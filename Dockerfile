@@ -33,7 +33,7 @@ COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
-# Copy Prisma files (needed for db push/seed)
+# Copy Prisma files and full node_modules needed for CLI
 COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
@@ -41,6 +41,12 @@ COPY --from=builder /app/node_modules/prisma ./node_modules/prisma
 
 # Copy seed dependencies
 COPY --from=builder /app/node_modules/bcryptjs ./node_modules/bcryptjs
+
+# Make prisma CLI accessible
+RUN mkdir -p /app/node_modules/.bin && \
+    ln -s /app/node_modules/prisma/build/index.js /app/node_modules/.bin/prisma && \
+    chmod +x /app/node_modules/.bin/prisma
+ENV PATH="/app/node_modules/.bin:$PATH"
 
 USER nextjs
 EXPOSE 3000
