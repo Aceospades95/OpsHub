@@ -3,8 +3,8 @@ FROM node:18-alpine AS base
 # Install dependencies
 FROM base AS deps
 WORKDIR /app
-COPY package.json package-lock.json* ./
-RUN npm ci
+COPY package.json ./
+RUN npm install
 
 # Generate Prisma client
 COPY prisma ./prisma
@@ -37,8 +37,6 @@ COPY --from=builder /app/node_modules/prisma ./node_modules/prisma
 
 # Copy seed dependencies
 COPY --from=builder /app/node_modules/bcryptjs ./node_modules/bcryptjs
-COPY --from=builder /app/node_modules/tsx ./node_modules/tsx
-COPY --from=builder /app/node_modules/esbuild ./node_modules/esbuild
 
 USER nextjs
 EXPOSE 3000
