@@ -1,0 +1,535 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  MANAGER
+  CONTRIBUTOR
+  VIEWER
+}
+
+enum ClientStatus {
+  ACTIVE
+  INACTIVE
+  PROSPECT
+  ARCHIVED
+}
+
+enum ProjectStatus {
+  PLANNING
+  ACTIVE
+  ON_HOLD
+  COMPLETED
+  ARCHIVED
+}
+
+enum ContractStatus {
+  DRAFT
+  UNDER_REVIEW
+  ACTIVE
+  EXPIRING_SOON
+  EXPIRED
+  TERMINATED
+  RENEWED
+}
+
+enum ContractType {
+  MSA
+  SOW
+  NDA
+  Amendment
+  Other
+}
+
+enum TermType {
+  SLA
+  OBLIGATION
+  DEADLINE
+  DELIVERABLE
+  ESCALATION
+  RENEWAL
+  BILLING
+  PENALTY
+  OTHER
+}
+
+enum Priority {
+  HIGH
+  MEDIUM
+  LOW
+}
+
+enum DocumentType {
+  SOP
+  GUIDE
+  POLICY
+  REFERENCE
+  TEMPLATE
+  OTHER
+}
+
+enum SupplierStatus {
+  ACTIVE
+  INACTIVE
+  ARCHIVED
+}
+
+enum IntranetCategory {
+  EXPENSE_REPORT
+  TIME_OFF
+  ORG_CHART
+  ANNOUNCEMENT
+  HR_POLICY
+  SOP
+  GENERAL_RESOURCE
+  FORM
+  OTHER
+}
+
+enum EmbedType {
+  iframe
+  google_form
+  jotform
+  other
+}
+
+// ─── USERS ───────────────────────────────────────────────
+
+model User {
+  id             String   @id @default(cuid())
+  name           String
+  email          String   @unique
+  hashedPassword String
+  role           Role     @default(VIEWER)
+  avatar         String?
+  isActive       Boolean  @default(true)
+  department     String?
+  jobTitle       String?
+  phone          String?
+  managerId      String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  manager        User?    @relation("UserManager", fields: [managerId], references: [id])
+  directReports  User[]   @relation("UserManager")
+
+  projectMembers       ProjectMember[]
+  milestoneAssignments MilestoneAssignee[]
+  comments             Comment[]
+  activityLogs         ActivityLog[]
+  files                File[]
+  modulePermissions    ModulePermission[]
+  entityPermissions    EntityPermission[]
+}
+
+model ModulePermission {
+  id         String  @id @default(cuid())
+  userId     String
+  module     String  // clients, projects, contracts, suppliers, tools, intranet, admin
+  canView    Boolean @default(false)
+  canEdit    Boolean @default(false)
+  canCreate  Boolean @default(false)
+  canDelete  Boolean @default(false)
+  canComment Boolean @default(false)
+  canUpload  Boolean @default(false)
+  canManage  Boolean @default(false)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, module])
+}
+
+model EntityPermission {
+  id         String  @id @default(cuid())
+  userId     String
+  entityType String  // client, project
+  entityId   String
+  canView    Boolean @default(false)
+  canEdit    Boolean @default(false)
+  canComment Boolean @default(false)
+  canUpload  Boolean @default(false)
+  canManage  Boolean @default(false)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, entityType, entityId])
+}
+
+// ─── CLIENTS ─────────────────────────────────────────────
+
+model Client {
+  id          String       @id @default(cuid())
+  name        String
+  description String?      @db.Text
+  summary     String?      @db.Text
+  industry    String?
+  website     String?
+  status      ClientStatus @default(ACTIVE)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  projects  Project[]
+  contracts Contract[]
+  contacts  ClientContact[]
+  comments  Comment[]
+}
+
+model ClientContact {
+  id        String   @id @default(cuid())
+  name      String
+  title     String?
+  email     String?
+  phone     String?
+  isPrimary Boolean  @default(false)
+  notes     String?  @db.Text
+  clientId  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+}
+
+// ─── PROJECTS ────────────────────────────────────────────
+
+model Project {
+  id              String        @id @default(cuid())
+  name            String
+  description     String?       @db.Text
+  status          ProjectStatus @default(PLANNING)
+  startDate       DateTime?
+  endDate         DateTime?
+  clientId        String
+  parentProjectId String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  client        Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  parentProject Project?  @relation("ProjectHierarchy", fields: [parentProjectId], references: [id])
+  childProjects Project[] @relation("ProjectHierarchy")
+
+  contracts  Contract[]
+  documents  Document[]
+  files      File[]
+  comments   Comment[]
+  members    ProjectMember[]
+  milestones Milestone[]
+  links      ExternalLink[]
+  embeds     Embed[]
+  tools      ProjectTool[]
+}
+
+model ProjectMember {
+  id        String   @id @default(cuid())
+  role      Role     @default(CONTRIBUTOR)
+  userId    String
+  projectId String
+  createdAt DateTime @default(now())
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, projectId])
+}
+
+model Milestone {
+  id          String    @id @default(cuid())
+  title       String
+  description String?   @db.Text
+  dueDate     DateTime?
+  completed   Boolean   @default(false)
+  completedAt DateTime?
+  projectId   String
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  project   Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  assignees MilestoneAssignee[]
+}
+
+model MilestoneAssignee {
+  id          String   @id @default(cuid())
+  milestoneId String
+  userId      String
+  createdAt   DateTime @default(now())
+
+  milestone Milestone @relation(fields: [milestoneId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([milestoneId, userId])
+}
+
+// ─── CONTRACTS ───────────────────────────────────────────
+
+model Contract {
+  id                  String         @id @default(cuid())
+  title               String
+  description         String?        @db.Text
+  status              ContractStatus @default(DRAFT)
+  contractNumber      String?
+  contractType        ContractType?
+  value               Float?
+  currency            String?        @default("USD")
+  startDate           DateTime?
+  endDate             DateTime?
+  renewalDate         DateTime?
+  noticePeriodDays    Int?
+  autoRenew           Boolean        @default(false)
+  summary             String?        @db.Text
+  externalDocumentUrl String?
+  documentSourceType  String?        // upload, google_drive, external_url, other
+  documentSourceLabel String?
+  parentContractId    String?
+  clientId            String
+  projectId           String?
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+
+  parentContract Contract?  @relation("ContractHierarchy", fields: [parentContractId], references: [id])
+  childContracts Contract[] @relation("ContractHierarchy")
+  client         Client     @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  project        Project?   @relation(fields: [projectId], references: [id])
+
+  terms    ContractTerm[]
+  files    File[]
+  comments Comment[]
+  links    ExternalLink[]
+  embeds   Embed[]
+}
+
+model ContractTerm {
+  id          String    @id @default(cuid())
+  type        TermType  @default(OTHER)
+  title       String
+  description String    @db.Text
+  priority    Priority? @default(MEDIUM)
+  dueDate     DateTime?
+  contractId  String
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  contract Contract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+}
+
+// ─── DOCUMENTS ───────────────────────────────────────────
+
+model Document {
+  id        String       @id @default(cuid())
+  title     String
+  content   String?      @db.Text
+  type      DocumentType @default(OTHER)
+  version   Int          @default(1)
+  published Boolean      @default(false)
+  projectId String?
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  project  Project?          @relation(fields: [projectId], references: [id])
+  versions DocumentVersion[]
+  files    File[]
+  comments Comment[]
+  embeds   Embed[]
+}
+
+model DocumentVersion {
+  id         String   @id @default(cuid())
+  version    Int
+  content    String   @db.Text
+  changelog  String?  @db.Text
+  documentId String
+  createdAt  DateTime @default(now())
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+}
+
+// ─── SUPPLIERS ───────────────────────────────────────────
+
+model Supplier {
+  id           String         @id @default(cuid())
+  name         String
+  category     String
+  contactName  String?
+  contactEmail String?
+  contactPhone String?
+  address      String?        @db.Text
+  website      String?
+  notes        String?        @db.Text
+  status       SupplierStatus @default(ACTIVE)
+  isPreferred  Boolean        @default(false)
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  files    File[]
+  links    ExternalLink[]
+  comments Comment[]
+  projects SupplierProject[]
+}
+
+model SupplierProject {
+  id         String   @id @default(cuid())
+  supplierId String
+  projectId  String
+  notes      String?
+  createdAt  DateTime @default(now())
+
+  supplier Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+
+  @@unique([supplierId, projectId])
+}
+
+// ─── TOOLS ───────────────────────────────────────────────
+
+model Tool {
+  id           String   @id @default(cuid())
+  name         String
+  description  String?  @db.Text
+  category     String?  // form, calculator, tracker, report, automation, other
+  toolUrl      String?
+  toolType     String   @default("internal") // internal, external, embedded
+  isGlobal     Boolean  @default(true)
+  clonedFromId String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  clonedFrom Tool?  @relation("ToolClone", fields: [clonedFromId], references: [id])
+  clones     Tool[] @relation("ToolClone")
+
+  embeds   Embed[]
+  projects ProjectTool[]
+}
+
+model ProjectTool {
+  id        String   @id @default(cuid())
+  projectId String
+  toolId    String
+  createdAt DateTime @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  tool    Tool    @relation(fields: [toolId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, toolId])
+}
+
+// ─── INTRANET ────────────────────────────────────────────
+
+model IntranetResource {
+  id        String           @id @default(cuid())
+  title     String
+  description String?        @db.Text
+  content   String?          @db.Text
+  category  IntranetCategory @default(OTHER)
+  published Boolean          @default(false)
+  pinned    Boolean          @default(false)
+  sortOrder Int              @default(0)
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+
+  files  File[]
+  links  ExternalLink[]
+  embeds Embed[]
+}
+
+// ─── POLYMORPHIC ATTACHMENTS ─────────────────────────────
+
+model File {
+  id                 String   @id @default(cuid())
+  name               String
+  url                String
+  size               Int?
+  mimeType           String?
+  source             String   @default("upload")
+  uploadedById       String
+  projectId          String?
+  contractId         String?
+  documentId         String?
+  supplierId         String?
+  intranetResourceId String?
+  createdAt          DateTime @default(now())
+
+  uploadedBy       User              @relation(fields: [uploadedById], references: [id])
+  project          Project?          @relation(fields: [projectId], references: [id])
+  contract         Contract?         @relation(fields: [contractId], references: [id])
+  document         Document?         @relation(fields: [documentId], references: [id])
+  supplier         Supplier?         @relation(fields: [supplierId], references: [id])
+  intranetResource IntranetResource? @relation(fields: [intranetResourceId], references: [id])
+}
+
+model ExternalLink {
+  id                 String   @id @default(cuid())
+  title              String
+  url                String
+  description        String?
+  source             String   @default("manual")
+  projectId          String?
+  contractId         String?
+  supplierId         String?
+  intranetResourceId String?
+  createdAt          DateTime @default(now())
+
+  project          Project?          @relation(fields: [projectId], references: [id])
+  contract         Contract?         @relation(fields: [contractId], references: [id])
+  supplier         Supplier?         @relation(fields: [supplierId], references: [id])
+  intranetResource IntranetResource? @relation(fields: [intranetResourceId], references: [id])
+}
+
+model Embed {
+  id                 String    @id @default(cuid())
+  title              String
+  embedUrl           String    @db.Text
+  embedType          EmbedType @default(iframe)
+  description        String?
+  width              String?   @default("100%")
+  height             String?   @default("600px")
+  projectId          String?
+  contractId         String?
+  documentId         String?
+  toolId             String?
+  intranetResourceId String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  project          Project?          @relation(fields: [projectId], references: [id])
+  contract         Contract?         @relation(fields: [contractId], references: [id])
+  document         Document?         @relation(fields: [documentId], references: [id])
+  tool             Tool?             @relation(fields: [toolId], references: [id])
+  intranetResource IntranetResource? @relation(fields: [intranetResourceId], references: [id])
+}
+
+model Comment {
+  id         String   @id @default(cuid())
+  content    String   @db.Text
+  authorId   String
+  clientId   String?
+  projectId  String?
+  contractId String?
+  documentId String?
+  supplierId String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  author   User      @relation(fields: [authorId], references: [id])
+  client   Client?   @relation(fields: [clientId], references: [id])
+  project  Project?  @relation(fields: [projectId], references: [id])
+  contract Contract? @relation(fields: [contractId], references: [id])
+  document Document? @relation(fields: [documentId], references: [id])
+  supplier Supplier? @relation(fields: [supplierId], references: [id])
+}
+
+model ActivityLog {
+  id         String   @id @default(cuid())
+  action     String   // created, updated, deleted, commented
+  entityType String
+  entityId   String
+  details    String?  @db.Text
+  userId     String
+  createdAt  DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([entityType, entityId])
+}
