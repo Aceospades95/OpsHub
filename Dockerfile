@@ -43,6 +43,10 @@ COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
 COPY --from=builder /app/node_modules/prisma ./node_modules/prisma
 
+# Copy Prisma CLI runtime dependencies
+COPY --from=builder /app/node_modules/effect ./node_modules/effect
+COPY --from=builder /app/node_modules/@effect ./node_modules/@effect
+
 # Copy seed dependencies
 COPY --from=builder /app/node_modules/bcryptjs ./node_modules/bcryptjs
 
