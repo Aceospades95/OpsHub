@@ -21,6 +21,10 @@ RUN mkdir -p public
 
 RUN npm run build
 
+# Bundle seed.ts into a single JS file using esbuild (already a Next.js dep)
+RUN npx esbuild prisma/seed.ts --bundle --platform=node --outfile=prisma/seed.js \
+    --external:@prisma/client --external:bcryptjs 2>/dev/null || true
+
 # Production image
 FROM base AS runner
 WORKDIR /app
@@ -48,9 +52,12 @@ RUN mkdir -p /app/node_modules/.bin && \
     chmod +x /app/node_modules/.bin/prisma
 ENV PATH="/app/node_modules/.bin:$PATH"
 
+# Copy startup script
+COPY --from=builder /app/start.sh ./start.sh
+
 USER nextjs
 EXPOSE 3000
 ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
 
-CMD ["node", "server.js"]
+CMD ["sh", "start.sh"]
