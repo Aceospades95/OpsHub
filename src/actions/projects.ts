@@ -1,0 +1,233 @@
+"use server";
+
+import { db } from "@/lib/db";
+import { requireAuth, resolveModulePerms } from "@/lib/permissions";
+import { logActivity } from "@/lib/activity";
+import { revalidatePath } from "next/cache";
+import { z } from "zod";
+
+const projectSchema = z.object({
+  name: z.string().min(1, "Name is required"),
+  description: z.string().optional(),
+  status: z.enum(["PLANNING", "ACTIVE", "ON_HOLD", "COMPLETED", "ARCHIVED"]).optional(),
+  startDate: z.string().optional(),
+  endDate: z.string().optional(),
+  clientId: z.string().min(1, "Client is required"),
+  parentProjectId: z.string().optional(),
+});
+
+export async function createProject(_prev: unknown, formData: FormData) {
+  const user = await requireAuth();
+  const perms = await resolveModulePerms(user.id, user.role, "projects");
+  if (!perms.canCreate) return { error: "Permission denied" };
+
+  const parsed = projectSchema.safeParse({
+    name: formData.get("name"),
+    description: formData.get("description") || undefined,
+    status: formData.get("status") || "PLANNING",
+    startDate: formData.get("startDate") || undefined,
+    endDate: formData.get("endDate") || undefined,
+    clientId: formData.get("clientId"),
+    parentProjectId: formData.get("parentProjectId") || undefined,
+  });
+
+  if (!parsed.success) return { error: "Invalid input", fieldErrors: parsed.error.flatten().fieldErrors };
+
+  const data = {
+    ...parsed.data,
+    startDate: parsed.data.startDate ? new Date(parsed.data.startDate) : undefined,
+    endDate: parsed.data.endDate ? new Date(parsed.data.endDate) : undefined,
+    parentProjectId: parsed.data.parentProjectId || undefined,
+  };
+
+  const project = await db.project.create({ data });
+
+  // Auto-add creator as a member
+  await db.projectMember.create({
+    data: { userId: user.id, projectId: project.id, role: user.role },
+  });
+
+  await logActivity("created", "project", project.id, user.id, project.name);
+  revalidatePath("/projects");
+  return { success: true };
+}
+
+export async function updateProject(_prev: unknown, formData: FormData) {
+  const user = await requireAuth();
+  const perms = await resolveModulePerms(user.id, user.role, "projects");
+  if (!perms.canEdit) return { error: "Permission denied" };
+
+  const id = formData.get("id") as string;
+  const parsed = projectSchema.safeParse({
+    name: formData.get("name"),
+    description: formData.get("description") || undefined,
+    status: formData.get("status") || undefined,
+    startDate: formData.get("startDate") || undefined,
+    endDate: formData.get("endDate") || undefined,
+    clientId: formData.get("clientId"),
+    parentProjectId: formData.get("parentProjectId") || undefined,
+  });
+
+  if (!parsed.success) return { error: "Invalid input", fieldErrors: parsed.error.flatten().fieldErrors };
+
+  await db.project.update({
+    where: { id },
+    data: {
+      ...parsed.data,
+      startDate: parsed.data.startDate ? new Date(parsed.data.startDate) : null,
+      endDate: parsed.data.endDate ? new Date(parsed.data.endDate) : null,
+      parentProjectId: parsed.data.parentProjectId || null,
+    },
+  });
+
+  await logActivity("updated", "project", id, user.id, parsed.data.name);
+  revalidatePath(`/projects/${id}`);
+  revalidatePath("/projects");
+  return { success: true };
+}
+
+export async function deleteProject(_prev: unknown, formData: FormData) {
+  const user = await requireAuth();
+  const perms = await resolveModulePerms(user.id, user.role, "projects");
+  if (!perms.canDelete) return { error: "Permission denied" };
+
+  const id = formData.get("id") as string;
+  const project = await db.project.findUnique({ where: { id } });
+  if (!project) return { error: "Project not found" };
+
+  await db.project.delete({ where: { id } });
+  await logActivity("deleted", "project", id, user.id, project.name);
+  revalidatePath("/projects");
+  return { success: true };
+}
+
+// Members
+export async function addProjectMember(_prev: unknown, formData: FormData) {
+  const user = await requireAuth();
+  const perms = await resolveModulePerms(user.id, user.role, "projects");
+  if (!perms.canEdit) return { error: "Permission denied" };
+
+  const projectId = formData.get("projectId") as string;
+  const userId = formData.get("userId") as string;
+  const role = (formData.get("role") as string) || "CONTRIBUTOR";
+
+  const existing = await db.projectMember.findUnique({
+    where: { userId_projectId: { userId, projectId } },
+  });
+  if (existing) return { error: "User is already a member" };
+
+  await db.projectMember.create({
+    data: { userId, projectId, role: role as "ADMIN" | "MANAGER" | "CONTRIBUTOR" | "VIEWER" },
+  });
+
+  revalidatePath(`/projects/${projectId}`);
+  return { success: true };
+}
+
+export async function removeProjectMember(_prev: unknown, formData: FormData) {
+  const user = await requireAuth();
+  const perms = await resolveModulePerms(user.id, user.role, "projects");
+  if (!perms.canEdit) return { error: "Permission denied" };
+
+  const id = formData.get("id") as string;
+  await db.projectMember.delete({ where: { id } });
+  revalidatePath("/projects");
+  return { success: true };
+}
+
+// Milestones
+const milestoneSchema = z.object({
+  title: z.string().min(1, "Title is required"),
+  description: z.string().optional(),
+  dueDate: z.string().optional(),
+  projectId: z.string(),
+});
+
+export async function createMilestone(_prev: unknown, formData: FormData) {
+  const user = await requireAuth();
+  const perms = await resolveModulePerms(user.id, user.role, "projects");
+  if (!perms.canCreate) return { error: "Permission denied" };
+
+  const parsed = milestoneSchema.safeParse({
+    title: formData.get("title"),
+    description: formData.get("description") || undefined,
+    dueDate: formData.get("dueDate") || undefined,
+    projectId: formData.get("projectId"),
+  });
+
+  if (!parsed.success) return { error: "Invalid input", fieldErrors: parsed.error.flatten().fieldErrors };
+
+  await db.milestone.create({
+    data: {
+      ...parsed.data,
+      dueDate: parsed.data.dueDate ? new Date(parsed.data.dueDate) : undefined,
+    },
+  });
+
+  revalidatePath(`/projects/${parsed.data.projectId}`);
+  return { success: true };
+}
+
+export async function toggleMilestone(_prev: unknown, formData: FormData) {
+  const user = await requireAuth();
+  const perms = await resolveModulePerms(user.id, user.role, "projects");
+  if (!perms.canEdit) return { error: "Permission denied" };
+
+  const id = formData.get("id") as string;
+  const milestone = await db.milestone.findUnique({ where: { id } });
+  if (!milestone) return { error: "Not found" };
+
+  await db.milestone.update({
+    where: { id },
+    data: {
+      completed: !milestone.completed,
+      completedAt: !milestone.completed ? new Date() : null,
+    },
+  });
+
+  revalidatePath(`/projects/${milestone.projectId}`);
+  return { success: true };
+}
+
+export async function deleteMilestone(_prev: unknown, formData: FormData) {
+  const user = await requireAuth();
+  const perms = await resolveModulePerms(user.id, user.role, "projects");
+  if (!perms.canDelete) return { error: "Permission denied" };
+
+  const id = formData.get("id") as string;
+  const milestone = await db.milestone.findUnique({ where: { id } });
+  if (!milestone) return { error: "Not found" };
+
+  await db.milestone.delete({ where: { id } });
+  revalidatePath(`/projects/${milestone.projectId}`);
+  return { success: true };
+}
+
+export async function addMilestoneAssignee(_prev: unknown, formData: FormData) {
+  const user = await requireAuth();
+  const perms = await resolveModulePerms(user.id, user.role, "projects");
+  if (!perms.canEdit) return { error: "Permission denied" };
+
+  const milestoneId = formData.get("milestoneId") as string;
+  const userId = formData.get("userId") as string;
+
+  const existing = await db.milestoneAssignee.findUnique({
+    where: { milestoneId_userId: { milestoneId, userId } },
+  });
+  if (existing) return { error: "Already assigned" };
+
+  await db.milestoneAssignee.create({ data: { milestoneId, userId } });
+  revalidatePath("/projects");
+  return { success: true };
+}
+
+export async function removeMilestoneAssignee(_prev: unknown, formData: FormData) {
+  const user = await requireAuth();
+  const perms = await resolveModulePerms(user.id, user.role, "projects");
+  if (!perms.canEdit) return { error: "Permission denied" };
+
+  const id = formData.get("id") as string;
+  await db.milestoneAssignee.delete({ where: { id } });
+  revalidatePath("/projects");
+  return { success: true };
+}
