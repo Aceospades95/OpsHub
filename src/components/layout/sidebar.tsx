@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -17,6 +17,8 @@ import {
   Palette,
   ChevronLeft,
   ChevronRight,
+  Menu,
+  X,
 } from "lucide-react";
 
 interface SidebarProps {
@@ -40,7 +42,13 @@ const navItems = [
 
 export function Sidebar({ visibleModules, userRole }: SidebarProps) {
   const [collapsed, setCollapsed] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
   const pathname = usePathname();
+
+  // Close mobile menu on navigation
+  useEffect(() => {
+    setMobileOpen(false);
+  }, [pathname]);
 
   const filteredItems = navItems.filter(
     (item) => {
@@ -50,27 +58,31 @@ export function Sidebar({ visibleModules, userRole }: SidebarProps) {
     }
   );
 
-  return (
-    <aside
-      className={`flex flex-col border-r border-border bg-card transition-all duration-200 ${
-        collapsed ? "w-16" : "w-60"
-      }`}
-    >
+  const navContent = (
+    <>
       <div className="flex h-16 items-center justify-between border-b border-border px-4">
         {!collapsed && (
           <Link href="/dashboard" className="text-xl font-bold text-primary">
             OpsHub
           </Link>
         )}
+        {/* Desktop collapse button */}
         <button
           onClick={() => setCollapsed(!collapsed)}
-          className="rounded p-1.5 hover:bg-muted transition-colors"
+          className="hidden md:block rounded p-1.5 hover:bg-muted transition-colors"
         >
           {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
         </button>
+        {/* Mobile close button */}
+        <button
+          onClick={() => setMobileOpen(false)}
+          className="md:hidden rounded p-1.5 hover:bg-muted transition-colors"
+        >
+          <X className="h-5 w-5" />
+        </button>
       </div>
 
-      <nav className="flex-1 space-y-1 p-2">
+      <nav className="flex-1 space-y-1 overflow-y-auto p-2">
         {filteredItems.map((item) => {
           const isActive =
             pathname === item.href || pathname.startsWith(item.href + "/");
@@ -93,6 +105,45 @@ export function Sidebar({ visibleModules, userRole }: SidebarProps) {
           );
         })}
       </nav>
-    </aside>
+    </>
+  );
+
+  return (
+    <>
+      {/* Mobile menu button - rendered in header area */}
+      <button
+        onClick={() => setMobileOpen(true)}
+        className="md:hidden fixed top-4 left-4 z-40 rounded p-2 bg-card border border-border shadow-sm hover:bg-muted transition-colors"
+        aria-label="Open menu"
+      >
+        <Menu className="h-5 w-5" />
+      </button>
+
+      {/* Mobile overlay */}
+      {mobileOpen && (
+        <div
+          className="md:hidden fixed inset-0 z-40 bg-black/50"
+          onClick={() => setMobileOpen(false)}
+        />
+      )}
+
+      {/* Mobile drawer */}
+      <aside
+        className={`md:hidden fixed inset-y-0 left-0 z-50 w-60 flex flex-col bg-card border-r border-border transform transition-transform duration-200 ${
+          mobileOpen ? "translate-x-0" : "-translate-x-full"
+        }`}
+      >
+        {navContent}
+      </aside>
+
+      {/* Desktop sidebar */}
+      <aside
+        className={`hidden md:flex flex-col border-r border-border bg-card transition-all duration-200 ${
+          collapsed ? "w-16" : "w-60"
+        }`}
+      >
+        {navContent}
+      </aside>
+    </>
   );
 }

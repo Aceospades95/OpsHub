@@ -25,22 +25,25 @@ export function Header({ userName, userEmail, userRole }: HeaderProps) {
   };
 
   return (
-    <header className="flex h-16 items-center justify-between border-b border-border bg-card px-6">
-      <form onSubmit={handleSearch} className="flex items-center gap-2">
-        <Search className="h-4 w-4 text-muted-foreground" />
+    <header className="flex h-16 items-center justify-between border-b border-border bg-card px-4 sm:px-6">
+      {/* Spacer for mobile hamburger button */}
+      <div className="w-10 md:hidden" />
+
+      <form onSubmit={handleSearch} className="flex items-center gap-2 flex-1 min-w-0 max-w-md">
+        <Search className="h-4 w-4 text-muted-foreground shrink-0" />
         <input
           type="text"
-          placeholder="Search across all modules..."
+          placeholder="Search..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          className="w-64 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+          className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground min-w-0"
         />
       </form>
 
-      <div className="relative">
+      <div className="relative shrink-0">
         <button
           onClick={() => setShowMenu(!showMenu)}
-          className="flex items-center gap-3 rounded px-2 py-1 hover:bg-muted transition-colors"
+          className="flex items-center gap-2 sm:gap-3 rounded px-2 py-1 hover:bg-muted transition-colors"
         >
           <div className="text-right hidden sm:block">
             <p className="text-sm font-medium">{userName}</p>
