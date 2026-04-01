@@ -30,7 +30,7 @@ export function ClientAttachments({ clientId, links, embeds, canEdit, canDelete 
           <AddContentDialog
             open={open}
             onClose={() => setOpen(false)}
-            entityType="project"
+            entityType="client"
             entityId={clientId}
           />
         </>

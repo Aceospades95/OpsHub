@@ -22,7 +22,11 @@ const statusVariantMap: Record<string, BadgeVariant> = {
   TERMINATED: "destructive",
   RENEWED: "success",
 
-  // Supplier statuses (reuses above)
+  // Task statuses
+  TODO: "outline",
+  IN_PROGRESS: "default",
+  DONE: "success",
+  CANCELLED: "secondary",
 
   // Priority
   HIGH: "destructive",

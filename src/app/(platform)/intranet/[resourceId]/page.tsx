@@ -38,7 +38,7 @@ export default async function IntranetDetailPage({ params }: Props) {
       />
 
       <div className="flex items-center gap-3 mb-6">
-        <Badge variant="outline">{resource.category.replace(/_/g, " ")}</Badge>
+        <Badge variant="outline">{resource.category.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, (c: string) => c.toUpperCase())}</Badge>
         {resource.published ? <Badge variant="success">Published</Badge> : <Badge variant="secondary">Draft</Badge>}
         {resource.pinned && (
           <Badge variant="default" className="flex items-center gap-1">
