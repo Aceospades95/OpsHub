@@ -38,7 +38,7 @@ export default async function SearchPage({ searchParams }: Props) {
   const contractPerms = await resolveModulePerms(userId, role, "contracts");
   const supplierPerms = await resolveModulePerms(userId, role, "suppliers");
 
-  const [clients, projects, contracts, suppliers] = await Promise.all([
+  const [clients, projects, contracts, suppliers, tasks] = await Promise.all([
     clientPerms.canView
       ? db.client.findMany({
           where: { OR: [{ name: { contains: query, mode: "insensitive" } }, { description: { contains: query, mode: "insensitive" } }] },
@@ -65,9 +65,18 @@ export default async function SearchPage({ searchParams }: Props) {
           take: 10,
         })
       : [],
+    db.task.findMany({
+      where: { OR: [{ title: { contains: query, mode: "insensitive" } }, { description: { contains: query, mode: "insensitive" } }] },
+      include: {
+        project: { select: { name: true } },
+        client: { select: { name: true } },
+        assignee: { select: { name: true } },
+      },
+      take: 10,
+    }),
   ]);
 
-  const totalResults = clients.length + projects.length + contracts.length + suppliers.length;
+  const totalResults = clients.length + projects.length + contracts.length + suppliers.length + tasks.length;
 
   return (
     <div>
@@ -153,6 +162,29 @@ export default async function SearchPage({ searchParams }: Props) {
                         <Badge variant="outline">{supplier.category}</Badge>
                       </div>
                       <StatusBadge status={supplier.status} />
+                    </CardContent>
+                  </Card>
+                </Link>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {tasks.length > 0 && (
+          <div>
+            <h2 className="text-lg font-semibold mb-3">Tasks ({tasks.length})</h2>
+            <div className="space-y-2">
+              {tasks.map((task) => (
+                <Link key={task.id} href="/tasks">
+                  <Card className="hover:shadow-md transition-shadow">
+                    <CardContent className="p-4 flex items-center justify-between">
+                      <div>
+                        <p className="font-medium">{task.title}</p>
+                        <p className="text-sm text-muted-foreground">
+                          {[task.project?.name, task.client?.name, task.assignee?.name].filter(Boolean).join(" · ")}
+                        </p>
+                      </div>
+                      <Badge variant={task.status === "DONE" ? "success" : "outline"}>{task.status.replace("_", " ")}</Badge>
                     </CardContent>
                   </Card>
                 </Link>

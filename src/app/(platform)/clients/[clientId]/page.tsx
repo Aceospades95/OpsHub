@@ -6,13 +6,12 @@ import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { CommentSection } from "@/components/shared/comment-section";
-import { FileList } from "@/components/shared/file-list";
 import { Badge } from "@/components/ui/badge";
-import { Globe, Mail, Phone, Star } from "lucide-react";
+import { Globe, Mail, Phone, Star, CheckSquare, Clock } from "lucide-react";
+import { format } from "date-fns";
 import Link from "next/link";
 import { ClientActions } from "./client-actions";
 import { ContactSection } from "./contact-section";
-import { ClientAttachments } from "./client-attachments";
 
 interface Props {
   params: Promise<{ clientId: string }>;
@@ -46,9 +45,13 @@ export default async function ClientDetailPage({ params }: Props) {
 
   if (!client) notFound();
 
-  // Get links and embeds separately since they're not directly on client
-  const links = await db.externalLink.findMany({ where: { projectId: undefined, contractId: undefined, supplierId: undefined } });
-  const embeds = await db.embed.findMany({ where: { projectId: undefined, contractId: undefined, toolId: undefined } });
+  // Get tasks associated with this client
+  const tasks = await db.task.findMany({
+    where: { clientId: client.id, status: { in: ["TODO", "IN_PROGRESS"] } },
+    orderBy: [{ priority: "asc" }, { dueDate: "asc" }],
+    include: { assignee: { select: { name: true } } },
+    take: 10,
+  });
 
   return (
     <div>
@@ -191,19 +194,43 @@ export default async function ClientDetailPage({ params }: Props) {
             </CardContent>
           </Card>
 
-          {/* Attachments */}
+          {/* Tasks */}
           <Card>
             <CardHeader>
-              <CardTitle>Attachments</CardTitle>
+              <div className="flex items-center justify-between">
+                <CardTitle className="flex items-center gap-2">
+                  <CheckSquare className="h-4 w-4" />
+                  Tasks
+                </CardTitle>
+                <Link href={`/tasks?clientId=${client.id}`} className="text-xs text-primary hover:underline">
+                  View all
+                </Link>
+              </div>
             </CardHeader>
             <CardContent>
-              <ClientAttachments
-                clientId={client.id}
-                links={links}
-                embeds={embeds}
-                canEdit={perms.canEdit}
-                canDelete={perms.canDelete}
-              />
+              {tasks.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No open tasks</p>
+              ) : (
+                <div className="space-y-2">
+                  {tasks.map((task) => (
+                    <div key={task.id} className="flex items-start gap-2 text-sm">
+                      <CheckSquare className={`h-4 w-4 mt-0.5 shrink-0 ${task.status === "IN_PROGRESS" ? "text-primary" : "text-muted-foreground"}`} />
+                      <div className="min-w-0">
+                        <p className="font-medium truncate">{task.title}</p>
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                          {task.assignee && <span>{task.assignee.name}</span>}
+                          {task.dueDate && (
+                            <span className={`flex items-center gap-1 ${new Date(task.dueDate) < new Date() ? "text-destructive" : ""}`}>
+                              <Clock className="h-3 w-3" />
+                              {format(new Date(task.dueDate), "MMM d")}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>

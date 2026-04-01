@@ -13,7 +13,7 @@ import { addExternalLink, addEmbed } from "@/actions/attachments";
 interface AddContentDialogProps {
   open: boolean;
   onClose: () => void;
-  entityType: "project" | "contract" | "supplier" | "intranet" | "tool" | "document";
+  entityType: "client" | "project" | "contract" | "supplier" | "intranet" | "tool" | "document";
   entityId: string;
 }
 
@@ -33,7 +33,7 @@ export function AddContentDialog({ open, onClose, entityType, entityId }: AddCon
   }, [linkState, embedState, onClose, router]);
 
   return (
-    <Dialog open={open} onClose={onClose} title="Add Content">
+    <Dialog open={open} onClose={onClose} title="Add Link or Embed">
       <div className="flex gap-2 mb-4">
         <button
           className={`px-3 py-1.5 text-sm rounded font-medium transition-colors ${

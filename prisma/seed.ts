@@ -648,6 +648,101 @@ async function main() {
     },
   });
 
+  // Tasks
+  await prisma.task.upsert({
+    where: { id: "task-1" },
+    update: {},
+    create: {
+      id: "task-1",
+      title: "Review GPS hardware quotes from TechFix",
+      description: "Compare pricing for 100+ unit orders and negotiate volume discount.",
+      status: "TODO",
+      priority: "HIGH",
+      dueDate: new Date("2025-04-15"),
+      projectId: projectFleet.id,
+      clientId: clientAcme.id,
+      assigneeId: contributor.id,
+      createdById: admin.id,
+    },
+  });
+
+  await prisma.task.upsert({
+    where: { id: "task-2" },
+    update: {},
+    create: {
+      id: "task-2",
+      title: "Schedule architecture review with Acme team",
+      status: "IN_PROGRESS",
+      priority: "HIGH",
+      dueDate: new Date("2025-04-10"),
+      projectId: projectFleet.id,
+      clientId: clientAcme.id,
+      assigneeId: manager.id,
+      createdById: admin.id,
+    },
+  });
+
+  await prisma.task.upsert({
+    where: { id: "task-3" },
+    update: {},
+    create: {
+      id: "task-3",
+      title: "Prepare onboarding materials for GlobalTech",
+      description: "Create welcome packet, access request forms, and training schedule.",
+      status: "TODO",
+      priority: "MEDIUM",
+      dueDate: new Date("2025-04-20"),
+      projectId: projectOnboard.id,
+      clientId: clientGlobal.id,
+      assigneeId: manager.id,
+      createdById: admin.id,
+    },
+  });
+
+  await prisma.task.upsert({
+    where: { id: "task-4" },
+    update: {},
+    create: {
+      id: "task-4",
+      title: "Update fleet requirements doc with stakeholder feedback",
+      status: "TODO",
+      priority: "MEDIUM",
+      projectId: projectFleet.id,
+      assigneeId: contributor.id,
+      createdById: manager.id,
+    },
+  });
+
+  await prisma.task.upsert({
+    where: { id: "task-5" },
+    update: {},
+    create: {
+      id: "task-5",
+      title: "Review and renew SafeGuard Alarms contract",
+      status: "TODO",
+      priority: "LOW",
+      dueDate: new Date("2025-05-01"),
+      assigneeId: admin.id,
+      createdById: admin.id,
+    },
+  });
+
+  await prisma.task.upsert({
+    where: { id: "task-6" },
+    update: {},
+    create: {
+      id: "task-6",
+      title: "Complete security audit scope document",
+      status: "TODO",
+      priority: "MEDIUM",
+      dueDate: new Date("2025-04-25"),
+      projectId: projectSecurity.id,
+      clientId: clientGlobal.id,
+      assigneeId: admin.id,
+      createdById: admin.id,
+    },
+  });
+
   // Activity Logs
   const activities = [
     { action: "created", entityType: "client", entityId: clientAcme.id, details: "Acme Corp", userId: admin.id },
