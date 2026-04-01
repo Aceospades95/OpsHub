@@ -16,6 +16,7 @@ export type PermissionFlags = {
 const ROLE_LEVEL: Record<Role, number> = {
   ADMIN: 4,
   MANAGER: 3,
+  DEVELOPER: 3,
   CONTRIBUTOR: 2,
   VIEWER: 1,
 };
@@ -117,6 +118,10 @@ export async function resolveEntityPerms(
 
   // Fall back to module perms
   return resolveModulePerms(userId, role, module);
+}
+
+export function canAccessSandbox(role: Role): boolean {
+  return role === "ADMIN" || role === "DEVELOPER";
 }
 
 export async function getVisibleModules(

@@ -16,7 +16,7 @@ export default async function PlatformLayout({
 
   return (
     <div className="flex h-screen overflow-hidden">
-      <Sidebar visibleModules={visibleModules} />
+      <Sidebar visibleModules={visibleModules} userRole={session.user.role} />
       <div className="flex flex-1 flex-col overflow-hidden">
         <Header
           userName={session.user.name}

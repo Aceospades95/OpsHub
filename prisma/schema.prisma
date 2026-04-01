@@ -10,6 +10,7 @@ datasource db {
 enum Role {
   ADMIN
   MANAGER
+  DEVELOPER
   CONTRIBUTOR
   VIEWER
 }
@@ -135,6 +136,7 @@ model User {
   entityPermissions    EntityPermission[]
   assignedTasks        Task[]             @relation("TaskAssignee")
   createdTasks         Task[]             @relation("TaskCreator")
+  sandboxPages         SandboxPage[]
 }
 
 model ModulePermission {
@@ -216,7 +218,8 @@ model Client {
   contracts Contract[]
   contacts  ClientContact[]
   comments  Comment[]
-  tasks     Task[]
+  tasks        Task[]
+  sandboxPages SandboxPage[]
 }
 
 model ClientContact {
@@ -261,7 +264,8 @@ model Project {
   links      ExternalLink[]
   embeds     Embed[]
   tools      ProjectTool[]
-  tasks      Task[]
+  tasks        Task[]
+  sandboxPages SandboxPage[]
 }
 
 model ProjectMember {
@@ -572,4 +576,34 @@ model ActivityLog {
   user User @relation(fields: [userId], references: [id])
 
   @@index([entityType, entityId])
+}
+
+// ─── THEME SETTINGS ─────────────────────────────────────
+
+model ThemeSetting {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     String
+  updatedAt DateTime @updatedAt
+}
+
+// ─── SANDBOX PAGES ──────────────────────────────────────
+
+model SandboxPage {
+  id          String   @id @default(cuid())
+  title       String
+  slug        String   @unique
+  description String?  @db.Text
+  content     String?  @db.Text
+  layout      String   @default("default") // default, wide, full
+  published   Boolean  @default(false)
+  createdById String
+  projectId   String?
+  clientId    String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  createdBy User     @relation(fields: [createdById], references: [id])
+  project   Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  client    Client?  @relation(fields: [clientId], references: [id], onDelete: SetNull)
 }

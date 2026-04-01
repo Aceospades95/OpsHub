@@ -3,26 +3,61 @@ import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { resolveModulePerms } from "@/lib/permissions";
 import { PageHeader } from "@/components/layout/page-header";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { EmptyState } from "@/components/ui/empty-state";
+import { TreeView, TreeNode } from "@/components/shared/tree-view";
 import { Badge } from "@/components/ui/badge";
 import { FileText, AlertTriangle, Clock } from "lucide-react";
 import { format, differenceInDays } from "date-fns";
 import Link from "next/link";
 import { ContractCreateButton } from "./contract-create-button";
+import { ContractViewToggle } from "./contract-view-toggle";
 
-export default async function ContractsPage() {
+interface ContractWithRelations {
+  id: string;
+  title: string;
+  status: string;
+  contractType: string | null;
+  value: number | null;
+  currency: string | null;
+  startDate: Date | null;
+  endDate: Date | null;
+  client: { id: string; name: string };
+  childContracts: ContractWithRelations[];
+}
+
+function buildContractTreeNodes(contracts: ContractWithRelations[]): TreeNode[] {
+  return contracts.map((contract) => ({
+    id: contract.id,
+    label: contract.title,
+    href: `/contracts/${contract.id}`,
+    status: contract.status,
+    meta: contract.contractType || undefined,
+    children: contract.childContracts.length > 0
+      ? buildContractTreeNodes(contract.childContracts)
+      : undefined,
+  }));
+}
+
+export default async function ContractsPage({
+  searchParams,
+}: {
+  searchParams: { view?: string };
+}) {
   const session = await auth();
   if (!session?.user) redirect("/login");
 
   const perms = await resolveModulePerms(session.user.id, session.user.role, "contracts");
   if (!perms.canView) redirect("/dashboard");
 
+  const view = searchParams.view || "cards";
+
+  // Card view: flat query with SLA/risk data (existing behavior)
   const contracts = await db.contract.findMany({
     orderBy: { updatedAt: "desc" },
     include: {
-      client: { select: { name: true } },
+      client: { select: { id: true, name: true } },
       project: { select: { name: true } },
       terms: {
         where: { type: "SLA" },
@@ -42,6 +77,45 @@ export default async function ContractsPage() {
     orderBy: { name: "asc" },
   });
 
+  // Tree view: hierarchical query for root contracts with nested children
+  let clientTreeNodes: TreeNode[] = [];
+  if (view === "tree") {
+    const rootContracts = await db.contract.findMany({
+      where: { parentContractId: null },
+      orderBy: { updatedAt: "desc" },
+      include: {
+        client: { select: { id: true, name: true } },
+        childContracts: {
+          include: {
+            client: { select: { id: true, name: true } },
+            childContracts: {
+              include: {
+                client: { select: { id: true, name: true } },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    // Group by client
+    const clientMap = new Map<string, { id: string; name: string; contracts: ContractWithRelations[] }>();
+    for (const contract of rootContracts) {
+      const clientId = contract.client.id;
+      if (!clientMap.has(clientId)) {
+        clientMap.set(clientId, { id: clientId, name: contract.client.name, contracts: [] });
+      }
+      clientMap.get(clientId)!.contracts.push(contract as unknown as ContractWithRelations);
+    }
+
+    clientTreeNodes = Array.from(clientMap.values()).map((client) => ({
+      id: client.id,
+      label: client.name,
+      href: `/clients/${client.id}`,
+      children: buildContractTreeNodes(client.contracts),
+    }));
+  }
+
   const now = new Date();
 
   return (
@@ -50,14 +124,29 @@ export default async function ContractsPage() {
         title="Contracts"
         description="Manage contracts and agreements"
         actions={
-          perms.canCreate ? (
-            <ContractCreateButton clients={clients} projects={projects} parentContracts={contracts} />
-          ) : undefined
+          <div className="flex items-center gap-2">
+            <ContractViewToggle currentView={view} />
+            {perms.canCreate && (
+              <ContractCreateButton clients={clients} projects={projects} parentContracts={contracts} />
+            )}
+          </div>
         }
       />
 
       {contracts.length === 0 ? (
         <EmptyState icon={FileText} title="No contracts yet" description="Create your first contract" />
+      ) : view === "tree" ? (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <FileText className="h-5 w-5" />
+              Contract Hierarchy
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <TreeView nodes={clientTreeNodes} />
+          </CardContent>
+        </Card>
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {contracts.map((contract) => {

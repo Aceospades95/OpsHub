@@ -11,14 +11,17 @@ import {
   CheckSquare,
   Truck,
   Wrench,
+  Blocks,
   Globe,
   Shield,
+  Palette,
   ChevronLeft,
   ChevronRight,
 } from "lucide-react";
 
 interface SidebarProps {
   visibleModules: string[];
+  userRole?: string;
 }
 
 const navItems = [
@@ -29,16 +32,22 @@ const navItems = [
   { label: "Contracts", href: "/contracts", icon: FileText, module: "contracts" },
   { label: "Suppliers", href: "/suppliers", icon: Truck, module: "suppliers" },
   { label: "Tools", href: "/tools", icon: Wrench, module: "tools" },
+  { label: "Sandbox", href: "/sandbox", icon: Blocks, module: "sandbox" },
   { label: "Intranet", href: "/intranet", icon: Globe, module: "intranet" },
   { label: "Admin", href: "/admin/users", icon: Shield, module: "admin" },
+  { label: "Theme", href: "/admin/theme", icon: Palette, module: "admin" },
 ];
 
-export function Sidebar({ visibleModules }: SidebarProps) {
+export function Sidebar({ visibleModules, userRole }: SidebarProps) {
   const [collapsed, setCollapsed] = useState(false);
   const pathname = usePathname();
 
   const filteredItems = navItems.filter(
-    (item) => item.module === "dashboard" || item.module === "tasks" || visibleModules.includes(item.module)
+    (item) => {
+      if (item.module === "dashboard" || item.module === "tasks") return true;
+      if (item.module === "sandbox") return userRole === "ADMIN" || userRole === "DEVELOPER";
+      return visibleModules.includes(item.module);
+    }
   );
 
   return (

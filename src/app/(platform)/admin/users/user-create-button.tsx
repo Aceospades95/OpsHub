@@ -32,6 +32,7 @@ export function UserCreateButton({ allUsers }: Props) {
               options={[
                 { label: "Viewer", value: "VIEWER" },
                 { label: "Contributor", value: "CONTRIBUTOR" },
+                { label: "Developer", value: "DEVELOPER" },
                 { label: "Manager", value: "MANAGER" },
                 { label: "Admin", value: "ADMIN" },
               ]}
