@@ -15,12 +15,17 @@ function requireAdmin(role: string) {
 }
 
 export async function getThemeSettings(): Promise<Record<string, string>> {
-  const rows = await db.themeSetting.findMany();
-  const result: Record<string, string> = {};
-  for (const row of rows) {
-    result[row.key] = row.value;
+  try {
+    const rows = await db.themeSetting.findMany();
+    const result: Record<string, string> = {};
+    for (const row of rows) {
+      result[row.key] = row.value;
+    }
+    return result;
+  } catch {
+    // DB not available during build — return empty (defaults apply via globals.css)
+    return {};
   }
-  return result;
 }
 
 export async function saveThemeSettings(_prev: unknown, formData: FormData) {
