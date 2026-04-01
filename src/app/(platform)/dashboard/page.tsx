@@ -13,9 +13,12 @@ import {
   Users,
   AlertTriangle,
   Activity,
+  CheckSquare,
+  Clock,
 } from "lucide-react";
-import { formatDistanceToNow } from "date-fns";
+import { formatDistanceToNow, format } from "date-fns";
 import Link from "next/link";
+import { DashboardTaskCheckbox } from "./dashboard-task-checkbox";
 
 export default async function DashboardPage() {
   const session = await auth();
@@ -35,6 +38,8 @@ export default async function DashboardPage() {
     expiringContracts,
     teamCount,
     recentActivity,
+    myTasks,
+    openTaskCount,
   ] = await Promise.all([
     clientPerms.canView ? db.client.count() : Promise.resolve(0),
     projectPerms.canView ? db.project.count() : Promise.resolve(0),
@@ -55,6 +60,25 @@ export default async function DashboardPage() {
       orderBy: { createdAt: "desc" },
       include: { user: { select: { name: true } } },
     }),
+    db.task.findMany({
+      where: {
+        status: { in: ["TODO", "IN_PROGRESS"] },
+        OR: [
+          { assigneeId: userId },
+          { createdById: userId },
+        ],
+      },
+      take: 8,
+      orderBy: [{ priority: "asc" }, { dueDate: "asc" }],
+      include: {
+        project: { select: { id: true, name: true } },
+        client: { select: { id: true, name: true } },
+        assignee: { select: { name: true } },
+      },
+    }),
+    db.task.count({
+      where: { status: { in: ["TODO", "IN_PROGRESS"] } },
+    }),
   ]);
 
   const stats = [
@@ -64,6 +88,7 @@ export default async function DashboardPage() {
       icon: Building2,
       href: "/clients",
       visible: clientPerms.canView,
+      sub: "\u00A0",
     },
     {
       label: "Projects",
@@ -79,15 +104,23 @@ export default async function DashboardPage() {
       icon: FileText,
       href: "/contracts",
       visible: contractPerms.canView,
+      sub: "\u00A0",
     },
     {
-      label: "Team Members",
-      value: teamCount,
-      icon: Users,
-      href: "/admin/users",
+      label: "Open Tasks",
+      value: openTaskCount,
+      icon: CheckSquare,
+      href: "/tasks",
       visible: true,
+      sub: `${myTasks.length} assigned to you`,
     },
   ];
+
+  const priorityColors: Record<string, string> = {
+    HIGH: "bg-red-100 text-red-800",
+    MEDIUM: "bg-yellow-100 text-yellow-800",
+    LOW: "bg-green-100 text-green-800",
+  };
 
   return (
     <div>
@@ -103,15 +136,15 @@ export default async function DashboardPage() {
             const Icon = stat.icon;
             return (
               <Link key={stat.label} href={stat.href}>
-                <Card className="hover:shadow-md transition-shadow">
+                <Card className="hover:shadow-md transition-shadow h-full">
                   <CardContent className="p-6">
                     <div className="flex items-center justify-between">
                       <div>
                         <p className="text-sm text-muted-foreground">{stat.label}</p>
                         <p className="text-3xl font-bold text-foreground">{stat.value}</p>
-                        {stat.sub && (
-                          <p className="text-xs text-muted-foreground mt-1">{stat.sub}</p>
-                        )}
+                        <p className="text-xs text-muted-foreground mt-1 min-h-[1rem]">
+                          {stat.sub}
+                        </p>
                       </div>
                       <Icon className="h-8 w-8 text-primary/60" />
                     </div>
@@ -137,45 +170,94 @@ export default async function DashboardPage() {
         </Card>
       )}
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Activity className="h-5 w-5" />
-            Recent Activity
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {recentActivity.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No recent activity</p>
-          ) : (
-            <div className="space-y-3">
-              {recentActivity.map((log) => (
-                <div key={log.id} className="flex items-start gap-3">
-                  <Avatar name={log.user.name} size="xs" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm">
-                      <span className="font-medium">{log.user.name}</span>{" "}
-                      <span className="text-muted-foreground">{log.action}</span>{" "}
-                      <span className="text-muted-foreground">
-                        {log.entityType}
-                      </span>
-                      {log.details && (
-                        <span className="text-muted-foreground"> — {log.details}</span>
-                      )}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {formatDistanceToNow(log.createdAt, { addSuffix: true })}
-                    </p>
-                  </div>
-                  <Badge variant="outline" className="shrink-0">
-                    {log.action}
-                  </Badge>
-                </div>
-              ))}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
+        {/* My Tasks */}
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle className="flex items-center gap-2">
+                <CheckSquare className="h-5 w-5" />
+                My Tasks
+              </CardTitle>
+              <Link href="/tasks" className="text-sm text-primary hover:underline">
+                View all
+              </Link>
             </div>
-          )}
-        </CardContent>
-      </Card>
+          </CardHeader>
+          <CardContent>
+            {myTasks.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No open tasks</p>
+            ) : (
+              <div className="space-y-2">
+                {myTasks.map((task) => (
+                  <div key={task.id} className="flex items-center gap-3 py-1">
+                    <DashboardTaskCheckbox taskId={task.id} status={task.status} />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium truncate">{task.title}</span>
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${priorityColors[task.priority]}`}>
+                          {task.priority}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                        {task.project && <span>{task.project.name}</span>}
+                        {task.client && <span>{task.client.name}</span>}
+                        {task.dueDate && (
+                          <span className={`flex items-center gap-1 ${new Date(task.dueDate) < new Date() ? "text-destructive" : ""}`}>
+                            <Clock className="h-3 w-3" />
+                            {format(new Date(task.dueDate), "MMM d")}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Recent Activity */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Activity className="h-5 w-5" />
+              Recent Activity
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {recentActivity.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No recent activity</p>
+            ) : (
+              <div className="space-y-3">
+                {recentActivity.map((log) => (
+                  <div key={log.id} className="flex items-start gap-3">
+                    <Avatar name={log.user.name} size="xs" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm">
+                        <span className="font-medium">{log.user.name}</span>{" "}
+                        <span className="text-muted-foreground">{log.action}</span>{" "}
+                        <span className="text-muted-foreground">
+                          {log.entityType}
+                        </span>
+                        {log.details && (
+                          <span className="text-muted-foreground"> — {log.details}</span>
+                        )}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {formatDistanceToNow(log.createdAt, { addSuffix: true })}
+                      </p>
+                    </div>
+                    <Badge variant="outline" className="shrink-0">
+                      {log.action}
+                    </Badge>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }

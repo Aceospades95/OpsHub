@@ -8,6 +8,7 @@ import {
   Building2,
   FolderKanban,
   FileText,
+  CheckSquare,
   Truck,
   Wrench,
   Globe,
@@ -24,6 +25,7 @@ const navItems = [
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard, module: "dashboard" },
   { label: "Clients", href: "/clients", icon: Building2, module: "clients" },
   { label: "Projects", href: "/projects", icon: FolderKanban, module: "projects" },
+  { label: "Tasks", href: "/tasks", icon: CheckSquare, module: "tasks" },
   { label: "Contracts", href: "/contracts", icon: FileText, module: "contracts" },
   { label: "Suppliers", href: "/suppliers", icon: Truck, module: "suppliers" },
   { label: "Tools", href: "/tools", icon: Wrench, module: "tools" },
@@ -36,7 +38,7 @@ export function Sidebar({ visibleModules }: SidebarProps) {
   const pathname = usePathname();
 
   const filteredItems = navItems.filter(
-    (item) => item.module === "dashboard" || visibleModules.includes(item.module)
+    (item) => item.module === "dashboard" || item.module === "tasks" || visibleModules.includes(item.module)
   );
 
   return (

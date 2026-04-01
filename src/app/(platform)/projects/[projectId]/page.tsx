@@ -6,10 +6,10 @@ import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { CommentSection } from "@/components/shared/comment-section";
-import { FileList } from "@/components/shared/file-list";
 import { TreeView, type TreeNode } from "@/components/shared/tree-view";
 import { Badge } from "@/components/ui/badge";
 import { format } from "date-fns";
+import { CheckSquare, Clock } from "lucide-react";
 import Link from "next/link";
 import { ProjectActions } from "./project-actions";
 import { MemberSection } from "./member-section";
@@ -84,11 +84,19 @@ export default async function ProjectDetailPage({ params }: Props) {
     orderBy: { name: "asc" },
   });
 
-  const allUsers = await db.user.findMany({
-    where: { isActive: true },
-    select: { id: true, name: true, email: true },
-    orderBy: { name: "asc" },
-  });
+  const [allUsers, projectTasks] = await Promise.all([
+    db.user.findMany({
+      where: { isActive: true },
+      select: { id: true, name: true, email: true },
+      orderBy: { name: "asc" },
+    }),
+    db.task.findMany({
+      where: { projectId: project.id, status: { in: ["TODO", "IN_PROGRESS"] } },
+      orderBy: [{ priority: "asc" }, { dueDate: "asc" }],
+      include: { assignee: { select: { name: true } } },
+      take: 10,
+    }),
+  ]);
 
   const treeNodes = buildTree(project.childProjects as Parameters<typeof buildTree>[0]);
 
@@ -164,6 +172,53 @@ export default async function ProjectDetailPage({ params }: Props) {
                 canCreate={perms.canCreate}
                 canDelete={perms.canDelete}
               />
+            </CardContent>
+          </Card>
+
+          {/* Tasks */}
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <CardTitle className="flex items-center gap-2">
+                <CheckSquare className="h-5 w-5" />
+                Tasks ({projectTasks.length})
+              </CardTitle>
+              <Link href={`/tasks?projectId=${project.id}`} className="text-sm text-primary hover:underline">
+                View all
+              </Link>
+            </CardHeader>
+            <CardContent>
+              {projectTasks.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No open tasks</p>
+              ) : (
+                <div className="space-y-2">
+                  {projectTasks.map((task) => (
+                    <div key={task.id} className="flex items-center justify-between rounded border border-border p-3 hover:bg-muted transition-colors">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <CheckSquare className={`h-4 w-4 shrink-0 ${task.status === "IN_PROGRESS" ? "text-primary" : "text-muted-foreground"}`} />
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium truncate">{task.title}</p>
+                          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                            {task.assignee && <span>{task.assignee.name}</span>}
+                            {task.dueDate && (
+                              <span className={`flex items-center gap-1 ${new Date(task.dueDate) < new Date() ? "text-destructive" : ""}`}>
+                                <Clock className="h-3 w-3" />
+                                {format(new Date(task.dueDate), "MMM d")}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                        task.priority === "HIGH" ? "bg-red-100 text-red-800" :
+                        task.priority === "MEDIUM" ? "bg-yellow-100 text-yellow-800" :
+                        "bg-green-100 text-green-800"
+                      }`}>
+                        {task.priority}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </CardContent>
           </Card>
 
