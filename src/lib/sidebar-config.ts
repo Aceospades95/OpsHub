@@ -28,7 +28,6 @@ export const SYSTEM_MODULES: Record<string, { label: string; href: string; icon:
   admin: { label: "Admin", href: "/admin/users", icon: "Shield" },
   theme: { label: "Theme", href: "/admin/theme", icon: "Palette" },
   sidebar: { label: "Sidebar", href: "/admin/sidebar", icon: "PanelLeft" },
-  widgets: { label: "Widgets", href: "/admin/widgets", icon: "Puzzle" },
 };
 
 export const DEFAULT_SIDEBAR_CONFIG: SidebarConfig = {
@@ -61,7 +60,6 @@ export const DEFAULT_SIDEBAR_CONFIG: SidebarConfig = {
         { key: "admin", visible: true },
         { key: "theme", visible: true },
         { key: "sidebar", visible: true },
-        { key: "widgets", visible: true },
       ],
     },
   ],
