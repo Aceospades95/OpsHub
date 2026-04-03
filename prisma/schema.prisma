@@ -137,6 +137,7 @@ model User {
   assignedTasks        Task[]             @relation("TaskAssignee")
   createdTasks         Task[]             @relation("TaskCreator")
   sandboxPages         SandboxPage[]
+  managedClients       Client[]           @relation("ClientAccountManager")
 }
 
 model ModulePermission {
@@ -204,22 +205,24 @@ model Task {
 // ─── CLIENTS ─────────────────────────────────────────────
 
 model Client {
-  id          String       @id @default(cuid())
-  name        String
-  description String?      @db.Text
-  summary     String?      @db.Text
-  industry    String?
-  website     String?
-  status      ClientStatus @default(ACTIVE)
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
+  id               String       @id @default(cuid())
+  name             String
+  description      String?      @db.Text
+  summary          String?      @db.Text
+  industry         String?
+  website          String?
+  status           ClientStatus @default(ACTIVE)
+  accountManagerId String?
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
 
-  projects  Project[]
-  contracts Contract[]
-  contacts  ClientContact[]
-  comments  Comment[]
-  tasks        Task[]
-  sandboxPages SandboxPage[]
+  accountManager User?          @relation("ClientAccountManager", fields: [accountManagerId], references: [id], onDelete: SetNull)
+  projects       Project[]
+  contracts      Contract[]
+  contacts       ClientContact[]
+  comments       Comment[]
+  tasks          Task[]
+  sandboxPages   SandboxPage[]
 }
 
 model ClientContact {

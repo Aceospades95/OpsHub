@@ -9,16 +9,49 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Building2 } from "lucide-react";
 import Link from "next/link";
 import { ClientCreateButton } from "./client-create-button";
+import { ClientFilters } from "./client-filters";
+import { Prisma } from "@prisma/client";
 
-export default async function ClientsPage() {
+export default async function ClientsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ status?: string; sort?: string }>;
+}) {
   const session = await auth();
   if (!session?.user) redirect("/login");
 
   const perms = await resolveModulePerms(session.user.id, session.user.role, "clients");
   if (!perms.canView) redirect("/dashboard");
 
+  const params = await searchParams;
+  const statusFilter = params.status;
+  const sortParam = params.sort;
+
+  // Build where clause
+  const where: Prisma.ClientWhereInput = {};
+  if (statusFilter && ["ACTIVE", "INACTIVE", "PROSPECT", "ARCHIVED"].includes(statusFilter)) {
+    where.status = statusFilter as "ACTIVE" | "INACTIVE" | "PROSPECT" | "ARCHIVED";
+  }
+
+  // Build orderBy
+  let orderBy: Prisma.ClientOrderByWithRelationInput | Prisma.ClientOrderByWithRelationInput[];
+  switch (sortParam) {
+    case "name-asc":
+      orderBy = { name: "asc" };
+      break;
+    case "name-desc":
+      orderBy = { name: "desc" };
+      break;
+    case "projects":
+      orderBy = { projects: { _count: "desc" } };
+      break;
+    default:
+      orderBy = { updatedAt: "desc" };
+  }
+
   const clients = await db.client.findMany({
-    orderBy: { updatedAt: "desc" },
+    where,
+    orderBy,
     include: {
       _count: { select: { projects: true, contracts: true, contacts: true } },
     },
@@ -32,11 +65,17 @@ export default async function ClientsPage() {
         actions={perms.canCreate ? <ClientCreateButton /> : undefined}
       />
 
+      <ClientFilters
+        currentStatus={statusFilter}
+        currentSort={sortParam}
+        resultCount={clients.length}
+      />
+
       {clients.length === 0 ? (
         <EmptyState
           icon={Building2}
           title="No clients yet"
-          description="Add your first client to get started"
+          description={statusFilter ? "No clients match the current filter" : "Add your first client to get started"}
         />
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">

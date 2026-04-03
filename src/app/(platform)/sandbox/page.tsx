@@ -44,8 +44,8 @@ export default async function SandboxListPage() {
   return (
     <div>
       <PageHeader
-        title="Sandbox"
-        description="Experimental pages and developer modules"
+        title="Custom Pages"
+        description="Create and manage custom pages and modules"
         actions={<SandboxCreateButton projects={projects} clients={clients} />}
       />
 

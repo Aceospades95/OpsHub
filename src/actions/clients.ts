@@ -13,6 +13,7 @@ const clientSchema = z.object({
   industry: z.string().optional(),
   website: z.string().optional(),
   status: z.enum(["ACTIVE", "INACTIVE", "PROSPECT", "ARCHIVED"]).optional(),
+  accountManagerId: z.string().optional(),
 });
 
 export async function createClient(_prev: unknown, formData: FormData) {
@@ -50,11 +51,18 @@ export async function updateClient(_prev: unknown, formData: FormData) {
     industry: formData.get("industry") || undefined,
     website: formData.get("website") || undefined,
     status: formData.get("status") || undefined,
+    accountManagerId: formData.get("accountManagerId") || undefined,
   });
 
   if (!parsed.success) return { error: "Invalid input", fieldErrors: parsed.error.flatten().fieldErrors };
 
-  await db.client.update({ where: { id }, data: parsed.data });
+  await db.client.update({
+    where: { id },
+    data: {
+      ...parsed.data,
+      accountManagerId: parsed.data.accountManagerId || null,
+    },
+  });
   await logActivity("updated", "client", id, user.id, parsed.data.name);
   revalidatePath(`/clients/${id}`);
   revalidatePath("/clients");

@@ -22,6 +22,7 @@ export default async function ToolsPage() {
     orderBy: { name: "asc" },
     include: {
       _count: { select: { clones: true, projects: true } },
+      projects: { include: { project: { select: { id: true, name: true } } } },
     },
   });
 
@@ -55,6 +56,15 @@ export default async function ToolsPage() {
                       <span className="text-xs text-muted-foreground">{tool._count.projects} projects</span>
                     )}
                   </div>
+                  {tool.projects.length > 0 && (
+                    <div className="mt-3 flex flex-wrap gap-1">
+                      {tool.projects.map((pt) => (
+                        <Badge key={pt.id} variant="outline" className="text-xs">
+                          {pt.project.name}
+                        </Badge>
+                      ))}
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             </Link>

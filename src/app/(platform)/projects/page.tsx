@@ -12,6 +12,8 @@ import { format } from "date-fns";
 import Link from "next/link";
 import { ProjectCreateButton } from "./project-create-button";
 import { ProjectViewToggle } from "./project-view-toggle";
+import { ProjectFilters } from "./project-filters";
+import { Prisma } from "@prisma/client";
 
 interface ProjectWithRelations {
   id: string;
@@ -40,7 +42,7 @@ function buildTreeNodes(projects: ProjectWithRelations[]): TreeNode[] {
 export default async function ProjectsPage({
   searchParams,
 }: {
-  searchParams: { view?: string };
+  searchParams: Promise<{ view?: string; sort?: string }>;
 }) {
   const session = await auth();
   if (!session?.user) redirect("/login");
@@ -48,9 +50,28 @@ export default async function ProjectsPage({
   const perms = await resolveModulePerms(session.user.id, session.user.role, "projects");
   if (!perms.canView) redirect("/dashboard");
 
-  const view = searchParams.view || "cards";
+  const params = await searchParams;
+  const view = params.view || "cards";
+  const sortParam = params.sort;
 
-  const projects = await db.project.findMany({
+  // Build orderBy for card view (all projects)
+  let cardOrderBy: Prisma.ProjectOrderByWithRelationInput | Prisma.ProjectOrderByWithRelationInput[];
+  switch (sortParam) {
+    case "name-asc":
+      cardOrderBy = { name: "asc" };
+      break;
+    case "name-desc":
+      cardOrderBy = { name: "desc" };
+      break;
+    case "members":
+      cardOrderBy = { members: { _count: "desc" } };
+      break;
+    default:
+      cardOrderBy = { updatedAt: "desc" };
+  }
+
+  // For tree view, always fetch root projects with hierarchy
+  const treeProjects = await db.project.findMany({
     where: { parentProjectId: null },
     orderBy: { updatedAt: "desc" },
     include: {
@@ -71,6 +92,16 @@ export default async function ProjectsPage({
     },
   });
 
+  // For card view, fetch ALL projects (not just roots) with parent info
+  const allProjects = await db.project.findMany({
+    orderBy: cardOrderBy,
+    include: {
+      client: { select: { id: true, name: true } },
+      parentProject: { select: { id: true, name: true } },
+      _count: { select: { members: true, childProjects: true, tasks: true } },
+    },
+  });
+
   const clients = await db.client.findMany({
     where: { status: "ACTIVE" },
     select: { id: true, name: true },
@@ -80,7 +111,7 @@ export default async function ProjectsPage({
   // Group projects by client for tree view
   type ProjectItem = ProjectWithRelations;
   const clientMap = new Map<string, { name: string; id: string; projects: ProjectItem[] }>();
-  for (const project of projects) {
+  for (const project of treeProjects) {
     const clientId = project.client.id;
     if (!clientMap.has(clientId)) {
       clientMap.set(clientId, { name: project.client.name, id: clientId, projects: [] });
@@ -102,13 +133,14 @@ export default async function ProjectsPage({
         description="Manage projects across all clients"
         actions={
           <div className="flex items-center gap-2">
+            <ProjectFilters currentSort={sortParam} />
             <ProjectViewToggle currentView={view} />
             {perms.canCreate && <ProjectCreateButton clients={clients} />}
           </div>
         }
       />
 
-      {projects.length === 0 ? (
+      {treeProjects.length === 0 && allProjects.length === 0 ? (
         <EmptyState
           icon={FolderKanban}
           title="No projects yet"
@@ -128,7 +160,7 @@ export default async function ProjectsPage({
         </Card>
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {projects.map((project) => (
+          {allProjects.map((project) => (
             <Link key={project.id} href={`/projects/${project.id}`}>
               <Card className="hover:shadow-md transition-shadow h-full">
                 <CardContent className="p-5">
@@ -136,9 +168,14 @@ export default async function ProjectsPage({
                     <h3 className="font-semibold text-foreground">{project.name}</h3>
                     <StatusBadge status={project.status} />
                   </div>
-                  <p className="text-sm text-muted-foreground mb-3">
+                  <p className="text-sm text-muted-foreground mb-1">
                     {project.client.name}
                   </p>
+                  {project.parentProject && (
+                    <p className="text-xs text-muted-foreground mb-2">
+                      Sub-project of: {project.parentProject.name}
+                    </p>
+                  )}
                   {(project.startDate || project.endDate) && (
                     <p className="text-xs text-muted-foreground mb-2">
                       {project.startDate && format(project.startDate, "MMM d, yyyy")}
