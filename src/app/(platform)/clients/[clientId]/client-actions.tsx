@@ -19,15 +19,17 @@ interface Client {
   industry: string | null;
   website: string | null;
   status: string;
+  accountManagerId: string | null;
 }
 
 interface Props {
   client: Client;
+  users: { id: string; name: string }[];
   canEdit: boolean;
   canDelete: boolean;
 }
 
-export function ClientActions({ client, canEdit, canDelete }: Props) {
+export function ClientActions({ client, users, canEdit, canDelete }: Props) {
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const router = useRouter();
@@ -73,6 +75,13 @@ export function ClientActions({ client, canEdit, canDelete }: Props) {
                     { label: "Inactive", value: "INACTIVE" },
                     { label: "Archived", value: "ARCHIVED" },
                   ]}
+                />
+                <Select
+                  name="accountManagerId"
+                  label="Account Manager"
+                  defaultValue={client.accountManagerId || ""}
+                  placeholder="No account manager"
+                  options={users.map((u) => ({ label: u.name || u.id, value: u.id }))}
                 />
               </>
             )}

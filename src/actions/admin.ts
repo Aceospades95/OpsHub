@@ -15,7 +15,7 @@ const createUserSchema = z.object({
   name: z.string().min(2, "Name required"),
   email: z.string().email("Invalid email"),
   password: z.string().min(6, "Min 6 chars"),
-  role: z.enum(["ADMIN", "MANAGER", "CONTRIBUTOR", "VIEWER"]),
+  role: z.enum(["ADMIN", "MANAGER", "DEVELOPER", "CONTRIBUTOR", "VIEWER"]),
   department: z.string().optional(),
   jobTitle: z.string().optional(),
   phone: z.string().optional(),
@@ -57,7 +57,7 @@ export async function createUser(_prev: unknown, formData: FormData) {
 const updateUserSchema = z.object({
   name: z.string().min(2),
   email: z.string().email(),
-  role: z.enum(["ADMIN", "MANAGER", "CONTRIBUTOR", "VIEWER"]),
+  role: z.enum(["ADMIN", "MANAGER", "DEVELOPER", "CONTRIBUTOR", "VIEWER"]),
   department: z.string().optional(),
   jobTitle: z.string().optional(),
   phone: z.string().optional(),

@@ -59,7 +59,7 @@ export default async function AdminUsersPage() {
                     </Link>
                   </td>
                   <td className="p-4">
-                    <Badge variant={user.role === "ADMIN" ? "default" : user.role === "MANAGER" ? "success" : "secondary"}>
+                    <Badge variant={user.role === "ADMIN" ? "default" : user.role === "MANAGER" ? "success" : user.role === "DEVELOPER" ? "warning" : "secondary"}>
                       {user.role}
                     </Badge>
                   </td>

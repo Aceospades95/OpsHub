@@ -63,10 +63,7 @@ export default async function DashboardPage() {
     db.task.findMany({
       where: {
         status: { in: ["TODO", "IN_PROGRESS"] },
-        OR: [
-          { assigneeId: userId },
-          { createdById: userId },
-        ],
+        assigneeId: userId,
       },
       take: 8,
       orderBy: [{ priority: "asc" }, { dueDate: "asc" }],

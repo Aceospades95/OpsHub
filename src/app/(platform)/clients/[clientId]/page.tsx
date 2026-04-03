@@ -7,7 +7,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { CommentSection } from "@/components/shared/comment-section";
 import { Badge } from "@/components/ui/badge";
-import { Globe, Mail, Phone, Star, CheckSquare, Clock } from "lucide-react";
+import { Avatar } from "@/components/ui/avatar";
+import { Globe, Mail, Phone, Star, CheckSquare, Clock, UserCircle } from "lucide-react";
 import { format } from "date-fns";
 import Link from "next/link";
 import { ClientActions } from "./client-actions";
@@ -28,6 +29,7 @@ export default async function ClientDetailPage({ params }: Props) {
   const client = await db.client.findUnique({
     where: { id: clientId },
     include: {
+      accountManager: { select: { id: true, name: true } },
       contacts: { orderBy: [{ isPrimary: "desc" }, { name: "asc" }] },
       projects: {
         include: {
@@ -53,6 +55,12 @@ export default async function ClientDetailPage({ params }: Props) {
     take: 10,
   });
 
+  const users = await db.user.findMany({
+    where: { isActive: true },
+    select: { id: true, name: true },
+    orderBy: { name: "asc" },
+  });
+
   return (
     <div>
       <PageHeader
@@ -61,6 +69,7 @@ export default async function ClientDetailPage({ params }: Props) {
         actions={
           <ClientActions
             client={client}
+            users={users}
             canEdit={perms.canEdit}
             canDelete={perms.canDelete}
           />
@@ -69,6 +78,18 @@ export default async function ClientDetailPage({ params }: Props) {
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <div className="lg:col-span-2 space-y-6">
+          {/* Summary */}
+          {client.summary && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Summary</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm text-muted-foreground whitespace-pre-wrap">{client.summary}</p>
+              </CardContent>
+            </Card>
+          )}
+
           {/* Client Info */}
           <Card>
             <CardContent className="p-6">
@@ -76,12 +97,6 @@ export default async function ClientDetailPage({ params }: Props) {
                 <StatusBadge status={client.status} />
                 {client.industry && <Badge variant="outline">{client.industry}</Badge>}
               </div>
-              {client.summary && (
-                <div className="mb-4">
-                  <h4 className="text-sm font-medium mb-1">Summary</h4>
-                  <p className="text-sm text-muted-foreground whitespace-pre-wrap">{client.summary}</p>
-                </div>
-              )}
               {client.website && (
                 <a
                   href={client.website}
@@ -180,6 +195,26 @@ export default async function ClientDetailPage({ params }: Props) {
 
         {/* Right sidebar */}
         <div className="space-y-6">
+          {/* Account Manager */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <UserCircle className="h-4 w-4" />
+                Account Manager
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {client.accountManager ? (
+                <div className="flex items-center gap-3">
+                  <Avatar name={client.accountManager.name || "?"} size="sm" />
+                  <span className="text-sm font-medium">{client.accountManager.name}</span>
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">Not assigned</p>
+              )}
+            </CardContent>
+          </Card>
+
           {/* Contacts */}
           <Card>
             <CardHeader>

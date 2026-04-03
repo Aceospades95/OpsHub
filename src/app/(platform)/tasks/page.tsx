@@ -9,8 +9,11 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { CheckSquare } from "lucide-react";
 import { TaskCreateButton } from "./task-create-button";
 import { TaskCheckbox } from "./task-checkbox";
+import { TaskFilters } from "./task-filters";
+import { Suspense } from "react";
 import { format } from "date-fns";
 import Link from "next/link";
+import type { Prisma } from "@prisma/client";
 
 const priorityColors: Record<string, string> = {
   HIGH: "bg-red-100 text-red-800",
@@ -25,12 +28,45 @@ const statusLabels: Record<string, string> = {
   CANCELLED: "Cancelled",
 };
 
-export default async function TasksPage() {
+export default async function TasksPage({
+  searchParams,
+}: {
+  searchParams: { assignee?: string; project?: string; client?: string; show?: string };
+}) {
   const session = await auth();
   if (!session?.user) redirect("/login");
 
+  const { assignee, project, client, show } = searchParams;
+
+  // Build filter
+  const where: Prisma.TaskWhereInput = {};
+
+  if (assignee === "me") {
+    where.assigneeId = session.user.id;
+  } else if (assignee === "unassigned") {
+    where.assigneeId = null;
+  } else if (assignee && assignee !== "all") {
+    where.assigneeId = assignee;
+  }
+
+  if (project) {
+    where.projectId = project;
+  }
+
+  if (client) {
+    where.clientId = client;
+  }
+
+  if (show === "active") {
+    where.status = { in: ["TODO", "IN_PROGRESS"] };
+  } else if (show === "done") {
+    where.status = "DONE";
+  }
+  // default: show all
+
   const [tasks, projects, clients, users] = await Promise.all([
     db.task.findMany({
+      where,
       orderBy: [{ status: "asc" }, { priority: "asc" }, { dueDate: "asc" }],
       include: {
         project: { select: { id: true, name: true } },
@@ -47,6 +83,26 @@ export default async function TasksPage() {
   const activeTasks = tasks.filter((t) => t.status !== "DONE" && t.status !== "CANCELLED");
   const completedTasks = tasks.filter((t) => t.status === "DONE" || t.status === "CANCELLED");
 
+  // Active filter label
+  const filterParts: string[] = [];
+  if (assignee === "me") filterParts.push("assigned to you");
+  else if (assignee === "unassigned") filterParts.push("unassigned");
+  else if (assignee) {
+    const u = users.find((u) => u.id === assignee);
+    if (u) filterParts.push(`assigned to ${u.name}`);
+  }
+  if (project) {
+    const p = projects.find((p) => p.id === project);
+    if (p) filterParts.push(p.name);
+  }
+  if (client) {
+    const c = clients.find((c) => c.id === client);
+    if (c) filterParts.push(c.name);
+  }
+  const filterLabel = filterParts.length > 0
+    ? `Showing: ${filterParts.join(" · ")}`
+    : "Showing all tasks";
+
   return (
     <div>
       <PageHeader
@@ -55,11 +111,26 @@ export default async function TasksPage() {
         actions={<TaskCreateButton projects={projects} clients={clients} users={users} />}
       />
 
+      <Suspense fallback={null}>
+        <TaskFilters
+          projects={projects}
+          clients={clients}
+          users={users}
+          currentAssignee={assignee}
+          currentProject={project}
+          currentClient={client}
+          currentShow={show}
+          currentUserId={session.user.id}
+        />
+      </Suspense>
+
+      <p className="text-xs text-muted-foreground mb-4">{filterLabel} — {tasks.length} task{tasks.length !== 1 ? "s" : ""}</p>
+
       {tasks.length === 0 ? (
         <EmptyState
           icon={CheckSquare}
-          title="No tasks yet"
-          description="Create your first task to start tracking work"
+          title="No tasks found"
+          description={filterParts.length > 0 ? "Try adjusting your filters" : "Create your first task to start tracking work"}
         />
       ) : (
         <div className="space-y-8">
@@ -103,7 +174,10 @@ export default async function TasksPage() {
                           </div>
                         </div>
                         {task.assignee && (
-                          <Avatar name={task.assignee.name} size="xs" />
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <Avatar name={task.assignee.name} size="xs" />
+                            <span className="text-xs text-muted-foreground hidden sm:inline">{task.assignee.name}</span>
+                          </div>
                         )}
                       </div>
                     </CardContent>
@@ -129,6 +203,7 @@ export default async function TasksPage() {
                           <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
                             {task.project && <span>{task.project.name}</span>}
                             {task.client && <span>{task.client.name}</span>}
+                            {task.assignee && <span>{task.assignee.name}</span>}
                             <span>{statusLabels[task.status]}</span>
                           </div>
                         </div>

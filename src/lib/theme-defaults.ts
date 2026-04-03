@@ -1,0 +1,18 @@
+export const DEFAULT_THEME: Record<string, string> = {
+  primary: "#15583e",
+  "primary-foreground": "#ffffff",
+  secondary: "#edf5f0",
+  "secondary-foreground": "#15583e",
+  accent: "#22885a",
+  background: "#ffffff",
+  foreground: "#0a0a0a",
+  muted: "#f5f7f5",
+  "muted-foreground": "#6b7c6b",
+  border: "#d4ddd4",
+  input: "#d4ddd4",
+  card: "#ffffff",
+  "card-foreground": "#0a0a0a",
+  destructive: "#ef4444",
+  success: "#16a34a",
+  warning: "#f59e0b",
+};

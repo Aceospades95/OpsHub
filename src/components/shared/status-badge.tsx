@@ -22,6 +22,9 @@ const statusVariantMap: Record<string, BadgeVariant> = {
   TERMINATED: "destructive",
   RENEWED: "success",
 
+  // Sandbox statuses
+  PUBLISHED: "success",
+
   // Task statuses
   TODO: "outline",
   IN_PROGRESS: "default",

@@ -231,3 +231,24 @@ export async function removeMilestoneAssignee(_prev: unknown, formData: FormData
   revalidatePath("/projects");
   return { success: true };
 }
+
+// Tools
+export async function linkToolToProject(_prev: unknown, formData: FormData) {
+  const user = await requireAuth();
+  const perms = await resolveModulePerms(user.id, user.role, "projects");
+  if (!perms.canEdit) return { error: "Permission denied" };
+
+  const projectId = formData.get("projectId") as string;
+  const toolId = formData.get("toolId") as string;
+
+  if (!projectId || !toolId) return { error: "Project and tool are required" };
+
+  const existing = await db.projectTool.findUnique({
+    where: { projectId_toolId: { projectId, toolId } },
+  });
+  if (existing) return { error: "Tool is already linked to this project" };
+
+  await db.projectTool.create({ data: { projectId, toolId } });
+  revalidatePath(`/projects/${projectId}`);
+  return { success: true };
+}
