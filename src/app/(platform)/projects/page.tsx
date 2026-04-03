@@ -13,6 +13,7 @@ import Link from "next/link";
 import { ProjectCreateButton } from "./project-create-button";
 import { ProjectViewToggle } from "./project-view-toggle";
 import { ProjectFilters } from "./project-filters";
+import { Suspense } from "react";
 import { Prisma } from "@prisma/client";
 
 interface ProjectWithRelations {
@@ -139,7 +140,7 @@ export default async function ProjectsPage({
         description="Manage projects across all clients"
         actions={
           <div className="flex items-center gap-2">
-            <ProjectFilters currentSort={sortParam} />
+            <Suspense fallback={null}><ProjectFilters currentSort={sortParam} /></Suspense>
             <ProjectViewToggle currentView={view} />
             {perms.canCreate && <ProjectCreateButton clients={clients} />}
           </div>

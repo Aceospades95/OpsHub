@@ -10,6 +10,7 @@ import { CheckSquare } from "lucide-react";
 import { TaskCreateButton } from "./task-create-button";
 import { TaskCheckbox } from "./task-checkbox";
 import { TaskFilters } from "./task-filters";
+import { Suspense } from "react";
 import { format } from "date-fns";
 import Link from "next/link";
 import type { Prisma } from "@prisma/client";
@@ -110,16 +111,18 @@ export default async function TasksPage({
         actions={<TaskCreateButton projects={projects} clients={clients} users={users} />}
       />
 
-      <TaskFilters
-        projects={projects}
-        clients={clients}
-        users={users}
-        currentAssignee={assignee}
-        currentProject={project}
-        currentClient={client}
-        currentShow={show}
-        currentUserId={session.user.id}
-      />
+      <Suspense fallback={null}>
+        <TaskFilters
+          projects={projects}
+          clients={clients}
+          users={users}
+          currentAssignee={assignee}
+          currentProject={project}
+          currentClient={client}
+          currentShow={show}
+          currentUserId={session.user.id}
+        />
+      </Suspense>
 
       <p className="text-xs text-muted-foreground mb-4">{filterLabel} — {tasks.length} task{tasks.length !== 1 ? "s" : ""}</p>
 

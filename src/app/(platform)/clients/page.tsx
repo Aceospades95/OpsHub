@@ -1,6 +1,7 @@
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
+import { Suspense } from "react";
 import { resolveModulePerms } from "@/lib/permissions";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent } from "@/components/ui/card";
@@ -64,11 +65,13 @@ export default async function ClientsPage({
         actions={perms.canCreate ? <ClientCreateButton /> : undefined}
       />
 
-      <ClientFilters
-        currentStatus={statusFilter}
-        currentSort={sortParam}
-        resultCount={clients.length}
-      />
+      <Suspense fallback={null}>
+        <ClientFilters
+          currentStatus={statusFilter}
+          currentSort={sortParam}
+          resultCount={clients.length}
+        />
+      </Suspense>
 
       {clients.length === 0 ? (
         <EmptyState
