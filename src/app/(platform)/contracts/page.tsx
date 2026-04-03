@@ -144,6 +144,13 @@ export default async function ContractsPage({
             </CardTitle>
           </CardHeader>
           <CardContent>
+            {/* Tree view header */}
+            <div className="flex items-center gap-2 px-2 py-2 mb-2 border-b border-border text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              <span className="w-5" />
+              <span className="flex-1">Contract</span>
+              <span className="w-24 text-center">Status</span>
+              <span className="w-32 text-right">Type</span>
+            </div>
             <TreeView nodes={clientTreeNodes} />
           </CardContent>
         </Card>

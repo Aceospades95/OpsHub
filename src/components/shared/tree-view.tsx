@@ -16,7 +16,6 @@ export interface TreeNode {
 
 interface TreeViewProps {
   nodes: TreeNode[];
-  level?: number;
 }
 
 function TreeItem({ node, level = 0 }: { node: TreeNode; level: number }) {
@@ -32,7 +31,7 @@ function TreeItem({ node, level = 0 }: { node: TreeNode; level: number }) {
         {hasChildren ? (
           <button
             onClick={() => setExpanded(!expanded)}
-            className="rounded p-0.5 hover:bg-border"
+            className="rounded p-0.5 hover:bg-border shrink-0"
           >
             {expanded ? (
               <ChevronDown className="h-4 w-4 text-muted-foreground" />
@@ -41,17 +40,23 @@ function TreeItem({ node, level = 0 }: { node: TreeNode; level: number }) {
             )}
           </button>
         ) : (
-          <span className="w-5" />
+          <span className="w-5 shrink-0" />
         )}
         <Link
           href={node.href}
-          className="flex-1 text-sm font-medium hover:text-primary"
+          className="flex-1 text-sm font-medium hover:text-primary truncate min-w-0"
         >
           {node.label}
         </Link>
-        {node.status && <StatusBadge status={node.status} />}
+        {node.status && (
+          <span className="w-24 flex justify-center shrink-0">
+            <StatusBadge status={node.status} />
+          </span>
+        )}
         {node.meta && (
-          <span className="text-xs text-muted-foreground">{node.meta}</span>
+          <span className="w-32 text-right text-xs text-muted-foreground shrink-0 truncate">
+            {node.meta}
+          </span>
         )}
       </div>
       {expanded && hasChildren && (

@@ -15,7 +15,7 @@ import { Prisma } from "@prisma/client";
 export default async function ClientsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string; sort?: string }>;
+  searchParams: { status?: string; sort?: string };
 }) {
   const session = await auth();
   if (!session?.user) redirect("/login");
@@ -23,9 +23,8 @@ export default async function ClientsPage({
   const perms = await resolveModulePerms(session.user.id, session.user.role, "clients");
   if (!perms.canView) redirect("/dashboard");
 
-  const params = await searchParams;
-  const statusFilter = params.status;
-  const sortParam = params.sort;
+  const statusFilter = searchParams.status;
+  const sortParam = searchParams.sort;
 
   // Build where clause
   const where: Prisma.ClientWhereInput = {};

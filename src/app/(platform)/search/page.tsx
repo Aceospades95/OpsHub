@@ -10,11 +10,11 @@ import { Search } from "lucide-react";
 import Link from "next/link";
 
 interface Props {
-  searchParams: Promise<{ q?: string }>;
+  searchParams: { q?: string };
 }
 
 export default async function SearchPage({ searchParams }: Props) {
-  const { q } = await searchParams;
+  const q = searchParams.q;
   const session = await auth();
   if (!session?.user) redirect("/login");
 
