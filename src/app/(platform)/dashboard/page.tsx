@@ -15,42 +15,37 @@ export default async function DashboardPage() {
   const session = await auth();
   if (!session?.user) redirect("/login");
 
-  const config = await getDashboardLayout();
+  let dashboardContent: React.ReactNode;
 
-  // Resolve all data needed by widgets
-  const [statValues, alertData, activityLogs] = await Promise.all([
-    resolveAllStats(config.widgets),
-    getAlertData(),
-    getActivityForWidget(),
-  ]);
+  try {
+    const config = await getDashboardLayout();
 
-  // Find task list widget config
-  const taskWidget = config.widgets.find((w) => w.type === "task-list");
-  const taskConfig = taskWidget?.config as TaskListConfig | undefined;
-  const tasks = await getTasksForWidget(
-    session.user.id,
-    taskConfig?.scope || "mine",
-    taskConfig?.limit || 8
-  );
+    const [statValues, alertData, activityLogs] = await Promise.all([
+      resolveAllStats(config.widgets),
+      getAlertData(),
+      getActivityForWidget(),
+    ]);
 
-  // Serialize dates for client component
-  const serializedTasks = tasks.map((t) => ({
-    ...t,
-    dueDate: t.dueDate ? t.dueDate.toISOString() : null,
-  }));
-  const serializedLogs = activityLogs.map((l) => ({
-    ...l,
-    createdAt: l.createdAt.toISOString(),
-  }));
+    const taskWidget = config.widgets.find((w) => w.type === "task-list");
+    const taskConfig = taskWidget?.config as TaskListConfig | undefined;
+    const tasks = await getTasksForWidget(
+      session.user.id,
+      taskConfig?.scope || "mine",
+      taskConfig?.limit || 8
+    );
 
-  const canEdit = session.user.role === "ADMIN" || session.user.role === "DEVELOPER";
+    const serializedTasks = tasks.map((t) => ({
+      ...t,
+      dueDate: t.dueDate ? t.dueDate.toISOString() : null,
+    }));
+    const serializedLogs = activityLogs.map((l) => ({
+      ...l,
+      createdAt: l.createdAt.toISOString(),
+    }));
 
-  return (
-    <div>
-      <PageHeader
-        title="Dashboard"
-        description={`Welcome back, ${session.user.name}`}
-      />
+    const canEdit = session.user.role === "ADMIN" || session.user.role === "DEVELOPER";
+
+    dashboardContent = (
       <DashboardGrid
         config={config}
         statValues={statValues}
@@ -60,6 +55,24 @@ export default async function DashboardPage() {
         canEdit={canEdit}
         userId={session.user.id}
       />
+    );
+  } catch (err) {
+    console.error("Dashboard data loading error:", err);
+    dashboardContent = (
+      <div className="rounded border border-destructive/50 bg-destructive/5 p-6 text-sm">
+        <p className="font-medium text-destructive mb-2">Dashboard failed to load</p>
+        <p className="text-muted-foreground">{err instanceof Error ? err.message : "Unknown error"}</p>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <PageHeader
+        title="Dashboard"
+        description={`Welcome back, ${session.user.name}`}
+      />
+      {dashboardContent}
     </div>
   );
 }
