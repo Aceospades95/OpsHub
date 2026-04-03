@@ -40,8 +40,7 @@ import {
 } from "@/lib/dashboard-widgets";
 import { DashboardTaskCheckbox } from "./dashboard-task-checkbox";
 import Link from "next/link";
-import "react-grid-layout/css/styles.css";
-import "react-resizable/css/styles.css";
+// CSS is imported in globals.css to ensure it's bundled in standalone builds
 
 import RGL from "react-grid-layout";
 // eslint-disable-next-line
@@ -69,7 +68,7 @@ interface TaskData {
   title: string;
   status: string;
   priority: string;
-  dueDate: Date | null;
+  dueDate: string | null;
   project: { id: string; name: string } | null;
   client: { id: string; name: string } | null;
   assignee: { name: string } | null;
@@ -80,7 +79,7 @@ interface ActivityData {
   action: string;
   entityType: string;
   details: string | null;
-  createdAt: Date;
+  createdAt: string;
   user: { name: string };
 }
 

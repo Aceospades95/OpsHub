@@ -33,6 +33,16 @@ export default async function DashboardPage() {
     taskConfig?.limit || 8
   );
 
+  // Serialize dates for client component
+  const serializedTasks = tasks.map((t) => ({
+    ...t,
+    dueDate: t.dueDate ? t.dueDate.toISOString() : null,
+  }));
+  const serializedLogs = activityLogs.map((l) => ({
+    ...l,
+    createdAt: l.createdAt.toISOString(),
+  }));
+
   const canEdit = session.user.role === "ADMIN" || session.user.role === "DEVELOPER";
 
   return (
@@ -44,8 +54,8 @@ export default async function DashboardPage() {
       <DashboardGrid
         config={config}
         statValues={statValues}
-        tasks={tasks}
-        activityLogs={activityLogs}
+        tasks={serializedTasks}
+        activityLogs={serializedLogs}
         alertData={alertData}
         canEdit={canEdit}
         userId={session.user.id}
