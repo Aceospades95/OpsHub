@@ -43,10 +43,10 @@ import Link from "next/link";
 import "react-grid-layout/css/styles.css";
 import "react-resizable/css/styles.css";
 
-import { Responsive } from "react-grid-layout";
-// @ts-expect-error - WidthProvider types are incorrect in @types/react-grid-layout
-import WidthProvider from "react-grid-layout/lib/components/WidthProvider";
-const ResponsiveGrid = WidthProvider(Responsive);
+import RGL from "react-grid-layout";
+// eslint-disable-next-line
+const RGLAny = RGL as any;
+const ResponsiveGrid = RGLAny.WidthProvider(RGLAny.Responsive);
 
 const ICON_MAP: Record<string, LucideIcon> = {
   Building2, FolderKanban, FileText, CheckSquare, Truck, Users, Wrench,
