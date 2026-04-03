@@ -11,7 +11,9 @@ import { Avatar } from "@/components/ui/avatar";
 import { Globe, Mail, Phone, Star, CheckSquare, Clock, UserCircle } from "lucide-react";
 import { format } from "date-fns";
 import Link from "next/link";
-import { PageLayout } from "@/components/shared/page-layout";
+import { WidgetGridLoader as WidgetGrid } from "@/components/shared/widget-grid-loader";
+import { getWidgetLayout, getCustomWidgets } from "@/actions/widgets";
+import { getDefaultPageLayout } from "@/lib/widget-registry";
 import { ClientActions } from "./client-actions";
 import { ContactSection } from "./contact-section";
 
@@ -62,7 +64,15 @@ export default async function ClientDetailPage({ params }: Props) {
     orderBy: { name: "asc" },
   });
 
-  const isAdmin = session.user.role === "ADMIN";
+  const canEditLayout = session.user.role === "ADMIN" || session.user.role === "DEVELOPER";
+  let pageLayout;
+  try {
+    const saved = await getWidgetLayout("client-detail");
+    pageLayout = saved || getDefaultPageLayout("client-detail");
+  } catch {
+    pageLayout = getDefaultPageLayout("client-detail");
+  }
+  const cwList = await getCustomWidgets();
 
   // Define all card sections by ID
   const cardMap: Record<string, React.ReactNode> = {
@@ -271,7 +281,13 @@ export default async function ClientDetailPage({ params }: Props) {
         }
       />
 
-      <PageLayout pageType="client-detail" cards={cardMap} isAdmin={isAdmin} />
+      <WidgetGrid
+        pageType="client-detail"
+        initialLayout={pageLayout}
+        systemWidgets={cardMap}
+        customWidgets={cwList.map((w) => ({ id: w.id, name: w.name, type: w.type, config: w.config }))}
+        canEdit={canEditLayout}
+      />
     </div>
   );
 }

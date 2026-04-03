@@ -17,6 +17,7 @@ import {
   Palette,
   FileCode,
   PanelLeft,
+  Puzzle,
   ChevronLeft,
   ChevronRight,
   Menu,
@@ -52,6 +53,7 @@ const ICON_MAP: Record<string, LucideIcon> = {
   Palette,
   FileCode,
   PanelLeft,
+  Puzzle,
 };
 
 const SYSTEM_DEFAULTS: Record<string, { label: string; href: string; icon: string }> = {
@@ -67,6 +69,7 @@ const SYSTEM_DEFAULTS: Record<string, { label: string; href: string; icon: strin
   admin: { label: "Admin", href: "/admin/users", icon: "Shield" },
   theme: { label: "Theme", href: "/admin/theme", icon: "Palette" },
   sidebar: { label: "Sidebar", href: "/admin/sidebar", icon: "PanelLeft" },
+  widgets: { label: "Widgets", href: "/admin/widgets", icon: "Puzzle" },
 };
 
 // Modules that require specific roles
@@ -75,6 +78,7 @@ const ROLE_GATED: Record<string, (role: string) => boolean> = {
   admin: (role) => role === "ADMIN",
   theme: (role) => role === "ADMIN",
   sidebar: (role) => role === "ADMIN",
+  widgets: (role) => role === "ADMIN" || role === "DEVELOPER",
 };
 
 // Modules always visible regardless of permissions

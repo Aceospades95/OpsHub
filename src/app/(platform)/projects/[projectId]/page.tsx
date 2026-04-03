@@ -7,7 +7,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { CommentSection } from "@/components/shared/comment-section";
 import { TreeView, type TreeNode } from "@/components/shared/tree-view";
-import { PageLayout } from "@/components/shared/page-layout";
+import { WidgetGridLoader as WidgetGrid } from "@/components/shared/widget-grid-loader";
+import { getWidgetLayout, getCustomWidgets } from "@/actions/widgets";
+import { getDefaultPageLayout } from "@/lib/widget-registry";
 import { Badge } from "@/components/ui/badge";
 import { format } from "date-fns";
 import { CheckSquare, Clock } from "lucide-react";
@@ -107,7 +109,16 @@ export default async function ProjectDetailPage({ params }: Props) {
   const treeNodes = buildTree(project.childProjects as Parameters<typeof buildTree>[0]);
   const linkedToolIds = new Set(project.tools.map((pt) => pt.toolId));
   const availableTools = allTools.filter((t) => !linkedToolIds.has(t.id));
-  const isAdmin = session.user.role === "ADMIN";
+  const canEdit2 = session.user.role === "ADMIN" || session.user.role === "DEVELOPER";
+
+  let pageLayout;
+  try {
+    const saved = await getWidgetLayout("project-detail");
+    pageLayout = saved || getDefaultPageLayout("project-detail");
+  } catch {
+    pageLayout = getDefaultPageLayout("project-detail");
+  }
+  const cwList = await getCustomWidgets();
 
   // Define all card sections by ID
   const cardMap: Record<string, React.ReactNode> = {
@@ -280,7 +291,13 @@ export default async function ProjectDetailPage({ params }: Props) {
         )}
       </div>
 
-      <PageLayout pageType="project-detail" cards={cardMap} isAdmin={isAdmin} />
+      <WidgetGrid
+        pageType="project-detail"
+        initialLayout={pageLayout}
+        systemWidgets={cardMap}
+        customWidgets={cwList.map((w) => ({ id: w.id, name: w.name, type: w.type, config: w.config }))}
+        canEdit={canEdit2}
+      />
     </div>
   );
 }
