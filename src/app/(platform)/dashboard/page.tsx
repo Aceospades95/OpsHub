@@ -8,7 +8,7 @@ import {
   getActivityForWidget,
   getAlertData,
 } from "@/actions/dashboard-layout";
-import { DashboardGrid } from "./dashboard-grid";
+import { DashboardGridLoader as DashboardGrid } from "./dashboard-grid-loader";
 import type { TaskListConfig } from "@/lib/dashboard-widgets";
 
 export default async function DashboardPage() {
