@@ -1,10 +1,9 @@
 #!/bin/sh
 echo "Applying database schema..."
-NODE_PATH=/app/prisma-cli npx prisma db push --skip-generate --accept-data-loss 2>&1 || echo "Warning: prisma db push failed - will retry once..."
-# Retry once if it failed (DB might not be ready yet)
-if [ $? -ne 0 ]; then
+npx prisma db push --skip-generate --accept-data-loss 2>&1 || {
+  echo "Retrying in 3 seconds..."
   sleep 3
-  NODE_PATH=/app/prisma-cli npx prisma db push --skip-generate --accept-data-loss 2>&1 || echo "Warning: schema migration failed"
-fi
+  npx prisma db push --skip-generate --accept-data-loss 2>&1 || echo "Warning: schema migration failed"
+}
 echo "Starting Next.js server..."
 exec node server.js

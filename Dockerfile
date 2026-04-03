@@ -25,11 +25,7 @@ RUN npm run build
 RUN npx esbuild prisma/seed.ts --bundle --platform=node --outfile=prisma/seed.js \
     --external:@prisma/client --external:bcryptjs 2>/dev/null || true
 
-# Create a minimal prisma CLI bundle for runtime db push
-# Copy entire node_modules to avoid transitive dependency issues
-RUN cp -r node_modules /prisma-cli
-
-# Production image
+# Production image - use full node_modules for prisma CLI support
 FROM base AS runner
 WORKDIR /app
 ENV NODE_ENV=production
@@ -41,23 +37,9 @@ COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
-# Copy Prisma schema and seed
+# Copy Prisma files and FULL node_modules for CLI
 COPY --from=builder /app/prisma ./prisma
-COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
-COPY --from=builder /app/node_modules/@prisma/client ./node_modules/@prisma/client
-
-# Copy prisma CLI bundle for runtime db push
-COPY --from=builder /prisma-cli /app/prisma-cli
-
-# Copy seed dependencies
-COPY --from=builder /app/node_modules/bcryptjs ./node_modules/bcryptjs
-
-# Make prisma CLI accessible via the bundle
-RUN mkdir -p /app/node_modules/.bin && \
-    ln -s /app/prisma-cli/prisma/build/index.js /app/node_modules/.bin/prisma && \
-    chmod +x /app/node_modules/.bin/prisma
-ENV PATH="/app/node_modules/.bin:$PATH"
-ENV NODE_PATH="/app/prisma-cli"
+COPY --from=deps /app/node_modules ./node_modules
 
 # Copy startup script
 COPY --from=builder /app/start.sh ./start.sh
