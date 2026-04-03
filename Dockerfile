@@ -26,24 +26,8 @@ RUN npx esbuild prisma/seed.ts --bundle --platform=node --outfile=prisma/seed.js
     --external:@prisma/client --external:bcryptjs 2>/dev/null || true
 
 # Create a minimal prisma CLI bundle for runtime db push
-RUN mkdir -p /prisma-cli && \
-    cp -r node_modules/prisma /prisma-cli/prisma && \
-    cp -r node_modules/@prisma /prisma-cli/@prisma && \
-    cp -r node_modules/.prisma /prisma-cli/.prisma && \
-    cp -r node_modules/effect /prisma-cli/effect 2>/dev/null || true && \
-    cp -r node_modules/c12 /prisma-cli/c12 2>/dev/null || true && \
-    cp -r node_modules/deepmerge-ts /prisma-cli/deepmerge-ts 2>/dev/null || true && \
-    cp -r node_modules/empathic /prisma-cli/empathic 2>/dev/null || true && \
-    cp -r node_modules/confbox /prisma-cli/confbox 2>/dev/null || true && \
-    cp -r node_modules/defu /prisma-cli/defu 2>/dev/null || true && \
-    cp -r node_modules/exsolve /prisma-cli/exsolve 2>/dev/null || true && \
-    cp -r node_modules/ohash /prisma-cli/ohash 2>/dev/null || true && \
-    cp -r node_modules/pathe /prisma-cli/pathe 2>/dev/null || true && \
-    cp -r node_modules/dotenv /prisma-cli/dotenv 2>/dev/null || true && \
-    cp -r node_modules/chokidar /prisma-cli/chokidar 2>/dev/null || true && \
-    cp -r node_modules/giget /prisma-cli/giget 2>/dev/null || true && \
-    cp -r node_modules/jiti /prisma-cli/jiti 2>/dev/null || true && \
-    cp -r node_modules/perfect-debounce /prisma-cli/perfect-debounce 2>/dev/null || true
+# Copy entire node_modules to avoid transitive dependency issues
+RUN cp -r node_modules /prisma-cli
 
 # Production image
 FROM base AS runner
