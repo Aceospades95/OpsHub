@@ -6,7 +6,6 @@ import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
 import {
@@ -16,14 +15,12 @@ import {
   BarChart3, PieChart, Activity, Shield, Zap, BookmarkPlus,
   type LucideIcon,
 } from "lucide-react";
-import { format } from "date-fns";
-import { formatDistanceToNow } from "date-fns";
+import { format, formatDistanceToNow } from "date-fns";
 import {
   saveDashboardLayout,
   resetDashboardLayout,
   saveTemplate,
   getTemplates,
-  applyTemplate,
   deleteTemplate,
 } from "@/actions/dashboard-layout";
 import {
@@ -40,12 +37,8 @@ import {
 } from "@/lib/dashboard-widgets";
 import { DashboardTaskCheckbox } from "./dashboard-task-checkbox";
 import Link from "next/link";
-// CSS is imported in globals.css to ensure it's bundled in standalone builds
 
-import RGL from "react-grid-layout";
-// eslint-disable-next-line
-const RGLAny = RGL as any;
-const ResponsiveGrid = RGLAny.WidthProvider(RGLAny.Responsive);
+import { ResponsiveGridLayout, useContainerWidth, verticalCompactor } from "react-grid-layout";
 
 const ICON_MAP: Record<string, LucideIcon> = {
   Building2, FolderKanban, FileText, CheckSquare, Truck, Users, Wrench,
@@ -106,6 +99,8 @@ export function DashboardGrid({
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const router = useRouter();
+
+  const { width: containerWidth, containerRef } = useContainerWidth({ initialWidth: 1200 });
 
   const handleLayoutChange = useCallback(
     (newLayout: GridItem[]) => {
@@ -209,17 +204,18 @@ export function DashboardGrid({
       )}
 
       {/* Grid */}
-      <ResponsiveGrid
+      <div ref={containerRef as React.RefObject<HTMLDivElement>}>
+      <ResponsiveGridLayout
         layouts={{ lg: config.layout }}
         breakpoints={{ lg: 1024, md: 768, sm: 480 }}
         cols={{ lg: 12, md: 8, sm: 4 }}
         rowHeight={50}
-        isDraggable={editing}
-        isResizable={editing}
-        onLayoutChange={(layout: GridItem[]) => handleLayoutChange(layout)}
-        draggableHandle=".drag-handle"
-        compactType="vertical"
-        margin={[16, 16]}
+        width={containerWidth || 1200}
+        dragConfig={{ enabled: editing, bounded: false, handle: ".drag-handle", threshold: 3 }}
+        resizeConfig={{ enabled: editing }}
+        onLayoutChange={(layout) => handleLayoutChange([...layout] as GridItem[])}
+        compactor={verticalCompactor}
+        margin={[16, 16] as [number, number]}
       >
         {config.widgets.map((widget) => {
           const layoutItem = config.layout.find((l) => l.i === widget.id);
@@ -244,7 +240,8 @@ export function DashboardGrid({
             </div>
           );
         })}
-      </ResponsiveGrid>
+      </ResponsiveGridLayout>
+      </div>
 
       {/* Add Widget Dialog */}
       <AddWidgetDialog
