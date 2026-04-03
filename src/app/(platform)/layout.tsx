@@ -2,6 +2,7 @@ import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { getVisibleModules } from "@/lib/permissions";
+import { getSidebarConfig } from "@/actions/sidebar";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Header } from "@/components/layout/header";
 
@@ -13,8 +14,9 @@ export default async function PlatformLayout({
   const session = await auth();
   if (!session?.user) redirect("/login");
 
-  const [visibleModules, customPages] = await Promise.all([
+  const [visibleModules, sidebarConfig, customPages] = await Promise.all([
     getVisibleModules(session.user.id, session.user.role),
+    getSidebarConfig(),
     db.sandboxPage.findMany({
       where: { published: true },
       select: { id: true, title: true, slug: true },
@@ -28,6 +30,7 @@ export default async function PlatformLayout({
         visibleModules={visibleModules}
         userRole={session.user.role}
         customPages={customPages}
+        sidebarConfig={sidebarConfig}
       />
       <div className="flex flex-1 flex-col overflow-hidden">
         <Header

@@ -16,11 +16,14 @@ import {
   Shield,
   Palette,
   FileCode,
+  PanelLeft,
   ChevronLeft,
   ChevronRight,
   Menu,
   X,
+  type LucideIcon,
 } from "lucide-react";
+import type { SidebarConfig, SidebarItemConfig } from "@/lib/sidebar-config";
 
 interface CustomPage {
   id: string;
@@ -32,23 +35,52 @@ interface SidebarProps {
   visibleModules: string[];
   userRole?: string;
   customPages?: CustomPage[];
+  sidebarConfig?: SidebarConfig;
 }
 
-const navItems = [
-  { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard, module: "dashboard" },
-  { label: "Clients", href: "/clients", icon: Building2, module: "clients" },
-  { label: "Projects", href: "/projects", icon: FolderKanban, module: "projects" },
-  { label: "Tasks", href: "/tasks", icon: CheckSquare, module: "tasks" },
-  { label: "Contracts", href: "/contracts", icon: FileText, module: "contracts" },
-  { label: "Suppliers", href: "/suppliers", icon: Truck, module: "suppliers" },
-  { label: "Tools", href: "/tools", icon: Wrench, module: "tools" },
-  { label: "Intranet", href: "/intranet", icon: Globe, module: "intranet" },
-  { label: "Custom Pages", href: "/sandbox", icon: Blocks, module: "sandbox" },
-  { label: "Admin", href: "/admin/users", icon: Shield, module: "admin" },
-  { label: "Theme", href: "/admin/theme", icon: Palette, module: "admin" },
-];
+const ICON_MAP: Record<string, LucideIcon> = {
+  LayoutDashboard,
+  Building2,
+  FolderKanban,
+  FileText,
+  CheckSquare,
+  Truck,
+  Wrench,
+  Blocks,
+  Globe,
+  Shield,
+  Palette,
+  FileCode,
+  PanelLeft,
+};
 
-export function Sidebar({ visibleModules, userRole, customPages = [] }: SidebarProps) {
+const SYSTEM_DEFAULTS: Record<string, { label: string; href: string; icon: string }> = {
+  dashboard: { label: "Dashboard", href: "/dashboard", icon: "LayoutDashboard" },
+  clients: { label: "Clients", href: "/clients", icon: "Building2" },
+  projects: { label: "Projects", href: "/projects", icon: "FolderKanban" },
+  tasks: { label: "Tasks", href: "/tasks", icon: "CheckSquare" },
+  contracts: { label: "Contracts", href: "/contracts", icon: "FileText" },
+  suppliers: { label: "Suppliers", href: "/suppliers", icon: "Truck" },
+  tools: { label: "Tools", href: "/tools", icon: "Wrench" },
+  intranet: { label: "Intranet", href: "/intranet", icon: "Globe" },
+  sandbox: { label: "Custom Pages", href: "/sandbox", icon: "Blocks" },
+  admin: { label: "Admin", href: "/admin/users", icon: "Shield" },
+  theme: { label: "Theme", href: "/admin/theme", icon: "Palette" },
+  sidebar: { label: "Sidebar", href: "/admin/sidebar", icon: "PanelLeft" },
+};
+
+// Modules that require specific roles
+const ROLE_GATED: Record<string, (role: string) => boolean> = {
+  sandbox: (role) => role === "ADMIN" || role === "DEVELOPER",
+  admin: (role) => role === "ADMIN",
+  theme: (role) => role === "ADMIN",
+  sidebar: (role) => role === "ADMIN",
+};
+
+// Modules always visible regardless of permissions
+const ALWAYS_VISIBLE = new Set(["dashboard", "tasks"]);
+
+export function Sidebar({ visibleModules, userRole = "", customPages = [], sidebarConfig }: SidebarProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const pathname = usePathname();
@@ -57,20 +89,63 @@ export function Sidebar({ visibleModules, userRole, customPages = [] }: SidebarP
     setMobileOpen(false);
   }, [pathname]);
 
-  const filteredItems = navItems.filter(
-    (item) => {
-      if (item.module === "dashboard" || item.module === "tasks") return true;
-      if (item.module === "sandbox") return userRole === "ADMIN" || userRole === "DEVELOPER";
-      return visibleModules.includes(item.module);
-    }
-  );
+  // Build a map of custom pages for quick lookup
+  const customPageMap = new Map(customPages.map((p) => [`custom-${p.id}`, p]));
 
-  const renderNavLink = (
-    href: string,
-    label: string,
-    Icon: React.ElementType,
-    key: string,
-  ) => {
+  function shouldShowItem(item: SidebarItemConfig): boolean {
+    if (!item.visible) return false;
+
+    const key = item.key;
+
+    // Custom page items
+    if (key.startsWith("custom-")) {
+      return customPageMap.has(key);
+    }
+
+    // Role-gated modules
+    if (ROLE_GATED[key]) {
+      return ROLE_GATED[key](userRole);
+    }
+
+    // Always-visible modules
+    if (ALWAYS_VISIBLE.has(key)) return true;
+
+    // Permission-based modules
+    return visibleModules.includes(key);
+  }
+
+  function getItemProps(item: SidebarItemConfig) {
+    // Custom page
+    if (item.key.startsWith("custom-")) {
+      const page = customPageMap.get(item.key);
+      if (!page) return null;
+      return {
+        label: item.label || page.title,
+        href: `/sandbox/${page.id}`,
+        Icon: ICON_MAP.FileCode,
+      };
+    }
+
+    // System module
+    const sys = SYSTEM_DEFAULTS[item.key];
+    if (!sys) return null;
+    return {
+      label: item.label || sys.label,
+      href: sys.href,
+      Icon: ICON_MAP[sys.icon] || FileCode,
+    };
+  }
+
+  // Use config sections or fall back to flat list
+  const sections = sidebarConfig?.sections || [
+    {
+      id: "main",
+      title: "",
+      items: Object.keys(SYSTEM_DEFAULTS).map((key) => ({ key, visible: true })),
+    },
+  ];
+
+  const renderNavLink = (href: string, label: string, Icon: LucideIcon, key: string) => {
     const isActive = pathname === href || pathname.startsWith(href + "/");
     return (
       <Link
@@ -111,24 +186,31 @@ export function Sidebar({ visibleModules, userRole, customPages = [] }: SidebarP
         </button>
       </div>
 
-      <nav className="flex-1 space-y-1 overflow-y-auto p-2">
-        {filteredItems.map((item) =>
-          renderNavLink(item.href, item.label, item.icon, item.href)
-        )}
+      <nav className="flex-1 overflow-y-auto p-2">
+        {sections.map((section) => {
+          const visibleItems = section.items.filter(shouldShowItem);
+          if (visibleItems.length === 0) return null;
 
-        {/* Published custom pages */}
-        {customPages.length > 0 && (
-          <>
-            {!collapsed && (
-              <div className="px-3 pt-4 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                Pages
+          return (
+            <div key={section.id} className="mb-2">
+              {section.title && !collapsed && (
+                <div className="px-3 pt-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  {section.title}
+                </div>
+              )}
+              {collapsed && section.title && (
+                <div className="border-t border-border my-2" />
+              )}
+              <div className="space-y-1">
+                {visibleItems.map((item) => {
+                  const props = getItemProps(item);
+                  if (!props) return null;
+                  return renderNavLink(props.href, props.label, props.Icon, item.key);
+                })}
               </div>
-            )}
-            {customPages.map((page) =>
-              renderNavLink(`/sandbox/${page.id}`, page.title, FileCode, `custom-${page.id}`)
-            )}
-          </>
-        )}
+            </div>
+          );
+        })}
       </nav>
     </>
   );
