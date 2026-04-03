@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { CommentSection } from "@/components/shared/comment-section";
 import { TreeView, type TreeNode } from "@/components/shared/tree-view";
+import { PageLayout } from "@/components/shared/page-layout";
 import { Badge } from "@/components/ui/badge";
 import { format } from "date-fns";
 import { CheckSquare, Clock } from "lucide-react";
@@ -104,10 +105,151 @@ export default async function ProjectDetailPage({ params }: Props) {
   ]);
 
   const treeNodes = buildTree(project.childProjects as Parameters<typeof buildTree>[0]);
-
-  // Filter out tools already linked to this project
   const linkedToolIds = new Set(project.tools.map((pt) => pt.toolId));
   const availableTools = allTools.filter((t) => !linkedToolIds.has(t.id));
+  const isAdmin = session.user.role === "ADMIN";
+
+  // Define all card sections by ID
+  const cardMap: Record<string, React.ReactNode> = {
+    "sub-projects": (
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <CardTitle>Sub-Projects ({project.childProjects.length})</CardTitle>
+          {perms.canCreate && (
+            <ProjectCreateButton clients={clients} defaultClientId={project.client.id} defaultParentId={project.id} />
+          )}
+        </CardHeader>
+        <CardContent>
+          <TreeView nodes={treeNodes} />
+        </CardContent>
+      </Card>
+    ),
+    milestones: (
+      <Card>
+        <CardHeader><CardTitle>Milestones ({project.milestones.length})</CardTitle></CardHeader>
+        <CardContent>
+          <MilestoneSection milestones={project.milestones} projectId={project.id} allUsers={allUsers} canEdit={perms.canEdit} canCreate={perms.canCreate} canDelete={perms.canDelete} />
+        </CardContent>
+      </Card>
+    ),
+    tasks: (
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <CardTitle className="flex items-center gap-2"><CheckSquare className="h-5 w-5" />Tasks ({projectTasks.length})</CardTitle>
+          <Link href={`/tasks?project=${project.id}`} className="text-sm text-primary hover:underline">View all</Link>
+        </CardHeader>
+        <CardContent>
+          {projectTasks.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No open tasks</p>
+          ) : (
+            <div className="space-y-2">
+              {projectTasks.map((task) => (
+                <div key={task.id} className="flex items-center justify-between rounded border border-border p-3 hover:bg-muted transition-colors">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <CheckSquare className={`h-4 w-4 shrink-0 ${task.status === "IN_PROGRESS" ? "text-primary" : "text-muted-foreground"}`} />
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium truncate">{task.title}</p>
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                        {task.assignee && <span>{task.assignee.name}</span>}
+                        {task.dueDate && (
+                          <span className={`flex items-center gap-1 ${new Date(task.dueDate) < new Date() ? "text-destructive" : ""}`}>
+                            <Clock className="h-3 w-3" />{format(new Date(task.dueDate), "MMM d")}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${task.priority === "HIGH" ? "bg-red-100 text-red-800" : task.priority === "MEDIUM" ? "bg-yellow-100 text-yellow-800" : "bg-green-100 text-green-800"}`}>{task.priority}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    ),
+    documents: (
+      <Card>
+        <CardHeader><CardTitle>Documents ({project.documents.length})</CardTitle></CardHeader>
+        <CardContent>
+          {project.documents.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No documents</p>
+          ) : (
+            <div className="space-y-2">
+              {project.documents.map((doc) => (
+                <Link key={doc.id} href={`/projects/${project.id}/documents/${doc.id}`} className="flex items-center justify-between rounded border border-border p-3 hover:bg-muted transition-colors">
+                  <div><p className="text-sm font-medium">{doc.title}</p><p className="text-xs text-muted-foreground">{doc.type} · v{doc.version}</p></div>
+                  {doc.published && <Badge variant="success">Published</Badge>}
+                </Link>
+              ))}
+            </div>
+          )}
+          {perms.canCreate && (
+            <Link href={`/projects/${project.id}/documents/new`} className="mt-3 inline-flex items-center text-sm text-primary hover:underline">+ Create Document</Link>
+          )}
+        </CardContent>
+      </Card>
+    ),
+    contracts: (
+      <Card>
+        <CardHeader><CardTitle>Contracts ({project.contracts.length})</CardTitle></CardHeader>
+        <CardContent>
+          {project.contracts.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No contracts</p>
+          ) : (
+            <div className="space-y-2">
+              {project.contracts.map((contract) => (
+                <Link key={contract.id} href={`/contracts/${contract.id}`} className="flex items-center justify-between rounded border border-border p-3 hover:bg-muted transition-colors">
+                  <p className="text-sm font-medium">{contract.title}</p>
+                  <StatusBadge status={contract.status} />
+                </Link>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    ),
+    comments: (
+      <Card>
+        <CardHeader><CardTitle>Comments</CardTitle></CardHeader>
+        <CardContent>
+          <CommentSection comments={project.comments} entityType="project" entityId={project.id} canComment={perms.canComment} canDelete={perms.canDelete} currentUserId={session.user.id} />
+        </CardContent>
+      </Card>
+    ),
+    team: (
+      <Card>
+        <CardHeader><CardTitle>Team ({project.members.length})</CardTitle></CardHeader>
+        <CardContent>
+          <MemberSection members={project.members} projectId={project.id} allUsers={allUsers} canEdit={perms.canEdit} />
+        </CardContent>
+      </Card>
+    ),
+    tools: (
+      <Card>
+        <CardHeader><CardTitle>Tools ({project.tools.length})</CardTitle></CardHeader>
+        <CardContent>
+          {project.tools.length > 0 ? (
+            <div className="space-y-2 mb-3">
+              {project.tools.map((pt) => (
+                <Link key={pt.id} href={`/tools/${pt.tool.id}`} className="block rounded border border-border p-2 hover:bg-muted text-sm">{pt.tool.name}</Link>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground mb-3">No tools linked</p>
+          )}
+          {perms.canEdit && availableTools.length > 0 && <AddToolButton projectId={project.id} availableTools={availableTools} />}
+        </CardContent>
+      </Card>
+    ),
+    attachments: (
+      <Card>
+        <CardHeader><CardTitle>Attachments</CardTitle></CardHeader>
+        <CardContent>
+          <ProjectAttachments projectId={project.id} links={project.links} embeds={project.embeds} canEdit={perms.canEdit} canDelete={perms.canDelete} />
+        </CardContent>
+      </Card>
+    ),
+  };
 
   return (
     <div>
@@ -115,21 +257,13 @@ export default async function ProjectDetailPage({ params }: Props) {
         title={project.name}
         description={project.description || undefined}
         actions={
-          <ProjectActions
-            project={{ ...project, clientId: project.client.id }}
-            clients={clients}
-            canEdit={perms.canEdit}
-            canDelete={perms.canDelete}
-          />
+          <ProjectActions project={{ ...project, clientId: project.client.id }} clients={clients} canEdit={perms.canEdit} canDelete={perms.canDelete} />
         }
       />
 
-      {/* Breadcrumb for sub-projects */}
       {project.parentProject && (
         <div className="mb-4 text-sm text-muted-foreground">
-          <Link href={`/projects/${project.parentProject.id}`} className="hover:text-primary">
-            {project.parentProject.name}
-          </Link>
+          <Link href={`/projects/${project.parentProject.id}`} className="hover:text-primary">{project.parentProject.name}</Link>
           <span className="mx-2">→</span>
           <span className="text-foreground">{project.name}</span>
         </div>
@@ -137,9 +271,7 @@ export default async function ProjectDetailPage({ params }: Props) {
 
       <div className="flex items-center gap-3 mb-6">
         <StatusBadge status={project.status} />
-        <Link href={`/clients/${project.client.id}`} className="text-sm text-primary hover:underline">
-          {project.client.name}
-        </Link>
+        <Link href={`/clients/${project.client.id}`} className="text-sm text-primary hover:underline">{project.client.name}</Link>
         {project.startDate && (
           <span className="text-sm text-muted-foreground">
             {format(project.startDate, "MMM d, yyyy")}
@@ -148,234 +280,7 @@ export default async function ProjectDetailPage({ params }: Props) {
         )}
       </div>
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        <div className="lg:col-span-2 space-y-6">
-          {/* Sub-projects */}
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between">
-              <CardTitle>Sub-Projects ({project.childProjects.length})</CardTitle>
-              {perms.canCreate && (
-                <ProjectCreateButton
-                  clients={clients}
-                  defaultClientId={project.client.id}
-                  defaultParentId={project.id}
-                />
-              )}
-            </CardHeader>
-            <CardContent>
-              <TreeView nodes={treeNodes} />
-            </CardContent>
-          </Card>
-
-          {/* Milestones */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Milestones ({project.milestones.length})</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <MilestoneSection
-                milestones={project.milestones}
-                projectId={project.id}
-                allUsers={allUsers}
-                canEdit={perms.canEdit}
-                canCreate={perms.canCreate}
-                canDelete={perms.canDelete}
-              />
-            </CardContent>
-          </Card>
-
-          {/* Documents */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Documents ({project.documents.length})</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {project.documents.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No documents</p>
-              ) : (
-                <div className="space-y-2">
-                  {project.documents.map((doc) => (
-                    <Link
-                      key={doc.id}
-                      href={`/projects/${project.id}/documents/${doc.id}`}
-                      className="flex items-center justify-between rounded border border-border p-3 hover:bg-muted transition-colors"
-                    >
-                      <div>
-                        <p className="text-sm font-medium">{doc.title}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {doc.type} · v{doc.version}
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        {doc.published && <Badge variant="success">Published</Badge>}
-                      </div>
-                    </Link>
-                  ))}
-                </div>
-              )}
-              {perms.canCreate && (
-                <Link
-                  href={`/projects/${project.id}/documents/new`}
-                  className="mt-3 inline-flex items-center text-sm text-primary hover:underline"
-                >
-                  + Create Document
-                </Link>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Contracts */}
-          {project.contracts.length > 0 && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Contracts</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-2">
-                  {project.contracts.map((contract) => (
-                    <Link
-                      key={contract.id}
-                      href={`/contracts/${contract.id}`}
-                      className="flex items-center justify-between rounded border border-border p-3 hover:bg-muted transition-colors"
-                    >
-                      <p className="text-sm font-medium">{contract.title}</p>
-                      <StatusBadge status={contract.status} />
-                    </Link>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Comments */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Comments</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <CommentSection
-                comments={project.comments}
-                entityType="project"
-                entityId={project.id}
-                canComment={perms.canComment}
-                canDelete={perms.canDelete}
-                currentUserId={session.user.id}
-              />
-            </CardContent>
-          </Card>
-        </div>
-
-        <div className="space-y-6">
-          {/* Team Members */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Team ({project.members.length})</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <MemberSection
-                members={project.members}
-                projectId={project.id}
-                allUsers={allUsers}
-                canEdit={perms.canEdit}
-              />
-            </CardContent>
-          </Card>
-
-          {/* Tasks */}
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between">
-              <CardTitle className="flex items-center gap-2">
-                <CheckSquare className="h-5 w-5" />
-                Tasks ({projectTasks.length})
-              </CardTitle>
-              <Link href={`/tasks?projectId=${project.id}`} className="text-sm text-primary hover:underline">
-                View all
-              </Link>
-            </CardHeader>
-            <CardContent>
-              {projectTasks.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No open tasks</p>
-              ) : (
-                <div className="space-y-2">
-                  {projectTasks.map((task) => (
-                    <div key={task.id} className="flex items-center justify-between rounded border border-border p-3 hover:bg-muted transition-colors">
-                      <div className="flex items-center gap-3 min-w-0">
-                        <CheckSquare className={`h-4 w-4 shrink-0 ${task.status === "IN_PROGRESS" ? "text-primary" : "text-muted-foreground"}`} />
-                        <div className="min-w-0">
-                          <p className="text-sm font-medium truncate">{task.title}</p>
-                          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                            {task.assignee && <span>{task.assignee.name}</span>}
-                            {task.dueDate && (
-                              <span className={`flex items-center gap-1 ${new Date(task.dueDate) < new Date() ? "text-destructive" : ""}`}>
-                                <Clock className="h-3 w-3" />
-                                {format(new Date(task.dueDate), "MMM d")}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                        task.priority === "HIGH" ? "bg-red-100 text-red-800" :
-                        task.priority === "MEDIUM" ? "bg-yellow-100 text-yellow-800" :
-                        "bg-green-100 text-green-800"
-                      }`}>
-                        {task.priority}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Tools */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Tools ({project.tools.length})</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {project.tools.length > 0 && (
-                <div className="space-y-2 mb-3">
-                  {project.tools.map((pt) => (
-                    <Link
-                      key={pt.id}
-                      href={`/tools/${pt.tool.id}`}
-                      className="block rounded border border-border p-2 hover:bg-muted text-sm"
-                    >
-                      {pt.tool.name}
-                    </Link>
-                  ))}
-                </div>
-              )}
-              {project.tools.length === 0 && (
-                <p className="text-sm text-muted-foreground mb-3">No tools linked</p>
-              )}
-              {perms.canEdit && availableTools.length > 0 && (
-                <AddToolButton
-                  projectId={project.id}
-                  availableTools={availableTools}
-                />
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Attachments */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Attachments</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <ProjectAttachments
-                projectId={project.id}
-                links={project.links}
-                embeds={project.embeds}
-                canEdit={perms.canEdit}
-                canDelete={perms.canDelete}
-              />
-            </CardContent>
-          </Card>
-        </div>
-      </div>
+      <PageLayout pageType="project-detail" cards={cardMap} isAdmin={isAdmin} />
     </div>
   );
 }
