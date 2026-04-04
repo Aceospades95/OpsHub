@@ -12,10 +12,11 @@ const entityModuleMap: Record<string, string> = {
   contract: "contracts",
   document: "projects",
   supplier: "suppliers",
+  certification: "certifications",
 };
 
 const addCommentSchema = z.object({
-  entityType: z.enum(["client", "project", "contract", "document", "supplier"]),
+  entityType: z.enum(["client", "project", "contract", "document", "supplier", "certification"]),
   entityId: z.string().min(1),
   content: z.string().min(1, "Comment cannot be empty"),
 });
@@ -69,7 +70,9 @@ export async function deleteComment(_prev: unknown, formData: FormData) {
           ? "contract"
           : comment.documentId
             ? "document"
-            : "supplier";
+            : comment.certificationId
+              ? "certification"
+              : "supplier";
     const moduleName = entityModuleMap[entityType];
     const perms = await resolveModulePerms(user.id, user.role, moduleName);
     if (!perms.canDelete) {

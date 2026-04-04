@@ -80,6 +80,7 @@ async function queryModel(
     case "user": return db.user.findMany(args as Parameters<typeof db.user.findMany>[0]) as unknown as Record<string, unknown>[];
     case "document": return db.document.findMany(args as Parameters<typeof db.document.findMany>[0]) as unknown as Record<string, unknown>[];
     case "supplier": return db.supplier.findMany(args as Parameters<typeof db.supplier.findMany>[0]) as unknown as Record<string, unknown>[];
+    case "certification": return db.certification.findMany(args as Parameters<typeof db.certification.findMany>[0]) as unknown as Record<string, unknown>[];
     case "activityLog": return db.activityLog.findMany(args as Parameters<typeof db.activityLog.findMany>[0]) as unknown as Record<string, unknown>[];
     default: return [];
   }
@@ -96,6 +97,7 @@ async function countModel(dataSourceId: string, where: Record<string, unknown>):
     case "user": return db.user.count({ where: w });
     case "document": return db.document.count({ where: w });
     case "supplier": return db.supplier.count({ where: w });
+    case "certification": return db.certification.count({ where: w });
     case "activityLog": return db.activityLog.count({ where: w });
     default: return 0;
   }

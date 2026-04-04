@@ -128,6 +128,27 @@ export const DATA_SOURCES: Record<string, DataSourceDefinition> = {
     aggregations: ["count", "countByField"],
   },
 
+  certification: {
+    id: "certification",
+    label: "Certifications",
+    fields: [
+      { key: "name", label: "Name", type: "string" },
+      { key: "status", label: "Status", type: "enum", enumValues: ["ACTIVE", "EXPIRING_SOON", "EXPIRED", "PENDING", "SUSPENDED", "REVOKED"] },
+      { key: "type", label: "Type", type: "enum", enumValues: ["INDUSTRY", "COMPLIANCE", "SAFETY", "PROFESSIONAL", "QUALITY", "SECURITY", "ENVIRONMENTAL", "VENDOR", "OTHER"] },
+      { key: "issuingBody", label: "Issuing Body", type: "string" },
+      { key: "issuedDate", label: "Issued Date", type: "date" },
+      { key: "expirationDate", label: "Expiration Date", type: "date" },
+      { key: "renewalDate", label: "Renewal Date", type: "date" },
+      { key: "renewalCost", label: "Renewal Cost", type: "number" },
+      { key: "autoRenew", label: "Auto-Renew", type: "boolean" },
+      { key: "client", label: "Client", type: "string", relation: { model: "client", displayField: "name" } },
+      { key: "assignee", label: "Assignee", type: "string", relation: { model: "user", displayField: "name" } },
+      { key: "createdAt", label: "Created", type: "date" },
+    ],
+    defaultSort: { field: "expirationDate", direction: "asc" },
+    aggregations: ["count", "sum", "countByField"],
+  },
+
   activityLog: {
     id: "activityLog",
     label: "Activity Logs",
