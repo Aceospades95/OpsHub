@@ -5,10 +5,10 @@ import { resolveModulePerms } from "@/lib/permissions";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { FileList } from "@/components/shared/file-list";
 import { Pin } from "lucide-react";
 import { IntranetActions } from "./intranet-actions";
 import { IntranetAttachments } from "./intranet-attachments";
+import { PageLayout } from "@/components/shared/page-layout";
 
 interface Props {
   params: Promise<{ resourceId: string }>;
@@ -29,6 +29,40 @@ export default async function IntranetDetailPage({ params }: Props) {
 
   if (!resource) notFound();
 
+  const canEditLayout = session.user.role === "ADMIN" || session.user.role === "DEVELOPER";
+
+  const cardMap: Record<string, React.ReactNode> = {
+    content: resource.content ? (
+      <Card className="h-full">
+        <CardHeader><CardTitle>Content</CardTitle></CardHeader>
+        <CardContent>
+          <div className="text-sm whitespace-pre-wrap">{resource.content}</div>
+        </CardContent>
+      </Card>
+    ) : (
+      <Card className="h-full">
+        <CardHeader><CardTitle>Content</CardTitle></CardHeader>
+        <CardContent>
+          <p className="text-sm text-muted-foreground">No content yet</p>
+        </CardContent>
+      </Card>
+    ),
+    attachments: (
+      <Card className="h-full">
+        <CardHeader><CardTitle>Attachments</CardTitle></CardHeader>
+        <CardContent>
+          <IntranetAttachments
+            resourceId={resource.id}
+            links={resource.links}
+            embeds={resource.embeds}
+            canEdit={perms.canEdit}
+            canDelete={perms.canDelete}
+          />
+        </CardContent>
+      </Card>
+    ),
+  };
+
   return (
     <div>
       <PageHeader
@@ -47,33 +81,7 @@ export default async function IntranetDetailPage({ params }: Props) {
         )}
       </div>
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        <div className="lg:col-span-2 space-y-6">
-          {resource.content && (
-            <Card>
-              <CardHeader><CardTitle>Content</CardTitle></CardHeader>
-              <CardContent>
-                <div className="text-sm whitespace-pre-wrap">{resource.content}</div>
-              </CardContent>
-            </Card>
-          )}
-        </div>
-
-        <div className="space-y-6">
-          <Card>
-            <CardHeader><CardTitle>Attachments</CardTitle></CardHeader>
-            <CardContent>
-              <IntranetAttachments
-                resourceId={resource.id}
-                links={resource.links}
-                embeds={resource.embeds}
-                canEdit={perms.canEdit}
-                canDelete={perms.canDelete}
-              />
-            </CardContent>
-          </Card>
-        </div>
-      </div>
+      <PageLayout pageType="intranet-detail" cards={cardMap} canEdit={canEditLayout} />
     </div>
   );
 }

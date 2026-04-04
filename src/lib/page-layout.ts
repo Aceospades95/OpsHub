@@ -24,6 +24,13 @@ export interface CardDefinition {
   defaultGrid: GridPosition;
 }
 
+export interface LayoutTemplate {
+  name: string;
+  pageType: string;
+  config: PageLayoutConfig;
+  createdAt: string;
+}
+
 export const PAGE_CARDS: Record<string, CardDefinition[]> = {
   dashboard: [
     { id: "stats", label: "Stats Cards", defaultGrid: { x: 0, y: 0, w: 12, h: 3, minW: 4, minH: 2 } },
@@ -56,6 +63,13 @@ export const PAGE_CARDS: Record<string, CardDefinition[]> = {
     { id: "child-contracts", label: "Child Contracts", defaultGrid: { x: 0, y: 6, w: 8, h: 4, minW: 4, minH: 3 } },
     { id: "terms", label: "Contract Terms", defaultGrid: { x: 0, y: 10, w: 8, h: 5, minW: 4, minH: 3 } },
     { id: "comments", label: "Comments", defaultGrid: { x: 0, y: 15, w: 12, h: 5, minW: 4, minH: 3 } },
+  ],
+  "intranet-detail": [
+    { id: "content", label: "Content", defaultGrid: { x: 0, y: 0, w: 8, h: 8, minW: 4, minH: 3 } },
+    { id: "attachments", label: "Attachments", defaultGrid: { x: 8, y: 0, w: 4, h: 8, minW: 3, minH: 3 } },
+  ],
+  intranet: [
+    { id: "resources", label: "Resources", defaultGrid: { x: 0, y: 0, w: 12, h: 12, minW: 6, minH: 4 } },
   ],
 };
 
