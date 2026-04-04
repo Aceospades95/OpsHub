@@ -26,6 +26,7 @@ export const SYSTEM_MODULES: Record<string, { label: string; href: string; icon:
   intranet: { label: "Intranet", href: "/intranet", icon: "Globe" },
   sandbox: { label: "Custom Pages", href: "/sandbox", icon: "Blocks" },
   admin: { label: "Admin", href: "/admin/users", icon: "Shield" },
+  widgets: { label: "Widget Builder", href: "/admin/widgets", icon: "Puzzle" },
   theme: { label: "Theme", href: "/admin/theme", icon: "Palette" },
   sidebar: { label: "Sidebar", href: "/admin/sidebar", icon: "PanelLeft" },
 };
@@ -58,6 +59,7 @@ export const DEFAULT_SIDEBAR_CONFIG: SidebarConfig = {
       items: [
         { key: "sandbox", visible: true },
         { key: "admin", visible: true },
+        { key: "widgets", visible: true },
         { key: "theme", visible: true },
         { key: "sidebar", visible: true },
       ],

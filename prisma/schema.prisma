@@ -138,6 +138,7 @@ model User {
   createdTasks         Task[]             @relation("TaskCreator")
   sandboxPages         SandboxPage[]
   managedClients       Client[]           @relation("ClientAccountManager")
+  customWidgets        CustomWidget[]
 }
 
 model ModulePermission {
@@ -609,4 +610,23 @@ model SandboxPage {
   createdBy User     @relation(fields: [createdById], references: [id])
   project   Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
   client    Client?  @relation(fields: [clientId], references: [id], onDelete: SetNull)
+}
+
+// ─── CUSTOM WIDGETS ────────────────────────────────────
+
+model CustomWidget {
+  id          String   @id @default(cuid())
+  name        String
+  description String?  @db.Text
+  config      String   @db.Text             // JSON WidgetConfig
+  icon        String?  @default("BarChart3")
+  category    String   @default("data")
+  isPublished Boolean  @default(false)
+  createdById String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  createdBy User @relation(fields: [createdById], references: [id])
+
+  @@index([isPublished])
 }
