@@ -15,6 +15,7 @@ import { ContractActions } from "./contract-actions";
 import { TermSection } from "./term-section";
 import { ContractAttachments } from "./contract-attachments";
 import { ContractCreateButton } from "../contract-create-button";
+import { PageLayout } from "@/components/shared/page-layout";
 
 interface Props {
   params: Promise<{ contractId: string }>;
@@ -24,6 +25,8 @@ export default async function ContractDetailPage({ params }: Props) {
   const { contractId } = await params;
   const session = await auth();
   if (!session?.user) redirect("/login");
+
+  const canEditLayout = session.user.role === "ADMIN" || session.user.role === "DEVELOPER";
 
   const perms = await resolveModulePerms(session.user.id, session.user.role, "contracts");
   if (!perms.canView) redirect("/dashboard");
@@ -58,6 +61,142 @@ export default async function ContractDetailPage({ params }: Props) {
     status: c.status,
     meta: c.contractType || undefined,
   }));
+
+  const cardMap: Record<string, React.ReactNode> = {
+    details: (
+      <Card className="h-full">
+        <CardHeader>
+          <CardTitle>Contract Details</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-2 gap-4 text-sm">
+            {contract.value && (
+              <div>
+                <p className="text-muted-foreground">Value</p>
+                <p className="font-medium">{contract.currency || "USD"} {contract.value.toLocaleString()}</p>
+              </div>
+            )}
+            {contract.startDate && (
+              <div>
+                <p className="text-muted-foreground">Start Date</p>
+                <p className="font-medium">{format(contract.startDate, "MMM d, yyyy")}</p>
+              </div>
+            )}
+            {contract.endDate && (
+              <div>
+                <p className="text-muted-foreground">End Date</p>
+                <p className="font-medium">{format(contract.endDate, "MMM d, yyyy")}</p>
+              </div>
+            )}
+            {contract.renewalDate && (
+              <div>
+                <p className="text-muted-foreground">Renewal Date</p>
+                <p className="font-medium">{format(contract.renewalDate, "MMM d, yyyy")}</p>
+              </div>
+            )}
+            {contract.noticePeriodDays && (
+              <div>
+                <p className="text-muted-foreground">Notice Period</p>
+                <p className="font-medium">{contract.noticePeriodDays} days</p>
+              </div>
+            )}
+            <div>
+              <p className="text-muted-foreground">Auto-Renew</p>
+              <p className="font-medium">{contract.autoRenew ? "Yes" : "No"}</p>
+            </div>
+          </div>
+          {contract.summary && (
+            <div className="mt-4 pt-4 border-t border-border">
+              <p className="text-sm text-muted-foreground mb-1">Summary</p>
+              <p className="text-sm whitespace-pre-wrap">{contract.summary}</p>
+            </div>
+          )}
+          {contract.externalDocumentUrl && (
+            <div className="mt-4 pt-4 border-t border-border">
+              <p className="text-sm text-muted-foreground mb-1">
+                Document Source {contract.documentSourceLabel && `(${contract.documentSourceLabel})`}
+              </p>
+              <a
+                href={contract.externalDocumentUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-sm text-primary hover:underline"
+              >
+                {contract.externalDocumentUrl}
+              </a>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    ),
+    "child-contracts": (contract.childContracts.length > 0 || perms.canCreate) ? (
+      <Card className="h-full">
+        <CardHeader className="flex flex-row items-center justify-between">
+          <CardTitle>Child Contracts ({contract.childContracts.length})</CardTitle>
+          {perms.canCreate && (
+            <ContractCreateButton
+              clients={clients}
+              projects={projects}
+              parentContracts={[]}
+              defaultClientId={contract.client.id}
+              defaultParentId={contract.id}
+            />
+          )}
+        </CardHeader>
+        <CardContent>
+          <TreeView nodes={childNodes} />
+        </CardContent>
+      </Card>
+    ) : null,
+    terms: (
+      <Card className="h-full">
+        <CardHeader>
+          <CardTitle>Contract Terms ({contract.terms.length})</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <TermSection
+            terms={contract.terms}
+            contractId={contract.id}
+            canEdit={perms.canEdit}
+            canDelete={perms.canDelete}
+          />
+        </CardContent>
+      </Card>
+    ),
+    comments: (
+      <Card className="h-full">
+        <CardHeader>
+          <CardTitle>Comments</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <CommentSection
+            comments={contract.comments}
+            entityType="contract"
+            entityId={contract.id}
+            canComment={perms.canComment}
+            canDelete={perms.canDelete}
+            currentUserId={session.user.id}
+          />
+        </CardContent>
+      </Card>
+    ),
+    attachments: (
+      <Card className="h-full">
+        <CardHeader>
+          <CardTitle>Attachments</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <ContractAttachments
+            contractId={contract.id}
+            links={contract.links}
+            embeds={contract.embeds}
+            canEdit={perms.canEdit}
+            canDelete={perms.canDelete}
+          />
+        </CardContent>
+      </Card>
+    ),
+  };
 
   return (
     <div>
@@ -101,145 +240,7 @@ export default async function ContractDetailPage({ params }: Props) {
         )}
       </div>
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        <div className="lg:col-span-2 space-y-6">
-          {/* Financial & Dates */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Contract Details</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-2 gap-4 text-sm">
-                {contract.value && (
-                  <div>
-                    <p className="text-muted-foreground">Value</p>
-                    <p className="font-medium">{contract.currency || "USD"} {contract.value.toLocaleString()}</p>
-                  </div>
-                )}
-                {contract.startDate && (
-                  <div>
-                    <p className="text-muted-foreground">Start Date</p>
-                    <p className="font-medium">{format(contract.startDate, "MMM d, yyyy")}</p>
-                  </div>
-                )}
-                {contract.endDate && (
-                  <div>
-                    <p className="text-muted-foreground">End Date</p>
-                    <p className="font-medium">{format(contract.endDate, "MMM d, yyyy")}</p>
-                  </div>
-                )}
-                {contract.renewalDate && (
-                  <div>
-                    <p className="text-muted-foreground">Renewal Date</p>
-                    <p className="font-medium">{format(contract.renewalDate, "MMM d, yyyy")}</p>
-                  </div>
-                )}
-                {contract.noticePeriodDays && (
-                  <div>
-                    <p className="text-muted-foreground">Notice Period</p>
-                    <p className="font-medium">{contract.noticePeriodDays} days</p>
-                  </div>
-                )}
-                <div>
-                  <p className="text-muted-foreground">Auto-Renew</p>
-                  <p className="font-medium">{contract.autoRenew ? "Yes" : "No"}</p>
-                </div>
-              </div>
-              {contract.summary && (
-                <div className="mt-4 pt-4 border-t border-border">
-                  <p className="text-sm text-muted-foreground mb-1">Summary</p>
-                  <p className="text-sm whitespace-pre-wrap">{contract.summary}</p>
-                </div>
-              )}
-              {contract.externalDocumentUrl && (
-                <div className="mt-4 pt-4 border-t border-border">
-                  <p className="text-sm text-muted-foreground mb-1">
-                    Document Source {contract.documentSourceLabel && `(${contract.documentSourceLabel})`}
-                  </p>
-                  <a
-                    href={contract.externalDocumentUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-sm text-primary hover:underline"
-                  >
-                    {contract.externalDocumentUrl}
-                  </a>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Child contracts */}
-          {(contract.childContracts.length > 0 || perms.canCreate) && (
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between">
-                <CardTitle>Child Contracts ({contract.childContracts.length})</CardTitle>
-                {perms.canCreate && (
-                  <ContractCreateButton
-                    clients={clients}
-                    projects={projects}
-                    parentContracts={[]}
-                    defaultClientId={contract.client.id}
-                    defaultParentId={contract.id}
-                  />
-                )}
-              </CardHeader>
-              <CardContent>
-                <TreeView nodes={childNodes} />
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Terms */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Contract Terms ({contract.terms.length})</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <TermSection
-                terms={contract.terms}
-                contractId={contract.id}
-                canEdit={perms.canEdit}
-                canDelete={perms.canDelete}
-              />
-            </CardContent>
-          </Card>
-
-          {/* Comments */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Comments</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <CommentSection
-                comments={contract.comments}
-                entityType="contract"
-                entityId={contract.id}
-                canComment={perms.canComment}
-                canDelete={perms.canDelete}
-                currentUserId={session.user.id}
-              />
-            </CardContent>
-          </Card>
-        </div>
-
-        <div className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Attachments</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <ContractAttachments
-                contractId={contract.id}
-                links={contract.links}
-                embeds={contract.embeds}
-                canEdit={perms.canEdit}
-                canDelete={perms.canDelete}
-              />
-            </CardContent>
-          </Card>
-        </div>
-      </div>
+      <PageLayout pageType="contract-detail" cards={cardMap} canEdit={canEditLayout} />
     </div>
   );
 }

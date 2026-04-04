@@ -1,10 +1,11 @@
-FROM node:18-alpine AS base
+FROM node:18-slim AS base
+RUN apt-get update -y && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
 
 # Install dependencies
 FROM base AS deps
 WORKDIR /app
-COPY package.json ./
-RUN npm install
+COPY package.json package-lock.json* ./
+RUN npm ci
 
 # Generate Prisma client
 COPY prisma ./prisma
@@ -19,6 +20,7 @@ COPY . .
 # Create public dir if it doesn't exist
 RUN mkdir -p public
 
+ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
 
 # Bundle seed.ts into a single JS file using esbuild (already a Next.js dep)

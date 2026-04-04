@@ -19,12 +19,15 @@ import {
 import { formatDistanceToNow, format } from "date-fns";
 import Link from "next/link";
 import { DashboardTaskCheckbox } from "./dashboard-task-checkbox";
+import { PageLayout } from "@/components/shared/page-layout";
 
 export default async function DashboardPage() {
   const session = await auth();
   if (!session?.user) redirect("/login");
 
   const { id: userId, role } = session.user;
+
+  const canEditLayout = session.user.role === "ADMIN" || session.user.role === "DEVELOPER";
 
   const clientPerms = await resolveModulePerms(userId, role, "clients");
   const projectPerms = await resolveModulePerms(userId, role, "projects");
@@ -119,14 +122,9 @@ export default async function DashboardPage() {
     LOW: "bg-green-100 text-green-800",
   };
 
-  return (
-    <div>
-      <PageHeader
-        title="Dashboard"
-        description={`Welcome back, ${session.user.name}`}
-      />
-
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 mb-8">
+  const cardMap: Record<string, React.ReactNode> = {
+    stats: (
+      <div className="h-full grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 content-start">
         {stats
           .filter((s) => s.visible)
           .map((stat) => {
@@ -151,110 +149,118 @@ export default async function DashboardPage() {
             );
           })}
       </div>
-
-      {expiringContracts > 0 && contractPerms.canView && (
-        <Card className="mb-8 border-warning/50">
-          <CardContent className="p-4 flex items-center gap-3">
-            <AlertTriangle className="h-5 w-5 text-warning" />
-            <p className="text-sm">
-              <strong>{expiringContracts}</strong> contract{expiringContracts !== 1 ? "s" : ""}{" "}
-              expiring soon or expired.{" "}
-              <Link href="/contracts" className="text-primary hover:underline">
-                Review now
-              </Link>
-            </p>
-          </CardContent>
-        </Card>
-      )}
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
-        {/* My Tasks */}
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <CardTitle className="flex items-center gap-2">
-                <CheckSquare className="h-5 w-5" />
-                My Tasks
-              </CardTitle>
-              <Link href="/tasks" className="text-sm text-primary hover:underline">
-                View all
-              </Link>
-            </div>
-          </CardHeader>
-          <CardContent>
-            {myTasks.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No open tasks</p>
-            ) : (
-              <div className="space-y-2">
-                {myTasks.map((task) => (
-                  <div key={task.id} className="flex items-center gap-3 py-1">
-                    <DashboardTaskCheckbox taskId={task.id} status={task.status} />
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium truncate">{task.title}</span>
-                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${priorityColors[task.priority]}`}>
-                          {task.priority}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                        {task.project && <span>{task.project.name}</span>}
-                        {task.client && <span>{task.client.name}</span>}
-                        {task.dueDate && (
-                          <span className={`flex items-center gap-1 ${new Date(task.dueDate) < new Date() ? "text-destructive" : ""}`}>
-                            <Clock className="h-3 w-3" />
-                            {format(new Date(task.dueDate), "MMM d")}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Recent Activity */}
-        <Card>
-          <CardHeader>
+    ),
+    alerts: expiringContracts > 0 && contractPerms.canView ? (
+      <Card className="border-warning/50 h-full">
+        <CardContent className="p-4 flex items-center gap-3">
+          <AlertTriangle className="h-5 w-5 text-warning" />
+          <p className="text-sm">
+            <strong>{expiringContracts}</strong> contract{expiringContracts !== 1 ? "s" : ""}{" "}
+            expiring soon or expired.{" "}
+            <Link href="/contracts" className="text-primary hover:underline">
+              Review now
+            </Link>
+          </p>
+        </CardContent>
+      </Card>
+    ) : null,
+    "my-tasks": (
+      <Card className="h-full">
+        <CardHeader>
+          <div className="flex items-center justify-between">
             <CardTitle className="flex items-center gap-2">
-              <Activity className="h-5 w-5" />
-              Recent Activity
+              <CheckSquare className="h-5 w-5" />
+              My Tasks
             </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {recentActivity.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No recent activity</p>
-            ) : (
-              <div className="space-y-3">
-                {recentActivity.map((log) => (
-                  <div key={log.id} className="flex items-start gap-3">
-                    <Avatar name={log.user.name} size="xs" />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm">
-                        <span className="font-medium">{log.user.name}</span>{" "}
-                        <span className="text-muted-foreground">{log.action}</span>{" "}
-                        <span className="text-muted-foreground">
-                          {log.entityType}
-                        </span>
-                        {log.details && (
-                          <span className="text-muted-foreground"> — {log.details}</span>
-                        )}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {formatDistanceToNow(log.createdAt, { addSuffix: true })}
-                      </p>
+            <Link href="/tasks" className="text-sm text-primary hover:underline">
+              View all
+            </Link>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {myTasks.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No open tasks</p>
+          ) : (
+            <div className="space-y-2">
+              {myTasks.map((task) => (
+                <div key={task.id} className="flex items-center gap-3 py-1">
+                  <DashboardTaskCheckbox taskId={task.id} status={task.status} />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium truncate">{task.title}</span>
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${priorityColors[task.priority]}`}>
+                        {task.priority}
+                      </span>
                     </div>
-                    <Badge variant="outline" className="shrink-0">
-                      {log.action}
-                    </Badge>
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      {task.project && <span>{task.project.name}</span>}
+                      {task.client && <span>{task.client.name}</span>}
+                      {task.dueDate && (
+                        <span className={`flex items-center gap-1 ${new Date(task.dueDate) < new Date() ? "text-destructive" : ""}`}>
+                          <Clock className="h-3 w-3" />
+                          {format(new Date(task.dueDate), "MMM d")}
+                        </span>
+                      )}
+                    </div>
                   </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    ),
+    activity: (
+      <Card className="h-full">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Activity className="h-5 w-5" />
+            Recent Activity
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {recentActivity.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No recent activity</p>
+          ) : (
+            <div className="space-y-3">
+              {recentActivity.map((log) => (
+                <div key={log.id} className="flex items-start gap-3">
+                  <Avatar name={log.user.name} size="xs" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm">
+                      <span className="font-medium">{log.user.name}</span>{" "}
+                      <span className="text-muted-foreground">{log.action}</span>{" "}
+                      <span className="text-muted-foreground">
+                        {log.entityType}
+                      </span>
+                      {log.details && (
+                        <span className="text-muted-foreground"> — {log.details}</span>
+                      )}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {formatDistanceToNow(log.createdAt, { addSuffix: true })}
+                    </p>
+                  </div>
+                  <Badge variant="outline" className="shrink-0">
+                    {log.action}
+                  </Badge>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    ),
+  };
+
+  return (
+    <div>
+      <PageHeader
+        title="Dashboard"
+        description={`Welcome back, ${session.user.name}`}
+      />
+
+      <PageLayout pageType="dashboard" cards={cardMap} canEdit={canEditLayout} />
     </div>
   );
 }
