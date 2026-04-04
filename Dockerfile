@@ -19,7 +19,16 @@ COPY . .
 # Create public dir if it doesn't exist
 RUN mkdir -p public
 
-RUN npm run build
+ENV NEXT_TELEMETRY_DISABLED=1
+RUN npm run build; BUILD_EXIT=$?; \
+    if [ $BUILD_EXIT -ne 0 ]; then \
+      echo "========== BUILD FAILED (exit $BUILD_EXIT) =========="; \
+      echo "Node version:"; node --version; \
+      echo "npm version:"; npm --version; \
+      echo "=== .next/trace (last 50 lines) ==="; \
+      tail -50 .next/trace 2>/dev/null || echo "no trace file"; \
+      exit $BUILD_EXIT; \
+    fi
 
 # Bundle seed.ts into a single JS file using esbuild (already a Next.js dep)
 RUN npx esbuild prisma/seed.ts --bundle --platform=node --outfile=prisma/seed.js \
