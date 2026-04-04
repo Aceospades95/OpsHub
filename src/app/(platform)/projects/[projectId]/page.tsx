@@ -114,7 +114,7 @@ export default async function ProjectDetailPage({ params }: Props) {
 
   const cardMap: Record<string, React.ReactNode> = {
     "sub-projects": (
-      <Card>
+      <Card className="h-full">
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle>Sub-Projects ({project.childProjects.length})</CardTitle>
           {perms.canCreate && (
@@ -131,7 +131,7 @@ export default async function ProjectDetailPage({ params }: Props) {
       </Card>
     ),
     milestones: (
-      <Card>
+      <Card className="h-full">
         <CardHeader>
           <CardTitle>Milestones ({project.milestones.length})</CardTitle>
         </CardHeader>
@@ -148,7 +148,7 @@ export default async function ProjectDetailPage({ params }: Props) {
       </Card>
     ),
     documents: (
-      <Card>
+      <Card className="h-full">
         <CardHeader>
           <CardTitle>Documents ({project.documents.length})</CardTitle>
         </CardHeader>
@@ -188,7 +188,7 @@ export default async function ProjectDetailPage({ params }: Props) {
       </Card>
     ),
     contracts: project.contracts.length > 0 ? (
-      <Card>
+      <Card className="h-full">
         <CardHeader>
           <CardTitle>Contracts</CardTitle>
         </CardHeader>
@@ -209,7 +209,7 @@ export default async function ProjectDetailPage({ params }: Props) {
       </Card>
     ) : null,
     comments: (
-      <Card>
+      <Card className="h-full">
         <CardHeader>
           <CardTitle>Comments</CardTitle>
         </CardHeader>
@@ -226,7 +226,7 @@ export default async function ProjectDetailPage({ params }: Props) {
       </Card>
     ),
     team: (
-      <Card>
+      <Card className="h-full">
         <CardHeader>
           <CardTitle>Team ({project.members.length})</CardTitle>
         </CardHeader>
@@ -241,7 +241,7 @@ export default async function ProjectDetailPage({ params }: Props) {
       </Card>
     ),
     tasks: (
-      <Card>
+      <Card className="h-full">
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle className="flex items-center gap-2">
             <CheckSquare className="h-5 w-5" />
@@ -288,7 +288,7 @@ export default async function ProjectDetailPage({ params }: Props) {
       </Card>
     ),
     tools: (
-      <Card>
+      <Card className="h-full">
         <CardHeader>
           <CardTitle>Tools ({project.tools.length})</CardTitle>
         </CardHeader>
@@ -319,7 +319,7 @@ export default async function ProjectDetailPage({ params }: Props) {
       </Card>
     ),
     attachments: (
-      <Card>
+      <Card className="h-full">
         <CardHeader>
           <CardTitle>Attachments</CardTitle>
         </CardHeader>

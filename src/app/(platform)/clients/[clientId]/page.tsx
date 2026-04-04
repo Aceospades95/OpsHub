@@ -66,7 +66,7 @@ export default async function ClientDetailPage({ params }: Props) {
 
   const cardMap: Record<string, React.ReactNode> = {
     "client-info": (
-      <>
+      <div className="h-full space-y-4">
         {client.summary && (
           <Card>
             <CardHeader>
@@ -96,10 +96,10 @@ export default async function ClientDetailPage({ params }: Props) {
             )}
           </CardContent>
         </Card>
-      </>
+      </div>
     ),
     projects: (
-      <Card>
+      <Card className="h-full">
         <CardHeader>
           <CardTitle>Projects ({client.projects.length})</CardTitle>
         </CardHeader>
@@ -130,7 +130,7 @@ export default async function ClientDetailPage({ params }: Props) {
       </Card>
     ),
     contracts: (
-      <Card>
+      <Card className="h-full">
         <CardHeader>
           <CardTitle>Contracts ({client.contracts.length})</CardTitle>
         </CardHeader>
@@ -163,7 +163,7 @@ export default async function ClientDetailPage({ params }: Props) {
       </Card>
     ),
     comments: (
-      <Card>
+      <Card className="h-full">
         <CardHeader>
           <CardTitle>Comments</CardTitle>
         </CardHeader>
@@ -180,7 +180,7 @@ export default async function ClientDetailPage({ params }: Props) {
       </Card>
     ),
     contacts: (
-      <>
+      <div className="h-full space-y-4">
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -211,10 +211,10 @@ export default async function ClientDetailPage({ params }: Props) {
             />
           </CardContent>
         </Card>
-      </>
+      </div>
     ),
     tasks: (
-      <Card>
+      <Card className="h-full">
         <CardHeader>
           <div className="flex items-center justify-between">
             <CardTitle className="flex items-center gap-2">

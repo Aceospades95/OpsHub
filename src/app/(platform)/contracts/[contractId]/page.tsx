@@ -64,7 +64,7 @@ export default async function ContractDetailPage({ params }: Props) {
 
   const cardMap: Record<string, React.ReactNode> = {
     details: (
-      <Card>
+      <Card className="h-full">
         <CardHeader>
           <CardTitle>Contract Details</CardTitle>
         </CardHeader>
@@ -130,7 +130,7 @@ export default async function ContractDetailPage({ params }: Props) {
       </Card>
     ),
     "child-contracts": (contract.childContracts.length > 0 || perms.canCreate) ? (
-      <Card>
+      <Card className="h-full">
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle>Child Contracts ({contract.childContracts.length})</CardTitle>
           {perms.canCreate && (
@@ -149,7 +149,7 @@ export default async function ContractDetailPage({ params }: Props) {
       </Card>
     ) : null,
     terms: (
-      <Card>
+      <Card className="h-full">
         <CardHeader>
           <CardTitle>Contract Terms ({contract.terms.length})</CardTitle>
         </CardHeader>
@@ -164,7 +164,7 @@ export default async function ContractDetailPage({ params }: Props) {
       </Card>
     ),
     comments: (
-      <Card>
+      <Card className="h-full">
         <CardHeader>
           <CardTitle>Comments</CardTitle>
         </CardHeader>
@@ -181,7 +181,7 @@ export default async function ContractDetailPage({ params }: Props) {
       </Card>
     ),
     attachments: (
-      <Card>
+      <Card className="h-full">
         <CardHeader>
           <CardTitle>Attachments</CardTitle>
         </CardHeader>

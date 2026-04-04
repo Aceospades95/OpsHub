@@ -124,7 +124,7 @@ export default async function DashboardPage() {
 
   const cardMap: Record<string, React.ReactNode> = {
     stats: (
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="h-full grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 content-start">
         {stats
           .filter((s) => s.visible)
           .map((stat) => {
@@ -151,7 +151,7 @@ export default async function DashboardPage() {
       </div>
     ),
     alerts: expiringContracts > 0 && contractPerms.canView ? (
-      <Card className="border-warning/50">
+      <Card className="border-warning/50 h-full">
         <CardContent className="p-4 flex items-center gap-3">
           <AlertTriangle className="h-5 w-5 text-warning" />
           <p className="text-sm">
@@ -165,7 +165,7 @@ export default async function DashboardPage() {
       </Card>
     ) : null,
     "my-tasks": (
-      <Card>
+      <Card className="h-full">
         <CardHeader>
           <div className="flex items-center justify-between">
             <CardTitle className="flex items-center gap-2">
@@ -211,7 +211,7 @@ export default async function DashboardPage() {
       </Card>
     ),
     activity: (
-      <Card>
+      <Card className="h-full">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Activity className="h-5 w-5" />
