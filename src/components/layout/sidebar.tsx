@@ -157,14 +157,19 @@ export function Sidebar({ visibleModules, userRole = "", customPages = [], sideb
   const missingKeys = Object.keys(SYSTEM_DEFAULTS).filter((k) => !allConfigKeys.has(k));
   let sections = baseSections;
   if (missingKeys.length > 0) {
-    const adminSection = sections.find((s) => s.id === "admin-section");
-    if (adminSection) {
-      sections = sections.map((s) =>
-        s.id === "admin-section"
-          ? { ...s, items: [...s.items, ...missingKeys.map((k) => ({ key: k, visible: true }))] }
-          : s
-      );
-    }
+    const ADMIN_KEYS = new Set(["admin", "widgets", "theme", "sidebar", "sandbox"]);
+    const mainMissing = missingKeys.filter((k) => !ADMIN_KEYS.has(k));
+    const adminMissing = missingKeys.filter((k) => ADMIN_KEYS.has(k));
+
+    sections = sections.map((s) => {
+      if (s.id === "main" && mainMissing.length > 0) {
+        return { ...s, items: [...s.items, ...mainMissing.map((k) => ({ key: k, visible: true }))] };
+      }
+      if (s.id === "admin-section" && adminMissing.length > 0) {
+        return { ...s, items: [...s.items, ...adminMissing.map((k) => ({ key: k, visible: true }))] };
+      }
+      return s;
+    });
   }
 
   const renderNavLink = (href: string, label: string, Icon: LucideIcon, key: string) => {
