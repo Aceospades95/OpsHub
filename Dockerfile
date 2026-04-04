@@ -3,8 +3,8 @@ FROM node:18-alpine AS base
 # Install dependencies
 FROM base AS deps
 WORKDIR /app
-COPY package.json ./
-RUN npm install
+COPY package.json package-lock.json ./
+RUN npm ci
 
 # Generate Prisma client
 COPY prisma ./prisma
