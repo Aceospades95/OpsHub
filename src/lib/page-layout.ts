@@ -31,7 +31,8 @@ export interface LayoutTemplate {
   createdAt: string;
 }
 
-export const DEFAULT_GAP = 16;
+export const DEFAULT_GAP = 12;
+export const ROW_HEIGHT = 30;
 
 export const PAGE_TYPE_LABELS: Record<string, string> = {
   dashboard: "Dashboard",
@@ -44,43 +45,43 @@ export const PAGE_TYPE_LABELS: Record<string, string> = {
 
 export const PAGE_CARDS: Record<string, CardDefinition[]> = {
   dashboard: [
-    { id: "stats", label: "Stats Cards", defaultGrid: { x: 0, y: 0, w: 12, h: 2, minW: 6, minH: 2 } },
-    { id: "alerts", label: "Alerts", defaultGrid: { x: 0, y: 2, w: 12, h: 1, minW: 4, minH: 1 } },
-    { id: "my-tasks", label: "My Tasks", defaultGrid: { x: 0, y: 3, w: 6, h: 7, minW: 3, minH: 3 } },
-    { id: "activity", label: "Recent Activity", defaultGrid: { x: 6, y: 3, w: 6, h: 7, minW: 3, minH: 3 } },
+    { id: "stats", label: "Stats Cards", defaultGrid: { x: 0, y: 0, w: 12, h: 4, minW: 6, minH: 3 } },
+    { id: "alerts", label: "Alerts", defaultGrid: { x: 0, y: 4, w: 12, h: 2, minW: 4, minH: 1 } },
+    { id: "my-tasks", label: "My Tasks", defaultGrid: { x: 0, y: 6, w: 6, h: 10, minW: 3, minH: 4 } },
+    { id: "activity", label: "Recent Activity", defaultGrid: { x: 6, y: 6, w: 6, h: 10, minW: 3, minH: 4 } },
   ],
   "client-detail": [
-    { id: "client-info", label: "Client Info", defaultGrid: { x: 0, y: 0, w: 8, h: 5, minW: 4, minH: 3 } },
-    { id: "contacts", label: "Contacts", defaultGrid: { x: 8, y: 0, w: 4, h: 5, minW: 3, minH: 3 } },
-    { id: "projects", label: "Projects", defaultGrid: { x: 0, y: 5, w: 6, h: 6, minW: 3, minH: 3 } },
-    { id: "tasks", label: "Tasks", defaultGrid: { x: 6, y: 5, w: 6, h: 6, minW: 3, minH: 3 } },
-    { id: "contracts", label: "Contracts", defaultGrid: { x: 0, y: 11, w: 6, h: 6, minW: 3, minH: 3 } },
-    { id: "comments", label: "Comments", defaultGrid: { x: 6, y: 11, w: 6, h: 6, minW: 3, minH: 3 } },
+    { id: "client-info", label: "Client Info", defaultGrid: { x: 0, y: 0, w: 8, h: 6, minW: 4, minH: 4 } },
+    { id: "contacts", label: "Contacts", defaultGrid: { x: 8, y: 0, w: 4, h: 6, minW: 3, minH: 4 } },
+    { id: "projects", label: "Projects", defaultGrid: { x: 0, y: 6, w: 6, h: 8, minW: 3, minH: 4 } },
+    { id: "tasks", label: "Tasks", defaultGrid: { x: 6, y: 6, w: 6, h: 8, minW: 3, minH: 4 } },
+    { id: "contracts", label: "Contracts", defaultGrid: { x: 0, y: 14, w: 6, h: 8, minW: 3, minH: 4 } },
+    { id: "comments", label: "Comments", defaultGrid: { x: 6, y: 14, w: 6, h: 8, minW: 3, minH: 4 } },
   ],
   "project-detail": [
-    { id: "sub-projects", label: "Sub-Projects", defaultGrid: { x: 0, y: 0, w: 8, h: 5, minW: 4, minH: 3 } },
-    { id: "team", label: "Team", defaultGrid: { x: 8, y: 0, w: 4, h: 5, minW: 3, minH: 3 } },
-    { id: "milestones", label: "Milestones", defaultGrid: { x: 0, y: 5, w: 6, h: 5, minW: 3, minH: 3 } },
-    { id: "tasks", label: "Tasks", defaultGrid: { x: 6, y: 5, w: 6, h: 5, minW: 3, minH: 3 } },
-    { id: "documents", label: "Documents", defaultGrid: { x: 0, y: 10, w: 6, h: 5, minW: 3, minH: 3 } },
-    { id: "tools", label: "Tools", defaultGrid: { x: 6, y: 10, w: 6, h: 5, minW: 3, minH: 3 } },
-    { id: "contracts", label: "Contracts", defaultGrid: { x: 0, y: 15, w: 6, h: 5, minW: 3, minH: 3 } },
-    { id: "attachments", label: "Attachments", defaultGrid: { x: 6, y: 15, w: 6, h: 5, minW: 3, minH: 3 } },
-    { id: "comments", label: "Comments", defaultGrid: { x: 0, y: 20, w: 12, h: 5, minW: 4, minH: 3 } },
+    { id: "sub-projects", label: "Sub-Projects", defaultGrid: { x: 0, y: 0, w: 8, h: 7, minW: 4, minH: 4 } },
+    { id: "team", label: "Team", defaultGrid: { x: 8, y: 0, w: 4, h: 7, minW: 3, minH: 4 } },
+    { id: "milestones", label: "Milestones", defaultGrid: { x: 0, y: 7, w: 6, h: 7, minW: 3, minH: 4 } },
+    { id: "tasks", label: "Tasks", defaultGrid: { x: 6, y: 7, w: 6, h: 7, minW: 3, minH: 4 } },
+    { id: "documents", label: "Documents", defaultGrid: { x: 0, y: 14, w: 6, h: 7, minW: 3, minH: 4 } },
+    { id: "tools", label: "Tools", defaultGrid: { x: 6, y: 14, w: 6, h: 7, minW: 3, minH: 4 } },
+    { id: "contracts", label: "Contracts", defaultGrid: { x: 0, y: 21, w: 6, h: 7, minW: 3, minH: 4 } },
+    { id: "attachments", label: "Attachments", defaultGrid: { x: 6, y: 21, w: 6, h: 7, minW: 3, minH: 4 } },
+    { id: "comments", label: "Comments", defaultGrid: { x: 0, y: 28, w: 12, h: 8, minW: 4, minH: 4 } },
   ],
   "contract-detail": [
-    { id: "details", label: "Contract Details", defaultGrid: { x: 0, y: 0, w: 8, h: 6, minW: 4, minH: 3 } },
-    { id: "attachments", label: "Attachments", defaultGrid: { x: 8, y: 0, w: 4, h: 6, minW: 3, minH: 3 } },
-    { id: "child-contracts", label: "Child Contracts", defaultGrid: { x: 0, y: 6, w: 12, h: 5, minW: 4, minH: 3 } },
-    { id: "terms", label: "Contract Terms", defaultGrid: { x: 0, y: 11, w: 6, h: 5, minW: 3, minH: 3 } },
-    { id: "comments", label: "Comments", defaultGrid: { x: 6, y: 11, w: 6, h: 5, minW: 3, minH: 3 } },
+    { id: "details", label: "Contract Details", defaultGrid: { x: 0, y: 0, w: 8, h: 8, minW: 4, minH: 4 } },
+    { id: "attachments", label: "Attachments", defaultGrid: { x: 8, y: 0, w: 4, h: 8, minW: 3, minH: 4 } },
+    { id: "child-contracts", label: "Child Contracts", defaultGrid: { x: 0, y: 8, w: 12, h: 6, minW: 4, minH: 4 } },
+    { id: "terms", label: "Contract Terms", defaultGrid: { x: 0, y: 14, w: 6, h: 8, minW: 3, minH: 4 } },
+    { id: "comments", label: "Comments", defaultGrid: { x: 6, y: 14, w: 6, h: 8, minW: 3, minH: 4 } },
   ],
   "intranet-detail": [
-    { id: "content", label: "Content", defaultGrid: { x: 0, y: 0, w: 8, h: 8, minW: 4, minH: 3 } },
-    { id: "attachments", label: "Attachments", defaultGrid: { x: 8, y: 0, w: 4, h: 8, minW: 3, minH: 3 } },
+    { id: "content", label: "Content", defaultGrid: { x: 0, y: 0, w: 8, h: 12, minW: 4, minH: 4 } },
+    { id: "attachments", label: "Attachments", defaultGrid: { x: 8, y: 0, w: 4, h: 12, minW: 3, minH: 4 } },
   ],
   intranet: [
-    { id: "resources", label: "Resources", defaultGrid: { x: 0, y: 0, w: 12, h: 10, minW: 6, minH: 4 } },
+    { id: "resources", label: "Resources", defaultGrid: { x: 0, y: 0, w: 12, h: 14, minW: 6, minH: 4 } },
   ],
 };
 

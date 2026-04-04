@@ -3,6 +3,7 @@
 import { useCallback, type ReactNode } from "react";
 import * as RGL from "react-grid-layout";
 import { Eye, Trash2, GripVertical } from "lucide-react";
+import { ROW_HEIGHT } from "@/lib/page-layout";
 
 const ResponsiveGridLayout =
   RGL.ResponsiveGridLayout || RGL.Responsive || (RGL as Record<string, unknown>).default;
@@ -54,7 +55,7 @@ export function GridEditorInner({
         layouts={{ lg: gridLayout }}
         breakpoints={{ lg: 1024, md: 768, sm: 480 }}
         cols={{ lg: 12, md: 8, sm: 4 }}
-        rowHeight={50}
+        rowHeight={ROW_HEIGHT}
         width={containerWidth || 1200}
         dragConfig={{ enabled: true, bounded: false, handle: ".drag-handle", threshold: 3 }}
         resizeConfig={{ enabled: true }}

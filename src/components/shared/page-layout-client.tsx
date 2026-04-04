@@ -28,6 +28,7 @@ import {
   PAGE_CARDS,
   PAGE_TYPE_LABELS,
   DEFAULT_GAP,
+  ROW_HEIGHT,
   type CardConfig,
   type PageLayoutConfig,
   type LayoutTemplate,
@@ -251,7 +252,7 @@ export function PageLayoutClient({
 
     return (
       <>
-        <div className="grid grid-cols-12 auto-rows-[50px]" style={{ gap: `${gap}px` }}>
+        <div className="grid grid-cols-12" style={{ gap: `${gap}px`, gridAutoRows: `${ROW_HEIGHT}px` }}>
           {sortedCards.map((card) => (
             <div
               key={card.id}
