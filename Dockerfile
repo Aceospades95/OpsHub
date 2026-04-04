@@ -1,10 +1,11 @@
-FROM node:18-alpine AS base
+FROM node:18-slim AS base
+RUN apt-get update -y && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
 
 # Install dependencies
 FROM base AS deps
 WORKDIR /app
-COPY package.json ./
-RUN npm install && npm install @next/swc-linux-x64-musl
+COPY package.json package-lock.json* ./
+RUN npm ci
 
 # Generate Prisma client
 COPY prisma ./prisma
