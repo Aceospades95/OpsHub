@@ -17,6 +17,7 @@ import {
   Palette,
   FileCode,
   PanelLeft,
+  Puzzle,
   ChevronLeft,
   ChevronRight,
   Menu,
@@ -52,6 +53,7 @@ const ICON_MAP: Record<string, LucideIcon> = {
   Palette,
   FileCode,
   PanelLeft,
+  Puzzle,
 };
 
 const SYSTEM_DEFAULTS: Record<string, { label: string; href: string; icon: string }> = {
@@ -65,6 +67,7 @@ const SYSTEM_DEFAULTS: Record<string, { label: string; href: string; icon: strin
   intranet: { label: "Intranet", href: "/intranet", icon: "Globe" },
   sandbox: { label: "Custom Pages", href: "/sandbox", icon: "Blocks" },
   admin: { label: "Admin", href: "/admin/users", icon: "Shield" },
+  widgets: { label: "Widget Builder", href: "/admin/widgets", icon: "Puzzle" },
   theme: { label: "Theme", href: "/admin/theme", icon: "Palette" },
   sidebar: { label: "Sidebar", href: "/admin/sidebar", icon: "PanelLeft" },
 };
@@ -73,6 +76,7 @@ const SYSTEM_DEFAULTS: Record<string, { label: string; href: string; icon: strin
 const ROLE_GATED: Record<string, (role: string) => boolean> = {
   sandbox: (role) => role === "ADMIN" || role === "DEVELOPER",
   admin: (role) => role === "ADMIN",
+  widgets: (role) => role === "ADMIN" || role === "DEVELOPER",
   theme: (role) => role === "ADMIN",
   sidebar: (role) => role === "ADMIN",
 };
@@ -137,13 +141,28 @@ export function Sidebar({ visibleModules, userRole = "", customPages = [], sideb
   }
 
   // Use config sections or fall back to flat list
-  const sections = sidebarConfig?.sections || [
+  const baseSections = sidebarConfig?.sections || [
     {
       id: "main",
       title: "",
       items: Object.keys(SYSTEM_DEFAULTS).map((key) => ({ key, visible: true })),
     },
   ];
+
+  // Merge any new system modules not in saved config into the admin section
+  const allConfigKeys = new Set(baseSections.flatMap((s) => s.items.map((i) => i.key)));
+  const missingKeys = Object.keys(SYSTEM_DEFAULTS).filter((k) => !allConfigKeys.has(k));
+  let sections = baseSections;
+  if (missingKeys.length > 0) {
+    const adminSection = sections.find((s) => s.id === "admin-section");
+    if (adminSection) {
+      sections = sections.map((s) =>
+        s.id === "admin-section"
+          ? { ...s, items: [...s.items, ...missingKeys.map((k) => ({ key: k, visible: true }))] }
+          : s
+      );
+    }
+  }
 
   const renderNavLink = (href: string, label: string, Icon: LucideIcon, key: string) => {
     const isActive = pathname === href || pathname.startsWith(href + "/");
