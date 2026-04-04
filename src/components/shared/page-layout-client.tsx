@@ -14,6 +14,7 @@ import {
   Copy,
   Trash2,
   BookTemplate,
+  SlidersHorizontal,
 } from "lucide-react";
 import {
   savePageLayout,
@@ -22,7 +23,14 @@ import {
   loadLayoutTemplate,
   deleteLayoutTemplate,
 } from "@/actions/page-layout";
-import { PAGE_CARDS, type CardConfig, type PageLayoutConfig, type LayoutTemplate } from "@/lib/page-layout";
+import {
+  PAGE_CARDS,
+  PAGE_TYPE_LABELS,
+  DEFAULT_GAP,
+  type CardConfig,
+  type PageLayoutConfig,
+  type LayoutTemplate,
+} from "@/lib/page-layout";
 import dynamic from "next/dynamic";
 
 const GridEditorInner = dynamic(
@@ -33,6 +41,7 @@ const GridEditorInner = dynamic(
 interface PageLayoutClientProps {
   pageType: string;
   initialCards: CardConfig[];
+  initialGap: number;
   cardLabels: Record<string, string>;
   canEdit: boolean;
   templates: LayoutTemplate[];
@@ -42,6 +51,7 @@ interface PageLayoutClientProps {
 export function PageLayoutClient({
   pageType,
   initialCards,
+  initialGap,
   cardLabels,
   canEdit,
   templates: initialTemplates,
@@ -49,12 +59,13 @@ export function PageLayoutClient({
 }: PageLayoutClientProps) {
   const [editing, setEditing] = useState(false);
   const [cards, setCards] = useState<CardConfig[]>(initialCards);
+  const [gap, setGap] = useState(initialGap);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [templates, setTemplates] = useState<LayoutTemplate[]>(initialTemplates);
   const [showTemplateMenu, setShowTemplateMenu] = useState(false);
   const [templateName, setTemplateName] = useState("");
-  const [showAddModule, setShowAddModule] = useState(false);
+  const [showAddWidget, setShowAddWidget] = useState(false);
   const router = useRouter();
 
   // Extract card content from children
@@ -69,11 +80,8 @@ export function PageLayoutClient({
   }, [children]);
 
   const defs = PAGE_CARDS[pageType] || [];
-
-  // Cards currently in the layout
   const cardIds = new Set(cards.map((c) => c.id));
-  // Available cards not yet added
-  const availableCards = defs.filter((d) => !cardIds.has(d.id));
+  const availableWidgets = defs.filter((d) => !cardIds.has(d.id));
 
   const handleLayoutChange = useCallback(
     (layout: readonly { i: string; x: number; y: number; w: number; h: number }[]) => {
@@ -92,26 +100,25 @@ export function PageLayoutClient({
     setCards((prev) => prev.map((c) => (c.id === id ? { ...c, visible: !c.visible } : c)));
   }
 
-  function addModule(id: string) {
+  function addWidget(id: string) {
     const def = defs.find((d) => d.id === id);
     if (!def) return;
-    // Place at bottom
     const maxY = cards.reduce((max, c) => Math.max(max, c.grid.y + c.grid.h), 0);
     setCards((prev) => [
       ...prev,
       { id, visible: true, grid: { ...def.defaultGrid, y: maxY } },
     ]);
-    setShowAddModule(false);
+    setShowAddWidget(false);
   }
 
-  function removeModule(id: string) {
+  function removeWidget(id: string) {
     setCards((prev) => prev.filter((c) => c.id !== id));
   }
 
   async function handleSave() {
     setSaving(true);
     setMessage("");
-    const config: PageLayoutConfig = { cards };
+    const config: PageLayoutConfig = { cards, gap };
     const result = await savePageLayout(pageType, config);
     if (result.success) {
       setMessage("Layout saved!");
@@ -136,12 +143,12 @@ export function PageLayoutClient({
   async function handleSaveTemplate() {
     if (!templateName.trim()) return;
     setSaving(true);
-    const config: PageLayoutConfig = { cards };
+    const config: PageLayoutConfig = { cards, gap };
     const result = await saveLayoutTemplate(pageType, templateName.trim(), config);
     if (result.success) {
       setTemplates((prev) => [
         { name: templateName.trim(), pageType, config, createdAt: new Date().toISOString() },
-        ...prev.filter((t) => t.name !== templateName.trim()),
+        ...prev.filter((t) => !(t.name === templateName.trim() && t.pageType === pageType)),
       ]);
       setTemplateName("");
       setMessage("Template saved!");
@@ -150,9 +157,9 @@ export function PageLayoutClient({
     setSaving(false);
   }
 
-  async function handleLoadTemplate(name: string) {
+  async function handleLoadTemplate(tpl: LayoutTemplate) {
     setSaving(true);
-    const result = await loadLayoutTemplate(pageType, name);
+    const result = await loadLayoutTemplate(pageType, tpl.pageType, tpl.name);
     if (result.success) {
       setShowTemplateMenu(false);
       setEditing(false);
@@ -165,12 +172,30 @@ export function PageLayoutClient({
     setSaving(false);
   }
 
-  async function handleDeleteTemplate(name: string) {
-    await deleteLayoutTemplate(pageType, name);
-    setTemplates((prev) => prev.filter((t) => t.name !== name));
+  async function handleDeleteTemplate(tpl: LayoutTemplate) {
+    await deleteLayoutTemplate(tpl.pageType, tpl.name);
+    setTemplates((prev) => prev.filter((t) => !(t.name === tpl.name && t.pageType === tpl.pageType)));
   }
 
-  // ---- View mode: static CSS grid ----
+  function handleCancel() {
+    setCards(initialCards);
+    setGap(initialGap);
+    setEditing(false);
+    setShowAddWidget(false);
+    setShowTemplateMenu(false);
+  }
+
+  // Group templates by source page type
+  const templatesByPage = useMemo(() => {
+    const grouped = new Map<string, LayoutTemplate[]>();
+    for (const t of templates) {
+      if (!grouped.has(t.pageType)) grouped.set(t.pageType, []);
+      grouped.get(t.pageType)!.push(t);
+    }
+    return grouped;
+  }, [templates]);
+
+  // ---- View mode ----
   if (!editing) {
     const sortedCards = [...cards]
       .filter((c) => c.visible && cardContentMap[c.id])
@@ -178,7 +203,10 @@ export function PageLayoutClient({
 
     return (
       <>
-        <div className="grid grid-cols-12 gap-4 auto-rows-[50px]">
+        <div
+          className="grid grid-cols-12 auto-rows-[50px]"
+          style={{ gap: `${gap}px` }}
+        >
           {sortedCards.map((card) => (
             <div
               key={card.id}
@@ -219,26 +247,49 @@ export function PageLayoutClient({
           <span className="text-sm font-bold text-primary flex items-center gap-2">
             <Settings2 className="h-4 w-4" /> Editing Layout
           </span>
-          <span className="text-xs text-muted-foreground hidden sm:inline">
-            Drag cards to move. Grab any edge or corner to resize.
+          <span className="text-xs text-muted-foreground hidden md:inline">
+            Drag widgets to move. Grab any edge or corner to resize.
           </span>
           <div className="flex-1" />
 
-          {/* Add Module */}
+          {/* Gap / Spacing control */}
+          <div className="flex items-center gap-2">
+            <SlidersHorizontal className="h-3.5 w-3.5 text-muted-foreground" />
+            <label className="text-xs text-muted-foreground hidden sm:inline">Spacing</label>
+            <input
+              type="range"
+              min={0}
+              max={32}
+              step={4}
+              value={gap}
+              onChange={(e) => setGap(Number(e.target.value))}
+              className="w-20 h-1.5 accent-primary"
+            />
+            <span className="text-xs text-muted-foreground w-8">{gap}px</span>
+          </div>
+
+          <div className="h-6 w-px bg-border" />
+
+          {/* Add Widget */}
           <div className="relative">
-            <Button size="sm" variant="outline" onClick={() => { setShowAddModule(!showAddModule); setShowTemplateMenu(false); }}>
-              <Plus className="h-4 w-4 mr-1" /> Add Module
+            <Button size="sm" variant="outline" onClick={() => { setShowAddWidget(!showAddWidget); setShowTemplateMenu(false); }}>
+              <Plus className="h-4 w-4 mr-1" /> Add Widget
             </Button>
-            {showAddModule && (
-              <div className="absolute right-0 top-full mt-1 w-56 bg-card border border-border rounded-lg shadow-lg z-50 py-1">
-                {availableCards.length === 0 && hiddenCards.length === 0 ? (
-                  <div className="px-3 py-2 text-xs text-muted-foreground">All modules are active</div>
+            {showAddWidget && (
+              <div className="absolute right-0 top-full mt-1 w-56 bg-card border border-border rounded-lg shadow-lg z-50 py-1 max-h-72 overflow-y-auto">
+                {availableWidgets.length === 0 && hiddenCards.length === 0 ? (
+                  <div className="px-3 py-2 text-xs text-muted-foreground">All widgets are active</div>
                 ) : (
                   <>
+                    {hiddenCards.length > 0 && (
+                      <div className="px-3 py-1 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+                        Hidden Widgets
+                      </div>
+                    )}
                     {hiddenCards.map((card) => (
                       <button
                         key={card.id}
-                        onClick={() => { toggleVisibility(card.id); setShowAddModule(false); }}
+                        onClick={() => { toggleVisibility(card.id); setShowAddWidget(false); }}
                         className="w-full text-left px-3 py-2 text-sm hover:bg-muted flex items-center gap-2"
                       >
                         <EyeOff className="h-3.5 w-3.5 text-muted-foreground" />
@@ -246,10 +297,15 @@ export function PageLayoutClient({
                         <span className="text-xs text-muted-foreground ml-auto">Show</span>
                       </button>
                     ))}
-                    {availableCards.map((def) => (
+                    {availableWidgets.length > 0 && (
+                      <div className="px-3 py-1 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mt-1">
+                        Available Widgets
+                      </div>
+                    )}
+                    {availableWidgets.map((def) => (
                       <button
                         key={def.id}
-                        onClick={() => addModule(def.id)}
+                        onClick={() => addWidget(def.id)}
                         className="w-full text-left px-3 py-2 text-sm hover:bg-muted flex items-center gap-2"
                       >
                         <Plus className="h-3.5 w-3.5 text-primary" />
@@ -265,11 +321,11 @@ export function PageLayoutClient({
 
           {/* Templates */}
           <div className="relative">
-            <Button size="sm" variant="outline" onClick={() => { setShowTemplateMenu(!showTemplateMenu); setShowAddModule(false); }}>
+            <Button size="sm" variant="outline" onClick={() => { setShowTemplateMenu(!showTemplateMenu); setShowAddWidget(false); }}>
               <BookTemplate className="h-4 w-4 mr-1" /> Templates
             </Button>
             {showTemplateMenu && (
-              <div className="absolute right-0 top-full mt-1 w-72 bg-card border border-border rounded-lg shadow-lg z-50 py-2">
+              <div className="absolute right-0 top-full mt-1 w-80 bg-card border border-border rounded-lg shadow-lg z-50 py-2 max-h-96 overflow-y-auto">
                 {/* Save current as template */}
                 <div className="px-3 pb-2 border-b border-border mb-1">
                   <label className="text-xs font-medium text-muted-foreground">Save current layout as template</label>
@@ -288,24 +344,35 @@ export function PageLayoutClient({
                   </div>
                 </div>
 
-                {/* Saved templates */}
+                {/* Templates grouped by source page */}
                 {templates.length === 0 ? (
                   <div className="px-3 py-2 text-xs text-muted-foreground">No saved templates</div>
                 ) : (
-                  templates.map((t) => (
-                    <div key={t.name} className="flex items-center gap-2 px-3 py-1.5 hover:bg-muted group">
-                      <button
-                        className="flex-1 text-sm text-left truncate"
-                        onClick={() => handleLoadTemplate(t.name)}
-                      >
-                        {t.name}
-                      </button>
-                      <button
-                        onClick={() => handleDeleteTemplate(t.name)}
-                        className="opacity-0 group-hover:opacity-100 text-destructive hover:text-destructive/80 transition-opacity"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
+                  Array.from(templatesByPage.entries()).map(([pt, tpls]) => (
+                    <div key={pt}>
+                      <div className="px-3 py-1.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+                        {PAGE_TYPE_LABELS[pt] || pt}
+                        {pt !== pageType && (
+                          <span className="text-[9px] font-normal normal-case text-muted-foreground/60">(other page)</span>
+                        )}
+                      </div>
+                      {tpls.map((t) => (
+                        <div key={`${t.pageType}-${t.name}`} className="flex items-center gap-2 px-3 py-1.5 hover:bg-muted group">
+                          <button
+                            className="flex-1 text-sm text-left truncate"
+                            onClick={() => handleLoadTemplate(t)}
+                            title={t.pageType !== pageType ? `Apply "${t.name}" from ${PAGE_TYPE_LABELS[t.pageType] || t.pageType} to this page` : `Load "${t.name}"`}
+                          >
+                            {t.name}
+                          </button>
+                          <button
+                            onClick={() => handleDeleteTemplate(t)}
+                            className="opacity-0 group-hover:opacity-100 text-destructive hover:text-destructive/80 transition-opacity"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      ))}
                     </div>
                   ))
                 )}
@@ -333,17 +400,11 @@ export function PageLayoutClient({
         cards={visibleCards}
         cardLabels={cardLabels}
         cardContent={cardContentMap}
+        gap={gap}
         onLayoutChange={handleLayoutChange}
         onToggleVisibility={toggleVisibility}
-        onRemoveModule={removeModule}
+        onRemoveWidget={removeWidget}
       />
     </div>
   );
-
-  function handleCancel() {
-    setCards(initialCards);
-    setEditing(false);
-    setShowAddModule(false);
-    setShowTemplateMenu(false);
-  }
 }

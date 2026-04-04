@@ -1,5 +1,5 @@
-import { getPageLayout, getLayoutTemplates } from "@/actions/page-layout";
-import { resolveLayout, PAGE_CARDS, type CardConfig, type LayoutTemplate } from "@/lib/page-layout";
+import { getPageLayout, getAllLayoutTemplates } from "@/actions/page-layout";
+import { resolveLayout, PAGE_CARDS, DEFAULT_GAP, type LayoutTemplate } from "@/lib/page-layout";
 import { PageLayoutClient } from "./page-layout-client";
 
 interface PageLayoutProps {
@@ -11,6 +11,7 @@ interface PageLayoutProps {
 export async function PageLayout({ pageType, cards, canEdit }: PageLayoutProps) {
   const savedLayout = await getPageLayout(pageType);
   const resolvedCards = resolveLayout(savedLayout, pageType);
+  const savedGap = savedLayout?.gap ?? DEFAULT_GAP;
   const defs = PAGE_CARDS[pageType] || [];
 
   // Build label map from definitions
@@ -19,21 +20,21 @@ export async function PageLayout({ pageType, cards, canEdit }: PageLayoutProps) 
     cardLabels[d.id] = d.label;
   }
 
-  // Fetch templates if user can edit
+  // Fetch ALL templates across all pages if user can edit
   let templates: LayoutTemplate[] = [];
   if (canEdit) {
-    templates = await getLayoutTemplates(pageType);
+    templates = await getAllLayoutTemplates();
   }
 
   return (
     <PageLayoutClient
       pageType={pageType}
       initialCards={resolvedCards}
+      initialGap={savedGap}
       cardLabels={cardLabels}
       canEdit={canEdit}
       templates={templates}
     >
-      {/* Pass card content as children keyed by data-card-id */}
       {Object.entries(cards).map(([id, node]) => (
         <div key={id} data-card-id={id}>
           {node}

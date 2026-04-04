@@ -13,10 +13,6 @@ function templateKey(pageType: string, name: string): string {
   return `layout_template_${pageType}_${name}`;
 }
 
-function templatePrefix(pageType: string): string {
-  return `layout_template_${pageType}_`;
-}
-
 export async function getPageLayout(pageType: string): Promise<PageLayoutConfig | null> {
   try {
     const setting = await db.themeSetting.findUnique({ where: { key: layoutKey(pageType) } });
@@ -79,11 +75,11 @@ export async function saveLayoutTemplate(pageType: string, name: string, config:
   return { success: true };
 }
 
-export async function getLayoutTemplates(pageType: string): Promise<LayoutTemplate[]> {
+/** Fetch ALL layout templates across all page types */
+export async function getAllLayoutTemplates(): Promise<LayoutTemplate[]> {
   try {
-    const prefix = templatePrefix(pageType);
     const settings = await db.themeSetting.findMany({
-      where: { key: { startsWith: prefix } },
+      where: { key: { startsWith: "layout_template_" } },
       orderBy: { updatedAt: "desc" },
     });
     return settings.map((s) => JSON.parse(s.value) as LayoutTemplate);
@@ -102,18 +98,18 @@ export async function deleteLayoutTemplate(pageType: string, name: string) {
   return { success: true };
 }
 
-export async function loadLayoutTemplate(pageType: string, name: string) {
+export async function loadLayoutTemplate(pageType: string, templatePageType: string, name: string) {
   const user = await requireAuth();
   if (user.role !== "ADMIN" && user.role !== "DEVELOPER") {
     return { error: "Developer or Admin access required" };
   }
 
-  const key = templateKey(pageType, name);
+  const key = templateKey(templatePageType, name);
   const setting = await db.themeSetting.findUnique({ where: { key } });
   if (!setting) return { error: "Template not found" };
 
   const template = JSON.parse(setting.value) as LayoutTemplate;
-  // Apply template as current layout
+  // Apply template as current layout for the target page type
   await db.themeSetting.upsert({
     where: { key: layoutKey(pageType) },
     create: { key: layoutKey(pageType), value: JSON.stringify(template.config) },

@@ -10,12 +10,12 @@ export interface GridPosition {
 export interface CardConfig {
   id: string;
   visible: boolean;
-  // Grid position for drag-and-drop
   grid: GridPosition;
 }
 
 export interface PageLayoutConfig {
   cards: CardConfig[];
+  gap?: number; // spacing between widgets in px (default 16)
 }
 
 export interface CardDefinition {
@@ -30,6 +30,17 @@ export interface LayoutTemplate {
   config: PageLayoutConfig;
   createdAt: string;
 }
+
+export const DEFAULT_GAP = 16;
+
+export const PAGE_TYPE_LABELS: Record<string, string> = {
+  dashboard: "Dashboard",
+  "client-detail": "Client Detail",
+  "project-detail": "Project Detail",
+  "contract-detail": "Contract Detail",
+  "intranet-detail": "Intranet Detail",
+  intranet: "Intranet",
+};
 
 export const PAGE_CARDS: Record<string, CardDefinition[]> = {
   dashboard: [
@@ -81,6 +92,7 @@ export function getDefaultLayout(pageType: string): PageLayoutConfig {
       visible: true,
       grid: { ...d.defaultGrid },
     })),
+    gap: DEFAULT_GAP,
   };
 }
 
