@@ -101,7 +101,19 @@ export function resolveLayout(saved: PageLayoutConfig | null, pageType: string):
   if (!saved) return getDefaultLayout(pageType).cards;
 
   const savedMap = new Map(saved.cards.map((c) => [c.id, c]));
-  return defs.map((def) => savedMap.get(def.id) || {
+
+  // Start with page-specific cards (ensure all defaults exist)
+  const result: CardConfig[] = defs.map((def) => savedMap.get(def.id) || {
     id: def.id, visible: true, grid: { ...def.defaultGrid },
   });
+
+  // Add any global widgets from saved config that aren't page-specific
+  const pageCardIds = new Set(defs.map((d) => d.id));
+  for (const card of saved.cards) {
+    if (!pageCardIds.has(card.id)) {
+      result.push(card);
+    }
+  }
+
+  return result;
 }

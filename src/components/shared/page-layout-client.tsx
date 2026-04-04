@@ -11,10 +11,11 @@ import {
   EyeOff,
   X,
   Plus,
-  Copy,
+  SaveAll,
   Trash2,
   BookTemplate,
   SlidersHorizontal,
+  ChevronRight,
 } from "lucide-react";
 import {
   savePageLayout,
@@ -31,6 +32,12 @@ import {
   type PageLayoutConfig,
   type LayoutTemplate,
 } from "@/lib/page-layout";
+import {
+  GLOBAL_WIDGETS,
+  WIDGET_CATEGORY_LABELS,
+  type WidgetCategory,
+  type WidgetDefinition,
+} from "@/lib/widget-registry";
 import dynamic from "next/dynamic";
 
 const GridEditorInner = dynamic(
@@ -52,7 +59,7 @@ export function PageLayoutClient({
   pageType,
   initialCards,
   initialGap,
-  cardLabels,
+  cardLabels: pageCardLabels,
   canEdit,
   templates: initialTemplates,
   children,
@@ -66,7 +73,17 @@ export function PageLayoutClient({
   const [showTemplateMenu, setShowTemplateMenu] = useState(false);
   const [templateName, setTemplateName] = useState("");
   const [showAddWidget, setShowAddWidget] = useState(false);
+  const [expandedCategory, setExpandedCategory] = useState<string | null>(null);
   const router = useRouter();
+
+  // Build combined label map: page-specific + global widgets
+  const allCardLabels = useMemo(() => {
+    const labels = { ...pageCardLabels };
+    for (const w of GLOBAL_WIDGETS) {
+      labels[w.id] = w.label;
+    }
+    return labels;
+  }, [pageCardLabels]);
 
   // Extract card content from children
   const cardContentMap = useMemo(() => {
@@ -81,7 +98,20 @@ export function PageLayoutClient({
 
   const defs = PAGE_CARDS[pageType] || [];
   const cardIds = new Set(cards.map((c) => c.id));
-  const availableWidgets = defs.filter((d) => !cardIds.has(d.id));
+
+  // Page-specific widgets not in layout
+  const availablePageWidgets = defs.filter((d) => !cardIds.has(d.id));
+
+  // Global widgets not in layout, grouped by category
+  const availableGlobalWidgets = useMemo(() => {
+    const available = GLOBAL_WIDGETS.filter((w) => !cardIds.has(w.id));
+    const grouped = new Map<WidgetCategory, WidgetDefinition[]>();
+    for (const w of available) {
+      if (!grouped.has(w.category)) grouped.set(w.category, []);
+      grouped.get(w.category)!.push(w);
+    }
+    return grouped;
+  }, [cardIds]);
 
   const handleLayoutChange = useCallback(
     (layout: readonly { i: string; x: number; y: number; w: number; h: number }[]) => {
@@ -100,7 +130,7 @@ export function PageLayoutClient({
     setCards((prev) => prev.map((c) => (c.id === id ? { ...c, visible: !c.visible } : c)));
   }
 
-  function addWidget(id: string) {
+  function addPageWidget(id: string) {
     const def = defs.find((d) => d.id === id);
     if (!def) return;
     const maxY = cards.reduce((max, c) => Math.max(max, c.grid.y + c.grid.h), 0);
@@ -109,6 +139,20 @@ export function PageLayoutClient({
       { id, visible: true, grid: { ...def.defaultGrid, y: maxY } },
     ]);
     setShowAddWidget(false);
+  }
+
+  function addGlobalWidget(widget: WidgetDefinition) {
+    const maxY = cards.reduce((max, c) => Math.max(max, c.grid.y + c.grid.h), 0);
+    setCards((prev) => [
+      ...prev,
+      {
+        id: widget.id,
+        visible: true,
+        grid: { x: 0, y: maxY, ...widget.defaultGrid },
+      },
+    ]);
+    setShowAddWidget(false);
+    setExpandedCategory(null);
   }
 
   function removeWidget(id: string) {
@@ -183,6 +227,7 @@ export function PageLayoutClient({
     setEditing(false);
     setShowAddWidget(false);
     setShowTemplateMenu(false);
+    setExpandedCategory(null);
   }
 
   // Group templates by source page type
@@ -195,6 +240,9 @@ export function PageLayoutClient({
     return grouped;
   }, [templates]);
 
+  // Hidden cards (visible = false)
+  const hiddenCards = cards.filter((c) => !c.visible);
+
   // ---- View mode ----
   if (!editing) {
     const sortedCards = [...cards]
@@ -203,10 +251,7 @@ export function PageLayoutClient({
 
     return (
       <>
-        <div
-          className="grid grid-cols-12 auto-rows-[50px]"
-          style={{ gap: `${gap}px` }}
-        >
+        <div className="grid grid-cols-12 auto-rows-[50px]" style={{ gap: `${gap}px` }}>
           {sortedCards.map((card) => (
             <div
               key={card.id}
@@ -237,7 +282,11 @@ export function PageLayoutClient({
 
   // ---- Edit mode ----
   const visibleCards = cards.filter((c) => c.visible);
-  const hiddenCards = cards.filter((c) => !c.visible);
+
+  const hasHidden = hiddenCards.length > 0;
+  const hasAvailablePage = availablePageWidgets.length > 0;
+  const hasAvailableGlobal = availableGlobalWidgets.size > 0;
+  const hasAnythingToAdd = hasHidden || hasAvailablePage || hasAvailableGlobal;
 
   return (
     <div className="relative">
@@ -252,7 +301,7 @@ export function PageLayoutClient({
           </span>
           <div className="flex-1" />
 
-          {/* Gap / Spacing control */}
+          {/* Spacing slider */}
           <div className="flex items-center gap-2">
             <SlidersHorizontal className="h-3.5 w-3.5 text-muted-foreground" />
             <label className="text-xs text-muted-foreground hidden sm:inline">Spacing</label>
@@ -276,43 +325,89 @@ export function PageLayoutClient({
               <Plus className="h-4 w-4 mr-1" /> Add Widget
             </Button>
             {showAddWidget && (
-              <div className="absolute right-0 top-full mt-1 w-56 bg-card border border-border rounded-lg shadow-lg z-50 py-1 max-h-72 overflow-y-auto">
-                {availableWidgets.length === 0 && hiddenCards.length === 0 ? (
-                  <div className="px-3 py-2 text-xs text-muted-foreground">All widgets are active</div>
+              <div className="absolute right-0 top-full mt-1 w-72 bg-card border border-border rounded-lg shadow-lg z-50 py-1 max-h-[70vh] overflow-y-auto">
+                {!hasAnythingToAdd ? (
+                  <div className="px-3 py-2 text-xs text-muted-foreground">All widgets are active on this page</div>
                 ) : (
                   <>
-                    {hiddenCards.length > 0 && (
-                      <div className="px-3 py-1 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
-                        Hidden Widgets
-                      </div>
+                    {/* Hidden widgets — show first */}
+                    {hasHidden && (
+                      <>
+                        <div className="px-3 py-1.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+                          Hidden Widgets
+                        </div>
+                        {hiddenCards.map((card) => (
+                          <button
+                            key={card.id}
+                            onClick={() => { toggleVisibility(card.id); setShowAddWidget(false); }}
+                            className="w-full text-left px-3 py-2 text-sm hover:bg-muted flex items-center gap-2"
+                          >
+                            <EyeOff className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                            <span className="flex-1 truncate">{allCardLabels[card.id] || card.id}</span>
+                            <span className="text-xs text-primary">Show</span>
+                          </button>
+                        ))}
+                      </>
                     )}
-                    {hiddenCards.map((card) => (
-                      <button
-                        key={card.id}
-                        onClick={() => { toggleVisibility(card.id); setShowAddWidget(false); }}
-                        className="w-full text-left px-3 py-2 text-sm hover:bg-muted flex items-center gap-2"
-                      >
-                        <EyeOff className="h-3.5 w-3.5 text-muted-foreground" />
-                        {cardLabels[card.id] || card.id}
-                        <span className="text-xs text-muted-foreground ml-auto">Show</span>
-                      </button>
-                    ))}
-                    {availableWidgets.length > 0 && (
-                      <div className="px-3 py-1 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mt-1">
-                        Available Widgets
-                      </div>
+
+                    {/* Page-specific widgets not yet added */}
+                    {hasAvailablePage && (
+                      <>
+                        <div className="px-3 py-1.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mt-1">
+                          Page Widgets
+                        </div>
+                        {availablePageWidgets.map((def) => (
+                          <button
+                            key={def.id}
+                            onClick={() => addPageWidget(def.id)}
+                            className="w-full text-left px-3 py-2 text-sm hover:bg-muted flex items-center gap-2"
+                          >
+                            <Plus className="h-3.5 w-3.5 text-primary shrink-0" />
+                            <span className="flex-1 truncate">{def.label}</span>
+                            <span className="text-xs text-muted-foreground">Add</span>
+                          </button>
+                        ))}
+                      </>
                     )}
-                    {availableWidgets.map((def) => (
-                      <button
-                        key={def.id}
-                        onClick={() => addWidget(def.id)}
-                        className="w-full text-left px-3 py-2 text-sm hover:bg-muted flex items-center gap-2"
-                      >
-                        <Plus className="h-3.5 w-3.5 text-primary" />
-                        {def.label}
-                        <span className="text-xs text-muted-foreground ml-auto">Add</span>
-                      </button>
-                    ))}
+
+                    {/* Global widgets by category */}
+                    {hasAvailableGlobal && (
+                      <>
+                        {(hasHidden || hasAvailablePage) && <div className="border-t border-border my-1" />}
+                        <div className="px-3 py-1.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+                          Widget Catalog
+                        </div>
+                        {Array.from(availableGlobalWidgets.entries()).map(([category, widgets]) => (
+                          <div key={category}>
+                            <button
+                              onClick={() => setExpandedCategory(expandedCategory === category ? null : category)}
+                              className="w-full text-left px-3 py-2 text-sm hover:bg-muted flex items-center gap-2 font-medium"
+                            >
+                              <ChevronRight className={`h-3.5 w-3.5 text-muted-foreground transition-transform ${expandedCategory === category ? "rotate-90" : ""}`} />
+                              <span className="flex-1">{WIDGET_CATEGORY_LABELS[category]}</span>
+                              <span className="text-xs text-muted-foreground">{widgets.length}</span>
+                            </button>
+                            {expandedCategory === category && (
+                              <div className="pl-4">
+                                {widgets.map((w) => (
+                                  <button
+                                    key={w.id}
+                                    onClick={() => addGlobalWidget(w)}
+                                    className="w-full text-left px-3 py-2 text-sm hover:bg-muted flex items-start gap-2"
+                                  >
+                                    <Plus className="h-3.5 w-3.5 text-primary shrink-0 mt-0.5" />
+                                    <div className="flex-1 min-w-0">
+                                      <div className="font-medium truncate">{w.label}</div>
+                                      <div className="text-xs text-muted-foreground line-clamp-1">{w.description}</div>
+                                    </div>
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </>
+                    )}
                   </>
                 )}
               </div>
@@ -339,7 +434,7 @@ export function PageLayoutClient({
                       onKeyDown={(e) => e.key === "Enter" && handleSaveTemplate()}
                     />
                     <Button size="sm" variant="default" onClick={handleSaveTemplate} disabled={!templateName.trim() || saving}>
-                      <Copy className="h-3.5 w-3.5" />
+                      <SaveAll className="h-3.5 w-3.5" />
                     </Button>
                   </div>
                 </div>
@@ -361,7 +456,7 @@ export function PageLayoutClient({
                           <button
                             className="flex-1 text-sm text-left truncate"
                             onClick={() => handleLoadTemplate(t)}
-                            title={t.pageType !== pageType ? `Apply "${t.name}" from ${PAGE_TYPE_LABELS[t.pageType] || t.pageType} to this page` : `Load "${t.name}"`}
+                            title={t.pageType !== pageType ? `Apply "${t.name}" from ${PAGE_TYPE_LABELS[t.pageType] || t.pageType}` : `Load "${t.name}"`}
                           >
                             {t.name}
                           </button>
@@ -398,7 +493,7 @@ export function PageLayoutClient({
       {/* Grid editor with actual card content */}
       <GridEditorInner
         cards={visibleCards}
-        cardLabels={cardLabels}
+        cardLabels={allCardLabels}
         cardContent={cardContentMap}
         gap={gap}
         onLayoutChange={handleLayoutChange}
