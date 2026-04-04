@@ -70,7 +70,7 @@ export const GLOBAL_WIDGETS: WidgetDefinition[] = [
     description: "Quick access to team members and contacts",
     category: "communication",
     icon: "Users",
-    defaultGrid: { w: 4, h: 5, minW: 3, minH: 3 },
+    defaultGrid: { w: 6, h: 5, minW: 3, minH: 3 },
   },
   {
     id: "widget-recent-comments",
