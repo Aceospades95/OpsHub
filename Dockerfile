@@ -4,7 +4,7 @@ FROM node:18-alpine AS base
 FROM base AS deps
 WORKDIR /app
 COPY package.json ./
-RUN npm install
+RUN npm install && npm install @next/swc-linux-x64-musl
 
 # Generate Prisma client
 COPY prisma ./prisma
