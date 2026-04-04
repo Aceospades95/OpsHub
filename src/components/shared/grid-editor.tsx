@@ -2,7 +2,10 @@
 
 import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { ResponsiveGridLayout, useContainerWidth, verticalCompactor } from "react-grid-layout";
+import * as RGL from "react-grid-layout";
+const ResponsiveGridLayout = RGL.ResponsiveGridLayout || RGL.Responsive || (RGL as Record<string, unknown>).default;
+const useContainerWidth = RGL.useContainerWidth;
+const verticalCompactor = RGL.verticalCompactor;
 import { Button } from "@/components/ui/button";
 import { Settings2, Save, RotateCcw, Eye, EyeOff, X } from "lucide-react";
 import { savePageLayout, resetPageLayout } from "@/actions/page-layout";
