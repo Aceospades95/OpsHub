@@ -190,7 +190,7 @@ export function SidebarEditor({ initialConfig, customPages }: Props) {
         <Card key={section.id}>
           <CardHeader className="flex flex-row items-center justify-between gap-4">
             <div className="flex items-center gap-2 flex-1 min-w-0">
-              <GripVertical className="h-4 w-4 text-muted-foreground shrink-0" />
+              <GripVertical className="h-5 w-5 text-muted-foreground shrink-0" />
               <input
                 type="text"
                 value={section.title}
@@ -205,26 +205,26 @@ export function SidebarEditor({ initialConfig, customPages }: Props) {
                 size="sm"
                 onClick={() => moveSection(sectionIndex, -1)}
                 disabled={sectionIndex === 0}
-                className="h-8 w-8 p-0"
+                className="h-9 w-9 p-0"
               >
-                <ChevronUp className="h-4 w-4" />
+                <ChevronUp className="h-5 w-5" />
               </Button>
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={() => moveSection(sectionIndex, 1)}
                 disabled={sectionIndex === config.sections.length - 1}
-                className="h-8 w-8 p-0"
+                className="h-9 w-9 p-0"
               >
-                <ChevronDown className="h-4 w-4" />
+                <ChevronDown className="h-5 w-5" />
               </Button>
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={() => removeSection(sectionIndex)}
-                className="h-8 w-8 p-0 text-destructive hover:text-destructive"
+                className="h-9 w-9 p-0 text-destructive hover:text-destructive"
               >
-                <Trash2 className="h-4 w-4" />
+                <Trash2 className="h-5 w-5" />
               </Button>
             </div>
           </CardHeader>
@@ -240,22 +240,22 @@ export function SidebarEditor({ initialConfig, customPages }: Props) {
                       item.visible ? "bg-card" : "bg-muted opacity-60"
                     }`}
                   >
-                    <GripVertical className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                    <GripVertical className="h-5 w-5 text-muted-foreground shrink-0" />
                     <span className={`flex-1 text-sm ${item.visible ? "font-medium" : "line-through text-muted-foreground"}`}>
                       {getItemLabel(item)}
                     </span>
                     {item.key.startsWith("custom-") && (
                       <span className="text-[10px] px-1.5 py-0.5 rounded bg-secondary text-secondary-foreground">page</span>
                     )}
-                    <div className="flex items-center gap-0.5 shrink-0">
-                      <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => moveItem(sectionIndex, itemIndex, -1)} disabled={itemIndex === 0}>
-                        <ChevronUp className="h-3.5 w-3.5" />
+                    <div className="flex items-center gap-1 shrink-0">
+                      <Button variant="ghost" size="sm" className="h-9 w-9 p-0" onClick={() => moveItem(sectionIndex, itemIndex, -1)} disabled={itemIndex === 0}>
+                        <ChevronUp className="h-5 w-5" />
                       </Button>
-                      <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => moveItem(sectionIndex, itemIndex, 1)} disabled={itemIndex === section.items.length - 1}>
-                        <ChevronDown className="h-3.5 w-3.5" />
+                      <Button variant="ghost" size="sm" className="h-9 w-9 p-0" onClick={() => moveItem(sectionIndex, itemIndex, 1)} disabled={itemIndex === section.items.length - 1}>
+                        <ChevronDown className="h-5 w-5" />
                       </Button>
-                      <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => toggleItemVisibility(sectionIndex, itemIndex)}>
-                        {item.visible ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
+                      <Button variant="ghost" size="sm" className="h-9 w-9 p-0" onClick={() => toggleItemVisibility(sectionIndex, itemIndex)}>
+                        {item.visible ? <Eye className="h-5 w-5" /> : <EyeOff className="h-5 w-5" />}
                       </Button>
                       {/* Move to section dropdown */}
                       {config.sections.length > 1 && (
@@ -265,7 +265,7 @@ export function SidebarEditor({ initialConfig, customPages }: Props) {
                             const toIdx = parseInt(e.target.value);
                             if (!isNaN(toIdx)) moveItemToSection(sectionIndex, itemIndex, toIdx);
                           }}
-                          className="h-7 w-7 p-0 bg-transparent text-xs cursor-pointer opacity-50 hover:opacity-100"
+                          className="h-9 w-9 p-0 bg-transparent text-sm cursor-pointer opacity-50 hover:opacity-100"
                           title="Move to section"
                         >
                           <option value="">↗</option>
@@ -274,8 +274,8 @@ export function SidebarEditor({ initialConfig, customPages }: Props) {
                           ))}
                         </select>
                       )}
-                      <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-destructive" onClick={() => removeItem(sectionIndex, itemIndex)}>
-                        <Trash2 className="h-3.5 w-3.5" />
+                      <Button variant="ghost" size="sm" className="h-9 w-9 p-0 text-destructive" onClick={() => removeItem(sectionIndex, itemIndex)}>
+                        <Trash2 className="h-5 w-5" />
                       </Button>
                     </div>
                   </div>
