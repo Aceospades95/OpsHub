@@ -133,6 +133,7 @@ export async function getVisibleModules(
     "projects",
     "contracts",
     "certifications",
+    "team",
     "suppliers",
     "tools",
     "intranet",

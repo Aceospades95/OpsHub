@@ -17,6 +17,7 @@ import { MilestoneSection } from "./milestone-section";
 import { ProjectAttachments } from "./project-attachments";
 import { ProjectCreateButton } from "../project-create-button";
 import { AddToolButton } from "./add-tool-button";
+import { TeamHierarchy } from "./team-hierarchy";
 import { PageLayout } from "@/components/shared/page-layout";
 
 interface Props {
@@ -56,7 +57,7 @@ export default async function ProjectDetailPage({ params }: Props) {
         },
       },
       members: {
-        include: { user: { select: { id: true, name: true, email: true } } },
+        include: { user: { select: { id: true, name: true, email: true, managerId: true, jobTitle: true, department: true } } },
       },
       milestones: {
         include: {
@@ -231,6 +232,7 @@ export default async function ProjectDetailPage({ params }: Props) {
           <CardTitle>Team ({project.members.length})</CardTitle>
         </CardHeader>
         <CardContent>
+          <TeamHierarchy members={project.members as Parameters<typeof TeamHierarchy>[0]["members"]} />
           <MemberSection
             members={project.members}
             projectId={project.id}
