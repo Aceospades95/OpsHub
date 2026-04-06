@@ -131,7 +131,7 @@ export default async function DashboardPage() {
             const Icon = stat.icon;
             return (
               <Link key={stat.label} href={stat.href}>
-                <Card className="hover:shadow-md transition-shadow h-full">
+                <Card className="hover:shadow-lg transition-shadow h-full border-border/60 shadow-sm">
                   <CardContent className="p-6">
                     <div className="flex items-center justify-between">
                       <div>
