@@ -20,6 +20,7 @@ interface OrgChartTreeProps {
   onNodeClick?: (id: string) => void;
   highlightId?: string;
   compact?: boolean;
+  showRoleBadge?: boolean;
 }
 
 function NodeCard({
@@ -27,11 +28,13 @@ function NodeCard({
   compact,
   highlighted,
   onClick,
+  showRoleBadge,
 }: {
   node: OrgChartNode;
   compact?: boolean;
   highlighted?: boolean;
   onClick?: () => void;
+  showRoleBadge?: boolean;
 }) {
   return (
     <button
@@ -39,7 +42,7 @@ function NodeCard({
       className={`
         rounded-lg border bg-card shadow-sm text-left transition-all hover:shadow-md
         ${highlighted ? "border-primary ring-2 ring-primary/20" : "border-border"}
-        ${compact ? "px-3 py-2 min-w-[120px]" : "px-4 py-3 min-w-[160px]"}
+        ${compact ? "px-3 py-2 min-w-[120px]" : "px-4 py-3 min-w-[160px] max-w-[220px]"}
       `}
     >
       <div className={`flex items-center ${compact ? "gap-2" : "gap-3"}`}>
@@ -47,14 +50,14 @@ function NodeCard({
         <div className="min-w-0">
           <p className={`font-semibold truncate ${compact ? "text-xs" : "text-sm"}`}>{node.name}</p>
           {node.jobTitle && (
-            <p className={`text-muted-foreground truncate ${compact ? "text-[10px]" : "text-xs"}`}>{node.jobTitle}</p>
+            <p className={`text-primary/80 font-medium truncate ${compact ? "text-[10px]" : "text-xs"}`}>{node.jobTitle}</p>
           )}
           {!compact && node.department && (
             <p className="text-[10px] text-muted-foreground truncate">{node.department}</p>
           )}
         </div>
       </div>
-      {node.role && !compact && (
+      {showRoleBadge && node.role && !compact && (
         <div className="mt-1.5">
           <Badge variant="outline" className="text-[10px]">{node.role}</Badge>
         </div>
@@ -69,12 +72,14 @@ function OrgBranch({
   highlightId,
   onNodeClick,
   isRoot,
+  showRoleBadge,
 }: {
   node: OrgChartNode;
   compact?: boolean;
   highlightId?: string;
   onNodeClick?: (id: string) => void;
   isRoot?: boolean;
+  showRoleBadge?: boolean;
 }) {
   const [expanded, setExpanded] = useState(true);
   const hasChildren = node.children.length > 0;
@@ -87,6 +92,7 @@ function OrgBranch({
           node={node}
           compact={compact}
           highlighted={highlightId === node.id}
+          showRoleBadge={showRoleBadge}
           onClick={() => {
             if (hasChildren) setExpanded(!expanded);
             onNodeClick?.(node.id);
@@ -116,6 +122,7 @@ function OrgBranch({
               compact={compact}
               highlightId={highlightId}
               onNodeClick={onNodeClick}
+              showRoleBadge={showRoleBadge}
             />
           ) : (
             <div className="relative flex items-start">
@@ -153,6 +160,7 @@ function OrgBranch({
                       compact={compact}
                       highlightId={highlightId}
                       onNodeClick={onNodeClick}
+                      showRoleBadge={showRoleBadge}
                     />
                   </div>
                 ))}
@@ -165,7 +173,7 @@ function OrgBranch({
   );
 }
 
-export function OrgChartTree({ nodes, onNodeClick, highlightId, compact }: OrgChartTreeProps) {
+export function OrgChartTree({ nodes, onNodeClick, highlightId, compact, showRoleBadge }: OrgChartTreeProps) {
   if (nodes.length === 0) {
     return <p className="text-sm text-muted-foreground">No team members</p>;
   }
@@ -179,6 +187,7 @@ export function OrgChartTree({ nodes, onNodeClick, highlightId, compact }: OrgCh
             compact={compact}
             highlightId={highlightId}
             onNodeClick={onNodeClick}
+            showRoleBadge={showRoleBadge}
             isRoot
           />
         ) : (
@@ -190,6 +199,7 @@ export function OrgChartTree({ nodes, onNodeClick, highlightId, compact }: OrgCh
                 compact={compact}
                 highlightId={highlightId}
                 onNodeClick={onNodeClick}
+                showRoleBadge={showRoleBadge}
                 isRoot
               />
             ))}

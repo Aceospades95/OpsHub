@@ -216,7 +216,12 @@ function StaffingMatrix({ users, projects, search }: { users: UserData[]; projec
                           <Avatar name={user.name} size="xs" />
                           <div className="min-w-0">
                             <p className="font-medium text-sm truncate">{user.name}</p>
-                            <p className="text-[10px] text-muted-foreground truncate">{user.jobTitle || user.department || ""}</p>
+                            {user.jobTitle && (
+                              <p className="text-[10px] text-primary/80 font-medium truncate">{user.jobTitle}</p>
+                            )}
+                            {user.department && !user.jobTitle && (
+                              <p className="text-[10px] text-muted-foreground truncate">{user.department}</p>
+                            )}
                           </div>
                         </div>
                       </td>
@@ -324,10 +329,9 @@ function EmployeeBreakdown({ users, search }: { users: UserData[]; search: strin
             <thead>
               <tr className="border-b border-border bg-muted/50">
                 <th className="text-left py-3 px-4 font-semibold">Employee</th>
-                <th className="text-left py-3 px-4 font-semibold hidden md:table-cell">Job Title</th>
-                <th className="text-left py-3 px-4 font-semibold hidden lg:table-cell">Department</th>
-                <th className="text-left py-3 px-4 font-semibold hidden lg:table-cell">Manager</th>
-                <th className="text-center py-3 px-4 font-semibold">Role</th>
+                <th className="text-left py-3 px-4 font-semibold hidden md:table-cell">Department</th>
+                <th className="text-left py-3 px-4 font-semibold hidden lg:table-cell">Reports To</th>
+                <th className="text-center py-3 px-4 font-semibold">System Role</th>
                 <th className="text-center py-3 px-4 font-semibold">Projects</th>
               </tr>
             </thead>
@@ -343,12 +347,14 @@ function EmployeeBreakdown({ users, search }: { users: UserData[]; search: strin
                         <Avatar name={user.name} size="sm" />
                         <div className="min-w-0">
                           <p className="font-medium truncate">{user.name}</p>
-                          <p className="text-xs text-muted-foreground truncate">{user.email}</p>
+                          {user.jobTitle && (
+                            <p className="text-xs text-primary/80 font-medium truncate">{user.jobTitle}</p>
+                          )}
+                          <p className="text-[10px] text-muted-foreground truncate">{user.email}</p>
                         </div>
                       </div>
                     </td>
-                    <td className="py-3 px-4 text-muted-foreground hidden md:table-cell">{user.jobTitle || "—"}</td>
-                    <td className="py-3 px-4 text-muted-foreground hidden lg:table-cell">{user.department || "—"}</td>
+                    <td className="py-3 px-4 text-muted-foreground hidden md:table-cell">{user.department || "—"}</td>
                     <td className="py-3 px-4 text-muted-foreground hidden lg:table-cell">{user.manager?.name || "—"}</td>
                     <td className="py-3 px-4 text-center">
                       <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${roleColors[user.role] || ""}`}>
@@ -361,7 +367,7 @@ function EmployeeBreakdown({ users, search }: { users: UserData[]; search: strin
                   </tr>
                   {expandedId === user.id && user.projectMembers.length > 0 && (
                     <tr key={`${user.id}-expand`} className="bg-muted/20">
-                      <td colSpan={6} className="py-2 px-8">
+                      <td colSpan={5} className="py-2 px-8">
                         <div className="flex flex-wrap gap-2">
                           {user.projectMembers.map((pm) => (
                             <a key={pm.project.id} href={`/projects/${pm.project.id}`}
