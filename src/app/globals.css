@@ -42,6 +42,23 @@ a {
   text-decoration: none;
 }
 
+/* Page background — slightly darker than muted so cards pop */
+.page-bg {
+  background: var(--muted);
+  background-image: linear-gradient(
+    to bottom,
+    color-mix(in srgb, var(--border) 15%, var(--muted) 85%),
+    color-mix(in srgb, var(--border) 15%, var(--muted) 85%)
+  );
+}
+
+/* Fallback for browsers without color-mix */
+@supports not (background: color-mix(in srgb, red, blue)) {
+  .page-bg {
+    background: var(--muted);
+  }
+}
+
 /* ===== react-grid-layout core styles ===== */
 .react-grid-layout {
   position: relative;
