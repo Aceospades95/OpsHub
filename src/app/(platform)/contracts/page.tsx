@@ -4,25 +4,16 @@ import { db } from "@/lib/db";
 import { resolveModulePerms } from "@/lib/permissions";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { StatusBadge } from "@/components/shared/status-badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { TreeView, TreeNode } from "@/components/shared/tree-view";
-import { Badge } from "@/components/ui/badge";
-import { FileText, AlertTriangle, Clock } from "lucide-react";
-import { format, differenceInDays } from "date-fns";
-import Link from "next/link";
+import { FileText } from "lucide-react";
 import { ContractCreateButton } from "./contract-create-button";
-import { ContractViewToggle } from "./contract-view-toggle";
 
 interface ContractWithRelations {
   id: string;
   title: string;
   status: string;
   contractType: string | null;
-  value: number | null;
-  currency: string | null;
-  startDate: Date | null;
-  endDate: Date | null;
   client: { id: string; name: string };
   childContracts: ContractWithRelations[];
 }
@@ -40,32 +31,12 @@ function buildContractTreeNodes(contracts: ContractWithRelations[]): TreeNode[] 
   }));
 }
 
-export default async function ContractsPage({
-  searchParams,
-}: {
-  searchParams: { view?: string };
-}) {
+export default async function ContractsPage() {
   const session = await auth();
   if (!session?.user) redirect("/login");
 
   const perms = await resolveModulePerms(session.user.id, session.user.role, "contracts");
   if (!perms.canView) redirect("/dashboard");
-
-  const view = searchParams.view || "cards";
-
-  // Card view: flat query with SLA/risk data (existing behavior)
-  const contracts = await db.contract.findMany({
-    orderBy: { updatedAt: "desc" },
-    include: {
-      client: { select: { id: true, name: true } },
-      project: { select: { name: true } },
-      terms: {
-        where: { type: "SLA" },
-        select: { id: true, title: true, priority: true },
-      },
-      _count: { select: { terms: true } },
-    },
-  });
 
   const clients = await db.client.findMany({
     select: { id: true, name: true },
@@ -77,46 +48,49 @@ export default async function ContractsPage({
     orderBy: { name: "asc" },
   });
 
-  // Tree view: hierarchical query for root contracts with nested children
-  let clientTreeNodes: TreeNode[] = [];
-  if (view === "tree") {
-    const rootContracts = await db.contract.findMany({
-      where: { parentContractId: null },
-      orderBy: { updatedAt: "desc" },
-      include: {
-        client: { select: { id: true, name: true } },
-        childContracts: {
-          include: {
-            client: { select: { id: true, name: true } },
-            childContracts: {
-              include: {
-                client: { select: { id: true, name: true } },
+  const parentContracts = await db.contract.findMany({
+    select: { id: true, title: true },
+    orderBy: { title: "asc" },
+  });
+
+  // Hierarchical query: root contracts grouped by client
+  const rootContracts = await db.contract.findMany({
+    where: { parentContractId: null },
+    orderBy: { updatedAt: "desc" },
+    include: {
+      client: { select: { id: true, name: true } },
+      childContracts: {
+        include: {
+          client: { select: { id: true, name: true } },
+          childContracts: {
+            include: {
+              client: { select: { id: true, name: true } },
+              childContracts: {
+                include: { client: { select: { id: true, name: true } } },
               },
             },
           },
         },
       },
-    });
+    },
+  });
 
-    // Group by client
-    const clientMap = new Map<string, { id: string; name: string; contracts: ContractWithRelations[] }>();
-    for (const contract of rootContracts) {
-      const clientId = contract.client.id;
-      if (!clientMap.has(clientId)) {
-        clientMap.set(clientId, { id: clientId, name: contract.client.name, contracts: [] });
-      }
-      clientMap.get(clientId)!.contracts.push(contract as unknown as ContractWithRelations);
+  // Group by client
+  const clientMap = new Map<string, { id: string; name: string; contracts: ContractWithRelations[] }>();
+  for (const contract of rootContracts) {
+    const clientId = contract.client.id;
+    if (!clientMap.has(clientId)) {
+      clientMap.set(clientId, { id: clientId, name: contract.client.name, contracts: [] });
     }
-
-    clientTreeNodes = Array.from(clientMap.values()).map((client) => ({
-      id: client.id,
-      label: client.name,
-      href: `/clients/${client.id}`,
-      children: buildContractTreeNodes(client.contracts),
-    }));
+    clientMap.get(clientId)!.contracts.push(contract as unknown as ContractWithRelations);
   }
 
-  const now = new Date();
+  const clientTreeNodes: TreeNode[] = Array.from(clientMap.values()).map((client) => ({
+    id: client.id,
+    label: client.name,
+    href: `/clients/${client.id}`,
+    children: buildContractTreeNodes(client.contracts),
+  }));
 
   return (
     <div>
@@ -124,18 +98,15 @@ export default async function ContractsPage({
         title="Contracts"
         description="Manage contracts and agreements"
         actions={
-          <div className="flex items-center gap-2">
-            <ContractViewToggle currentView={view} />
-            {perms.canCreate && (
-              <ContractCreateButton clients={clients} projects={projects} parentContracts={contracts} />
-            )}
-          </div>
+          perms.canCreate ? (
+            <ContractCreateButton clients={clients} projects={projects} parentContracts={parentContracts} />
+          ) : undefined
         }
       />
 
-      {contracts.length === 0 ? (
+      {rootContracts.length === 0 ? (
         <EmptyState icon={FileText} title="No contracts yet" description="Create your first contract" />
-      ) : view === "tree" ? (
+      ) : (
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -144,9 +115,8 @@ export default async function ContractsPage({
             </CardTitle>
           </CardHeader>
           <CardContent>
-            {/* Tree view header */}
-            <div className="flex items-center gap-2 px-2 py-2 mb-2 border-b border-border text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              <span className="w-5" />
+            <div className="flex items-center gap-2 px-2 py-2 mb-2 border-b text-xs font-semibold uppercase tracking-wider text-muted-foreground" style={{ borderColor: "color-mix(in srgb, var(--foreground) 10%, transparent)" }}>
+              <span className="w-6" />
               <span className="flex-1">Contract</span>
               <span className="w-24 text-center">Status</span>
               <span className="w-32 text-right">Type</span>
@@ -154,75 +124,6 @@ export default async function ContractsPage({
             <TreeView nodes={clientTreeNodes} />
           </CardContent>
         </Card>
-      ) : (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {contracts.map((contract) => {
-            const daysUntilEnd = contract.endDate
-              ? differenceInDays(contract.endDate, now)
-              : null;
-            const isExpiringSoon = daysUntilEnd !== null && daysUntilEnd > 0 && daysUntilEnd <= 90;
-            const isExpired = daysUntilEnd !== null && daysUntilEnd <= 0;
-            const slaCount = contract.terms.length;
-            const highPrioritySLAs = contract.terms.filter((t) => t.priority === "HIGH").length;
-
-            return (
-              <Link key={contract.id} href={`/contracts/${contract.id}`}>
-                <Card className={`hover:shadow-md transition-shadow h-full ${isExpired ? "border-destructive/50" : isExpiringSoon ? "border-warning/50" : ""}`}>
-                  <CardContent className="p-5">
-                    <div className="flex items-start justify-between mb-2">
-                      <h3 className="font-semibold text-foreground text-sm">{contract.title}</h3>
-                      <StatusBadge status={contract.status} />
-                    </div>
-                    <p className="text-sm text-muted-foreground">{contract.client.name}</p>
-                    {contract.project && (
-                      <p className="text-xs text-muted-foreground">{contract.project.name}</p>
-                    )}
-                    <div className="flex items-center gap-2 mt-3 flex-wrap">
-                      {contract.contractType && (
-                        <Badge variant="outline">{contract.contractType}</Badge>
-                      )}
-                      {contract.value && (
-                        <span className="text-sm font-medium">
-                          {contract.currency || "USD"} {contract.value.toLocaleString()}
-                        </span>
-                      )}
-                    </div>
-
-                    {/* Risk / SLA indicators */}
-                    <div className="flex items-center gap-3 mt-3 pt-3 border-t border-border text-xs">
-                      {isExpired && (
-                        <span className="flex items-center gap-1 text-destructive font-medium">
-                          <AlertTriangle className="h-3 w-3" /> Expired
-                        </span>
-                      )}
-                      {isExpiringSoon && (
-                        <span className="flex items-center gap-1 text-yellow-600 font-medium">
-                          <Clock className="h-3 w-3" /> {daysUntilEnd}d remaining
-                        </span>
-                      )}
-                      {!isExpired && !isExpiringSoon && contract.endDate && (
-                        <span className="text-muted-foreground">
-                          Ends {format(contract.endDate, "MMM d, yyyy")}
-                        </span>
-                      )}
-                      {slaCount > 0 && (
-                        <span className={`font-medium ${highPrioritySLAs > 0 ? "text-red-600" : "text-muted-foreground"}`}>
-                          {slaCount} SLA{slaCount !== 1 ? "s" : ""}
-                          {highPrioritySLAs > 0 && ` (${highPrioritySLAs} high)`}
-                        </span>
-                      )}
-                      {contract._count.terms > 0 && slaCount === 0 && (
-                        <span className="text-muted-foreground">
-                          {contract._count.terms} terms
-                        </span>
-                      )}
-                    </div>
-                  </CardContent>
-                </Card>
-              </Link>
-            );
-          })}
-        </div>
       )}
     </div>
   );

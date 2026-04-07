@@ -35,7 +35,7 @@ function TreeItem({ node, level = 0 }: { node: TreeNode; level: number }) {
           hasChildren ? "cursor-pointer hover:bg-muted/50" : ""
         }`}
         style={{
-          backgroundColor: "color-mix(in srgb, var(--card) 85%, var(--foreground) 3%)",
+          backgroundColor: `color-mix(in srgb, var(--card) ${Math.max(70, 90 - level * 5)}%, var(--foreground) ${3 + level * 2}%)`,
           border: `1.5px solid color-mix(in srgb, ${levelColor} 35%, transparent)`,
           marginBottom: level === 0 ? "6px" : "3px",
           marginLeft: level > 0 ? "2px" : undefined,
