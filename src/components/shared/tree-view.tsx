@@ -22,44 +22,37 @@ function TreeItem({ node, level = 0 }: { node: TreeNode; level: number }) {
   const [expanded, setExpanded] = useState(true);
   const hasChildren = node.children && node.children.length > 0;
 
-  // Top-level: uses --primary, nested: uses --accent
   const levelColor = level === 0 ? "var(--primary)" : "var(--accent)";
+
+  function handleRowClick(e: React.MouseEvent) {
+    // Don't collapse if clicking the link
+    if ((e.target as HTMLElement).closest("a")) return;
+    if (hasChildren) setExpanded(!expanded);
+  }
 
   return (
     <div>
-      {/* The row — clicking it toggles collapse, but the link inside still works */}
       <div
-        onClick={(e) => {
-          // Only toggle if the click isn't on the link or a button
-          const target = e.target as HTMLElement;
-          if (target.closest("a") || target.closest("button")) return;
-          if (hasChildren) setExpanded(!expanded);
-        }}
-        className={`flex items-center gap-2 rounded-lg px-3 py-2.5 transition-colors ${
-          hasChildren ? "cursor-pointer" : ""
+        role={hasChildren ? "button" : undefined}
+        onClick={handleRowClick}
+        className={`flex items-center gap-2 rounded-lg px-3 py-2.5 bg-card transition-colors ${
+          hasChildren ? "cursor-pointer hover:bg-muted/50" : ""
         }`}
         style={{
-          backgroundColor: level === 0
-            ? "color-mix(in srgb, var(--primary) 8%, var(--card))"
-            : "color-mix(in srgb, var(--accent) 5%, var(--card))",
-          border: `1px solid color-mix(in srgb, ${levelColor} 20%, transparent)`,
+          border: `1.5px solid color-mix(in srgb, ${levelColor} 35%, transparent)`,
           marginBottom: level === 0 ? "6px" : "3px",
           marginLeft: level > 0 ? "2px" : undefined,
         }}
       >
         {/* Expand/collapse icon */}
         {hasChildren ? (
-          <button
-            onClick={(e) => { e.stopPropagation(); setExpanded(!expanded); }}
-            className="rounded p-0.5 shrink-0"
-            style={{ color: levelColor }}
-          >
+          <span className="shrink-0" style={{ color: levelColor }}>
             {expanded ? (
               <ChevronDown className="h-5 w-5" />
             ) : (
               <ChevronRight className="h-5 w-5" />
             )}
-          </button>
+          </span>
         ) : (
           <span className="w-6 shrink-0 flex justify-center">
             <span
@@ -69,12 +62,10 @@ function TreeItem({ node, level = 0 }: { node: TreeNode; level: number }) {
           </span>
         )}
 
-        {/* Label — remains a link */}
+        {/* Label — this is the only clickable link */}
         <Link
           href={node.href}
-          onClick={(e) => e.stopPropagation()}
-          className="flex-1 text-sm font-medium hover:underline truncate min-w-0"
-          style={{ color: level === 0 ? undefined : undefined }}
+          className="flex-1 text-sm font-medium hover:underline hover:text-primary truncate min-w-0"
         >
           {node.label}
         </Link>
@@ -93,7 +84,7 @@ function TreeItem({ node, level = 0 }: { node: TreeNode; level: number }) {
           </span>
         )}
 
-        {/* Child count indicator */}
+        {/* Child count */}
         {hasChildren && (
           <span
             className="text-[10px] font-medium px-1.5 py-0.5 rounded-full shrink-0"
@@ -107,20 +98,16 @@ function TreeItem({ node, level = 0 }: { node: TreeNode; level: number }) {
         )}
       </div>
 
-      {/* Children — with colored connector line */}
+      {/* Children with colored connector line */}
       {expanded && hasChildren && (
         <div
           className="ml-5 pl-4 pb-1"
           style={{
-            borderLeft: `2px solid color-mix(in srgb, var(--accent) 30%, transparent)`,
+            borderLeft: `2px solid color-mix(in srgb, ${levelColor} 35%, transparent)`,
           }}
         >
           {node.children!.map((child) => (
-            <TreeItem
-              key={child.id}
-              node={child}
-              level={level + 1}
-            />
+            <TreeItem key={child.id} node={child} level={level + 1} />
           ))}
         </div>
       )}
