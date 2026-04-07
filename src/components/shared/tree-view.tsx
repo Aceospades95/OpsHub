@@ -35,7 +35,7 @@ function TreeItem({ node, level = 0 }: { node: TreeNode; level: number }) {
           hasChildren ? "cursor-pointer hover:bg-muted/50" : ""
         }`}
         style={{
-          backgroundColor: `color-mix(in srgb, var(--card) ${Math.max(70, 90 - level * 5)}%, var(--foreground) ${3 + level * 2}%)`,
+          backgroundColor: `color-mix(in srgb, var(--card) ${Math.max(70, 97 - level * 3)}%, var(--foreground) ${3 + level * 3}%)`,
           border: `1.5px solid color-mix(in srgb, ${levelColor} 35%, transparent)`,
           marginBottom: level === 0 ? "6px" : "3px",
           marginLeft: level > 0 ? "2px" : undefined,
@@ -74,19 +74,15 @@ function TreeItem({ node, level = 0 }: { node: TreeNode; level: number }) {
           </Link>
         </div>
 
-        {/* Right side — also toggles on click */}
+        {/* Right side — fixed-width columns, always rendered */}
         <div className="flex items-center gap-2 shrink-0" onClick={toggle}>
-          {node.status && (
-            <span className="w-24 flex justify-center">
-              <StatusBadge status={node.status} />
-            </span>
-          )}
+          <span className="w-24 flex justify-center">
+            {node.status ? <StatusBadge status={node.status} /> : null}
+          </span>
 
-          {node.meta && (
-            <span className="w-32 text-right text-xs text-muted-foreground truncate">
-              {node.meta}
-            </span>
-          )}
+          <span className="w-32 text-right text-xs text-muted-foreground truncate">
+            {node.meta || ""}
+          </span>
 
           {hasChildren && (
             <span
