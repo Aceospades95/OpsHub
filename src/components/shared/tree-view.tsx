@@ -18,76 +18,108 @@ interface TreeViewProps {
   nodes: TreeNode[];
 }
 
-const LEVEL_COLORS = [
-  "border-primary/40",
-  "border-accent/40",
-  "border-warning/40",
-  "border-purple-400/40",
-  "border-blue-400/40",
-];
-
-const LEVEL_BG = [
-  "",
-  "bg-primary/[0.03]",
-  "bg-accent/[0.03]",
-  "bg-warning/[0.03]",
-  "bg-purple-400/[0.03]",
-];
-
-function TreeItem({ node, level = 0, isLast = false }: { node: TreeNode; level: number; isLast: boolean }) {
+function TreeItem({ node, level = 0 }: { node: TreeNode; level: number }) {
   const [expanded, setExpanded] = useState(true);
   const hasChildren = node.children && node.children.length > 0;
-  const borderColor = LEVEL_COLORS[level % LEVEL_COLORS.length];
-  const bgColor = LEVEL_BG[level % LEVEL_BG.length];
+
+  // Top-level: uses --primary, nested: uses --accent
+  const levelColor = level === 0 ? "var(--primary)" : "var(--accent)";
 
   return (
-    <div className={level > 0 ? `ml-4 border-l-2 ${borderColor}` : ""}>
+    <div>
+      {/* The row — clicking it toggles collapse, but the link inside still works */}
       <div
-        className={`flex items-center gap-2 rounded-md px-3 py-2 hover:bg-muted/60 transition-colors ${bgColor} ${
-          level === 0 ? "border border-border/60 rounded-lg mb-1 shadow-sm" : "ml-2"
+        onClick={(e) => {
+          // Only toggle if the click isn't on the link or a button
+          const target = e.target as HTMLElement;
+          if (target.closest("a") || target.closest("button")) return;
+          if (hasChildren) setExpanded(!expanded);
+        }}
+        className={`flex items-center gap-2 rounded-lg px-3 py-2.5 transition-colors ${
+          hasChildren ? "cursor-pointer" : ""
         }`}
+        style={{
+          backgroundColor: level === 0
+            ? "color-mix(in srgb, var(--primary) 8%, var(--card))"
+            : "color-mix(in srgb, var(--accent) 5%, var(--card))",
+          border: `1px solid color-mix(in srgb, ${levelColor} 20%, transparent)`,
+          marginBottom: level === 0 ? "6px" : "3px",
+          marginLeft: level > 0 ? "2px" : undefined,
+        }}
       >
+        {/* Expand/collapse icon */}
         {hasChildren ? (
           <button
-            onClick={() => setExpanded(!expanded)}
-            className="rounded p-0.5 hover:bg-border shrink-0"
+            onClick={(e) => { e.stopPropagation(); setExpanded(!expanded); }}
+            className="rounded p-0.5 shrink-0"
+            style={{ color: levelColor }}
           >
             {expanded ? (
-              <ChevronDown className="h-5 w-5 text-muted-foreground" />
+              <ChevronDown className="h-5 w-5" />
             ) : (
-              <ChevronRight className="h-5 w-5 text-muted-foreground" />
+              <ChevronRight className="h-5 w-5" />
             )}
           </button>
         ) : (
           <span className="w-6 shrink-0 flex justify-center">
-            <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/30" />
+            <span
+              className="h-2 w-2 rounded-full"
+              style={{ backgroundColor: `color-mix(in srgb, ${levelColor} 40%, transparent)` }}
+            />
           </span>
         )}
+
+        {/* Label — remains a link */}
         <Link
           href={node.href}
-          className="flex-1 text-sm font-medium hover:text-primary truncate min-w-0"
+          onClick={(e) => e.stopPropagation()}
+          className="flex-1 text-sm font-medium hover:underline truncate min-w-0"
+          style={{ color: level === 0 ? undefined : undefined }}
         >
           {node.label}
         </Link>
+
+        {/* Status badge */}
         {node.status && (
           <span className="w-24 flex justify-center shrink-0">
             <StatusBadge status={node.status} />
           </span>
         )}
+
+        {/* Meta info */}
         {node.meta && (
           <span className="w-32 text-right text-xs text-muted-foreground shrink-0 truncate">
             {node.meta}
           </span>
         )}
+
+        {/* Child count indicator */}
+        {hasChildren && (
+          <span
+            className="text-[10px] font-medium px-1.5 py-0.5 rounded-full shrink-0"
+            style={{
+              backgroundColor: `color-mix(in srgb, ${levelColor} 12%, transparent)`,
+              color: levelColor,
+            }}
+          >
+            {node.children!.length}
+          </span>
+        )}
       </div>
+
+      {/* Children — with colored connector line */}
       {expanded && hasChildren && (
-        <div className={`${level === 0 ? "mb-2" : ""}`}>
-          {node.children!.map((child, i) => (
+        <div
+          className="ml-5 pl-4 pb-1"
+          style={{
+            borderLeft: `2px solid color-mix(in srgb, var(--accent) 30%, transparent)`,
+          }}
+        >
+          {node.children!.map((child) => (
             <TreeItem
               key={child.id}
               node={child}
               level={level + 1}
-              isLast={i === node.children!.length - 1}
             />
           ))}
         </div>
@@ -102,9 +134,9 @@ export function TreeView({ nodes }: TreeViewProps) {
   }
 
   return (
-    <div className="space-y-1">
-      {nodes.map((node, i) => (
-        <TreeItem key={node.id} node={node} level={0} isLast={i === nodes.length - 1} />
+    <div>
+      {nodes.map((node) => (
+        <TreeItem key={node.id} node={node} level={0} />
       ))}
     </div>
   );
