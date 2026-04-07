@@ -24,78 +24,82 @@ function TreeItem({ node, level = 0 }: { node: TreeNode; level: number }) {
 
   const levelColor = level === 0 ? "var(--primary)" : "var(--accent)";
 
-  function handleRowClick(e: React.MouseEvent) {
-    // Don't collapse if clicking the link
-    if ((e.target as HTMLElement).closest("a")) return;
+  function toggle() {
     if (hasChildren) setExpanded(!expanded);
   }
 
   return (
     <div>
       <div
-        role={hasChildren ? "button" : undefined}
-        onClick={handleRowClick}
-        className={`flex items-center gap-2 rounded-lg px-3 py-2.5 bg-card transition-colors ${
+        className={`flex items-center gap-2 rounded-lg px-3 py-2.5 transition-colors ${
           hasChildren ? "cursor-pointer hover:bg-muted/50" : ""
         }`}
         style={{
+          backgroundColor: "color-mix(in srgb, var(--card) 60%, var(--background) 40%)",
           border: `1.5px solid color-mix(in srgb, ${levelColor} 35%, transparent)`,
           marginBottom: level === 0 ? "6px" : "3px",
           marginLeft: level > 0 ? "2px" : undefined,
         }}
       >
-        {/* Expand/collapse icon */}
-        {hasChildren ? (
-          <span className="shrink-0" style={{ color: levelColor }}>
-            {expanded ? (
-              <ChevronDown className="h-5 w-5" />
-            ) : (
-              <ChevronRight className="h-5 w-5" />
-            )}
-          </span>
-        ) : (
-          <span className="w-6 shrink-0 flex justify-center">
-            <span
-              className="h-2 w-2 rounded-full"
-              style={{ backgroundColor: `color-mix(in srgb, ${levelColor} 40%, transparent)` }}
-            />
-          </span>
-        )}
-
-        {/* Label — this is the only clickable link */}
-        <Link
-          href={node.href}
-          className="flex-1 text-sm font-medium hover:underline hover:text-primary truncate min-w-0"
+        {/* Collapse toggle area — everything except the link is a toggle */}
+        <div
+          className={`flex items-center gap-2 flex-1 min-w-0 ${hasChildren ? "cursor-pointer" : ""}`}
+          onClick={toggle}
         >
-          {node.label}
-        </Link>
+          {/* Expand/collapse icon */}
+          {hasChildren ? (
+            <span className="shrink-0" style={{ color: levelColor }}>
+              {expanded ? (
+                <ChevronDown className="h-5 w-5" />
+              ) : (
+                <ChevronRight className="h-5 w-5" />
+              )}
+            </span>
+          ) : (
+            <span className="w-6 shrink-0 flex justify-center">
+              <span
+                className="h-2 w-2 rounded-full"
+                style={{ backgroundColor: `color-mix(in srgb, ${levelColor} 40%, transparent)` }}
+              />
+            </span>
+          )}
 
-        {/* Status badge */}
-        {node.status && (
-          <span className="w-24 flex justify-center shrink-0">
-            <StatusBadge status={node.status} />
-          </span>
-        )}
-
-        {/* Meta info */}
-        {node.meta && (
-          <span className="w-32 text-right text-xs text-muted-foreground shrink-0 truncate">
-            {node.meta}
-          </span>
-        )}
-
-        {/* Child count */}
-        {hasChildren && (
-          <span
-            className="text-[10px] font-medium px-1.5 py-0.5 rounded-full shrink-0"
-            style={{
-              backgroundColor: `color-mix(in srgb, ${levelColor} 12%, transparent)`,
-              color: levelColor,
-            }}
+          {/* Label — link that navigates */}
+          <Link
+            href={node.href}
+            onClick={(e) => e.stopPropagation()}
+            className="text-sm font-medium hover:underline hover:text-primary truncate"
           >
-            {node.children!.length}
-          </span>
-        )}
+            {node.label}
+          </Link>
+        </div>
+
+        {/* Right side — also toggles on click */}
+        <div className="flex items-center gap-2 shrink-0" onClick={toggle}>
+          {node.status && (
+            <span className="w-24 flex justify-center">
+              <StatusBadge status={node.status} />
+            </span>
+          )}
+
+          {node.meta && (
+            <span className="w-32 text-right text-xs text-muted-foreground truncate">
+              {node.meta}
+            </span>
+          )}
+
+          {hasChildren && (
+            <span
+              className="text-[10px] font-medium px-1.5 py-0.5 rounded-full"
+              style={{
+                backgroundColor: `color-mix(in srgb, ${levelColor} 12%, transparent)`,
+                color: levelColor,
+              }}
+            >
+              {node.children!.length}
+            </span>
+          )}
+        </div>
       </div>
 
       {/* Children with colored connector line */}
