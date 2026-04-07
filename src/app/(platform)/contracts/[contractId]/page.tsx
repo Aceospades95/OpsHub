@@ -147,7 +147,14 @@ export default async function ContractDetailPage({ params }: Props) {
           <TreeView nodes={childNodes} />
         </CardContent>
       </Card>
-    ) : null,
+    ) : (
+      <Card className="h-full">
+        <CardHeader><CardTitle>Child Contracts</CardTitle></CardHeader>
+        <CardContent>
+          <p className="text-sm text-muted-foreground">No child contracts</p>
+        </CardContent>
+      </Card>
+    ),
     terms: (
       <Card className="h-full">
         <CardHeader>

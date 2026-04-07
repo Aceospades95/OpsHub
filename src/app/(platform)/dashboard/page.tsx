@@ -163,7 +163,14 @@ export default async function DashboardPage() {
           </p>
         </CardContent>
       </Card>
-    ) : null,
+    ) : (
+      <Card className="h-full">
+        <CardContent className="p-4 flex items-center gap-3">
+          <CheckSquare className="h-5 w-5 text-success" />
+          <p className="text-sm text-muted-foreground">No alerts — all contracts are up to date</p>
+        </CardContent>
+      </Card>
+    ),
     "my-tasks": (
       <Card className="h-full">
         <CardHeader>

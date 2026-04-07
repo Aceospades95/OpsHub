@@ -208,7 +208,14 @@ export default async function ProjectDetailPage({ params }: Props) {
           </div>
         </CardContent>
       </Card>
-    ) : null,
+    ) : (
+      <Card className="h-full">
+        <CardHeader><CardTitle>Contracts</CardTitle></CardHeader>
+        <CardContent>
+          <p className="text-sm text-muted-foreground">No contracts linked to this project</p>
+        </CardContent>
+      </Card>
+    ),
     comments: (
       <Card className="h-full">
         <CardHeader>
