@@ -279,7 +279,7 @@ export function PageLayoutClient({
                 gridColumn: `${card.grid.x + 1} / span ${card.grid.w}`,
                 gridRow: `${card.grid.y + 1} / span ${card.grid.h}`,
               }}
-              className="min-h-0 [&>*]:h-full [&>*]:overflow-auto [&>*]:flex [&>*]:flex-col"
+              className="min-h-0 overflow-hidden [&>*]:h-full [&>*]:overflow-auto"
             >
               {cardContentMap[card.id]}
             </div>
