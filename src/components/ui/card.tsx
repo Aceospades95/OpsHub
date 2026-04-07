@@ -5,7 +5,10 @@ interface CardProps {
 
 export function Card({ children, className = "" }: CardProps) {
   return (
-    <div className={`rounded-lg border border-border/80 bg-card text-card-foreground shadow-md ${className}`}>
+    <div
+      className={`rounded-lg bg-card text-card-foreground shadow-md ${className}`}
+      style={{ border: "1px solid color-mix(in srgb, var(--foreground) 12%, transparent)" }}
+    >
       {children}
     </div>
   );
@@ -13,7 +16,10 @@ export function Card({ children, className = "" }: CardProps) {
 
 export function CardHeader({ children, className = "" }: CardProps) {
   return (
-    <div className={`sticky top-0 z-[1] flex flex-col space-y-1.5 px-6 pt-5 pb-3 bg-card border-b border-border/50 rounded-t-lg ${className}`}>
+    <div
+      className={`sticky top-0 z-[1] flex flex-col space-y-1.5 px-6 pt-5 pb-3 bg-card rounded-t-lg ${className}`}
+      style={{ borderBottom: "1px solid color-mix(in srgb, var(--foreground) 8%, transparent)" }}
+    >
       {children}
     </div>
   );
