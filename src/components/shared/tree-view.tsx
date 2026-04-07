@@ -72,6 +72,19 @@ function TreeItem({ node, level = 0 }: { node: TreeNode; level: number }) {
           >
             {node.label}
           </Link>
+
+          {/* Child count badge — next to the name */}
+          {hasChildren && (
+            <span
+              className="text-[10px] font-medium px-1.5 py-0.5 rounded-full shrink-0"
+              style={{
+                backgroundColor: `color-mix(in srgb, ${levelColor} 12%, transparent)`,
+                color: levelColor,
+              }}
+            >
+              {node.children!.length}
+            </span>
+          )}
         </div>
 
         {/* Right side — fixed-width columns, always rendered */}
@@ -83,18 +96,6 @@ function TreeItem({ node, level = 0 }: { node: TreeNode; level: number }) {
           <span className="w-32 text-right text-xs text-muted-foreground truncate">
             {node.meta || ""}
           </span>
-
-          {hasChildren && (
-            <span
-              className="text-[10px] font-medium px-1.5 py-0.5 rounded-full"
-              style={{
-                backgroundColor: `color-mix(in srgb, ${levelColor} 12%, transparent)`,
-                color: levelColor,
-              }}
-            >
-              {node.children!.length}
-            </span>
-          )}
         </div>
       </div>
 
