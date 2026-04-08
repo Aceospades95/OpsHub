@@ -295,6 +295,21 @@ model Project {
   tools      ProjectTool[]
   tasks        Task[]
   sandboxPages SandboxPage[]
+
+  relations        ProjectRelation[] @relation("ProjectRelations")
+  relatedRelations ProjectRelation[] @relation("RelatedProjectRelations")
+}
+
+model ProjectRelation {
+  id               String   @id @default(cuid())
+  projectId        String
+  relatedProjectId String
+  createdAt        DateTime @default(now())
+
+  project        Project @relation("ProjectRelations", fields: [projectId], references: [id], onDelete: Cascade)
+  relatedProject Project @relation("RelatedProjectRelations", fields: [relatedProjectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, relatedProjectId])
 }
 
 model ProjectMember {

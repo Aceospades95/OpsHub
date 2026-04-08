@@ -19,6 +19,7 @@ import { ProjectCreateButton } from "../project-create-button";
 import { AddToolButton } from "./add-tool-button";
 import { TeamHierarchy } from "./team-hierarchy";
 import { PageLayout } from "@/components/shared/page-layout";
+import { TaskCheckbox } from "@/app/(platform)/tasks/task-checkbox";
 
 interface Props {
   params: Promise<{ projectId: string }>;
@@ -87,7 +88,7 @@ export default async function ProjectDetailPage({ params }: Props) {
     orderBy: { name: "asc" },
   });
 
-  const [allUsers, projectTasks, allTools] = await Promise.all([
+  const [allUsers, projectTasks, allTools, allProjects] = await Promise.all([
     db.user.findMany({
       where: { isActive: true },
       select: { id: true, name: true, email: true },
@@ -100,6 +101,11 @@ export default async function ProjectDetailPage({ params }: Props) {
       take: 10,
     }),
     db.tool.findMany({
+      select: { id: true, name: true },
+      orderBy: { name: "asc" },
+    }),
+    db.project.findMany({
+      where: { id: { not: project.id } },
       select: { id: true, name: true },
       orderBy: { name: "asc" },
     }),
@@ -121,6 +127,7 @@ export default async function ProjectDetailPage({ params }: Props) {
           {perms.canCreate && (
             <ProjectCreateButton
               clients={clients}
+              projects={allProjects}
               defaultClientId={project.client.id}
               defaultParentId={project.id}
             />
@@ -268,7 +275,7 @@ export default async function ProjectDetailPage({ params }: Props) {
               {projectTasks.map((task) => (
                 <div key={task.id} className="flex items-center justify-between rounded border border-border p-3 hover:bg-muted transition-colors">
                   <div className="flex items-center gap-3 min-w-0">
-                    <CheckSquare className={`h-4 w-4 shrink-0 ${task.status === "IN_PROGRESS" ? "text-primary" : "text-muted-foreground"}`} />
+                    <TaskCheckbox taskId={task.id} status={task.status} />
                     <div className="min-w-0">
                       <p className="text-sm font-medium truncate">{task.title}</p>
                       <div className="flex items-center gap-2 text-xs text-muted-foreground">

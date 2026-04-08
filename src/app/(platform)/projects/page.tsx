@@ -6,7 +6,8 @@ import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { TreeView, TreeNode } from "@/components/shared/tree-view";
-import { FolderKanban } from "lucide-react";
+import { FolderKanban, Building2 } from "lucide-react";
+import Link from "next/link";
 import { ProjectCreateButton } from "./project-create-button";
 
 interface ProjectWithRelations {
@@ -38,33 +39,37 @@ export default async function ProjectsPage() {
   const perms = await resolveModulePerms(session.user.id, session.user.role, "projects");
   if (!perms.canView) redirect("/dashboard");
 
-  const clients = await db.client.findMany({
-    where: { status: "ACTIVE" },
-    select: { id: true, name: true },
-    orderBy: { name: "asc" },
-  });
-
-  // Fetch root projects with hierarchy, grouped by client
-  const rootProjects = await db.project.findMany({
-    where: { parentProjectId: null },
-    orderBy: { updatedAt: "desc" },
-    include: {
-      client: { select: { id: true, name: true } },
-      _count: { select: { members: true, childProjects: true, tasks: true } },
-      childProjects: {
-        include: {
-          client: { select: { id: true, name: true } },
-          _count: { select: { members: true, childProjects: true, tasks: true } },
-          childProjects: {
-            include: {
-              client: { select: { id: true, name: true } },
-              _count: { select: { members: true, childProjects: true, tasks: true } },
+  const [clients, rootProjects, allProjects] = await Promise.all([
+    db.client.findMany({
+      where: { status: "ACTIVE" },
+      select: { id: true, name: true },
+      orderBy: { name: "asc" },
+    }),
+    db.project.findMany({
+      where: { parentProjectId: null },
+      orderBy: { updatedAt: "desc" },
+      include: {
+        client: { select: { id: true, name: true } },
+        _count: { select: { members: true, childProjects: true, tasks: true } },
+        childProjects: {
+          include: {
+            client: { select: { id: true, name: true } },
+            _count: { select: { members: true, childProjects: true, tasks: true } },
+            childProjects: {
+              include: {
+                client: { select: { id: true, name: true } },
+                _count: { select: { members: true, childProjects: true, tasks: true } },
+              },
             },
           },
         },
       },
-    },
-  });
+    }),
+    db.project.findMany({
+      select: { id: true, name: true },
+      orderBy: { name: "asc" },
+    }),
+  ]);
 
   // Group by client
   const clientMap = new Map<string, { name: string; id: string; projects: ProjectWithRelations[] }>();
@@ -76,19 +81,14 @@ export default async function ProjectsPage() {
     clientMap.get(clientId)!.projects.push(project as unknown as ProjectWithRelations);
   }
 
-  const clientTreeNodes: TreeNode[] = Array.from(clientMap.values()).map((client) => ({
-    id: client.id,
-    label: client.name,
-    href: `/clients/${client.id}`,
-    children: buildTreeNodes(client.projects),
-  }));
+  const clientGroups = Array.from(clientMap.values()).sort((a, b) => a.name.localeCompare(b.name));
 
   return (
     <div>
       <PageHeader
         title="Projects"
         description="Manage projects across all clients"
-        actions={perms.canCreate ? <ProjectCreateButton clients={clients} /> : undefined}
+        actions={perms.canCreate ? <ProjectCreateButton clients={clients} projects={allProjects} /> : undefined}
       />
 
       {rootProjects.length === 0 ? (
@@ -98,23 +98,44 @@ export default async function ProjectsPage() {
           description="Create your first project to get started"
         />
       ) : (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <FolderKanban className="h-5 w-5" />
-              Project Hierarchy
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex items-center gap-2 px-2 py-2 mb-2 border-b text-xs font-semibold uppercase tracking-wider text-muted-foreground" style={{ borderColor: "color-mix(in srgb, var(--foreground) 10%, transparent)" }}>
-              <span className="w-6" />
-              <span className="flex-1">Project</span>
-              <span className="w-24 text-center">Status</span>
-              <span className="w-32 text-right">Members</span>
-            </div>
-            <TreeView nodes={clientTreeNodes} />
-          </CardContent>
-        </Card>
+        <div className="space-y-6">
+          {clientGroups.map((client) => (
+            <Card key={client.id}>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <CardTitle className="flex items-center gap-2">
+                    <Building2 className="h-5 w-5 text-primary" />
+                    <Link href={`/clients/${client.id}`} className="hover:underline hover:text-primary">
+                      {client.name}
+                    </Link>
+                    <span className="text-sm font-normal text-muted-foreground ml-1">
+                      {client.projects.length} {client.projects.length === 1 ? "project" : "projects"}
+                    </span>
+                  </CardTitle>
+                  {perms.canCreate && (
+                    <ProjectCreateButton
+                      clients={clients}
+                      projects={allProjects}
+                      defaultClientId={client.id}
+                    />
+                  )}
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div
+                  className="flex items-center gap-2 px-2 py-2 mb-2 border-b text-xs font-semibold uppercase tracking-wider text-muted-foreground"
+                  style={{ borderColor: "color-mix(in srgb, var(--foreground) 10%, transparent)" }}
+                >
+                  <span className="w-6" />
+                  <span className="flex-1">Project</span>
+                  <span className="w-24 text-center">Status</span>
+                  <span className="w-32 text-right">Members</span>
+                </div>
+                <TreeView nodes={buildTreeNodes(client.projects)} />
+              </CardContent>
+            </Card>
+          ))}
+        </div>
       )}
     </div>
   );
