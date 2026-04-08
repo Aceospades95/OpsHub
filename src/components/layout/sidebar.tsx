@@ -9,6 +9,8 @@ import {
   FolderKanban,
   FileText,
   CheckSquare,
+  Award,
+  Users,
   Truck,
   Wrench,
   Blocks,
@@ -17,6 +19,7 @@ import {
   Palette,
   FileCode,
   PanelLeft,
+  Puzzle,
   ChevronLeft,
   ChevronRight,
   Menu,
@@ -44,6 +47,8 @@ const ICON_MAP: Record<string, LucideIcon> = {
   FolderKanban,
   FileText,
   CheckSquare,
+  Award,
+  Users,
   Truck,
   Wrench,
   Blocks,
@@ -52,6 +57,7 @@ const ICON_MAP: Record<string, LucideIcon> = {
   Palette,
   FileCode,
   PanelLeft,
+  Puzzle,
 };
 
 const SYSTEM_DEFAULTS: Record<string, { label: string; href: string; icon: string }> = {
@@ -59,12 +65,15 @@ const SYSTEM_DEFAULTS: Record<string, { label: string; href: string; icon: strin
   clients: { label: "Clients", href: "/clients", icon: "Building2" },
   projects: { label: "Projects", href: "/projects", icon: "FolderKanban" },
   tasks: { label: "Tasks", href: "/tasks", icon: "CheckSquare" },
+  team: { label: "Team", href: "/team", icon: "Users" },
   contracts: { label: "Contracts", href: "/contracts", icon: "FileText" },
+  certifications: { label: "Certifications", href: "/certifications", icon: "Award" },
   suppliers: { label: "Suppliers", href: "/suppliers", icon: "Truck" },
   tools: { label: "Tools", href: "/tools", icon: "Wrench" },
   intranet: { label: "Intranet", href: "/intranet", icon: "Globe" },
   sandbox: { label: "Custom Pages", href: "/sandbox", icon: "Blocks" },
   admin: { label: "Admin", href: "/admin/users", icon: "Shield" },
+  widgets: { label: "Widget Builder", href: "/admin/widgets", icon: "Puzzle" },
   theme: { label: "Theme", href: "/admin/theme", icon: "Palette" },
   sidebar: { label: "Sidebar", href: "/admin/sidebar", icon: "PanelLeft" },
 };
@@ -73,6 +82,7 @@ const SYSTEM_DEFAULTS: Record<string, { label: string; href: string; icon: strin
 const ROLE_GATED: Record<string, (role: string) => boolean> = {
   sandbox: (role) => role === "ADMIN" || role === "DEVELOPER",
   admin: (role) => role === "ADMIN",
+  widgets: (role) => role === "ADMIN" || role === "DEVELOPER",
   theme: (role) => role === "ADMIN",
   sidebar: (role) => role === "ADMIN",
 };
@@ -137,13 +147,33 @@ export function Sidebar({ visibleModules, userRole = "", customPages = [], sideb
   }
 
   // Use config sections or fall back to flat list
-  const sections = sidebarConfig?.sections || [
+  const baseSections = sidebarConfig?.sections || [
     {
       id: "main",
       title: "",
       items: Object.keys(SYSTEM_DEFAULTS).map((key) => ({ key, visible: true })),
     },
   ];
+
+  // Merge any new system modules not in saved config into the admin section
+  const allConfigKeys = new Set(baseSections.flatMap((s) => s.items.map((i) => i.key)));
+  const missingKeys = Object.keys(SYSTEM_DEFAULTS).filter((k) => !allConfigKeys.has(k));
+  let sections = baseSections;
+  if (missingKeys.length > 0) {
+    const ADMIN_KEYS = new Set(["admin", "widgets", "theme", "sidebar", "sandbox"]);
+    const mainMissing = missingKeys.filter((k) => !ADMIN_KEYS.has(k));
+    const adminMissing = missingKeys.filter((k) => ADMIN_KEYS.has(k));
+
+    sections = sections.map((s) => {
+      if (s.id === "main" && mainMissing.length > 0) {
+        return { ...s, items: [...s.items, ...mainMissing.map((k) => ({ key: k, visible: true }))] };
+      }
+      if (s.id === "admin-section" && adminMissing.length > 0) {
+        return { ...s, items: [...s.items, ...adminMissing.map((k) => ({ key: k, visible: true }))] };
+      }
+      return s;
+    });
+  }
 
   const renderNavLink = (href: string, label: string, Icon: LucideIcon, key: string) => {
     const isActive = pathname === href || pathname.startsWith(href + "/");

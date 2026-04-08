@@ -199,7 +199,12 @@ export function getGlobalWidget(id: string): WidgetDefinition | undefined {
   return GLOBAL_WIDGETS.find((w) => w.id === id);
 }
 
-/** Check if a card ID is a global widget (vs page-specific) */
+/** Check if a card ID is a custom (user-built) widget */
+export function isCustomWidget(id: string): boolean {
+  return id.startsWith("custom-widget-");
+}
+
+/** Check if a card ID is a global widget (hardcoded or custom) */
 export function isGlobalWidget(id: string): boolean {
-  return id.startsWith("widget-");
+  return id.startsWith("widget-") || id.startsWith("custom-widget-");
 }

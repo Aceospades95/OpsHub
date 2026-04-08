@@ -1,9 +1,11 @@
 import { auth } from "@/lib/auth";
+import { db } from "@/lib/db";
 import { getPageLayout, getAllLayoutTemplates } from "@/actions/page-layout";
 import { resolveLayout, PAGE_CARDS, DEFAULT_GAP, type LayoutTemplate } from "@/lib/page-layout";
 import { isGlobalWidget } from "@/lib/widget-registry";
 import { WidgetRenderer } from "@/components/widgets/widget-renderer";
 import { PageLayoutClient } from "./page-layout-client";
+import type { WidgetCategory } from "@/lib/widget-registry";
 
 interface PageLayoutProps {
   pageType: string;
@@ -26,7 +28,7 @@ export async function PageLayout({ pageType, cards, canEdit }: PageLayoutProps) 
     cardLabels[d.id] = d.label;
   }
 
-  // Render global widgets that are in the layout
+  // Render global/custom widgets that are in the layout
   const allCards = { ...cards };
   for (const card of resolvedCards) {
     if (isGlobalWidget(card.id) && !allCards[card.id]) {
@@ -36,8 +38,29 @@ export async function PageLayout({ pageType, cards, canEdit }: PageLayoutProps) 
 
   // Fetch ALL templates across all pages if user can edit
   let templates: LayoutTemplate[] = [];
+  let customWidgetDefs: { id: string; label: string; description: string; category: WidgetCategory; icon: string; defaultGrid: { w: number; h: number; minW: number; minH: number } }[] = [];
+
   if (canEdit) {
     templates = await getAllLayoutTemplates();
+
+    // Load published custom widgets for the catalog
+    try {
+      const published = await db.customWidget.findMany({
+        where: { isPublished: true },
+        select: { id: true, name: true, description: true, category: true, icon: true },
+        orderBy: { name: "asc" },
+      });
+      customWidgetDefs = published.map((w) => ({
+        id: `custom-widget-${w.id}`,
+        label: w.name,
+        description: w.description || "",
+        category: (w.category || "data") as WidgetCategory,
+        icon: w.icon || "BarChart3",
+        defaultGrid: { w: 6, h: 8, minW: 3, minH: 4 },
+      }));
+    } catch {
+      // DB not available during build
+    }
   }
 
   return (
@@ -48,6 +71,7 @@ export async function PageLayout({ pageType, cards, canEdit }: PageLayoutProps) 
       cardLabels={cardLabels}
       canEdit={canEdit}
       templates={templates}
+      customWidgets={customWidgetDefs}
     >
       {Object.entries(allCards).map(([id, node]) => (
         <div key={id} data-card-id={id}>

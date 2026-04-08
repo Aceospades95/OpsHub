@@ -9,7 +9,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Globe, Pin } from "lucide-react";
 import Link from "next/link";
 import { IntranetCreateButton } from "./intranet-create-button";
-import { PageLayout } from "@/components/shared/page-layout";
+import { IntranetCategoryAdd } from "./intranet-category-add";
 
 const categoryLabels: Record<string, string> = {
   EXPENSE_REPORT: "Expense Reports",
@@ -42,48 +42,6 @@ export default async function IntranetPage() {
     grouped.get(cat)!.push(r);
   }
 
-  const canEditLayout = session.user.role === "ADMIN" || session.user.role === "DEVELOPER";
-
-  const cardMap: Record<string, React.ReactNode> = {
-    resources: resources.length === 0 ? (
-      <EmptyState icon={Globe} title="No resources yet" description="Create your first intranet resource" />
-    ) : (
-      <div className="space-y-8">
-        {Array.from(grouped.entries()).map(([category, items]) => (
-          <div key={category}>
-            <h2 className="text-lg font-semibold mb-3">{categoryLabels[category] || category}</h2>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {items.map((resource) => (
-                <Link key={resource.id} href={`/intranet/${resource.id}`}>
-                  <Card className="hover:shadow-md transition-shadow h-full">
-                    <CardContent className="p-5">
-                      <div className="flex items-start justify-between mb-2">
-                        <h3 className="font-semibold text-foreground">{resource.title}</h3>
-                        <div className="flex gap-1">
-                          {resource.pinned && <Pin className="h-4 w-4 text-primary" />}
-                        </div>
-                      </div>
-                      {resource.description && (
-                        <p className="text-sm text-muted-foreground line-clamp-2">{resource.description}</p>
-                      )}
-                      <div className="flex gap-2 mt-3">
-                        {resource.published ? (
-                          <Badge variant="success">Published</Badge>
-                        ) : (
-                          <Badge variant="secondary">Draft</Badge>
-                        )}
-                      </div>
-                    </CardContent>
-                  </Card>
-                </Link>
-              ))}
-            </div>
-          </div>
-        ))}
-      </div>
-    ),
-  };
-
   return (
     <div>
       <PageHeader
@@ -92,7 +50,48 @@ export default async function IntranetPage() {
         actions={perms.canCreate ? <IntranetCreateButton /> : undefined}
       />
 
-      <PageLayout pageType="intranet" cards={cardMap} canEdit={canEditLayout} />
+      {resources.length === 0 ? (
+        <EmptyState icon={Globe} title="No resources yet" description="Create your first intranet resource" />
+      ) : (
+        <div className="space-y-8">
+          {Array.from(grouped.entries()).map(([category, items]) => (
+            <div key={category}>
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="text-lg font-semibold">{categoryLabels[category] || category}</h2>
+                {perms.canCreate && (
+                  <IntranetCategoryAdd category={category} categoryLabel={categoryLabels[category] || category} />
+                )}
+              </div>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {items.map((resource) => (
+                  <Link key={resource.id} href={`/intranet/${resource.id}`}>
+                    <Card className="hover:shadow-lg transition-shadow h-full">
+                      <CardContent className="p-5">
+                        <div className="flex items-start justify-between mb-2">
+                          <h3 className="font-semibold text-foreground">{resource.title}</h3>
+                          <div className="flex gap-1">
+                            {resource.pinned && <Pin className="h-4 w-4 text-primary" />}
+                          </div>
+                        </div>
+                        {resource.description && (
+                          <p className="text-sm text-muted-foreground line-clamp-2">{resource.description}</p>
+                        )}
+                        <div className="flex gap-2 mt-3">
+                          {resource.published ? (
+                            <Badge variant="success">Published</Badge>
+                          ) : (
+                            <Badge variant="secondary">Draft</Badge>
+                          )}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </Link>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

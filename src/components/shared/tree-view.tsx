@@ -22,45 +22,91 @@ function TreeItem({ node, level = 0 }: { node: TreeNode; level: number }) {
   const [expanded, setExpanded] = useState(true);
   const hasChildren = node.children && node.children.length > 0;
 
+  const levelColor = level === 0 ? "var(--primary)" : "var(--accent)";
+
+  function toggle() {
+    if (hasChildren) setExpanded(!expanded);
+  }
+
   return (
     <div>
       <div
-        className="flex items-center gap-2 rounded px-2 py-1.5 hover:bg-muted transition-colors"
-        style={{ paddingLeft: `${level * 20 + 8}px` }}
+        className={`flex items-center gap-2 rounded-lg px-3 py-2.5 transition-colors ${
+          hasChildren ? "cursor-pointer hover:bg-muted/50" : ""
+        }`}
+        style={{
+          backgroundColor: `color-mix(in srgb, var(--card) ${Math.max(70, 97 - level * 3)}%, var(--foreground) ${3 + level * 3}%)`,
+          border: `1.5px solid color-mix(in srgb, ${levelColor} 35%, transparent)`,
+          marginBottom: level === 0 ? "6px" : "3px",
+          marginLeft: level > 0 ? "2px" : undefined,
+        }}
       >
-        {hasChildren ? (
-          <button
-            onClick={() => setExpanded(!expanded)}
-            className="rounded p-0.5 hover:bg-border shrink-0"
-          >
-            {expanded ? (
-              <ChevronDown className="h-4 w-4 text-muted-foreground" />
-            ) : (
-              <ChevronRight className="h-4 w-4 text-muted-foreground" />
-            )}
-          </button>
-        ) : (
-          <span className="w-5 shrink-0" />
-        )}
-        <Link
-          href={node.href}
-          className="flex-1 text-sm font-medium hover:text-primary truncate min-w-0"
+        {/* Collapse toggle area — everything except the link is a toggle */}
+        <div
+          className={`flex items-center gap-2 flex-1 min-w-0 ${hasChildren ? "cursor-pointer" : ""}`}
+          onClick={toggle}
         >
-          {node.label}
-        </Link>
-        {node.status && (
-          <span className="w-24 flex justify-center shrink-0">
-            <StatusBadge status={node.status} />
+          {/* Expand/collapse icon */}
+          {hasChildren ? (
+            <span className="shrink-0" style={{ color: levelColor }}>
+              {expanded ? (
+                <ChevronDown className="h-5 w-5" />
+              ) : (
+                <ChevronRight className="h-5 w-5" />
+              )}
+            </span>
+          ) : (
+            <span className="w-6 shrink-0 flex justify-center">
+              <span
+                className="h-2 w-2 rounded-full"
+                style={{ backgroundColor: `color-mix(in srgb, ${levelColor} 40%, transparent)` }}
+              />
+            </span>
+          )}
+
+          {/* Label — link that navigates */}
+          <Link
+            href={node.href}
+            onClick={(e) => e.stopPropagation()}
+            className="text-sm font-medium hover:underline hover:text-primary truncate"
+          >
+            {node.label}
+          </Link>
+
+          {/* Child count badge — next to the name */}
+          {hasChildren && (
+            <span
+              className="text-[10px] font-medium px-1.5 py-0.5 rounded-full shrink-0"
+              style={{
+                backgroundColor: `color-mix(in srgb, ${levelColor} 12%, transparent)`,
+                color: levelColor,
+              }}
+            >
+              {node.children!.length}
+            </span>
+          )}
+        </div>
+
+        {/* Right side — fixed-width columns, always rendered */}
+        <div className="flex items-center gap-2 shrink-0" onClick={toggle}>
+          <span className="w-24 flex justify-center">
+            {node.status ? <StatusBadge status={node.status} /> : null}
           </span>
-        )}
-        {node.meta && (
-          <span className="w-32 text-right text-xs text-muted-foreground shrink-0 truncate">
-            {node.meta}
+
+          <span className="w-32 text-right text-xs text-muted-foreground truncate">
+            {node.meta || ""}
           </span>
-        )}
+        </div>
       </div>
+
+      {/* Children with colored connector line */}
       {expanded && hasChildren && (
-        <div>
+        <div
+          className="ml-5 pl-4 pb-1"
+          style={{
+            borderLeft: `2px solid color-mix(in srgb, ${levelColor} 35%, transparent)`,
+          }}
+        >
           {node.children!.map((child) => (
             <TreeItem key={child.id} node={child} level={level + 1} />
           ))}
@@ -76,7 +122,7 @@ export function TreeView({ nodes }: TreeViewProps) {
   }
 
   return (
-    <div className="space-y-0.5">
+    <div>
       {nodes.map((node) => (
         <TreeItem key={node.id} node={node} level={0} />
       ))}

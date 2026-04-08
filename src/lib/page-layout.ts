@@ -39,6 +39,7 @@ export const PAGE_TYPE_LABELS: Record<string, string> = {
   "client-detail": "Client Detail",
   "project-detail": "Project Detail",
   "contract-detail": "Contract Detail",
+  "certification-detail": "Certification Detail",
   "intranet-detail": "Intranet Detail",
   intranet: "Intranet",
 };
@@ -79,6 +80,11 @@ export const PAGE_CARDS: Record<string, CardDefinition[]> = {
   "intranet-detail": [
     { id: "content", label: "Content", defaultGrid: { x: 0, y: 0, w: 8, h: 12, minW: 4, minH: 4 } },
     { id: "attachments", label: "Attachments", defaultGrid: { x: 8, y: 0, w: 4, h: 12, minW: 3, minH: 4 } },
+  ],
+  "certification-detail": [
+    { id: "details", label: "Certification Details", defaultGrid: { x: 0, y: 0, w: 6, h: 10, minW: 4, minH: 4 } },
+    { id: "renewal", label: "Renewal Information", defaultGrid: { x: 6, y: 0, w: 6, h: 10, minW: 4, minH: 4 } },
+    { id: "comments", label: "Comments", defaultGrid: { x: 0, y: 10, w: 12, h: 8, minW: 4, minH: 4 } },
   ],
   intranet: [
     { id: "resources", label: "Resources", defaultGrid: { x: 0, y: 0, w: 12, h: 14, minW: 6, minH: 4 } },

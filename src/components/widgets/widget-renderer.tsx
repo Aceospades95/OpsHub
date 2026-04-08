@@ -1,5 +1,6 @@
-import { isGlobalWidget } from "@/lib/widget-registry";
+import { isGlobalWidget, isCustomWidget } from "@/lib/widget-registry";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { CustomWidgetRenderer } from "./custom-widget-renderer";
 import { WidgetKpiCard } from "./widget-kpi-card";
 import { WidgetProgressTracker } from "./widget-progress-tracker";
 import { WidgetStatsSummary } from "./widget-stats-summary";
@@ -48,6 +49,12 @@ const WIDGET_MAP: Record<string, React.ComponentType<{ userId: string }>> = {
 };
 
 export async function WidgetRenderer({ widgetId, userId }: WidgetRendererProps) {
+  // Custom widgets built via Widget Builder
+  if (isCustomWidget(widgetId)) {
+    const actualId = widgetId.replace("custom-widget-", "");
+    return <CustomWidgetRenderer widgetId={actualId} userId={userId} />;
+  }
+
   if (!isGlobalWidget(widgetId)) return null;
 
   const Component = WIDGET_MAP[widgetId];

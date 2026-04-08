@@ -6,7 +6,7 @@ export const DEFAULT_THEME: Record<string, string> = {
   accent: "#22885a",
   background: "#ffffff",
   foreground: "#0a0a0a",
-  muted: "#f5f7f5",
+  muted: "#eef1ee",
   "muted-foreground": "#6b7c6b",
   border: "#d4ddd4",
   input: "#d4ddd4",

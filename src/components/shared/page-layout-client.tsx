@@ -46,6 +46,15 @@ const GridEditorInner = dynamic(
   { ssr: false, loading: () => null }
 );
 
+interface CustomWidgetDef {
+  id: string;
+  label: string;
+  description: string;
+  category: WidgetCategory;
+  icon: string;
+  defaultGrid: { w: number; h: number; minW: number; minH: number };
+}
+
 interface PageLayoutClientProps {
   pageType: string;
   initialCards: CardConfig[];
@@ -53,6 +62,7 @@ interface PageLayoutClientProps {
   cardLabels: Record<string, string>;
   canEdit: boolean;
   templates: LayoutTemplate[];
+  customWidgets?: CustomWidgetDef[];
   children: ReactNode;
 }
 
@@ -63,6 +73,7 @@ export function PageLayoutClient({
   cardLabels: pageCardLabels,
   canEdit,
   templates: initialTemplates,
+  customWidgets = [],
   children,
 }: PageLayoutClientProps) {
   const [editing, setEditing] = useState(false);
@@ -81,6 +92,9 @@ export function PageLayoutClient({
   const allCardLabels = useMemo(() => {
     const labels = { ...pageCardLabels };
     for (const w of GLOBAL_WIDGETS) {
+      labels[w.id] = w.label;
+    }
+    for (const w of customWidgets) {
       labels[w.id] = w.label;
     }
     return labels;
@@ -113,6 +127,11 @@ export function PageLayoutClient({
     }
     return grouped;
   }, [cardIds]);
+
+  // Custom widgets not in layout
+  const availableCustomWidgets = useMemo(() => {
+    return customWidgets.filter((w) => !cardIds.has(w.id));
+  }, [cardIds, customWidgets]);
 
   const handleLayoutChange = useCallback(
     (layout: readonly { i: string; x: number; y: number; w: number; h: number }[]) => {
@@ -260,7 +279,7 @@ export function PageLayoutClient({
                 gridColumn: `${card.grid.x + 1} / span ${card.grid.w}`,
                 gridRow: `${card.grid.y + 1} / span ${card.grid.h}`,
               }}
-              className="min-h-0 overflow-auto [&>*]:h-full"
+              className="min-h-0 overflow-hidden [&>*]:h-full [&>*]:overflow-auto"
             >
               {cardContentMap[card.id]}
             </div>
@@ -287,7 +306,8 @@ export function PageLayoutClient({
   const hasHidden = hiddenCards.length > 0;
   const hasAvailablePage = availablePageWidgets.length > 0;
   const hasAvailableGlobal = availableGlobalWidgets.size > 0;
-  const hasAnythingToAdd = hasHidden || hasAvailablePage || hasAvailableGlobal;
+  const hasAvailableCustom = availableCustomWidgets.length > 0;
+  const hasAnythingToAdd = hasHidden || hasAvailablePage || hasAvailableGlobal || hasAvailableCustom;
 
   return (
     <div className="relative">
@@ -406,6 +426,33 @@ export function PageLayoutClient({
                               </div>
                             )}
                           </div>
+                        ))}
+                      </>
+                    )}
+
+                    {/* Custom Widgets (built via Widget Builder) */}
+                    {hasAvailableCustom && (
+                      <>
+                        <div className="border-t border-border my-1" />
+                        <div className="px-3 py-1.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+                          Custom Widgets
+                        </div>
+                        {availableCustomWidgets.map((w) => (
+                          <button
+                            key={w.id}
+                            onClick={() => {
+                              const maxY = cards.reduce((max, c) => Math.max(max, c.grid.y + c.grid.h), 0);
+                              setCards((prev) => [...prev, { id: w.id, visible: true, grid: { x: 0, y: maxY, ...w.defaultGrid } }]);
+                              setShowAddWidget(false);
+                            }}
+                            className="w-full text-left px-3 py-2 text-sm hover:bg-muted flex items-start gap-2"
+                          >
+                            <Plus className="h-3.5 w-3.5 text-accent shrink-0 mt-0.5" />
+                            <div className="flex-1 min-w-0">
+                              <div className="font-medium truncate">{w.label}</div>
+                              {w.description && <div className="text-xs text-muted-foreground line-clamp-1">{w.description}</div>}
+                            </div>
+                          </button>
                         ))}
                       </>
                     )}

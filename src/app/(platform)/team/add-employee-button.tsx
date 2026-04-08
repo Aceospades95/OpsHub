@@ -3,17 +3,13 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useFormState } from "react-dom";
-import { Button } from "@/components/ui/button";
 import { createUser } from "@/actions/admin";
-import { Plus } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { UserPlus } from "lucide-react";
 
 const ROLES = ["VIEWER", "CONTRIBUTOR", "DEVELOPER", "MANAGER", "ADMIN"];
 
-interface Props {
-  allUsers: { id: string; name: string }[];
-}
-
-export function UserCreateButton({ allUsers }: Props) {
+export function AddEmployeeButton({ managers }: { managers: { id: string; name: string }[] }) {
   const [open, setOpen] = useState(false);
   const [hasLogin, setHasLogin] = useState(true);
   const [state, action] = useFormState(createUser, null);
@@ -29,29 +25,36 @@ export function UserCreateButton({ allUsers }: Props) {
 
   return (
     <>
-      <Button onClick={() => setOpen(true)} size="sm">
-        <Plus className="h-4 w-4 mr-1" /> New User
+      <Button size="sm" onClick={() => setOpen(true)}>
+        <UserPlus className="h-4 w-4 mr-1" /> Add Employee
       </Button>
 
       {open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setOpen(false)}>
           <div className="bg-card rounded-lg shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto p-6" onClick={(e) => e.stopPropagation()}>
-            <h2 className="text-lg font-semibold mb-4">Create User</h2>
+            <h2 className="text-lg font-semibold mb-4">Add Employee</h2>
             <form action={action} className="space-y-4">
               <div>
                 <label className="text-sm font-medium">Full Name *</label>
                 <input name="name" required className="w-full mt-1 px-3 py-2 text-sm border border-input rounded-md bg-background" />
               </div>
 
+              {/* Login access toggle */}
               <div className="flex items-center gap-2 p-3 rounded-md bg-muted">
                 <input type="hidden" name="hasLoginAccess" value={hasLogin ? "true" : "false"} />
                 <label className="flex items-center gap-2 text-sm cursor-pointer">
-                  <input type="checkbox" checked={hasLogin} onChange={(e) => setHasLogin(e.target.checked)} className="accent-primary" />
+                  <input
+                    type="checkbox"
+                    checked={hasLogin}
+                    onChange={(e) => setHasLogin(e.target.checked)}
+                    className="accent-primary"
+                  />
                   Has login access
                 </label>
-                <span className="text-xs text-muted-foreground">Uncheck for tracked-only employees</span>
+                <span className="text-xs text-muted-foreground">Uncheck for employees who don&apos;t need a system account</span>
               </div>
 
+              {/* Email + Password — only shown for login users */}
               {hasLogin && (
                 <div className="grid grid-cols-2 gap-3">
                   <div>
@@ -96,7 +99,7 @@ export function UserCreateButton({ allUsers }: Props) {
                   <label className="text-sm font-medium">Reports To</label>
                   <select name="managerId" className="w-full mt-1 px-3 py-2 text-sm border border-input rounded-md bg-background">
                     <option value="">None</option>
-                    {allUsers.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+                    {managers.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
                   </select>
                 </div>
               </div>
@@ -105,7 +108,7 @@ export function UserCreateButton({ allUsers }: Props) {
 
               <div className="flex justify-end gap-2">
                 <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-                <Button type="submit">Create User</Button>
+                <Button type="submit">Create Employee</Button>
               </div>
             </form>
           </div>

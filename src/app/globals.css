@@ -10,7 +10,7 @@
   --secondary: #edf5f0;
   --secondary-foreground: #15583e;
   --accent: #22885a;
-  --muted: #f5f7f5;
+  --muted: #eef1ee;
   --muted-foreground: #6b7c6b;
   --border: #d4ddd4;
   --input: #d4ddd4;
@@ -40,6 +40,23 @@ body {
 a {
   color: inherit;
   text-decoration: none;
+}
+
+/* Page background — slightly darker than muted so cards pop */
+.page-bg {
+  background: var(--muted);
+  background-image: linear-gradient(
+    to bottom,
+    color-mix(in srgb, var(--border) 15%, var(--muted) 85%),
+    color-mix(in srgb, var(--border) 15%, var(--muted) 85%)
+  );
+}
+
+/* Fallback for browsers without color-mix */
+@supports not (background: color-mix(in srgb, red, blue)) {
+  .page-bg {
+    background: var(--muted);
+  }
 }
 
 /* ===== react-grid-layout core styles ===== */
