@@ -112,13 +112,15 @@ function OrgChartView({ users, search, currentUserId }: { users: UserData[]; sea
     );
   }, [users, search]);
 
-  const tree = useMemo(() => buildOrgTree(filtered), [filtered]);
+  const tree = useMemo(() => buildOrgTree(
+    filtered.map((u) => ({ ...u, href: `/admin/users/${u.id}` }))
+  ), [filtered]);
 
   return (
     <Card>
       <CardContent className="p-4">
         <div className="text-xs text-muted-foreground mb-2">
-          {users.length} team members · Click nodes to collapse/expand
+          {users.length} team members · Click a person to view their profile
         </div>
         <OrgChartTree nodes={tree} />
       </CardContent>

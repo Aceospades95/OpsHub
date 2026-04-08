@@ -1,9 +1,8 @@
 "use client";
 
-import { useState } from "react";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { ChevronDown, ChevronRight } from "lucide-react";
+import Link from "next/link";
 
 export interface OrgChartNode {
   id: string;
@@ -13,37 +12,34 @@ export interface OrgChartNode {
   location?: string;
   avatar?: string | null;
   role?: string;
+  href?: string;
   children: OrgChartNode[];
 }
 
 interface OrgChartTreeProps {
   nodes: OrgChartNode[];
-  onNodeClick?: (id: string) => void;
   compact?: boolean;
   showRoleBadge?: boolean;
 }
 
+const lineColor = "color-mix(in srgb, var(--primary) 30%, transparent)";
+
 function NodeCard({
   node,
   compact,
-  onClick,
   showRoleBadge,
 }: {
   node: OrgChartNode;
   compact?: boolean;
-  onClick?: () => void;
   showRoleBadge?: boolean;
 }) {
-  return (
-    <button
-      onClick={onClick}
+  const content = (
+    <div
       className={`
         rounded-lg bg-card shadow-sm text-left transition-all hover:shadow-md
         ${compact ? "px-3 py-2 min-w-[120px]" : "px-4 py-3 min-w-[160px] max-w-[240px]"}
       `}
-      style={{
-        border: "1.5px solid color-mix(in srgb, var(--primary) 30%, transparent)",
-      }}
+      style={{ border: `1.5px solid ${lineColor}` }}
     >
       <div className={`flex items-center ${compact ? "gap-2" : "gap-3"}`}>
         <Avatar name={node.name} size={compact ? "xs" : "sm"} />
@@ -65,107 +61,73 @@ function NodeCard({
           <Badge variant="outline" className="text-[10px]">{node.role}</Badge>
         </div>
       )}
-    </button>
+    </div>
   );
-}
 
-function VerticalLine({ compact }: { compact?: boolean }) {
-  return <div className={`w-px mx-auto ${compact ? "h-5" : "h-7"}`} style={{ backgroundColor: "color-mix(in srgb, var(--primary) 25%, transparent)" }} />;
+  if (node.href) {
+    return <Link href={node.href} className="block">{content}</Link>;
+  }
+  return content;
 }
 
 function OrgBranch({
   node,
   compact,
-  onNodeClick,
   showRoleBadge,
 }: {
   node: OrgChartNode;
   compact?: boolean;
-  onNodeClick?: (id: string) => void;
   showRoleBadge?: boolean;
 }) {
-  const [expanded, setExpanded] = useState(true);
   const hasChildren = node.children.length > 0;
+  const vLineH = compact ? 20 : 28;
 
   return (
     <div className="flex flex-col items-center">
-      {/* Node card */}
-      <div className="relative">
-        <NodeCard
-          node={node}
-          compact={compact}
-          showRoleBadge={showRoleBadge}
-          onClick={() => {
-            if (hasChildren) setExpanded(!expanded);
-            onNodeClick?.(node.id);
-          }}
-        />
-        {hasChildren && (
-          <span
-            className="absolute -bottom-1 left-1/2 -translate-x-1/2 translate-y-full z-10 bg-card rounded-full p-0.5 cursor-pointer"
-            style={{ border: "1px solid color-mix(in srgb, var(--primary) 25%, transparent)" }}
-            onClick={(e) => { e.stopPropagation(); setExpanded(!expanded); }}
-          >
-            {expanded
-              ? <ChevronDown className={compact ? "h-3 w-3" : "h-3.5 w-3.5"} />
-              : <ChevronRight className={compact ? "h-3 w-3" : "h-3.5 w-3.5"} />
-            }
-          </span>
-        )}
-      </div>
+      <NodeCard node={node} compact={compact} showRoleBadge={showRoleBadge} />
 
-      {/* Children */}
-      {hasChildren && expanded && (
+      {hasChildren && (
         <>
-          {/* Vertical line from parent down */}
-          <VerticalLine compact={compact} />
+          {/* Vertical line from parent down to connector */}
+          <div style={{ width: 1, height: vLineH, backgroundColor: lineColor }} />
 
           {node.children.length === 1 ? (
-            /* Single child — just a straight line down */
-            <OrgBranch
-              node={node.children[0]}
-              compact={compact}
-              onNodeClick={onNodeClick}
-              showRoleBadge={showRoleBadge}
-            />
+            <OrgBranch node={node.children[0]} compact={compact} showRoleBadge={showRoleBadge} />
           ) : (
-            /* Multiple children — horizontal bar connecting all */
-            <div>
-              {/* Row of vertical stubs + horizontal connector */}
-              <div className={`flex ${compact ? "gap-3" : "gap-6"}`}>
-                {node.children.map((child, idx) => (
-                  <div key={child.id} className="flex flex-col items-center flex-1">
-                    {/* Top half: horizontal line piece + vertical stub */}
-                    <div className="self-stretch relative" style={{ height: compact ? "16px" : "24px" }}>
-                      {/* Horizontal line — extends left/right to connect siblings */}
+            /* Multiple children: horizontal bar + vertical stubs */
+            <div className={`flex ${compact ? "gap-3" : "gap-6"}`}>
+              {node.children.map((child, idx) => {
+                const isFirst = idx === 0;
+                const isLast = idx === node.children.length - 1;
+                return (
+                  <div key={child.id} className="flex flex-col items-center">
+                    {/* Horizontal + vertical connector */}
+                    <div className="self-stretch relative" style={{ height: vLineH }}>
+                      {/* Horizontal piece */}
                       <div
                         className="absolute top-0"
                         style={{
-                          left: idx === 0 ? "50%" : 0,
-                          right: idx === node.children.length - 1 ? "50%" : 0,
-                          height: "1px",
-                          backgroundColor: "color-mix(in srgb, var(--primary) 25%, transparent)",
+                          height: 1,
+                          backgroundColor: lineColor,
+                          left: isFirst ? "50%" : 0,
+                          right: isLast ? "50%" : 0,
                         }}
                       />
-                      {/* Vertical stub down to child */}
+                      {/* Vertical stub */}
                       <div
-                        className="absolute left-1/2 -translate-x-1/2 top-0 w-px"
+                        className="absolute top-0 left-1/2"
                         style={{
+                          width: 1,
                           height: "100%",
-                          backgroundColor: "color-mix(in srgb, var(--primary) 25%, transparent)",
+                          backgroundColor: lineColor,
+                          transform: "translateX(-0.5px)",
                         }}
                       />
                     </div>
-                    {/* The child branch */}
-                    <OrgBranch
-                      node={child}
-                      compact={compact}
-                      onNodeClick={onNodeClick}
-                      showRoleBadge={showRoleBadge}
-                    />
+                    <OrgBranch node={child} compact={compact} showRoleBadge={showRoleBadge} />
                   </div>
-                ))}
-              </div>
+                );
+              })}
             </div>
           )}
         </>
@@ -174,7 +136,7 @@ function OrgBranch({
   );
 }
 
-export function OrgChartTree({ nodes, onNodeClick, compact, showRoleBadge }: OrgChartTreeProps) {
+export function OrgChartTree({ nodes, compact, showRoleBadge }: OrgChartTreeProps) {
   if (nodes.length === 0) {
     return <p className="text-sm text-muted-foreground">No team members to display</p>;
   }
@@ -183,22 +145,11 @@ export function OrgChartTree({ nodes, onNodeClick, compact, showRoleBadge }: Org
     <div className="overflow-x-auto py-4">
       <div className="inline-flex flex-col items-center min-w-full">
         {nodes.length === 1 ? (
-          <OrgBranch
-            node={nodes[0]}
-            compact={compact}
-            onNodeClick={onNodeClick}
-            showRoleBadge={showRoleBadge}
-          />
+          <OrgBranch node={nodes[0]} compact={compact} showRoleBadge={showRoleBadge} />
         ) : (
           <div className={`flex ${compact ? "gap-4" : "gap-8"}`}>
             {nodes.map((node) => (
-              <OrgBranch
-                key={node.id}
-                node={node}
-                compact={compact}
-                onNodeClick={onNodeClick}
-                showRoleBadge={showRoleBadge}
-              />
+              <OrgBranch key={node.id} node={node} compact={compact} showRoleBadge={showRoleBadge} />
             ))}
           </div>
         )}
@@ -218,6 +169,7 @@ export function buildOrgTree(
     avatar?: string | null;
     role?: string;
     managerId?: string | null;
+    href?: string;
   }[]
 ): OrgChartNode[] {
   const map = new Map<string, OrgChartNode>();
@@ -230,6 +182,7 @@ export function buildOrgTree(
       location: u.location || undefined,
       avatar: u.avatar,
       role: u.role,
+      href: u.href,
       children: [],
     });
   }
@@ -239,7 +192,6 @@ export function buildOrgTree(
   for (const u of users) {
     const node = map.get(u.id)!;
     if (u.managerId && map.has(u.managerId) && u.managerId !== u.id) {
-      // Check for cycle: walk up the chain from the proposed manager
       let current: string | null = u.managerId;
       let isCycle = false;
       const visited = new Set<string>();
