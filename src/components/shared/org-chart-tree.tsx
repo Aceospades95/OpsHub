@@ -97,7 +97,7 @@ function OrgBranch({
             <OrgBranch node={node.children[0]} compact={compact} showRoleBadge={showRoleBadge} />
           ) : (
             /* Multiple children: horizontal bar + vertical stubs */
-            <div className={`flex ${compact ? "gap-3" : "gap-6"}`}>
+            <div className={`flex items-start ${compact ? "gap-3" : "gap-6"}`}>
               {node.children.map((child, idx) => {
                 const isFirst = idx === 0;
                 const isLast = idx === node.children.length - 1;
@@ -145,11 +145,11 @@ export function OrgChartTree({ nodes, compact, showRoleBadge }: OrgChartTreeProp
 
   return (
     <div className="overflow-x-auto py-4">
-      <div className="inline-flex flex-col items-center min-w-full">
+      <div className="flex justify-center min-w-fit">
         {nodes.length === 1 ? (
           <OrgBranch node={nodes[0]} compact={compact} showRoleBadge={showRoleBadge} />
         ) : (
-          <div className={`flex ${compact ? "gap-4" : "gap-8"}`}>
+          <div className={`flex items-start ${compact ? "gap-4" : "gap-8"}`}>
             {nodes.map((node) => (
               <OrgBranch key={node.id} node={node} compact={compact} showRoleBadge={showRoleBadge} />
             ))}
