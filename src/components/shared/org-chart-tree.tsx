@@ -81,6 +81,8 @@ function OrgBranch({
 }) {
   const hasChildren = node.children.length > 0;
   const vLineH = compact ? 20 : 28;
+  // Half the flex gap so horizontal segments bridge the space between columns
+  const halfGap = compact ? 6 : 12;
 
   return (
     <div className="flex flex-col items-center">
@@ -103,14 +105,14 @@ function OrgBranch({
                   <div key={child.id} className="flex flex-col items-center">
                     {/* Horizontal + vertical connector */}
                     <div className="self-stretch relative" style={{ height: vLineH }}>
-                      {/* Horizontal piece */}
+                      {/* Horizontal piece — extend into the flex gap so segments connect */}
                       <div
                         className="absolute top-0"
                         style={{
                           height: 1,
                           backgroundColor: lineColor,
-                          left: isFirst ? "50%" : 0,
-                          right: isLast ? "50%" : 0,
+                          left: isFirst ? "50%" : -halfGap,
+                          right: isLast ? "50%" : -halfGap,
                         }}
                       />
                       {/* Vertical stub */}
@@ -173,6 +175,8 @@ export function buildOrgTree(
   }[]
 ): OrgChartNode[] {
   const map = new Map<string, OrgChartNode>();
+  const userById = new Map(users.map((u) => [u.id, u]));
+
   for (const u of users) {
     map.set(u.id, {
       id: u.id,
@@ -201,7 +205,7 @@ export function buildOrgTree(
           break;
         }
         visited.add(current);
-        const mgrUser = users.find((x) => x.id === current);
+        const mgrUser = userById.get(current);
         current = mgrUser?.managerId ?? null;
       }
 
