@@ -21,6 +21,7 @@ const createUserSchema = z.object({
   location: z.string().optional(),
   phone: z.string().optional(),
   managerId: z.string().optional(),
+  hasLoginAccess: z.boolean().optional(),
 });
 
 export async function createUser(_prev: unknown, formData: FormData) {
@@ -37,6 +38,7 @@ export async function createUser(_prev: unknown, formData: FormData) {
     phone: formData.get("phone") || undefined,
     location: formData.get("location") || undefined,
     managerId: formData.get("managerId") || undefined,
+    hasLoginAccess: formData.get("hasLoginAccess") !== "false",
   });
 
   if (!parsed.success) return { error: "Invalid input", fieldErrors: parsed.error.flatten().fieldErrors };
@@ -67,6 +69,7 @@ const updateUserSchema = z.object({
   phone: z.string().optional(),
   managerId: z.string().optional(),
   isActive: z.boolean().optional(),
+  hasLoginAccess: z.boolean().optional(),
 });
 
 export async function updateUser(_prev: unknown, formData: FormData) {
@@ -74,6 +77,9 @@ export async function updateUser(_prev: unknown, formData: FormData) {
   requireAdminOrManager(admin.role);
 
   const id = formData.get("id") as string;
+  const rawManagerId = formData.get("managerId") as string;
+  const managerId = rawManagerId && rawManagerId.trim() ? rawManagerId.trim() : null;
+
   const parsed = updateUserSchema.safeParse({
     name: formData.get("name"),
     email: formData.get("email"),
@@ -82,13 +88,35 @@ export async function updateUser(_prev: unknown, formData: FormData) {
     jobTitle: formData.get("jobTitle") || undefined,
     location: formData.get("location") || undefined,
     phone: formData.get("phone") || undefined,
-    managerId: formData.get("managerId") || undefined,
+    managerId: managerId || undefined,
     isActive: formData.get("isActive") !== "false",
   });
 
   if (!parsed.success) return { error: "Invalid input", fieldErrors: parsed.error.flatten().fieldErrors };
 
-  await db.user.update({ where: { id }, data: parsed.data });
+  // Validate no circular manager chain
+  if (managerId) {
+    if (managerId === id) {
+      return { error: "A user cannot report to themselves" };
+    }
+    // Walk up the chain from the proposed manager to check for cycles
+    let checkId: string | null = managerId;
+    const visited = new Set<string>([id]);
+    while (checkId) {
+      if (visited.has(checkId)) {
+        return { error: "This would create a circular reporting chain" };
+      }
+      visited.add(checkId);
+      const parent: { managerId: string | null } | null = await db.user.findUnique({ where: { id: checkId }, select: { managerId: true } });
+      checkId = parent?.managerId ?? null;
+    }
+  }
+
+  // Use null instead of undefined to actually clear the field
+  await db.user.update({
+    where: { id },
+    data: { ...parsed.data, managerId: managerId },
+  });
   await logActivity("updated", "user", id, admin.id, parsed.data.name);
   revalidatePath(`/admin/users/${id}`);
   revalidatePath("/admin/users");

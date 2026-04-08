@@ -120,7 +120,7 @@ function OrgChartView({ users, search, currentUserId }: { users: UserData[]; sea
         <div className="text-xs text-muted-foreground mb-2">
           {users.length} team members · Click nodes to collapse/expand
         </div>
-        <OrgChartTree nodes={tree} highlightId={currentUserId} />
+        <OrgChartTree nodes={tree} />
       </CardContent>
     </Card>
   );
@@ -128,129 +128,169 @@ function OrgChartView({ users, search, currentUserId }: { users: UserData[]; sea
 
 // ─── Staffing Matrix View ───────────────────────────
 
-const STATUS_GROUPS: { status: string[]; label: string; color: string }[] = [
-  { status: ["ACTIVE"], label: "Active Projects", color: "text-green-700" },
-  { status: ["PLANNING", "ON_HOLD"], label: "Planning / On Hold", color: "text-blue-700" },
-  { status: ["COMPLETED"], label: "Completed", color: "text-muted-foreground" },
+interface StaffingRow {
+  department: string;
+  manager: string;
+  project: { id: string; name: string; status: string };
+  location: string;
+  role: string;
+  employees: { id: string; name: string }[];
+  fte: number;
+}
+
+const DEPT_COLORS = [
+  "border-l-blue-500 bg-blue-500/5",
+  "border-l-green-500 bg-green-500/5",
+  "border-l-purple-500 bg-purple-500/5",
+  "border-l-orange-500 bg-orange-500/5",
+  "border-l-pink-500 bg-pink-500/5",
+  "border-l-cyan-500 bg-cyan-500/5",
+  "border-l-yellow-500 bg-yellow-500/5",
 ];
 
 function StaffingMatrix({ users, projects, search }: { users: UserData[]; projects: ProjectData[]; search: string }) {
-  const [deptFilter, setDeptFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState<string>("ACTIVE");
 
-  const departments = useMemo(() => {
-    const depts = new Set(users.map((u) => u.department).filter(Boolean) as string[]);
-    return Array.from(depts).sort();
-  }, [users]);
+  // Build rows: group by department → project → role
+  const rows = useMemo(() => {
+    const result: StaffingRow[] = [];
+    const projectMap = new Map(projects.map((p) => [p.id, p]));
 
-  const filteredUsers = useMemo(() => {
-    let result = users;
-    if (search) {
-      const q = search.toLowerCase();
-      result = result.filter((u) => u.name.toLowerCase().includes(q));
-    }
-    if (deptFilter) result = result.filter((u) => u.department === deptFilter);
-    return result;
-  }, [users, search, deptFilter]);
+    // Group users by their project assignments
+    const projRoleMap = new Map<string, { project: ProjectData; role: string; employees: UserData[] }>();
 
-  // Build lookup: userId -> projectId -> role
-  const assignments = useMemo(() => {
-    const map = new Map<string, Map<string, string>>();
-    for (const u of users) {
-      const pm = new Map<string, string>();
-      for (const m of u.projectMembers) {
-        pm.set(m.project.id, m.role);
+    for (const user of users) {
+      if (search) {
+        const q = search.toLowerCase();
+        if (!user.name.toLowerCase().includes(q)) continue;
       }
-      map.set(u.id, pm);
+      for (const pm of user.projectMembers) {
+        const proj = projectMap.get(pm.project.id);
+        if (!proj) continue;
+        if (statusFilter && !statusFilter.split(",").includes(proj.status)) continue;
+
+        const key = `${pm.project.id}::${pm.role}`;
+        if (!projRoleMap.has(key)) {
+          projRoleMap.set(key, { project: proj, role: pm.role, employees: [] });
+        }
+        projRoleMap.get(key)!.employees.push(user);
+      }
     }
-    return map;
-  }, [users]);
 
-  const roleColors: Record<string, string> = {
-    ADMIN: "bg-purple-100 text-purple-800",
-    MANAGER: "bg-blue-100 text-blue-800",
-    DEVELOPER: "bg-green-100 text-green-800",
-    CONTRIBUTOR: "bg-yellow-100 text-yellow-800",
-    VIEWER: "bg-gray-100 text-gray-800",
-  };
+    for (const entry of Array.from(projRoleMap.values())) {
+      // Find a manager among the employees or use the first one's manager
+      const managerUser = entry.employees.find((u) => u.role === "MANAGER" || u.role === "ADMIN");
+      const firstUser = entry.employees[0];
+      const dept = firstUser?.department || "Unassigned";
+      const manager = managerUser?.name || firstUser?.manager?.name || "—";
+      const location = firstUser?.location || "—";
 
-  // Group projects by status
-  const groupedProjects = useMemo(() => {
-    const projectIds = new Set(users.flatMap((u) => u.projectMembers.map((pm) => pm.project.id)));
-    const relevantProjects = projects.filter((p) => projectIds.has(p.id));
-    return STATUS_GROUPS.map((g) => ({
-      ...g,
-      projects: relevantProjects.filter((p) => g.status.includes(p.status)),
-    })).filter((g) => g.projects.length > 0);
-  }, [users, projects]);
+      result.push({
+        department: dept,
+        manager,
+        project: entry.project,
+        location,
+        role: entry.role,
+        employees: entry.employees.map((emp) => ({ id: emp.id, name: emp.name })),
+        fte: entry.employees.length,
+      });
+    }
+
+    // Sort by department, then project name
+    result.sort((a, b) => a.department.localeCompare(b.department) || a.project.name.localeCompare(b.project.name));
+    return result;
+  }, [users, projects, search, statusFilter]);
+
+  // Group rows by department for colored sections
+  const departments = useMemo(() => {
+    const depts = new Map<string, StaffingRow[]>();
+    for (const row of rows) {
+      if (!depts.has(row.department)) depts.set(row.department, []);
+      depts.get(row.department)!.push(row);
+    }
+    return depts;
+  }, [rows]);
+
+  const totalFte = rows.reduce((sum, r) => sum + r.fte, 0);
 
   return (
     <div>
-      {departments.length > 0 && (
-        <div className="mb-4">
-          <select value={deptFilter} onChange={(e) => setDeptFilter(e.target.value)}
-            className="px-3 py-2 text-sm border border-input rounded-md bg-background">
-            <option value="">All Departments</option>
-            {departments.map((d) => <option key={d} value={d}>{d}</option>)}
-          </select>
-        </div>
-      )}
-
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        {groupedProjects.map((group) => (
-          <Card key={group.label}>
-            <CardHeader className="pb-2">
-              <CardTitle className={`text-sm ${group.color}`}>{group.label}</CardTitle>
-            </CardHeader>
-            <CardContent className="p-0">
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-border">
-                      <th className="text-left py-2 px-3 text-xs font-semibold text-muted-foreground">Employee</th>
-                      {group.projects.map((p) => (
-                        <th key={p.id} className="text-center py-2 px-2 text-xs font-semibold min-w-[80px]">
-                          <div className="truncate max-w-[80px]" title={p.name}>{p.name}</div>
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredUsers.filter((u) =>
-                      group.projects.some((p) => (assignments.get(u.id) || new Map()).has(p.id))
-                    ).map((user) => {
-                      const userAssignments = assignments.get(user.id) || new Map();
-                      return (
-                        <tr key={user.id} className="border-b border-border/50">
-                          <td className="py-1.5 px-3">
-                            <div className="flex items-center gap-2">
-                              <Avatar name={user.name} size="xs" />
-                              <span className="text-xs font-medium truncate">{user.name}</span>
-                            </div>
-                          </td>
-                          {group.projects.map((p) => {
-                            const role = userAssignments.get(p.id);
-                            return (
-                              <td key={p.id} className="text-center py-1.5 px-2">
-                                {role ? (
-                                  <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-medium ${roleColors[role] || "bg-gray-100 text-gray-800"}`}>
-                                    {role}
-                                  </span>
-                                ) : (
-                                  <span className="text-muted-foreground/20">—</span>
-                                )}
-                              </td>
-                            );
-                          })}
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
+      <div className="flex items-center gap-3 mb-4">
+        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}
+          className="px-3 py-2 text-sm border border-input rounded-md bg-background">
+          <option value="ACTIVE">Active Projects</option>
+          <option value="PLANNING,ON_HOLD">Planning / On Hold</option>
+          <option value="ACTIVE,PLANNING,ON_HOLD">All Open</option>
+          <option value="COMPLETED">Completed</option>
+          <option value="">All Statuses</option>
+        </select>
+        <span className="text-sm text-muted-foreground ml-auto">
+          {rows.length} assignments · {totalFte} FTE
+        </span>
       </div>
+
+      <Card>
+        <CardContent className="p-0">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b-2 border-border bg-muted/50">
+                <th className="text-left py-3 px-4 font-semibold">Department</th>
+                <th className="text-left py-3 px-3 font-semibold">Manager</th>
+                <th className="text-left py-3 px-3 font-semibold">Project</th>
+                <th className="text-left py-3 px-3 font-semibold hidden md:table-cell">Location</th>
+                <th className="text-left py-3 px-3 font-semibold">Role</th>
+                <th className="text-center py-3 px-3 font-semibold w-16">FTE</th>
+                <th className="text-left py-3 px-3 font-semibold">Employee(s)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {Array.from(departments.entries()).map(([dept, deptRows], deptIdx) => {
+                const colorClass = DEPT_COLORS[deptIdx % DEPT_COLORS.length];
+                return deptRows.map((row, rowIdx) => (
+                  <tr key={`${dept}-${row.project.id}-${row.role}`}
+                    className={`border-b border-border/40 border-l-4 ${colorClass}`}
+                  >
+                    {/* Department — only show on first row of each group */}
+                    <td className="py-2.5 px-4 font-medium">
+                      {rowIdx === 0 ? dept : ""}
+                    </td>
+                    <td className="py-2.5 px-3 text-muted-foreground">{row.manager}</td>
+                    <td className="py-2.5 px-3">
+                      <a href={`/projects/${row.project.id}`} className="hover:underline hover:text-primary font-medium">
+                        {row.project.name}
+                      </a>
+                    </td>
+                    <td className="py-2.5 px-3 text-muted-foreground hidden md:table-cell">
+                      {row.location !== "—" && <span className="flex items-center gap-1"><MapPin className="h-3 w-3" />{row.location}</span>}
+                      {row.location === "—" && "—"}
+                    </td>
+                    <td className="py-2.5 px-3">
+                      <Badge variant="outline" className="text-[10px]">{row.role}</Badge>
+                    </td>
+                    <td className="py-2.5 px-3 text-center font-semibold">
+                      {row.fte.toFixed(row.fte % 1 ? 2 : 0)}
+                    </td>
+                    <td className="py-2.5 px-3">
+                      <div className="text-xs space-y-0.5">
+                        {row.employees.map((e) => (
+                          <div key={e.id}>{e.name}</div>
+                        ))}
+                      </div>
+                    </td>
+                  </tr>
+                ));
+              })}
+            </tbody>
+            <tfoot>
+              <tr className="border-t-2 border-border bg-muted/30">
+                <td colSpan={5} className="py-2.5 px-4 font-semibold text-right">Total FTE</td>
+                <td className="py-2.5 px-3 text-center font-bold">{totalFte}</td>
+                <td />
+              </tr>
+            </tfoot>
+          </table>
+        </CardContent>
+      </Card>
     </div>
   );
 }

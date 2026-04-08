@@ -78,6 +78,15 @@ export function AddEmployeeButton({ managers }: { managers: { id: string; name: 
                 </div>
               </div>
 
+              <div className="flex items-center gap-2 p-3 rounded-md bg-muted">
+                <label className="flex items-center gap-2 text-sm">
+                  <input type="hidden" name="hasLoginAccess" value="false" />
+                  <input type="checkbox" name="hasLoginAccess" value="true" defaultChecked className="accent-primary" />
+                  Has login access
+                </label>
+                <span className="text-xs text-muted-foreground">Uncheck for employees who don&apos;t need a system account</span>
+              </div>
+
               {state?.error && <p className="text-sm text-destructive">{state.error}</p>}
 
               <div className="flex justify-end gap-2">

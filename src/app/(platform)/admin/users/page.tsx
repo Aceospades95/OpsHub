@@ -70,7 +70,12 @@ export default async function AdminUsersPage() {
                 ) : "—"}
               </td>
               <td className="p-4">
-                <ToggleActiveButton userId={user.id} isActive={user.isActive} />
+                <div className="flex items-center gap-2">
+                  <ToggleActiveButton userId={user.id} isActive={user.isActive} />
+                  {!user.hasLoginAccess && (
+                    <Badge variant="outline" className="text-[10px]">No Login</Badge>
+                  )}
+                </div>
               </td>
               <td className="p-4">
                 <Link href={`/admin/users/${user.id}`} className="text-sm text-primary hover:underline">

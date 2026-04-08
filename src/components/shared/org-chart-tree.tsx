@@ -19,7 +19,6 @@ export interface OrgChartNode {
 interface OrgChartTreeProps {
   nodes: OrgChartNode[];
   onNodeClick?: (id: string) => void;
-  highlightId?: string;
   compact?: boolean;
   showRoleBadge?: boolean;
 }
@@ -27,13 +26,11 @@ interface OrgChartTreeProps {
 function NodeCard({
   node,
   compact,
-  highlighted,
   onClick,
   showRoleBadge,
 }: {
   node: OrgChartNode;
   compact?: boolean;
-  highlighted?: boolean;
   onClick?: () => void;
   showRoleBadge?: boolean;
 }) {
@@ -42,7 +39,6 @@ function NodeCard({
       onClick={onClick}
       className={`
         rounded-lg bg-card shadow-sm text-left transition-all hover:shadow-md
-        ${highlighted ? "ring-2 ring-primary/30" : ""}
         ${compact ? "px-3 py-2 min-w-[120px]" : "px-4 py-3 min-w-[160px] max-w-[240px]"}
       `}
       style={{
@@ -76,14 +72,12 @@ function NodeCard({
 function OrgBranch({
   node,
   compact,
-  highlightId,
   onNodeClick,
   isRoot,
   showRoleBadge,
 }: {
   node: OrgChartNode;
   compact?: boolean;
-  highlightId?: string;
   onNodeClick?: (id: string) => void;
   isRoot?: boolean;
   showRoleBadge?: boolean;
@@ -98,7 +92,6 @@ function OrgBranch({
         <NodeCard
           node={node}
           compact={compact}
-          highlighted={highlightId === node.id}
           showRoleBadge={showRoleBadge}
           onClick={() => {
             if (hasChildren) setExpanded(!expanded);
@@ -127,7 +120,6 @@ function OrgBranch({
             <OrgBranch
               node={node.children[0]}
               compact={compact}
-              highlightId={highlightId}
               onNodeClick={onNodeClick}
               showRoleBadge={showRoleBadge}
             />
@@ -165,7 +157,6 @@ function OrgBranch({
                     <OrgBranch
                       node={child}
                       compact={compact}
-                      highlightId={highlightId}
                       onNodeClick={onNodeClick}
                       showRoleBadge={showRoleBadge}
                     />
@@ -180,7 +171,7 @@ function OrgBranch({
   );
 }
 
-export function OrgChartTree({ nodes, onNodeClick, highlightId, compact, showRoleBadge }: OrgChartTreeProps) {
+export function OrgChartTree({ nodes, onNodeClick, compact, showRoleBadge }: OrgChartTreeProps) {
   if (nodes.length === 0) {
     return <p className="text-sm text-muted-foreground">No team members</p>;
   }
@@ -192,7 +183,6 @@ export function OrgChartTree({ nodes, onNodeClick, highlightId, compact, showRol
           <OrgBranch
             node={nodes[0]}
             compact={compact}
-            highlightId={highlightId}
             onNodeClick={onNodeClick}
             showRoleBadge={showRoleBadge}
             isRoot
@@ -204,7 +194,6 @@ export function OrgChartTree({ nodes, onNodeClick, highlightId, compact, showRol
                 key={node.id}
                 node={node}
                 compact={compact}
-                highlightId={highlightId}
                 onNodeClick={onNodeClick}
                 showRoleBadge={showRoleBadge}
                 isRoot
@@ -245,10 +234,31 @@ export function buildOrgTree(
   }
 
   const roots: OrgChartNode[] = [];
+  const placed = new Set<string>();
+
   for (const u of users) {
     const node = map.get(u.id)!;
-    if (u.managerId && map.has(u.managerId)) {
-      map.get(u.managerId)!.children.push(node);
+    if (u.managerId && map.has(u.managerId) && u.managerId !== u.id) {
+      // Check for cycle: walk up the chain from the manager
+      let current: string | null = u.managerId;
+      let isCycle = false;
+      const visited = new Set<string>();
+      while (current && map.has(current)) {
+        if (current === u.id || visited.has(current)) {
+          isCycle = true;
+          break;
+        }
+        visited.add(current);
+        const mgrUser = users.find((x) => x.id === current);
+        current = mgrUser?.managerId ?? null;
+      }
+
+      if (!isCycle) {
+        map.get(u.managerId)!.children.push(node);
+        placed.add(u.id);
+      } else {
+        roots.push(node);
+      }
     } else {
       roots.push(node);
     }

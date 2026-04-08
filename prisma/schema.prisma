@@ -138,6 +138,7 @@ model User {
   role           Role     @default(VIEWER)
   avatar         String?
   isActive       Boolean  @default(true)
+  hasLoginAccess Boolean  @default(true)
   department     String?
   jobTitle       String?
   location       String?
