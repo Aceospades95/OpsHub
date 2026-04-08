@@ -21,13 +21,25 @@ export async function createProject(_prev: unknown, formData: FormData) {
   const perms = await resolveModulePerms(user.id, user.role, "projects");
   if (!perms.canCreate) return { error: "Permission denied" };
 
+  // Handle inline client creation
+  let clientId = formData.get("clientId") as string;
+  const newClientName = (formData.get("newClientName") as string)?.trim();
+
+  if (!clientId && newClientName) {
+    const newClient = await db.client.create({
+      data: { name: newClientName, status: "ACTIVE" },
+    });
+    clientId = newClient.id;
+    await logActivity("created", "client", newClient.id, user.id, newClient.name);
+  }
+
   const parsed = projectSchema.safeParse({
     name: formData.get("name"),
     description: formData.get("description") || undefined,
     status: formData.get("status") || "PLANNING",
     startDate: formData.get("startDate") || undefined,
     endDate: formData.get("endDate") || undefined,
-    clientId: formData.get("clientId"),
+    clientId,
     parentProjectId: formData.get("parentProjectId") || undefined,
   });
 
@@ -47,8 +59,21 @@ export async function createProject(_prev: unknown, formData: FormData) {
     data: { userId: user.id, projectId: project.id, role: user.role },
   });
 
+  // Create related project links
+  const relatedIds = formData.getAll("relatedProjectIds") as string[];
+  if (relatedIds.length > 0) {
+    await db.projectRelation.createMany({
+      data: relatedIds.map((relatedProjectId) => ({
+        projectId: project.id,
+        relatedProjectId,
+      })),
+      skipDuplicates: true,
+    });
+  }
+
   await logActivity("created", "project", project.id, user.id, project.name);
   revalidatePath("/projects");
+  revalidatePath("/clients");
   return { success: true };
 }
 

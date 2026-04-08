@@ -81,6 +81,8 @@ function OrgBranch({
 }) {
   const hasChildren = node.children.length > 0;
   const vLineH = compact ? 20 : 28;
+  // Half the flex gap so horizontal segments bridge the space between columns
+  const halfGap = compact ? 6 : 12;
 
   return (
     <div className="flex flex-col items-center">
@@ -95,7 +97,7 @@ function OrgBranch({
             <OrgBranch node={node.children[0]} compact={compact} showRoleBadge={showRoleBadge} />
           ) : (
             /* Multiple children: horizontal bar + vertical stubs */
-            <div className={`flex ${compact ? "gap-3" : "gap-6"}`}>
+            <div className={`flex items-start ${compact ? "gap-3" : "gap-6"}`}>
               {node.children.map((child, idx) => {
                 const isFirst = idx === 0;
                 const isLast = idx === node.children.length - 1;
@@ -103,14 +105,14 @@ function OrgBranch({
                   <div key={child.id} className="flex flex-col items-center">
                     {/* Horizontal + vertical connector */}
                     <div className="self-stretch relative" style={{ height: vLineH }}>
-                      {/* Horizontal piece */}
+                      {/* Horizontal piece — extend into the flex gap so segments connect */}
                       <div
                         className="absolute top-0"
                         style={{
                           height: 1,
                           backgroundColor: lineColor,
-                          left: isFirst ? "50%" : 0,
-                          right: isLast ? "50%" : 0,
+                          left: isFirst ? "50%" : -halfGap,
+                          right: isLast ? "50%" : -halfGap,
                         }}
                       />
                       {/* Vertical stub */}
@@ -143,11 +145,11 @@ export function OrgChartTree({ nodes, compact, showRoleBadge }: OrgChartTreeProp
 
   return (
     <div className="overflow-x-auto py-4">
-      <div className="inline-flex flex-col items-center min-w-full">
+      <div className="flex justify-center min-w-fit">
         {nodes.length === 1 ? (
           <OrgBranch node={nodes[0]} compact={compact} showRoleBadge={showRoleBadge} />
         ) : (
-          <div className={`flex ${compact ? "gap-4" : "gap-8"}`}>
+          <div className={`flex items-start ${compact ? "gap-4" : "gap-8"}`}>
             {nodes.map((node) => (
               <OrgBranch key={node.id} node={node} compact={compact} showRoleBadge={showRoleBadge} />
             ))}
@@ -173,6 +175,8 @@ export function buildOrgTree(
   }[]
 ): OrgChartNode[] {
   const map = new Map<string, OrgChartNode>();
+  const userById = new Map(users.map((u) => [u.id, u]));
+
   for (const u of users) {
     map.set(u.id, {
       id: u.id,
@@ -201,7 +205,7 @@ export function buildOrgTree(
           break;
         }
         visited.add(current);
-        const mgrUser = users.find((x) => x.id === current);
+        const mgrUser = userById.get(current);
         current = mgrUser?.managerId ?? null;
       }
 

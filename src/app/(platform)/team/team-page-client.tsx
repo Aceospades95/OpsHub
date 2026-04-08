@@ -1,11 +1,11 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { OrgChartTree, buildOrgTree } from "@/components/shared/org-chart-tree";
-import { Network, Grid3x3, Users, Search, ChevronDown, ChevronRight, MapPin } from "lucide-react";
+import { Network, Grid3x3, Users, Search, ChevronDown, ChevronRight, MapPin, Plus, Trash2, Pencil } from "lucide-react";
 
 type ViewType = "org-chart" | "staffing" | "breakdown";
 
@@ -131,13 +131,16 @@ function OrgChartView({ users, search, currentUserId }: { users: UserData[]; sea
 // ─── Staffing Matrix View ───────────────────────────
 
 interface StaffingRow {
+  key: string;
   department: string;
   manager: string;
-  project: { id: string; name: string; status: string };
+  project: { id: string; name: string; status: string } | null;
+  projectName: string;
   location: string;
   role: string;
-  employees: { id: string; name: string }[];
+  employees: { id: string; name: string; jobTitle: string | null; email: string }[];
   fte: number;
+  isCustom: boolean;
 }
 
 const DEPT_COLORS = [
@@ -150,15 +153,78 @@ const DEPT_COLORS = [
   "border-l-yellow-500 bg-yellow-500/5",
 ];
 
+function InlineEdit({
+  value,
+  onSave,
+  type = "text",
+  className = "",
+}: {
+  value: string;
+  onSave: (v: string) => void;
+  type?: "text" | "number";
+  className?: string;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (editing) inputRef.current?.focus();
+  }, [editing]);
+
+  if (!editing) {
+    return (
+      <span
+        className={`cursor-pointer hover:bg-muted/60 rounded px-1 -mx-1 transition-colors ${className}`}
+        onClick={() => { setDraft(value); setEditing(true); }}
+        title="Click to edit"
+      >
+        {value || <span className="text-muted-foreground italic">—</span>}
+      </span>
+    );
+  }
+
+  const commit = () => {
+    setEditing(false);
+    if (draft !== value) onSave(draft);
+  };
+
+  return (
+    <input
+      ref={inputRef}
+      type={type}
+      value={draft}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") commit();
+        if (e.key === "Escape") { setDraft(value); setEditing(false); }
+      }}
+      className={`w-full bg-background border border-input rounded px-1 py-0.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary ${className}`}
+      step={type === "number" ? "0.1" : undefined}
+    />
+  );
+}
+
 function StaffingMatrix({ users, projects, search }: { users: UserData[]; projects: ProjectData[]; search: string }) {
   const [statusFilter, setStatusFilter] = useState<string>("ACTIVE");
+  const [fteOverrides, setFteOverrides] = useState<Record<string, number>>({});
+  const [notes, setNotes] = useState<Record<string, string>>({});
+  const [customRows, setCustomRows] = useState<StaffingRow[]>([]);
+  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
 
-  // Build rows: group by department → project → role
-  const rows = useMemo(() => {
+  const toggleExpand = (key: string) => {
+    setExpandedRows((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  };
+
+  // Build rows from project data
+  const dataRows = useMemo(() => {
     const result: StaffingRow[] = [];
     const projectMap = new Map(projects.map((p) => [p.id, p]));
-
-    // Group users by their project assignments
     const projRoleMap = new Map<string, { project: ProjectData; role: string; employees: UserData[] }>();
 
     for (const user of users) {
@@ -179,45 +245,75 @@ function StaffingMatrix({ users, projects, search }: { users: UserData[]; projec
       }
     }
 
-    for (const entry of Array.from(projRoleMap.values())) {
-      // Find a manager among the employees or use the first one's manager
+    for (const [key, entry] of Array.from(projRoleMap.entries())) {
       const managerUser = entry.employees.find((u) => u.role === "MANAGER" || u.role === "ADMIN");
       const firstUser = entry.employees[0];
-      const dept = firstUser?.department || "Unassigned";
-      const manager = managerUser?.name || firstUser?.manager?.name || "—";
-      const location = firstUser?.location || "—";
-
       result.push({
-        department: dept,
-        manager,
+        key,
+        department: firstUser?.department || "Unassigned",
+        manager: managerUser?.name || firstUser?.manager?.name || "—",
         project: entry.project,
-        location,
+        projectName: entry.project.name,
+        location: firstUser?.location || "—",
         role: entry.role,
-        employees: entry.employees.map((emp) => ({ id: emp.id, name: emp.name })),
+        employees: entry.employees.map((emp) => ({ id: emp.id, name: emp.name, jobTitle: emp.jobTitle, email: emp.email })),
         fte: entry.employees.length,
+        isCustom: false,
       });
     }
 
-    // Sort by department, then project name
-    result.sort((a, b) => a.department.localeCompare(b.department) || a.project.name.localeCompare(b.project.name));
+    result.sort((a, b) => a.department.localeCompare(b.department) || a.projectName.localeCompare(b.projectName));
     return result;
   }, [users, projects, search, statusFilter]);
 
-  // Group rows by department for colored sections
+  const allRows = useMemo(() => [...dataRows, ...customRows], [dataRows, customRows]);
+
   const departments = useMemo(() => {
     const depts = new Map<string, StaffingRow[]>();
-    for (const row of rows) {
+    for (const row of allRows) {
       if (!depts.has(row.department)) depts.set(row.department, []);
       depts.get(row.department)!.push(row);
     }
     return depts;
-  }, [rows]);
+  }, [allRows]);
 
-  const totalFte = rows.reduce((sum, r) => sum + r.fte, 0);
+  const totalFte = allRows.reduce((sum, r) => fteOverrides[r.key] ?? r.fte + sum, 0);
+  const computedTotal = allRows.reduce((sum, r) => sum + (fteOverrides[r.key] ?? r.fte), 0);
+
+  const addCustomRow = () => {
+    const id = `custom-${Date.now()}`;
+    setCustomRows((prev) => [
+      ...prev,
+      {
+        key: id,
+        department: "Unassigned",
+        manager: "",
+        project: null,
+        projectName: "",
+        location: "",
+        role: "",
+        employees: [],
+        fte: 1,
+        isCustom: true,
+      },
+    ]);
+  };
+
+  const updateCustomRow = (key: string, field: keyof StaffingRow, value: string | number) => {
+    setCustomRows((prev) =>
+      prev.map((r) => (r.key === key ? { ...r, [field]: value } : r))
+    );
+  };
+
+  const removeCustomRow = (key: string) => {
+    setCustomRows((prev) => prev.filter((r) => r.key !== key));
+    setFteOverrides((prev) => { const n = { ...prev }; delete n[key]; return n; });
+    setNotes((prev) => { const n = { ...prev }; delete n[key]; return n; });
+  };
 
   return (
     <div>
-      <div className="flex items-center gap-3 mb-4">
+      <div className="flex items-center gap-3 mb-4 flex-wrap">
         <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}
           className="px-3 py-2 text-sm border border-input rounded-md bg-background">
           <option value="ACTIVE">Active Projects</option>
@@ -226,8 +322,17 @@ function StaffingMatrix({ users, projects, search }: { users: UserData[]; projec
           <option value="COMPLETED">Completed</option>
           <option value="">All Statuses</option>
         </select>
+
+        <button
+          onClick={addCustomRow}
+          className="flex items-center gap-1 px-3 py-2 text-sm border border-input rounded-md bg-background hover:bg-muted transition-colors"
+        >
+          <Plus className="h-3.5 w-3.5" />
+          Add Row
+        </button>
+
         <span className="text-sm text-muted-foreground ml-auto">
-          {rows.length} assignments · {totalFte} FTE
+          {allRows.length} assignments · {computedTotal.toFixed(computedTotal % 1 ? 1 : 0)} FTE
         </span>
       </div>
 
@@ -241,53 +346,167 @@ function StaffingMatrix({ users, projects, search }: { users: UserData[]; projec
                 <th className="text-left py-3 px-3 font-semibold">Project</th>
                 <th className="text-left py-3 px-3 font-semibold hidden md:table-cell">Location</th>
                 <th className="text-left py-3 px-3 font-semibold">Role</th>
-                <th className="text-center py-3 px-3 font-semibold w-16">FTE</th>
+                <th className="text-center py-3 px-3 font-semibold w-20">FTE</th>
                 <th className="text-left py-3 px-3 font-semibold">Employee(s)</th>
+                <th className="text-left py-3 px-3 font-semibold hidden lg:table-cell">Notes</th>
+                <th className="w-8" />
               </tr>
             </thead>
             <tbody>
               {Array.from(departments.entries()).map(([dept, deptRows], deptIdx) => {
                 const colorClass = DEPT_COLORS[deptIdx % DEPT_COLORS.length];
-                return deptRows.map((row, rowIdx) => (
-                  <tr key={`${dept}-${row.project.id}-${row.role}`}
-                    className={`border-b border-border/40 border-l-4 ${colorClass}`}
-                  >
-                    {/* Department — only show on first row of each group */}
-                    <td className="py-2.5 px-4 font-medium">
-                      {rowIdx === 0 ? dept : ""}
-                    </td>
-                    <td className="py-2.5 px-3 text-muted-foreground">{row.manager}</td>
-                    <td className="py-2.5 px-3">
-                      <a href={`/projects/${row.project.id}`} className="hover:underline hover:text-primary font-medium">
-                        {row.project.name}
-                      </a>
-                    </td>
-                    <td className="py-2.5 px-3 text-muted-foreground hidden md:table-cell">
-                      {row.location !== "—" && <span className="flex items-center gap-1"><MapPin className="h-3 w-3" />{row.location}</span>}
-                      {row.location === "—" && "—"}
-                    </td>
-                    <td className="py-2.5 px-3">
-                      <Badge variant="outline" className="text-[10px]">{row.role}</Badge>
-                    </td>
-                    <td className="py-2.5 px-3 text-center font-semibold">
-                      {row.fte.toFixed(row.fte % 1 ? 2 : 0)}
-                    </td>
-                    <td className="py-2.5 px-3">
-                      <div className="text-xs space-y-0.5">
-                        {row.employees.map((e) => (
-                          <div key={e.id}>{e.name}</div>
-                        ))}
-                      </div>
-                    </td>
-                  </tr>
-                ));
+                return deptRows.map((row, rowIdx) => {
+                  const fteVal = fteOverrides[row.key] ?? row.fte;
+                  const isExpanded = expandedRows.has(row.key);
+                  const isOverridden = row.key in fteOverrides;
+
+                  return (
+                    <React.Fragment key={row.key}>
+                      <tr className={`border-b border-border/40 border-l-4 ${colorClass} ${row.isCustom ? "bg-muted/20" : ""}`}>
+                        <td className="py-2.5 px-4 font-medium">
+                          {row.isCustom ? (
+                            <InlineEdit
+                              value={row.department}
+                              onSave={(v) => updateCustomRow(row.key, "department", v)}
+                            />
+                          ) : (
+                            rowIdx === 0 ? dept : ""
+                          )}
+                        </td>
+                        <td className="py-2.5 px-3 text-muted-foreground">
+                          {row.isCustom ? (
+                            <InlineEdit value={row.manager} onSave={(v) => updateCustomRow(row.key, "manager", v)} />
+                          ) : (
+                            row.manager
+                          )}
+                        </td>
+                        <td className="py-2.5 px-3">
+                          {row.isCustom ? (
+                            <InlineEdit
+                              value={row.projectName}
+                              onSave={(v) => updateCustomRow(row.key, "projectName", v)}
+                              className="font-medium"
+                            />
+                          ) : row.project ? (
+                            <a href={`/projects/${row.project.id}`} className="hover:underline hover:text-primary font-medium">
+                              {row.project.name}
+                            </a>
+                          ) : (
+                            "—"
+                          )}
+                        </td>
+                        <td className="py-2.5 px-3 text-muted-foreground hidden md:table-cell">
+                          {row.isCustom ? (
+                            <InlineEdit value={row.location} onSave={(v) => updateCustomRow(row.key, "location", v)} />
+                          ) : (
+                            <>
+                              {row.location !== "—" && <span className="flex items-center gap-1"><MapPin className="h-3 w-3" />{row.location}</span>}
+                              {row.location === "—" && "—"}
+                            </>
+                          )}
+                        </td>
+                        <td className="py-2.5 px-3">
+                          {row.isCustom ? (
+                            <InlineEdit value={row.role} onSave={(v) => updateCustomRow(row.key, "role", v)} />
+                          ) : (
+                            <Badge variant="outline" className="text-[10px]">{row.role}</Badge>
+                          )}
+                        </td>
+                        <td className="py-2.5 px-3 text-center">
+                          <InlineEdit
+                            value={fteVal.toString()}
+                            onSave={(v) => {
+                              const n = parseFloat(v);
+                              if (!isNaN(n) && n >= 0) {
+                                setFteOverrides((prev) => ({ ...prev, [row.key]: n }));
+                              }
+                            }}
+                            type="number"
+                            className={`text-center font-semibold w-16 ${isOverridden ? "text-primary" : ""}`}
+                          />
+                        </td>
+                        <td className="py-2.5 px-3">
+                          {row.isCustom ? (
+                            <InlineEdit
+                              value={row.employees.map((e) => e.name).join(", ")}
+                              onSave={(v) =>
+                                updateCustomRow(row.key, "employees",
+                                  v.split(",").map((n, i) => ({ id: `c-${i}`, name: n.trim(), jobTitle: null, email: "" })) as unknown as string
+                                )
+                              }
+                            />
+                          ) : (
+                            <div>
+                              <div className="text-xs space-y-0.5">
+                                {row.employees.map((e) => (
+                                  <div key={e.id}>{e.name}</div>
+                                ))}
+                              </div>
+                              {row.employees.length > 1 && (
+                                <button
+                                  onClick={() => toggleExpand(row.key)}
+                                  className="text-[10px] text-primary hover:underline mt-0.5"
+                                >
+                                  {isExpanded ? "Less" : "Details"}
+                                </button>
+                              )}
+                            </div>
+                          )}
+                        </td>
+                        <td className="py-2.5 px-3 hidden lg:table-cell">
+                          <InlineEdit
+                            value={notes[row.key] || ""}
+                            onSave={(v) => setNotes((prev) => ({ ...prev, [row.key]: v }))}
+                            className="text-xs text-muted-foreground"
+                          />
+                        </td>
+                        <td className="py-2.5 px-1">
+                          {row.isCustom && (
+                            <button
+                              onClick={() => removeCustomRow(row.key)}
+                              className="text-muted-foreground hover:text-destructive transition-colors p-1"
+                              title="Remove row"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                      {/* Expanded detail row */}
+                      {isExpanded && !row.isCustom && (
+                        <tr className={`border-b border-border/20 border-l-4 ${colorClass}`}>
+                          <td colSpan={9} className="py-2 px-8 bg-muted/10">
+                            <table className="w-full text-xs">
+                              <thead>
+                                <tr className="text-muted-foreground">
+                                  <th className="text-left py-1 pr-4 font-medium">Name</th>
+                                  <th className="text-left py-1 pr-4 font-medium">Job Title</th>
+                                  <th className="text-left py-1 pr-4 font-medium">Email</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {row.employees.map((emp) => (
+                                  <tr key={emp.id}>
+                                    <td className="py-1 pr-4 font-medium">{emp.name}</td>
+                                    <td className="py-1 pr-4 text-muted-foreground">{emp.jobTitle || "—"}</td>
+                                    <td className="py-1 pr-4 text-muted-foreground">{emp.email}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
+                  );
+                });
               })}
             </tbody>
             <tfoot>
               <tr className="border-t-2 border-border bg-muted/30">
                 <td colSpan={5} className="py-2.5 px-4 font-semibold text-right">Total FTE</td>
-                <td className="py-2.5 px-3 text-center font-bold">{totalFte}</td>
-                <td />
+                <td className="py-2.5 px-3 text-center font-bold">{computedTotal.toFixed(computedTotal % 1 ? 1 : 0)}</td>
+                <td colSpan={3} />
               </tr>
             </tfoot>
           </table>
@@ -334,8 +553,8 @@ function EmployeeBreakdown({ users, inactiveUsers, search }: { users: UserData[]
 
   function renderUserRow(user: UserData, isInactive = false) {
     return (
-      <>
-        <tr key={user.id}
+      <React.Fragment key={user.id}>
+        <tr
           className={`border-b border-border/50 hover:bg-muted/30 cursor-pointer ${isInactive ? "opacity-60" : ""}`}
           onClick={() => setExpandedId(expandedId === user.id ? null : user.id)}
         >
@@ -370,7 +589,7 @@ function EmployeeBreakdown({ users, inactiveUsers, search }: { users: UserData[]
           </td>
         </tr>
         {expandedId === user.id && user.projectMembers.length > 0 && (
-          <tr key={`${user.id}-expand`} className="bg-muted/20">
+          <tr className="bg-muted/20">
             <td colSpan={6} className="py-2 px-8">
               <div className="flex flex-wrap gap-2">
                 {user.projectMembers.map((pm) => (
@@ -386,7 +605,7 @@ function EmployeeBreakdown({ users, inactiveUsers, search }: { users: UserData[]
             </td>
           </tr>
         )}
-      </>
+      </React.Fragment>
     );
   }
 
@@ -468,3 +687,5 @@ function EmployeeBreakdown({ users, inactiveUsers, search }: { users: UserData[]
     </div>
   );
 }
+
+import React from "react";

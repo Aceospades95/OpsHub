@@ -73,7 +73,7 @@ export async function updateTaskStatus(taskId: string, status: string) {
 
   const completedAt = status === "DONE" ? new Date() : null;
 
-  await db.task.update({
+  const task = await db.task.update({
     where: { id: taskId },
     data: {
       status: status as "TODO" | "IN_PROGRESS" | "DONE" | "CANCELLED",
@@ -83,6 +83,9 @@ export async function updateTaskStatus(taskId: string, status: string) {
 
   revalidatePath("/dashboard");
   revalidatePath("/tasks");
+  if (task.projectId) {
+    revalidatePath(`/projects/${task.projectId}`);
+  }
   return { success: true };
 }
 
