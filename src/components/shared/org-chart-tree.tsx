@@ -42,7 +42,7 @@ function NodeCard({
         ${compact ? "px-3 py-2 min-w-[120px]" : "px-4 py-3 min-w-[160px] max-w-[240px]"}
       `}
       style={{
-        border: `1.5px solid color-mix(in srgb, var(--primary) 30%, transparent)`,
+        border: "1.5px solid color-mix(in srgb, var(--primary) 30%, transparent)",
       }}
     >
       <div className={`flex items-center ${compact ? "gap-2" : "gap-3"}`}>
@@ -69,17 +69,19 @@ function NodeCard({
   );
 }
 
+function VerticalLine({ compact }: { compact?: boolean }) {
+  return <div className={`w-px mx-auto ${compact ? "h-5" : "h-7"}`} style={{ backgroundColor: "color-mix(in srgb, var(--primary) 25%, transparent)" }} />;
+}
+
 function OrgBranch({
   node,
   compact,
   onNodeClick,
-  isRoot,
   showRoleBadge,
 }: {
   node: OrgChartNode;
   compact?: boolean;
   onNodeClick?: (id: string) => void;
-  isRoot?: boolean;
   showRoleBadge?: boolean;
 }) {
   const [expanded, setExpanded] = useState(true);
@@ -99,8 +101,11 @@ function OrgBranch({
           }}
         />
         {hasChildren && (
-          <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 translate-y-full z-10 bg-card border border-border rounded-full p-0.5 cursor-pointer"
-            onClick={(e) => { e.stopPropagation(); setExpanded(!expanded); }}>
+          <span
+            className="absolute -bottom-1 left-1/2 -translate-x-1/2 translate-y-full z-10 bg-card rounded-full p-0.5 cursor-pointer"
+            style={{ border: "1px solid color-mix(in srgb, var(--primary) 25%, transparent)" }}
+            onClick={(e) => { e.stopPropagation(); setExpanded(!expanded); }}
+          >
             {expanded
               ? <ChevronDown className={compact ? "h-3 w-3" : "h-3.5 w-3.5"} />
               : <ChevronRight className={compact ? "h-3 w-3" : "h-3.5 w-3.5"} />
@@ -109,14 +114,14 @@ function OrgBranch({
         )}
       </div>
 
-      {/* Connector + children */}
+      {/* Children */}
       {hasChildren && expanded && (
         <>
-          {/* Vertical line down from parent */}
-          <div className={`w-px bg-border ${compact ? "h-6" : "h-8"}`} />
+          {/* Vertical line from parent down */}
+          <VerticalLine compact={compact} />
 
-          {/* Horizontal connector + children */}
           {node.children.length === 1 ? (
+            /* Single child — just a straight line down */
             <OrgBranch
               node={node.children[0]}
               compact={compact}
@@ -124,36 +129,34 @@ function OrgBranch({
               showRoleBadge={showRoleBadge}
             />
           ) : (
-            <div className="relative flex items-start">
-              {/* Horizontal bar across all children */}
-              <div
-                className="absolute bg-border h-px"
-                style={{
-                  top: 0,
-                  left: "calc(50% / var(--child-count))",
-                  right: "calc(50% / var(--child-count))",
-                  // @ts-expect-error CSS custom property
-                  "--child-count": node.children.length,
-                }}
-              />
-              {/* Use a simpler approach: first child center to last child center */}
-              <div className="absolute top-0 left-0 right-0 flex">
-                <div className="flex-1" />
-                <div className="flex-1" />
-              </div>
-
-              <div className="flex gap-4 relative">
-                {/* Actual horizontal connector */}
-                <div className="absolute top-0 h-px bg-border"
-                  style={{
-                    left: `calc(${100 / (2 * node.children.length)}%)`,
-                    right: `calc(${100 / (2 * node.children.length)}%)`,
-                  }}
-                />
-                {node.children.map((child) => (
-                  <div key={child.id} className="flex flex-col items-center">
-                    {/* Vertical stub from horizontal bar to child */}
-                    <div className={`w-px bg-border ${compact ? "h-4" : "h-6"}`} />
+            /* Multiple children — horizontal bar connecting all */
+            <div>
+              {/* Row of vertical stubs + horizontal connector */}
+              <div className={`flex ${compact ? "gap-3" : "gap-6"}`}>
+                {node.children.map((child, idx) => (
+                  <div key={child.id} className="flex flex-col items-center flex-1">
+                    {/* Top half: horizontal line piece + vertical stub */}
+                    <div className="self-stretch relative" style={{ height: compact ? "16px" : "24px" }}>
+                      {/* Horizontal line — extends left/right to connect siblings */}
+                      <div
+                        className="absolute top-0"
+                        style={{
+                          left: idx === 0 ? "50%" : 0,
+                          right: idx === node.children.length - 1 ? "50%" : 0,
+                          height: "1px",
+                          backgroundColor: "color-mix(in srgb, var(--primary) 25%, transparent)",
+                        }}
+                      />
+                      {/* Vertical stub down to child */}
+                      <div
+                        className="absolute left-1/2 -translate-x-1/2 top-0 w-px"
+                        style={{
+                          height: "100%",
+                          backgroundColor: "color-mix(in srgb, var(--primary) 25%, transparent)",
+                        }}
+                      />
+                    </div>
+                    {/* The child branch */}
                     <OrgBranch
                       node={child}
                       compact={compact}
@@ -173,7 +176,7 @@ function OrgBranch({
 
 export function OrgChartTree({ nodes, onNodeClick, compact, showRoleBadge }: OrgChartTreeProps) {
   if (nodes.length === 0) {
-    return <p className="text-sm text-muted-foreground">No team members</p>;
+    return <p className="text-sm text-muted-foreground">No team members to display</p>;
   }
 
   return (
@@ -185,10 +188,9 @@ export function OrgChartTree({ nodes, onNodeClick, compact, showRoleBadge }: Org
             compact={compact}
             onNodeClick={onNodeClick}
             showRoleBadge={showRoleBadge}
-            isRoot
           />
         ) : (
-          <div className="flex gap-8">
+          <div className={`flex ${compact ? "gap-4" : "gap-8"}`}>
             {nodes.map((node) => (
               <OrgBranch
                 key={node.id}
@@ -196,7 +198,6 @@ export function OrgChartTree({ nodes, onNodeClick, compact, showRoleBadge }: Org
                 compact={compact}
                 onNodeClick={onNodeClick}
                 showRoleBadge={showRoleBadge}
-                isRoot
               />
             ))}
           </div>
@@ -206,7 +207,7 @@ export function OrgChartTree({ nodes, onNodeClick, compact, showRoleBadge }: Org
   );
 }
 
-/** Build tree from flat user list with managerId */
+/** Build tree from flat user list with managerId — handles cycles safely */
 export function buildOrgTree(
   users: {
     id: string;
@@ -234,12 +235,11 @@ export function buildOrgTree(
   }
 
   const roots: OrgChartNode[] = [];
-  const placed = new Set<string>();
 
   for (const u of users) {
     const node = map.get(u.id)!;
     if (u.managerId && map.has(u.managerId) && u.managerId !== u.id) {
-      // Check for cycle: walk up the chain from the manager
+      // Check for cycle: walk up the chain from the proposed manager
       let current: string | null = u.managerId;
       let isCycle = false;
       const visited = new Set<string>();
@@ -255,7 +255,6 @@ export function buildOrgTree(
 
       if (!isCycle) {
         map.get(u.managerId)!.children.push(node);
-        placed.add(u.id);
       } else {
         roots.push(node);
       }

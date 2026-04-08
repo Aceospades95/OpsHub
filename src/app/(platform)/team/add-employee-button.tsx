@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useFormState } from "react-dom";
 import { createUser } from "@/actions/admin";
@@ -11,13 +11,17 @@ const ROLES = ["VIEWER", "CONTRIBUTOR", "DEVELOPER", "MANAGER", "ADMIN"];
 
 export function AddEmployeeButton({ managers }: { managers: { id: string; name: string }[] }) {
   const [open, setOpen] = useState(false);
+  const [hasLogin, setHasLogin] = useState(true);
   const [state, action] = useFormState(createUser, null);
   const router = useRouter();
 
-  if (state?.success) {
-    setOpen(false);
-    router.refresh();
-  }
+  useEffect(() => {
+    if (state?.success) {
+      setOpen(false);
+      setHasLogin(true);
+      router.refresh();
+    }
+  }, [state, router]);
 
   return (
     <>
@@ -34,14 +38,36 @@ export function AddEmployeeButton({ managers }: { managers: { id: string; name: 
                 <label className="text-sm font-medium">Full Name *</label>
                 <input name="name" required className="w-full mt-1 px-3 py-2 text-sm border border-input rounded-md bg-background" />
               </div>
-              <div>
-                <label className="text-sm font-medium">Email *</label>
-                <input name="email" type="email" required className="w-full mt-1 px-3 py-2 text-sm border border-input rounded-md bg-background" />
+
+              {/* Login access toggle */}
+              <div className="flex items-center gap-2 p-3 rounded-md bg-muted">
+                <input type="hidden" name="hasLoginAccess" value={hasLogin ? "true" : "false"} />
+                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={hasLogin}
+                    onChange={(e) => setHasLogin(e.target.checked)}
+                    className="accent-primary"
+                  />
+                  Has login access
+                </label>
+                <span className="text-xs text-muted-foreground">Uncheck for employees who don&apos;t need a system account</span>
               </div>
-              <div>
-                <label className="text-sm font-medium">Password *</label>
-                <input name="password" type="password" required minLength={6} className="w-full mt-1 px-3 py-2 text-sm border border-input rounded-md bg-background" />
-              </div>
+
+              {/* Email + Password — only shown for login users */}
+              {hasLogin && (
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-sm font-medium">Email *</label>
+                    <input name="email" type="email" className="w-full mt-1 px-3 py-2 text-sm border border-input rounded-md bg-background" />
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium">Password *</label>
+                    <input name="password" type="password" minLength={6} className="w-full mt-1 px-3 py-2 text-sm border border-input rounded-md bg-background" />
+                  </div>
+                </div>
+              )}
+
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-sm font-medium">Job Title</label>
@@ -76,15 +102,6 @@ export function AddEmployeeButton({ managers }: { managers: { id: string; name: 
                     {managers.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
                   </select>
                 </div>
-              </div>
-
-              <div className="flex items-center gap-2 p-3 rounded-md bg-muted">
-                <label className="flex items-center gap-2 text-sm">
-                  <input type="hidden" name="hasLoginAccess" value="false" />
-                  <input type="checkbox" name="hasLoginAccess" value="true" defaultChecked className="accent-primary" />
-                  Has login access
-                </label>
-                <span className="text-xs text-muted-foreground">Uncheck for employees who don&apos;t need a system account</span>
               </div>
 
               {state?.error && <p className="text-sm text-destructive">{state.error}</p>}

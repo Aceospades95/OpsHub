@@ -13,8 +13,8 @@ function requireAdminOrManager(role: string) {
 
 const createUserSchema = z.object({
   name: z.string().min(2, "Name required"),
-  email: z.string().email("Invalid email"),
-  password: z.string().min(6, "Min 6 chars"),
+  email: z.string().email("Invalid email").optional(),
+  password: z.string().min(6, "Min 6 chars").optional(),
   role: z.enum(["ADMIN", "MANAGER", "DEVELOPER", "CONTRIBUTOR", "VIEWER"]),
   department: z.string().optional(),
   jobTitle: z.string().optional(),
@@ -28,29 +28,42 @@ export async function createUser(_prev: unknown, formData: FormData) {
   const admin = await requireAuth();
   requireAdminOrManager(admin.role);
 
+  const hasLogin = formData.get("hasLoginAccess") !== "false";
+  const emailRaw = (formData.get("email") as string)?.trim();
+  const passwordRaw = (formData.get("password") as string)?.trim();
+
+  // For login users, email and password are required
+  if (hasLogin && !emailRaw) return { error: "Email is required for users with login access" };
+  if (hasLogin && (!passwordRaw || passwordRaw.length < 6)) return { error: "Password must be at least 6 characters" };
+
   const parsed = createUserSchema.safeParse({
     name: formData.get("name"),
-    email: formData.get("email"),
-    password: formData.get("password"),
+    email: emailRaw || undefined,
+    password: passwordRaw || undefined,
     role: formData.get("role") || "VIEWER",
     department: formData.get("department") || undefined,
     jobTitle: formData.get("jobTitle") || undefined,
     phone: formData.get("phone") || undefined,
     location: formData.get("location") || undefined,
     managerId: formData.get("managerId") || undefined,
-    hasLoginAccess: formData.get("hasLoginAccess") !== "false",
+    hasLoginAccess: hasLogin,
   });
 
   if (!parsed.success) return { error: "Invalid input", fieldErrors: parsed.error.flatten().fieldErrors };
 
-  const existing = await db.user.findUnique({ where: { email: parsed.data.email } });
+  // Generate placeholder email for no-login users
+  const email = parsed.data.email || `nologin-${Date.now()}@internal.local`;
+  const existing = await db.user.findUnique({ where: { email } });
   if (existing) return { error: "Email already exists" };
 
-  const hashedPassword = await hash(parsed.data.password, 12);
-  const { password, ...rest } = parsed.data;
+  const hashedPassword = parsed.data.password
+    ? await hash(parsed.data.password, 12)
+    : await hash(`noaccess-${Date.now()}`, 12);
+
+  const { password: _pw, email: _email, ...rest } = parsed.data;
 
   const user = await db.user.create({
-    data: { ...rest, hashedPassword },
+    data: { ...rest, email, hashedPassword, hasLoginAccess: hasLogin },
   });
 
   await logActivity("created", "user", user.id, admin.id, user.name);
