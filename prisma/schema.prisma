@@ -140,6 +140,7 @@ model User {
   isActive       Boolean  @default(true)
   department     String?
   jobTitle       String?
+  location       String?
   phone          String?
   managerId      String?
   createdAt      DateTime @default(now())

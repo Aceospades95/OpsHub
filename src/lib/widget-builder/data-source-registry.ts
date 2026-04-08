@@ -92,6 +92,7 @@ export const DATA_SOURCES: Record<string, DataSourceDefinition> = {
       { key: "role", label: "Role", type: "enum", enumValues: ["ADMIN", "MANAGER", "DEVELOPER", "CONTRIBUTOR", "VIEWER"] },
       { key: "department", label: "Department", type: "string" },
       { key: "jobTitle", label: "Job Title", type: "string" },
+      { key: "location", label: "Location", type: "string" },
       { key: "isActive", label: "Active", type: "boolean" },
       { key: "createdAt", label: "Created", type: "date" },
     ],

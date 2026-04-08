@@ -57,7 +57,7 @@ export default async function ProjectDetailPage({ params }: Props) {
         },
       },
       members: {
-        include: { user: { select: { id: true, name: true, email: true, managerId: true, jobTitle: true, department: true } } },
+        include: { user: { select: { id: true, name: true, email: true, managerId: true, jobTitle: true, department: true, location: true } } },
       },
       milestones: {
         include: {

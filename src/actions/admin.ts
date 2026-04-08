@@ -7,8 +7,8 @@ import { revalidatePath } from "next/cache";
 import { hash } from "bcryptjs";
 import { z } from "zod";
 
-function requireAdmin(role: string) {
-  if (role !== "ADMIN") throw new Error("Admin access required");
+function requireAdminOrManager(role: string) {
+  if (role !== "ADMIN" && role !== "MANAGER") throw new Error("Admin or Manager access required");
 }
 
 const createUserSchema = z.object({
@@ -18,13 +18,14 @@ const createUserSchema = z.object({
   role: z.enum(["ADMIN", "MANAGER", "DEVELOPER", "CONTRIBUTOR", "VIEWER"]),
   department: z.string().optional(),
   jobTitle: z.string().optional(),
+  location: z.string().optional(),
   phone: z.string().optional(),
   managerId: z.string().optional(),
 });
 
 export async function createUser(_prev: unknown, formData: FormData) {
   const admin = await requireAuth();
-  requireAdmin(admin.role);
+  requireAdminOrManager(admin.role);
 
   const parsed = createUserSchema.safeParse({
     name: formData.get("name"),
@@ -34,6 +35,7 @@ export async function createUser(_prev: unknown, formData: FormData) {
     department: formData.get("department") || undefined,
     jobTitle: formData.get("jobTitle") || undefined,
     phone: formData.get("phone") || undefined,
+    location: formData.get("location") || undefined,
     managerId: formData.get("managerId") || undefined,
   });
 
@@ -51,6 +53,7 @@ export async function createUser(_prev: unknown, formData: FormData) {
 
   await logActivity("created", "user", user.id, admin.id, user.name);
   revalidatePath("/admin/users");
+  revalidatePath("/team");
   return { success: true };
 }
 
@@ -60,6 +63,7 @@ const updateUserSchema = z.object({
   role: z.enum(["ADMIN", "MANAGER", "DEVELOPER", "CONTRIBUTOR", "VIEWER"]),
   department: z.string().optional(),
   jobTitle: z.string().optional(),
+  location: z.string().optional(),
   phone: z.string().optional(),
   managerId: z.string().optional(),
   isActive: z.boolean().optional(),
@@ -67,7 +71,7 @@ const updateUserSchema = z.object({
 
 export async function updateUser(_prev: unknown, formData: FormData) {
   const admin = await requireAuth();
-  requireAdmin(admin.role);
+  requireAdminOrManager(admin.role);
 
   const id = formData.get("id") as string;
   const parsed = updateUserSchema.safeParse({
@@ -76,6 +80,7 @@ export async function updateUser(_prev: unknown, formData: FormData) {
     role: formData.get("role"),
     department: formData.get("department") || undefined,
     jobTitle: formData.get("jobTitle") || undefined,
+    location: formData.get("location") || undefined,
     phone: formData.get("phone") || undefined,
     managerId: formData.get("managerId") || undefined,
     isActive: formData.get("isActive") !== "false",
@@ -87,12 +92,13 @@ export async function updateUser(_prev: unknown, formData: FormData) {
   await logActivity("updated", "user", id, admin.id, parsed.data.name);
   revalidatePath(`/admin/users/${id}`);
   revalidatePath("/admin/users");
+  revalidatePath("/team");
   return { success: true };
 }
 
 export async function deleteUser(_prev: unknown, formData: FormData) {
   const admin = await requireAuth();
-  requireAdmin(admin.role);
+  requireAdminOrManager(admin.role);
 
   const id = formData.get("id") as string;
   if (id === admin.id) return { error: "Cannot delete yourself" };
@@ -103,12 +109,13 @@ export async function deleteUser(_prev: unknown, formData: FormData) {
   await db.user.delete({ where: { id } });
   await logActivity("deleted", "user", id, admin.id, user.name);
   revalidatePath("/admin/users");
+  revalidatePath("/team");
   return { success: true };
 }
 
 export async function toggleUserActive(_prev: unknown, formData: FormData) {
   const admin = await requireAuth();
-  requireAdmin(admin.role);
+  requireAdminOrManager(admin.role);
 
   const id = formData.get("id") as string;
   const user = await db.user.findUnique({ where: { id } });
@@ -120,13 +127,14 @@ export async function toggleUserActive(_prev: unknown, formData: FormData) {
   });
 
   revalidatePath("/admin/users");
+  revalidatePath("/team");
   return { success: true };
 }
 
 // Module Permissions
 export async function saveModulePermissions(_prev: unknown, formData: FormData) {
   const admin = await requireAuth();
-  requireAdmin(admin.role);
+  requireAdminOrManager(admin.role);
 
   const userId = formData.get("userId") as string;
   const modules = ["clients", "projects", "contracts", "suppliers", "tools", "intranet", "admin"];
@@ -152,7 +160,7 @@ export async function saveModulePermissions(_prev: unknown, formData: FormData) 
 // Entity Permissions
 export async function saveEntityPermission(_prev: unknown, formData: FormData) {
   const admin = await requireAuth();
-  requireAdmin(admin.role);
+  requireAdminOrManager(admin.role);
 
   const userId = formData.get("userId") as string;
   const entityType = formData.get("entityType") as string;
@@ -185,10 +193,11 @@ export async function saveEntityPermission(_prev: unknown, formData: FormData) {
 
 export async function deleteEntityPermission(_prev: unknown, formData: FormData) {
   const admin = await requireAuth();
-  requireAdmin(admin.role);
+  requireAdminOrManager(admin.role);
 
   const id = formData.get("id") as string;
   await db.entityPermission.delete({ where: { id } });
   revalidatePath("/admin/users");
+  revalidatePath("/team");
   return { success: true };
 }

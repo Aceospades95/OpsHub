@@ -10,6 +10,7 @@ export interface OrgChartNode {
   name: string;
   jobTitle?: string;
   department?: string;
+  location?: string;
   avatar?: string | null;
   role?: string;
   children: OrgChartNode[];
@@ -40,10 +41,13 @@ function NodeCard({
     <button
       onClick={onClick}
       className={`
-        rounded-lg border bg-card shadow-sm text-left transition-all hover:shadow-md
-        ${highlighted ? "border-primary ring-2 ring-primary/20" : "border-border"}
-        ${compact ? "px-3 py-2 min-w-[120px]" : "px-4 py-3 min-w-[160px] max-w-[220px]"}
+        rounded-lg bg-card shadow-sm text-left transition-all hover:shadow-md
+        ${highlighted ? "ring-2 ring-primary/30" : ""}
+        ${compact ? "px-3 py-2 min-w-[120px]" : "px-4 py-3 min-w-[160px] max-w-[240px]"}
       `}
+      style={{
+        border: `1.5px solid color-mix(in srgb, var(--primary) 30%, transparent)`,
+      }}
     >
       <div className={`flex items-center ${compact ? "gap-2" : "gap-3"}`}>
         <Avatar name={node.name} size={compact ? "xs" : "sm"} />
@@ -54,6 +58,9 @@ function NodeCard({
           )}
           {!compact && node.department && (
             <p className="text-[10px] text-muted-foreground truncate">{node.department}</p>
+          )}
+          {!compact && node.location && (
+            <p className="text-[10px] text-muted-foreground truncate">{node.location}</p>
           )}
         </div>
       </div>
@@ -217,6 +224,7 @@ export function buildOrgTree(
     name: string;
     jobTitle?: string | null;
     department?: string | null;
+    location?: string | null;
     avatar?: string | null;
     role?: string;
     managerId?: string | null;
@@ -229,6 +237,7 @@ export function buildOrgTree(
       name: u.name,
       jobTitle: u.jobTitle || undefined,
       department: u.department || undefined,
+      location: u.location || undefined,
       avatar: u.avatar,
       role: u.role,
       children: [],
