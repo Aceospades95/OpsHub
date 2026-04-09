@@ -27,6 +27,8 @@ vi.mock("react-dom", async () => {
 // Mock server action modules to avoid next-auth import chain
 vi.mock("@/actions/assignments", () => ({
   createAssignment: vi.fn(),
+  updateAssignment: vi.fn(),
+  deleteAssignment: vi.fn(),
   createServiceOffering: vi.fn(),
 }));
 
@@ -260,7 +262,7 @@ describe("StaffingMatrix", () => {
     expect(screen.queryByText("Manage Offerings")).not.toBeInTheDocument();
   });
 
-  it("shows Create assignment for project-member rows when canManage", () => {
+  it("shows Edit assignment for project-member rows when canManage", () => {
     const userWithProjectOnly = makeUser({
       id: "u6",
       name: "Needs Assignment",
@@ -270,7 +272,8 @@ describe("StaffingMatrix", () => {
       ],
     });
     render(<StaffingMatrix {...defaultProps} users={[userWithProjectOnly]} canManage={true} />);
-    expect(screen.getByText("Create assignment")).toBeInTheDocument();
+    const editButtons = screen.getAllByText("Edit assignment");
+    expect(editButtons.length).toBeGreaterThanOrEqual(1);
   });
 
   it("shows Assign button for unassigned rows when canManage", () => {

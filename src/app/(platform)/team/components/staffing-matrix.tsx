@@ -4,7 +4,7 @@ import React, { useState, useMemo } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
-  ChevronDown, ChevronRight, ArrowUpDown, Plus, MapPin, X,
+  ChevronDown, ChevronRight, ArrowUpDown, Plus, MapPin, X, Pencil, AlertTriangle, UserPlus,
 } from "lucide-react";
 import Link from "next/link";
 import {
@@ -12,6 +12,7 @@ import {
   AllocationStatus, getAllocationStatus, computeEmployeeFte, formatFte,
 } from "./team-types";
 import { AddAssignmentDialog } from "./add-assignment-dialog";
+import { EditAssignmentDialog, type EditAssignmentData } from "./edit-assignment-dialog";
 import { ManageOfferingsDialog } from "./manage-offerings-dialog";
 
 interface StaffingMatrixProps {
@@ -43,11 +44,20 @@ interface MatrixRow {
   source: "assignment" | "project-member" | "unassigned";
 }
 
-// 3-level hierarchy: Offering → Client → rows
+// 4-level hierarchy: Offering → Client → Project → rows
+interface ProjectGroup {
+  projectName: string;
+  projectId: string | null;
+  rows: MatrixRow[];
+  totalFte: number;
+  neededPositions: number;
+  filledPositions: number;
+}
+
 interface ClientGroup {
   clientName: string;
   clientId: string | null;
-  rows: MatrixRow[];
+  projects: ProjectGroup[];
   totalFte: number;
 }
 
@@ -78,8 +88,10 @@ type SortDir = "asc" | "desc";
 type CapacityFilter = AllocationStatus | null;
 
 export function StaffingMatrix({ users, projects, clients, serviceOfferings, search, canManage }: StaffingMatrixProps) {
-  const [expandedOfferings, setExpandedOfferings] = useState<Set<string>>(new Set(["__all__"]));
-  const [expandedClients, setExpandedClients] = useState<Set<string>>(new Set(["__all__"]));
+  // Track collapsed groups (inverted: everything starts expanded)
+  const [collapsedOfferings, setCollapsedOfferings] = useState<Set<string>>(new Set());
+  const [collapsedClients, setCollapsedClients] = useState<Set<string>>(new Set());
+  const [collapsedProjects, setCollapsedProjects] = useState<Set<string>>(new Set());
   const [offeringFilter, setOfferingFilter] = useState("");
   const [clientFilter, setClientFilter] = useState("");
   const [managerFilter, setManagerFilter] = useState("");
@@ -89,10 +101,14 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, sea
   const [sortDir, setSortDir] = useState<SortDir>("asc");
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [addDialogKey, setAddDialogKey] = useState(0);
+  const [addDialogDefaults, setAddDialogDefaults] = useState<{ employeeId?: string; projectId?: string; clientId?: string; serviceOfferingId?: string }>({});
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [editDialogKey, setEditDialogKey] = useState(0);
+  const [editAssignment, setEditAssignment] = useState<EditAssignmentData | null>(null);
   const [offeringsDialogOpen, setOfferingsDialogOpen] = useState(false);
   const [fteHighlight, setFteHighlight] = useState<string | null>(null);
 
-  const toggleExpand = (set: Set<string>, key: string, setter: React.Dispatch<React.SetStateAction<Set<string>>>) => {
+  const toggleCollapse = (key: string, setter: React.Dispatch<React.SetStateAction<Set<string>>>) => {
     setter((prev) => {
       const next = new Set(prev);
       if (next.has(key)) next.delete(key); else next.add(key);
@@ -105,9 +121,16 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, sea
     else { setSortField(field); setSortDir("asc"); }
   };
 
-  const openAddDialog = () => {
+  const openAddDialog = (defaults: { employeeId?: string; projectId?: string; clientId?: string; serviceOfferingId?: string } = {}) => {
     setAddDialogKey((k) => k + 1);
+    setAddDialogDefaults(defaults);
     setAddDialogOpen(true);
+  };
+
+  const openEditDialog = (data: EditAssignmentData) => {
+    setEditDialogKey((k) => k + 1);
+    setEditAssignment(data);
+    setEditDialogOpen(true);
   };
 
   // Compute per-user allocation status for capacity filtering
@@ -261,16 +284,20 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, sea
     return result;
   }, [rows, offeringFilter, clientFilter, managerFilter, locationFilter, capacityFilter, users, userAllocationMap, sortField, sortDir]);
 
-  // Build 3-level hierarchy: Offering → Client → Rows
+  // Build 4-level hierarchy: Offering → Client → Project → Rows
   const offeringGroups: OfferingGroup[] = useMemo(() => {
-    const offeringMap = new Map<string, Map<string, MatrixRow[]>>();
+    // Offering → Client → Project → Rows
+    const offeringMap = new Map<string, Map<string, Map<string, MatrixRow[]>>>();
 
     for (const row of filteredRows) {
       if (!offeringMap.has(row.offering)) offeringMap.set(row.offering, new Map());
       const clientMap = offeringMap.get(row.offering)!;
       const clientKey = row.clientName || "(No Client)";
-      if (!clientMap.has(clientKey)) clientMap.set(clientKey, []);
-      clientMap.get(clientKey)!.push(row);
+      if (!clientMap.has(clientKey)) clientMap.set(clientKey, new Map());
+      const projectMap = clientMap.get(clientKey)!;
+      const projectKey = row.projectName || "(No Project)";
+      if (!projectMap.has(projectKey)) projectMap.set(projectKey, []);
+      projectMap.get(projectKey)!.push(row);
     }
 
     const groups: OfferingGroup[] = [];
@@ -280,23 +307,42 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, sea
       const allEmployeeIds = new Set<string>();
       let hasProjectMembers = false;
 
-      Array.from(clientMap.entries()).forEach(([clientName, clientRows]) => {
-        const clientFte = clientRows.reduce((s, r) => s + r.fte, 0);
-        const firstRow = clientRows[0];
+      Array.from(clientMap.entries()).forEach(([clientName, projectMap]) => {
+        const projectGroups: ProjectGroup[] = [];
+        let clientFte = 0;
+
+        Array.from(projectMap.entries()).forEach(([projectName, projectRows]) => {
+          const pFte = projectRows.reduce((s, r) => s + r.fte, 0);
+          const totalEmployees = new Set<string>();
+          projectRows.forEach((r) => r.employees.forEach((e) => totalEmployees.add(e.id)));
+          const neededPositions = Math.max(Math.ceil(pFte), totalEmployees.size);
+          projectGroups.push({
+            projectName: projectName === "(No Project)" ? "" : projectName,
+            projectId: projectRows[0]?.projectId || null,
+            rows: projectRows,
+            totalFte: pFte,
+            neededPositions,
+            filledPositions: totalEmployees.size,
+          });
+          clientFte += pFte;
+          projectRows.forEach((r) => {
+            r.employees.forEach((e) => allEmployeeIds.add(e.id));
+            if (r.source === "project-member") hasProjectMembers = true;
+          });
+        });
+
+        projectGroups.sort((a, b) => (a.projectName || "zzz").localeCompare(b.projectName || "zzz"));
+
+        const firstRow = projectGroups[0]?.rows[0];
         clientGroups.push({
           clientName: clientName === "(No Client)" ? "" : clientName,
           clientId: firstRow?.clientId || null,
-          rows: clientRows,
+          projects: projectGroups,
           totalFte: clientFte,
         });
         totalFte += clientFte;
-        clientRows.forEach((r) => {
-          r.employees.forEach((e) => allEmployeeIds.add(e.id));
-          if (r.source === "project-member") hasProjectMembers = true;
-        });
       });
 
-      // Sort client groups by name
       clientGroups.sort((a, b) => (a.clientName || "zzz").localeCompare(b.clientName || "zzz"));
 
       groups.push({
@@ -487,15 +533,16 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, sea
                 )}
                 {offeringGroups.map((group, groupIdx) => {
                   const color = OFFERING_COLORS[groupIdx % OFFERING_COLORS.length];
-                  const isOfferingExpanded = expandedOfferings.has("__all__") || expandedOfferings.has(group.offering);
+                  const isOfferingExpanded = !collapsedOfferings.has(group.offering);
                   const showClientHeaders = group.clients.length > 1 || (group.clients.length === 1 && group.clients[0].clientName);
+                  const totalRows = group.clients.reduce((s, c) => c.projects.reduce((s2, p) => s2 + p.rows.length, s), 0);
 
                   return (
                     <React.Fragment key={group.offering}>
                       {/* ─── Offering Group Header (Level 1) ─── */}
                       <tr
                         className={`border-b border-border/60 border-l-4 ${color.border} ${color.offeringBg} cursor-pointer hover:brightness-95 transition-all`}
-                        onClick={() => toggleExpand(expandedOfferings, group.offering, setExpandedOfferings)}
+                        onClick={() => toggleCollapse(group.offering, setCollapsedOfferings)}
                       >
                         <td colSpan={6} className="py-2.5 px-4">
                           <div className="flex items-center gap-2">
@@ -507,7 +554,7 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, sea
                               </Badge>
                             )}
                             <span className="text-xs text-muted-foreground">
-                              ({group.clients.reduce((s, c) => s + c.rows.length, 0)} row{group.clients.reduce((s, c) => s + c.rows.length, 0) !== 1 ? "s" : ""} · {group.employeeCount} employee{group.employeeCount !== 1 ? "s" : ""})
+                              ({totalRows} row{totalRows !== 1 ? "s" : ""} · {group.employeeCount} employee{group.employeeCount !== 1 ? "s" : ""})
                             </span>
                           </div>
                         </td>
@@ -517,7 +564,8 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, sea
 
                       {isOfferingExpanded && group.clients.map((cg) => {
                         const clientExpandKey = `${group.offering}::${cg.clientName || "__none__"}`;
-                        const isClientExpanded = expandedClients.has("__all__") || expandedClients.has(clientExpandKey);
+                        const isClientExpanded = !collapsedClients.has(clientExpandKey);
+                        const clientRowCount = cg.projects.reduce((s, p) => s + p.rows.length, 0);
 
                         return (
                           <React.Fragment key={clientExpandKey}>
@@ -525,7 +573,7 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, sea
                             {showClientHeaders && (
                               <tr
                                 className={`border-b border-border/40 border-l-4 ${color.border} ${color.clientBg} cursor-pointer hover:brightness-95 transition-all`}
-                                onClick={() => toggleExpand(expandedClients, clientExpandKey, setExpandedClients)}
+                                onClick={() => toggleCollapse(clientExpandKey, setCollapsedClients)}
                               >
                                 <td colSpan={6} className="py-2 px-4">
                                   <div className="flex items-center gap-2 pl-6">
@@ -540,7 +588,7 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, sea
                                       <span className="font-semibold text-sm text-muted-foreground">{cg.clientName || "No Client"}</span>
                                     )}
                                     <span className="text-xs text-muted-foreground">
-                                      ({cg.rows.length} row{cg.rows.length !== 1 ? "s" : ""})
+                                      ({clientRowCount} row{clientRowCount !== 1 ? "s" : ""})
                                     </span>
                                   </div>
                                 </td>
@@ -549,118 +597,240 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, sea
                               </tr>
                             )}
 
-                            {/* ─── Data Rows (Level 3) ─── */}
-                            {(showClientHeaders ? isClientExpanded : true) && cg.rows.map((row) => (
-                              <tr
-                                key={row.key}
-                                className={`border-b border-border/20 border-l-4 ${color.border} ${color.rowBg} transition-colors ${
-                                  fteHighlight && row.employees.some((e) => e.id === fteHighlight) ? "bg-primary/5" : ""
-                                }`}
-                              >
-                                <td className="py-2 px-4 text-muted-foreground text-xs" />
-                                <td className="py-2 px-3 text-sm">
-                                  {row.managerId ? (
-                                    <Link href={`/team/${row.managerId}`} className="hover:text-primary hover:underline">
-                                      {row.managerName}
-                                    </Link>
-                                  ) : row.managerName || <span className="text-muted-foreground">—</span>}
-                                </td>
-                                <td className="py-2 px-3 text-sm font-medium">
-                                  {row.clientId ? (
-                                    <Link href={`/clients/${row.clientId}`} className="hover:text-primary hover:underline">
-                                      {row.clientName}
-                                    </Link>
-                                  ) : row.clientName || <span className="text-muted-foreground">—</span>}
-                                </td>
-                                <td className="py-2 px-3 text-sm">
-                                  {row.projectId ? (
-                                    <Link href={`/projects/${row.projectId}`} className="font-medium hover:text-primary hover:underline">
-                                      {row.projectName}
-                                    </Link>
-                                  ) : row.projectName || <span className="text-muted-foreground">—</span>}
-                                </td>
-                                <td className="py-2 px-3 text-sm text-muted-foreground hidden md:table-cell">
-                                  {row.location ? (
-                                    <span className="flex items-center gap-1"><MapPin className="h-3 w-3" />{row.location}</span>
-                                  ) : "—"}
-                                </td>
-                                <td className="py-2 px-3 text-sm">
-                                  {row.roleRequired ? (
-                                    <Badge variant="outline" className="text-[10px]">{row.roleRequired}</Badge>
-                                  ) : <span className="text-muted-foreground">—</span>}
-                                </td>
-                                <td className="py-2 px-3 text-center">
-                                  {row.source === "project-member" ? (
-                                    canManage ? (
-                                      <button
-                                        onClick={openAddDialog}
-                                        className="font-bold text-sm text-blue-600 hover:text-primary cursor-pointer"
-                                        title="Default FTE from project membership — click to create assignment"
-                                      >
-                                        {formatFte(row.fte)}
-                                      </button>
-                                    ) : (
-                                      <span className="font-bold text-sm text-muted-foreground" title="Default FTE from project membership">
-                                        {formatFte(row.fte)}
-                                      </span>
-                                    )
-                                  ) : row.fte > 0 && row.employees.length === 1 ? (
-                                    <Link
-                                      href={`/team/${row.employees[0].id}`}
-                                      className="font-bold text-sm hover:text-primary hover:underline cursor-pointer"
-                                      title={`View ${row.employees[0].name}'s allocation details`}
-                                      onMouseEnter={() => setFteHighlight(row.employees[0].id)}
-                                      onMouseLeave={() => setFteHighlight(null)}
+                            {/* ─── Project Groups (Level 3) ─── */}
+                            {(showClientHeaders ? isClientExpanded : true) && cg.projects.map((pg) => {
+                              const projectExpandKey = `${clientExpandKey}::${pg.projectName || "__none__"}`;
+                              const isProjectExpanded = !collapsedProjects.has(projectExpandKey);
+                              const showProjectHeader = pg.projectName && (cg.projects.length > 1 || pg.rows.length > 1);
+                              const unfilled = Math.max(0, pg.neededPositions - pg.filledPositions);
+
+                              return (
+                                <React.Fragment key={projectExpandKey}>
+                                  {showProjectHeader && (
+                                    <tr
+                                      className={`border-b border-border/30 border-l-4 ${color.border} cursor-pointer hover:brightness-95 transition-all bg-muted/20`}
+                                      onClick={() => toggleCollapse(projectExpandKey, setCollapsedProjects)}
                                     >
-                                      {formatFte(row.fte)}
-                                    </Link>
-                                  ) : (
-                                    <button
-                                      onClick={() => toggleSort("fte")}
-                                      className={`font-bold text-sm hover:text-primary cursor-pointer ${row.fte > 1 ? "text-red-600" : ""}`}
-                                      title="Sort by FTE"
-                                    >
-                                      {formatFte(row.fte)}
-                                    </button>
+                                      <td colSpan={6} className="py-1.5 px-4">
+                                        <div className="flex items-center gap-2 pl-12">
+                                          {isProjectExpanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                                          {pg.projectId ? (
+                                            <Link href={`/projects/${pg.projectId}`}
+                                              className="font-medium text-xs hover:text-primary hover:underline"
+                                              onClick={(e) => e.stopPropagation()}>
+                                              {pg.projectName}
+                                            </Link>
+                                          ) : (
+                                            <span className="font-medium text-xs text-muted-foreground">{pg.projectName || "No Project"}</span>
+                                          )}
+                                          <span className="text-[10px] text-muted-foreground">
+                                            ({pg.rows.length} role{pg.rows.length !== 1 ? "s" : ""} · {pg.filledPositions}/{pg.neededPositions} filled)
+                                          </span>
+                                          {unfilled > 0 && (
+                                            <Badge variant="outline" className="text-[9px] bg-amber-50 border-amber-300 text-amber-700 gap-0.5">
+                                              <AlertTriangle className="h-2.5 w-2.5" />
+                                              {unfilled} unfilled
+                                            </Badge>
+                                          )}
+                                        </div>
+                                      </td>
+                                      <td className="py-1.5 px-3 text-center font-semibold text-xs">{formatFte(pg.totalFte)}</td>
+                                      <td colSpan={2} className="py-1.5 px-3" />
+                                    </tr>
                                   )}
-                                </td>
-                                <td className="py-2 px-3">
-                                  <div className="space-y-0.5">
-                                    {row.employees.map((emp) => (
-                                      <div key={emp.id}>
-                                        <Link href={`/team/${emp.id}`} className="text-xs hover:text-primary hover:underline">
-                                          {emp.name}
-                                        </Link>
-                                      </div>
-                                    ))}
-                                    {row.employees.length === 0 && (
-                                      <span className="text-xs text-muted-foreground italic">Unfilled</span>
-                                    )}
-                                  </div>
-                                </td>
-                                <td className="py-2 px-3 hidden lg:table-cell">
-                                  {row.source === "project-member" && canManage ? (
-                                    <button
-                                      onClick={openAddDialog}
-                                      className="text-xs text-primary hover:underline flex items-center gap-1"
-                                    >
-                                      <Plus className="h-3 w-3" />
-                                      Create assignment
-                                    </button>
-                                  ) : row.source === "unassigned" && canManage ? (
-                                    <button
-                                      onClick={openAddDialog}
-                                      className="text-xs text-primary hover:underline flex items-center gap-1"
-                                    >
-                                      <Plus className="h-3 w-3" />
-                                      Assign
-                                    </button>
-                                  ) : row.notes ? (
-                                    <span className="text-xs text-muted-foreground">{row.notes}</span>
-                                  ) : null}
-                                </td>
-                              </tr>
-                            ))}
+
+                                  {/* ─── Data Rows (Level 4) ─── */}
+                                  {(showProjectHeader ? isProjectExpanded : true) && pg.rows.map((row) => {
+                                    const rowUnfilled = Math.max(0, Math.ceil(row.fte) - row.employees.length);
+                                    return (
+                                      <tr
+                                        key={row.key}
+                                        className={`border-b border-border/20 border-l-4 ${color.border} ${color.rowBg} transition-colors ${
+                                          fteHighlight && row.employees.some((e) => e.id === fteHighlight) ? "bg-primary/5" : ""
+                                        }`}
+                                      >
+                                        <td className="py-2 px-4 text-muted-foreground text-xs" />
+                                        <td className="py-2 px-3 text-sm">
+                                          {row.managerId ? (
+                                            <Link href={`/team/${row.managerId}`} className="hover:text-primary hover:underline">
+                                              {row.managerName}
+                                            </Link>
+                                          ) : row.managerName || <span className="text-muted-foreground">—</span>}
+                                        </td>
+                                        <td className="py-2 px-3 text-sm font-medium">
+                                          {row.clientId ? (
+                                            <Link href={`/clients/${row.clientId}`} className="hover:text-primary hover:underline">
+                                              {row.clientName}
+                                            </Link>
+                                          ) : row.clientName || <span className="text-muted-foreground">—</span>}
+                                        </td>
+                                        <td className="py-2 px-3 text-sm">
+                                          {row.projectId ? (
+                                            <Link href={`/projects/${row.projectId}`} className="font-medium hover:text-primary hover:underline">
+                                              {row.projectName}
+                                            </Link>
+                                          ) : row.projectName || <span className="text-muted-foreground">—</span>}
+                                        </td>
+                                        <td className="py-2 px-3 text-sm text-muted-foreground hidden md:table-cell">
+                                          {row.location ? (
+                                            <span className="flex items-center gap-1"><MapPin className="h-3 w-3" />{row.location}</span>
+                                          ) : "—"}
+                                        </td>
+                                        <td className="py-2 px-3 text-sm">
+                                          {row.roleRequired ? (
+                                            <div className="flex items-center gap-1">
+                                              <Badge variant="outline" className="text-[10px]">{row.roleRequired}</Badge>
+                                              {rowUnfilled > 0 && (
+                                                <span className="text-[9px] text-amber-600 font-medium" title={`${rowUnfilled} position${rowUnfilled !== 1 ? "s" : ""} unfilled`}>
+                                                  <AlertTriangle className="h-3 w-3 inline text-amber-500" />
+                                                </span>
+                                              )}
+                                            </div>
+                                          ) : <span className="text-muted-foreground">—</span>}
+                                        </td>
+                                        <td className="py-2 px-3 text-center">
+                                          {row.source === "assignment" && canManage && row.assignmentIds.length === 1 && row.employees.length === 1 ? (
+                                            <button
+                                              onClick={() => {
+                                                const emp = row.employees[0];
+                                                const a = users.find((u) => u.id === emp.id)?.assignments.find((a) => a.id === row.assignmentIds[0]);
+                                                if (a) openEditDialog({
+                                                  id: a.id, employeeId: emp.id, employeeName: emp.name,
+                                                  projectId: a.project?.id || null, clientId: a.client?.id || null,
+                                                  serviceOfferingId: a.serviceOffering?.id || null,
+                                                  function: a.function || "", role: a.role || "",
+                                                  allocationFte: a.allocationFte, status: a.status,
+                                                  startDate: a.startDate, endDate: a.endDate, notes: a.notes || "",
+                                                });
+                                              }}
+                                              className="font-bold text-sm text-blue-600 hover:text-primary cursor-pointer"
+                                              title={`Edit ${row.employees[0].name}'s assignment`}
+                                              onMouseEnter={() => setFteHighlight(row.employees[0].id)}
+                                              onMouseLeave={() => setFteHighlight(null)}
+                                            >
+                                              {formatFte(row.fte)}
+                                            </button>
+                                          ) : row.source === "project-member" ? (
+                                            canManage ? (
+                                              <button
+                                                onClick={() => openAddDialog({
+                                                  employeeId: row.employees[0]?.id,
+                                                  projectId: row.projectId || undefined,
+                                                  clientId: row.clientId || undefined,
+                                                })}
+                                                className="font-bold text-sm text-blue-600 hover:text-primary cursor-pointer"
+                                                title="Default FTE — click to create assignment"
+                                              >
+                                                {formatFte(row.fte)}
+                                              </button>
+                                            ) : (
+                                              <span className="font-bold text-sm text-muted-foreground" title="Default FTE from project membership">
+                                                {formatFte(row.fte)}
+                                              </span>
+                                            )
+                                          ) : row.fte > 0 && row.employees.length === 1 ? (
+                                            <Link
+                                              href={`/team/${row.employees[0].id}`}
+                                              className="font-bold text-sm hover:text-primary hover:underline cursor-pointer"
+                                              title={`View ${row.employees[0].name}'s allocation details`}
+                                              onMouseEnter={() => setFteHighlight(row.employees[0].id)}
+                                              onMouseLeave={() => setFteHighlight(null)}
+                                            >
+                                              {formatFte(row.fte)}
+                                            </Link>
+                                          ) : (
+                                            <button
+                                              onClick={() => toggleSort("fte")}
+                                              className={`font-bold text-sm hover:text-primary cursor-pointer ${row.fte > 1 ? "text-red-600" : ""}`}
+                                              title="Sort by FTE"
+                                            >
+                                              {formatFte(row.fte)}
+                                            </button>
+                                          )}
+                                        </td>
+                                        <td className="py-2 px-3">
+                                          <div className="space-y-0.5">
+                                            {row.employees.map((emp) => (
+                                              <div key={emp.id}>
+                                                <Link href={`/team/${emp.id}`} className="text-xs hover:text-primary hover:underline">
+                                                  {emp.name}
+                                                </Link>
+                                              </div>
+                                            ))}
+                                            {/* Unfilled position slots */}
+                                            {rowUnfilled > 0 && Array.from({ length: rowUnfilled }).map((_, i) => (
+                                              <div key={`unfilled-${i}`} className="flex items-center gap-1 text-xs text-amber-600 italic">
+                                                <UserPlus className="h-3 w-3" />
+                                                <span>Unfilled</span>
+                                                {canManage && (
+                                                  <button
+                                                    onClick={() => openAddDialog({
+                                                      projectId: row.projectId || undefined,
+                                                      clientId: row.clientId || undefined,
+                                                      serviceOfferingId: row.offeringId || undefined,
+                                                    })}
+                                                    className="text-primary hover:underline ml-1"
+                                                  >
+                                                    Assign
+                                                  </button>
+                                                )}
+                                              </div>
+                                            ))}
+                                            {row.employees.length === 0 && rowUnfilled === 0 && (
+                                              <span className="text-xs text-muted-foreground italic">Unfilled</span>
+                                            )}
+                                          </div>
+                                        </td>
+                                        <td className="py-2 px-3 hidden lg:table-cell">
+                                          {row.source === "assignment" && canManage && row.assignmentIds.length === 1 && row.employees.length === 1 ? (
+                                            <button
+                                              onClick={() => {
+                                                const emp = row.employees[0];
+                                                const a = users.find((u) => u.id === emp.id)?.assignments.find((a) => a.id === row.assignmentIds[0]);
+                                                if (a) openEditDialog({
+                                                  id: a.id, employeeId: emp.id, employeeName: emp.name,
+                                                  projectId: a.project?.id || null, clientId: a.client?.id || null,
+                                                  serviceOfferingId: a.serviceOffering?.id || null,
+                                                  function: a.function || "", role: a.role || "",
+                                                  allocationFte: a.allocationFte, status: a.status,
+                                                  startDate: a.startDate, endDate: a.endDate, notes: a.notes || "",
+                                                });
+                                              }}
+                                              className="text-xs text-primary hover:underline flex items-center gap-1"
+                                            >
+                                              <Pencil className="h-3 w-3" />
+                                              Edit assignment
+                                            </button>
+                                          ) : row.source === "project-member" && canManage ? (
+                                            <button
+                                              onClick={() => openAddDialog({
+                                                employeeId: row.employees[0]?.id,
+                                                projectId: row.projectId || undefined,
+                                                clientId: row.clientId || undefined,
+                                              })}
+                                              className="text-xs text-primary hover:underline flex items-center gap-1"
+                                            >
+                                              <Pencil className="h-3 w-3" />
+                                              Edit assignment
+                                            </button>
+                                          ) : row.source === "unassigned" && canManage ? (
+                                            <button
+                                              onClick={() => openAddDialog({ employeeId: row.employees[0]?.id })}
+                                              className="text-xs text-primary hover:underline flex items-center gap-1"
+                                            >
+                                              <Plus className="h-3 w-3" />
+                                              Assign
+                                            </button>
+                                          ) : row.notes ? (
+                                            <span className="text-xs text-muted-foreground">{row.notes}</span>
+                                          ) : null}
+                                        </td>
+                                      </tr>
+                                    );
+                                  })}
+                                </React.Fragment>
+                              );
+                            })}
                           </React.Fragment>
                         );
                       })}
@@ -693,6 +863,19 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, sea
             open={addDialogOpen}
             onClose={() => setAddDialogOpen(false)}
             users={users}
+            projects={projects}
+            clients={clients}
+            serviceOfferings={serviceOfferings}
+            defaultEmployeeId={addDialogDefaults.employeeId}
+            defaultProjectId={addDialogDefaults.projectId}
+            defaultClientId={addDialogDefaults.clientId}
+            defaultServiceOfferingId={addDialogDefaults.serviceOfferingId}
+          />
+          <EditAssignmentDialog
+            key={`edit-${editDialogKey}`}
+            open={editDialogOpen}
+            onClose={() => setEditDialogOpen(false)}
+            assignment={editAssignment}
             projects={projects}
             clients={clients}
             serviceOfferings={serviceOfferings}
