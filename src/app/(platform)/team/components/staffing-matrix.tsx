@@ -485,7 +485,7 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, sea
                 className="flex items-center gap-1 px-3 py-1.5 text-sm font-medium border border-input rounded-md hover:bg-muted transition-colors">
                 Manage Offerings
               </button>
-              <button onClick={openAddDialog}
+              <button onClick={() => openAddDialog()}
                 className="flex items-center gap-1 px-3 py-1.5 text-sm font-medium bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors">
                 <Plus className="h-3.5 w-3.5" />
                 Add Assignment

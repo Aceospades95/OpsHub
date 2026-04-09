@@ -98,10 +98,12 @@ export async function deleteAssignment(_prev: unknown, formData: FormData) {
   requireAdminOrManager(user.role);
 
   const id = formData.get("id") as string;
+  if (!id) return { error: "Assignment ID is required" };
+
   await db.assignment.delete({ where: { id } });
   await logActivity("deleted", "assignment", id, user.id);
   revalidatePath("/team");
-  return { success: true };
+  return { success: true, error: null };
 }
 
 // Service Offering CRUD
