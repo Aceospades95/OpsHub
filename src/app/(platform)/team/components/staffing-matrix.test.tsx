@@ -10,6 +10,26 @@ vi.mock("next/link", () => ({
   ),
 }));
 
+// Mock next/navigation
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ refresh: vi.fn() }),
+}));
+
+// Mock react-dom useFormState
+vi.mock("react-dom", async () => {
+  const actual = await vi.importActual("react-dom");
+  return {
+    ...actual,
+    useFormState: () => [null, vi.fn()],
+  };
+});
+
+// Mock server action modules to avoid next-auth import chain
+vi.mock("@/actions/assignments", () => ({
+  createAssignment: vi.fn(),
+  createServiceOffering: vi.fn(),
+}));
+
 const mockProject: ProjectData = { id: "p1", name: "Project Alpha", status: "ACTIVE", clientId: "c1" };
 const mockClient: ClientData = { id: "c1", name: "Client One" };
 const mockSO: ServiceOfferingData = { id: "so1", name: "Consulting" };
@@ -36,7 +56,7 @@ function makeUser(overrides: Partial<UserData> = {}): UserData {
         status: "ACTIVE",
         role: "Lead",
         function: "Development",
-        notes: null,
+        notes: "Primary assignment",
         startDate: null,
         endDate: null,
         project: { id: "p1", name: "Project Alpha", status: "ACTIVE" },
@@ -54,7 +74,7 @@ function makeUser(overrides: Partial<UserData> = {}): UserData {
         endDate: null,
         project: { id: "p2", name: "Project Beta", status: "ACTIVE" },
         client: null,
-        serviceOffering: null,
+        serviceOffering: { id: "so2", name: "Data Center & Infra" },
       },
     ],
     ...overrides,
@@ -68,46 +88,86 @@ describe("StaffingMatrix", () => {
     clients: [mockClient],
     serviceOfferings: [mockSO],
     search: "",
+    canManage: false,
   };
 
   it("renders summary metrics", () => {
     render(<StaffingMatrix {...defaultProps} />);
     expect(screen.getByText("Headcount")).toBeInTheDocument();
-    expect(screen.getByText("Total Allocated FTE")).toBeInTheDocument();
-    expect(screen.getByText("Available Capacity")).toBeInTheDocument();
+    // "Total FTE" appears in both the metric card and footer
+    const totalFteElements = screen.getAllByText("Total FTE");
+    expect(totalFteElements.length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText("Assignments")).toBeInTheDocument();
   });
 
-  it("renders employee name", () => {
+  it("renders column headers for assignment-row layout", () => {
     render(<StaffingMatrix {...defaultProps} />);
-    expect(screen.getByText("Jane Smith")).toBeInTheDocument();
+    expect(screen.getByText("Offering")).toBeInTheDocument();
+    expect(screen.getByText("Manager / Lead")).toBeInTheDocument();
+    expect(screen.getByText("Client")).toBeInTheDocument();
+    expect(screen.getByText("Project")).toBeInTheDocument();
+    expect(screen.getByText("Role Required")).toBeInTheDocument();
+    expect(screen.getByText("FTE")).toBeInTheDocument();
+    expect(screen.getByText("Employee(s)")).toBeInTheDocument();
+    expect(screen.getByText("Notes")).toBeInTheDocument();
   });
 
-  it("shows total FTE for employee", () => {
+  it("renders employee name in assignment rows", () => {
     render(<StaffingMatrix {...defaultProps} />);
-    // 0.6 + 0.3 = 0.9 — appears in summary metric, row, and footer
-    const allFte = screen.getAllByText("0.90");
-    expect(allFte.length).toBeGreaterThanOrEqual(1);
+    // Jane appears in both assignment rows (two different assignments)
+    const janeElements = screen.getAllByText("Jane Smith");
+    expect(janeElements.length).toBeGreaterThanOrEqual(1);
   });
 
-  it("renders dynamic columns for projects", () => {
+  it("renders project names in assignment rows", () => {
     render(<StaffingMatrix {...defaultProps} />);
     expect(screen.getByText("Project Alpha")).toBeInTheDocument();
     expect(screen.getByText("Project Beta")).toBeInTheDocument();
   });
 
-  it("allows switching dimensions", () => {
+  it("renders client name in assignment rows", () => {
     render(<StaffingMatrix {...defaultProps} />);
-    const select = screen.getByDisplayValue("Project");
-    fireEvent.change(select, { target: { value: "client" } });
-    expect(screen.getByText("Client One")).toBeInTheDocument();
+    // "Client One" appears in filter dropdown and in the table row
+    const clientElements = screen.getAllByText("Client One");
+    expect(clientElements.length).toBeGreaterThanOrEqual(1);
   });
 
-  it("shows 'Available' badge for underallocated employee", () => {
+  it("shows offering group headers", () => {
     render(<StaffingMatrix {...defaultProps} />);
-    expect(screen.getByText("Available")).toBeInTheDocument();
+    // Offering names appear in both filter dropdown and group headers
+    const consultingElements = screen.getAllByText("Consulting");
+    expect(consultingElements.length).toBeGreaterThanOrEqual(1);
+    const dcElements = screen.getAllByText("Data Center & Infra");
+    expect(dcElements.length).toBeGreaterThanOrEqual(1);
   });
 
-  it("shows overallocated warning", () => {
+  it("displays FTE values in assignment rows", () => {
+    render(<StaffingMatrix {...defaultProps} />);
+    // 0.60 and 0.30 appear in rows, 0.90 in footer
+    const allFte = screen.getAllByText("0.60");
+    expect(allFte.length).toBeGreaterThanOrEqual(1);
+    const allFte2 = screen.getAllByText("0.30");
+    expect(allFte2.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("shows manager name in assignment rows", () => {
+    render(<StaffingMatrix {...defaultProps} />);
+    const managerLinks = screen.getAllByText("Bob Manager");
+    expect(managerLinks.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("shows role badges in assignment rows", () => {
+    render(<StaffingMatrix {...defaultProps} />);
+    expect(screen.getByText("Lead")).toBeInTheDocument();
+    expect(screen.getByText("Member")).toBeInTheDocument();
+  });
+
+  it("shows notes in assignment rows", () => {
+    render(<StaffingMatrix {...defaultProps} />);
+    expect(screen.getByText("Primary assignment")).toBeInTheDocument();
+  });
+
+  it("shows overallocated metric count", () => {
     const overUser = makeUser({
       id: "u2",
       name: "Over User",
@@ -116,34 +176,78 @@ describe("StaffingMatrix", () => {
           id: "a3", allocationFte: 0.7, status: "ACTIVE", role: null,
           function: null, notes: null, startDate: null, endDate: null,
           project: { id: "p1", name: "Project Alpha", status: "ACTIVE" },
-          client: null, serviceOffering: null,
+          client: null, serviceOffering: { id: "so1", name: "Consulting" },
         },
         {
           id: "a4", allocationFte: 0.5, status: "ACTIVE", role: null,
           function: null, notes: null, startDate: null, endDate: null,
           project: { id: "p2", name: "Project Beta", status: "ACTIVE" },
-          client: null, serviceOffering: null,
+          client: null, serviceOffering: { id: "so1", name: "Consulting" },
         },
       ],
     });
     render(<StaffingMatrix {...defaultProps} users={[overUser]} />);
-    expect(screen.getByText("Over")).toBeInTheDocument();
+    expect(screen.getByText("Overallocated")).toBeInTheDocument();
   });
 
-  it("filters employees by search", () => {
+  it("filters rows by search on employee name", () => {
     render(<StaffingMatrix {...defaultProps} search="nonexistent" />);
-    expect(screen.getByText(/No employees match/)).toBeInTheDocument();
+    expect(screen.getByText(/No assignments match/)).toBeInTheDocument();
   });
 
-  it("expands row on click to show assignment details", () => {
+  it("filters rows by search matching assignment fields", () => {
+    render(<StaffingMatrix {...defaultProps} search="Alpha" />);
+    expect(screen.getByText("Project Alpha")).toBeInTheDocument();
+  });
+
+  it("offering group headers are clickable", () => {
     render(<StaffingMatrix {...defaultProps} />);
-    // The expand button is the one inside the table row with the chevron
-    const rows = screen.getAllByRole("row");
-    // Row 0 is header, row 1 is the data row
-    const dataRow = rows[1];
-    const expandBtn = dataRow.querySelector("button");
-    if (expandBtn) fireEvent.click(expandBtn);
-    // Should show assignment count text
-    expect(screen.getByText(/2 assignments/i)).toBeInTheDocument();
+    // Verify group headers render and are clickable without errors
+    const consultingHeaders = screen.getAllByText("Consulting");
+    const groupHeader = consultingHeaders.find((el) => el.closest("tr"))!;
+    expect(groupHeader).toBeInTheDocument();
+    // Click should not throw
+    fireEvent.click(groupHeader.closest("tr")!);
+  });
+
+  it("shows unassigned employees as separate rows", () => {
+    const unassignedUser = makeUser({
+      id: "u3",
+      name: "New Hire",
+      assignments: [],
+    });
+    render(<StaffingMatrix {...defaultProps} users={[...defaultProps.users, unassignedUser]} />);
+    expect(screen.getByText("New Hire")).toBeInTheDocument();
+    // "Unassigned" appears in metric card label and as an offering group header
+    const unassignedElements = screen.getAllByText("Unassigned");
+    expect(unassignedElements.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("shows Add Assignment button when canManage is true", () => {
+    render(<StaffingMatrix {...defaultProps} canManage={true} />);
+    expect(screen.getByText("Add Assignment")).toBeInTheDocument();
+  });
+
+  it("shows Manage Offerings button when canManage is true", () => {
+    render(<StaffingMatrix {...defaultProps} canManage={true} />);
+    expect(screen.getByText("Manage Offerings")).toBeInTheDocument();
+  });
+
+  it("hides management buttons when canManage is false", () => {
+    render(<StaffingMatrix {...defaultProps} canManage={false} />);
+    expect(screen.queryByText("Add Assignment")).not.toBeInTheDocument();
+    expect(screen.queryByText("Manage Offerings")).not.toBeInTheDocument();
+  });
+
+  it("shows footer total FTE", () => {
+    render(<StaffingMatrix {...defaultProps} />);
+    // Total FTE: 0.60 + 0.30 = 0.90
+    const totalFteElements = screen.getAllByText("0.90");
+    expect(totalFteElements.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("renders filter dropdowns", () => {
+    render(<StaffingMatrix {...defaultProps} />);
+    expect(screen.getByText("All Offerings")).toBeInTheDocument();
   });
 });

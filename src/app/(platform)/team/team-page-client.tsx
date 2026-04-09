@@ -76,6 +76,7 @@ export function TeamPageClient({ users, inactiveUsers, projects, clients, servic
           clients={clients}
           serviceOfferings={serviceOfferings}
           search={search}
+          canManage={canManage}
         />
       )}
       {view === "breakdown" && (

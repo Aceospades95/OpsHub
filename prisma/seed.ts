@@ -761,6 +761,163 @@ async function main() {
     await prisma.activityLog.create({ data: log });
   }
 
+  // ─── SERVICE OFFERINGS ──────────────────────────────
+  const offeringFieldServices = await prisma.serviceOffering.upsert({
+    where: { name: "End User Device Field Services" },
+    update: {},
+    create: { name: "End User Device Field Services", description: "On-site field services for end user device deployment, repair, and support." },
+  });
+
+  const offeringDeviceDeployment = await prisma.serviceOffering.upsert({
+    where: { name: "End User Device Deployment" },
+    update: {},
+    create: { name: "End User Device Deployment", description: "Large-scale device deployment and imaging projects." },
+  });
+
+  const offeringDataCenter = await prisma.serviceOffering.upsert({
+    where: { name: "Data Center & Infra" },
+    update: {},
+    create: { name: "Data Center & Infra", description: "Data center operations, migrations, and infrastructure services." },
+  });
+
+  const offeringBPO = await prisma.serviceOffering.upsert({
+    where: { name: "Business Process Outsourcing" },
+    update: {},
+    create: { name: "Business Process Outsourcing", description: "Outsourced business process management and operations." },
+  });
+
+  const offeringConsulting = await prisma.serviceOffering.upsert({
+    where: { name: "Consulting" },
+    update: {},
+    create: { name: "Consulting", description: "Strategic consulting, security audits, and advisory services." },
+  });
+
+  // ─── ASSIGNMENTS / ALLOCATIONS ────────────────────────
+  // Admin (Alex Wynne) — Director of Operations, split across oversight roles
+  await prisma.assignment.upsert({
+    where: { id: "assign-admin-fleet" },
+    update: {},
+    create: {
+      id: "assign-admin-fleet",
+      employeeId: admin.id,
+      projectId: projectFleet.id,
+      clientId: clientAcme.id,
+      serviceOfferingId: offeringFieldServices.id,
+      function: "Operations Management",
+      role: "Operations Manager",
+      allocationFte: 0.4,
+      status: "ACTIVE",
+      startDate: new Date("2025-01-15"),
+    },
+  });
+
+  await prisma.assignment.upsert({
+    where: { id: "assign-admin-security" },
+    update: {},
+    create: {
+      id: "assign-admin-security",
+      employeeId: admin.id,
+      projectId: projectSecurity.id,
+      clientId: clientGlobal.id,
+      serviceOfferingId: offeringConsulting.id,
+      function: "Security Consulting",
+      role: "Lead Consultant",
+      allocationFte: 0.3,
+      status: "ACTIVE",
+      startDate: new Date("2025-06-01"),
+    },
+  });
+
+  await prisma.assignment.upsert({
+    where: { id: "assign-admin-bpo" },
+    update: {},
+    create: {
+      id: "assign-admin-bpo",
+      employeeId: admin.id,
+      serviceOfferingId: offeringBPO.id,
+      function: "Program Oversight",
+      role: "Team Lead",
+      allocationFte: 0.3,
+      status: "ACTIVE",
+      notes: "Manages Event processing Team",
+    },
+  });
+
+  // Manager (Jordan Rivera) — Senior Project Manager
+  await prisma.assignment.upsert({
+    where: { id: "assign-manager-fleet" },
+    update: {},
+    create: {
+      id: "assign-manager-fleet",
+      employeeId: manager.id,
+      projectId: projectFleet.id,
+      clientId: clientAcme.id,
+      serviceOfferingId: offeringFieldServices.id,
+      function: "Project Management",
+      role: "Project Lead",
+      allocationFte: 0.5,
+      status: "ACTIVE",
+      startDate: new Date("2025-01-15"),
+      endDate: new Date("2025-09-30"),
+    },
+  });
+
+  await prisma.assignment.upsert({
+    where: { id: "assign-manager-onboard" },
+    update: {},
+    create: {
+      id: "assign-manager-onboard",
+      employeeId: manager.id,
+      projectId: projectOnboard.id,
+      clientId: clientGlobal.id,
+      serviceOfferingId: offeringDeviceDeployment.id,
+      function: "Client Onboarding",
+      role: "Scheduler / Tech Lead",
+      allocationFte: 0.5,
+      status: "ACTIVE",
+      startDate: new Date("2025-02-01"),
+      endDate: new Date("2025-05-31"),
+    },
+  });
+
+  // Contributor (Casey Morgan) — Solutions Engineer
+  await prisma.assignment.upsert({
+    where: { id: "assign-contributor-fleet" },
+    update: {},
+    create: {
+      id: "assign-contributor-fleet",
+      employeeId: contributor.id,
+      projectId: projectFleet.id,
+      clientId: clientAcme.id,
+      serviceOfferingId: offeringFieldServices.id,
+      function: "Field Services",
+      role: "FSS Technician II",
+      allocationFte: 0.6,
+      status: "ACTIVE",
+      startDate: new Date("2025-01-15"),
+      notes: "3 certified techs for PM",
+    },
+  });
+
+  await prisma.assignment.upsert({
+    where: { id: "assign-contributor-gps" },
+    update: {},
+    create: {
+      id: "assign-contributor-gps",
+      employeeId: contributor.id,
+      projectId: projectFleetSub.id,
+      clientId: clientAcme.id,
+      serviceOfferingId: offeringDeviceDeployment.id,
+      function: "Device Deployment",
+      role: "Installation Tech",
+      allocationFte: 0.4,
+      status: "PLANNED",
+      startDate: new Date("2025-04-01"),
+      endDate: new Date("2025-07-31"),
+      notes: "Workload dependent - can be shifted to other projects as needed",
+    },
+  });
+
   console.log("Seed complete!");
   console.log("\nDemo accounts:");
   console.log("  admin@wynndalco.local / admin123");
