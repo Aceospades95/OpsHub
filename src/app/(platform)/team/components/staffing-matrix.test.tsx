@@ -54,7 +54,7 @@ function makeUser(overrides: Partial<UserData> = {}): UserData {
         id: "a1",
         allocationFte: 0.6,
         status: "ACTIVE",
-        role: "Lead",
+        role: "Lead Developer",
         function: "Development",
         notes: "Primary assignment",
         startDate: null,
@@ -67,7 +67,7 @@ function makeUser(overrides: Partial<UserData> = {}): UserData {
         id: "a2",
         allocationFte: 0.3,
         status: "ACTIVE",
-        role: "Member",
+        role: "QA Analyst",
         function: "QA",
         notes: null,
         startDate: null,
@@ -91,16 +91,17 @@ describe("StaffingMatrix", () => {
     canManage: false,
   };
 
-  it("renders summary metrics", () => {
+  it("renders summary metrics as buttons", () => {
     render(<StaffingMatrix {...defaultProps} />);
     expect(screen.getByText("Headcount")).toBeInTheDocument();
-    // "Total FTE" appears in both the metric card and footer
+    // Total FTE appears in metric card and footer
     const totalFteElements = screen.getAllByText("Total FTE");
     expect(totalFteElements.length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText("Assignments")).toBeInTheDocument();
+    expect(screen.getByText("Overallocated")).toBeInTheDocument();
   });
 
-  it("renders column headers for assignment-row layout", () => {
+  it("renders column headers", () => {
     render(<StaffingMatrix {...defaultProps} />);
     expect(screen.getByText("Offering")).toBeInTheDocument();
     expect(screen.getByText("Manager / Lead")).toBeInTheDocument();
@@ -112,29 +113,32 @@ describe("StaffingMatrix", () => {
     expect(screen.getByText("Notes")).toBeInTheDocument();
   });
 
-  it("renders employee name in assignment rows", () => {
+  it("renders employee names as links", () => {
     render(<StaffingMatrix {...defaultProps} />);
-    // Jane appears in both assignment rows (two different assignments)
     const janeElements = screen.getAllByText("Jane Smith");
     expect(janeElements.length).toBeGreaterThanOrEqual(1);
+    // Should be links to /team/u1
+    const janeLink = janeElements.find((el) => el.closest("a")?.getAttribute("href") === "/team/u1");
+    expect(janeLink).toBeTruthy();
   });
 
-  it("renders project names in assignment rows", () => {
+  it("renders project names as links", () => {
     render(<StaffingMatrix {...defaultProps} />);
-    expect(screen.getByText("Project Alpha")).toBeInTheDocument();
-    expect(screen.getByText("Project Beta")).toBeInTheDocument();
+    const alphaLink = screen.getByText("Project Alpha").closest("a");
+    expect(alphaLink?.getAttribute("href")).toBe("/projects/p1");
   });
 
-  it("renders client name in assignment rows", () => {
+  it("renders client names as links", () => {
     render(<StaffingMatrix {...defaultProps} />);
-    // "Client One" appears in filter dropdown and in the table row
+    // Client One appears in filter dropdown and in client sub-header and row cells
     const clientElements = screen.getAllByText("Client One");
-    expect(clientElements.length).toBeGreaterThanOrEqual(1);
+    // At least one should be a link to /clients/c1
+    const clientLink = clientElements.find((el) => el.closest("a")?.getAttribute("href") === "/clients/c1");
+    expect(clientLink).toBeTruthy();
   });
 
   it("shows offering group headers", () => {
     render(<StaffingMatrix {...defaultProps} />);
-    // Offering names appear in both filter dropdown and group headers
     const consultingElements = screen.getAllByText("Consulting");
     expect(consultingElements.length).toBeGreaterThanOrEqual(1);
     const dcElements = screen.getAllByText("Data Center & Infra");
@@ -143,23 +147,31 @@ describe("StaffingMatrix", () => {
 
   it("displays FTE values in assignment rows", () => {
     render(<StaffingMatrix {...defaultProps} />);
-    // 0.60 and 0.30 appear in rows, 0.90 in footer
     const allFte = screen.getAllByText("0.60");
     expect(allFte.length).toBeGreaterThanOrEqual(1);
     const allFte2 = screen.getAllByText("0.30");
     expect(allFte2.length).toBeGreaterThanOrEqual(1);
   });
 
-  it("shows manager name in assignment rows", () => {
+  it("makes single-employee FTE values clickable links", () => {
+    render(<StaffingMatrix {...defaultProps} />);
+    // 0.60 should be a link to /team/u1 (single employee row)
+    const fteLinks = screen.getAllByText("0.60");
+    const fteLink = fteLinks.find((el) => el.closest("a")?.getAttribute("href") === "/team/u1");
+    expect(fteLink).toBeTruthy();
+  });
+
+  it("shows manager names as links", () => {
     render(<StaffingMatrix {...defaultProps} />);
     const managerLinks = screen.getAllByText("Bob Manager");
     expect(managerLinks.length).toBeGreaterThanOrEqual(1);
   });
 
-  it("shows role badges in assignment rows", () => {
+  it("shows functional role in Role Required column", () => {
     render(<StaffingMatrix {...defaultProps} />);
-    expect(screen.getByText("Lead")).toBeInTheDocument();
-    expect(screen.getByText("Member")).toBeInTheDocument();
+    // Should show "Lead Developer" and "QA Analyst" (functional roles from assignments)
+    expect(screen.getByText("Lead Developer")).toBeInTheDocument();
+    expect(screen.getByText("QA Analyst")).toBeInTheDocument();
   });
 
   it("shows notes in assignment rows", () => {
@@ -167,13 +179,118 @@ describe("StaffingMatrix", () => {
     expect(screen.getByText("Primary assignment")).toBeInTheDocument();
   });
 
-  it("shows overallocated metric count", () => {
+  it("filters by search on employee name", () => {
+    render(<StaffingMatrix {...defaultProps} search="nonexistent" />);
+    expect(screen.getByText(/No assignments match/)).toBeInTheDocument();
+  });
+
+  it("offering group headers are collapsible", () => {
+    render(<StaffingMatrix {...defaultProps} />);
+    const consultingHeaders = screen.getAllByText("Consulting");
+    const groupHeader = consultingHeaders.find((el) => el.closest("tr"))!;
+    expect(groupHeader).toBeInTheDocument();
+    fireEvent.click(groupHeader.closest("tr")!);
+  });
+
+  it("shows unassigned employees", () => {
+    const unassignedUser = makeUser({
+      id: "u3",
+      name: "New Hire",
+      assignments: [],
+      projectMembers: [],
+    });
+    render(<StaffingMatrix {...defaultProps} users={[...defaultProps.users, unassignedUser]} />);
+    expect(screen.getByText("New Hire")).toBeInTheDocument();
+    const unassignedElements = screen.getAllByText("Unassigned");
+    expect(unassignedElements.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("shows project members without assignments under Project Staffing", () => {
+    const userWithProjectOnly = makeUser({
+      id: "u4",
+      name: "Project Person",
+      assignments: [],
+      projectMembers: [
+        { role: "CONTRIBUTOR", project: { id: "p3", name: "Project Gamma", status: "ACTIVE", clientId: "c1" } },
+      ],
+    });
+    render(<StaffingMatrix {...defaultProps} users={[userWithProjectOnly]} />);
+    expect(screen.getByText("Project Person")).toBeInTheDocument();
+    expect(screen.getByText("Project Gamma")).toBeInTheDocument();
+    const projectStaffing = screen.getAllByText("Project Staffing");
+    expect(projectStaffing.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("does not show system role for project-member rows", () => {
+    const userWithProjectOnly = makeUser({
+      id: "u4",
+      name: "Project Person",
+      assignments: [],
+      projectMembers: [
+        { role: "CONTRIBUTOR", project: { id: "p3", name: "Project Gamma", status: "ACTIVE", clientId: "c1" } },
+      ],
+    });
+    render(<StaffingMatrix {...defaultProps} users={[userWithProjectOnly]} />);
+    // "CONTRIBUTOR" (system role) should NOT appear as Role Required
+    expect(screen.queryByText("CONTRIBUTOR")).not.toBeInTheDocument();
+  });
+
+  it("does not duplicate project members that have assignments", () => {
+    const userWithBoth = makeUser({
+      id: "u5",
+      name: "Dual Person",
+      projectMembers: [
+        { role: "CONTRIBUTOR", project: { id: "p1", name: "Project Alpha", status: "ACTIVE", clientId: "c1" } },
+      ],
+    });
+    render(<StaffingMatrix {...defaultProps} users={[userWithBoth]} />);
+    const projectStaffing = screen.queryAllByText("Project Staffing");
+    expect(projectStaffing.length).toBe(0);
+  });
+
+  it("shows Add Assignment and Manage Offerings when canManage", () => {
+    render(<StaffingMatrix {...defaultProps} canManage={true} />);
+    expect(screen.getByText("Add Assignment")).toBeInTheDocument();
+    expect(screen.getByText("Manage Offerings")).toBeInTheDocument();
+  });
+
+  it("hides management buttons when canManage is false", () => {
+    render(<StaffingMatrix {...defaultProps} canManage={false} />);
+    expect(screen.queryByText("Add Assignment")).not.toBeInTheDocument();
+    expect(screen.queryByText("Manage Offerings")).not.toBeInTheDocument();
+  });
+
+  it("shows Create assignment for project-member rows when canManage", () => {
+    const userWithProjectOnly = makeUser({
+      id: "u6",
+      name: "Needs Assignment",
+      assignments: [],
+      projectMembers: [
+        { role: "DEVELOPER", project: { id: "p3", name: "Project Gamma", status: "ACTIVE", clientId: "c1" } },
+      ],
+    });
+    render(<StaffingMatrix {...defaultProps} users={[userWithProjectOnly]} canManage={true} />);
+    expect(screen.getByText("Create assignment")).toBeInTheDocument();
+  });
+
+  it("shows Assign button for unassigned rows when canManage", () => {
+    const unassignedUser = makeUser({
+      id: "u7",
+      name: "Unassigned Person",
+      assignments: [],
+      projectMembers: [],
+    });
+    render(<StaffingMatrix {...defaultProps} users={[unassignedUser]} canManage={true} />);
+    expect(screen.getByText("Assign")).toBeInTheDocument();
+  });
+
+  it("filters by capacity when clicking metric cards", () => {
     const overUser = makeUser({
       id: "u2",
       name: "Over User",
       assignments: [
         {
-          id: "a3", allocationFte: 0.7, status: "ACTIVE", role: null,
+          id: "a3", allocationFte: 0.7, status: "ACTIVE", role: "Tech Lead",
           function: null, notes: null, startDate: null, endDate: null,
           project: { id: "p1", name: "Project Alpha", status: "ACTIVE" },
           client: null, serviceOffering: { id: "so1", name: "Consulting" },
@@ -186,62 +303,22 @@ describe("StaffingMatrix", () => {
         },
       ],
     });
-    render(<StaffingMatrix {...defaultProps} users={[overUser]} />);
-    expect(screen.getByText("Overallocated")).toBeInTheDocument();
-  });
+    const normalUser = makeUser({ id: "u1", name: "Normal User" });
+    render(<StaffingMatrix {...defaultProps} users={[overUser, normalUser]} />);
 
-  it("filters rows by search on employee name", () => {
-    render(<StaffingMatrix {...defaultProps} search="nonexistent" />);
-    expect(screen.getByText(/No assignments match/)).toBeInTheDocument();
-  });
+    // Click "Overallocated" metric
+    fireEvent.click(screen.getByText("Overallocated").closest("button")!);
 
-  it("filters rows by search matching assignment fields", () => {
-    render(<StaffingMatrix {...defaultProps} search="Alpha" />);
-    expect(screen.getByText("Project Alpha")).toBeInTheDocument();
-  });
+    // Should show "Filtering by" indicator
+    expect(screen.getByText("Filtering by:")).toBeInTheDocument();
 
-  it("offering group headers are clickable", () => {
-    render(<StaffingMatrix {...defaultProps} />);
-    // Verify group headers render and are clickable without errors
-    const consultingHeaders = screen.getAllByText("Consulting");
-    const groupHeader = consultingHeaders.find((el) => el.closest("tr"))!;
-    expect(groupHeader).toBeInTheDocument();
-    // Click should not throw
-    fireEvent.click(groupHeader.closest("tr")!);
-  });
-
-  it("shows unassigned employees as separate rows", () => {
-    const unassignedUser = makeUser({
-      id: "u3",
-      name: "New Hire",
-      assignments: [],
-    });
-    render(<StaffingMatrix {...defaultProps} users={[...defaultProps.users, unassignedUser]} />);
-    expect(screen.getByText("New Hire")).toBeInTheDocument();
-    // "Unassigned" appears in metric card label and as an offering group header
-    const unassignedElements = screen.getAllByText("Unassigned");
-    expect(unassignedElements.length).toBeGreaterThanOrEqual(2);
-  });
-
-  it("shows Add Assignment button when canManage is true", () => {
-    render(<StaffingMatrix {...defaultProps} canManage={true} />);
-    expect(screen.getByText("Add Assignment")).toBeInTheDocument();
-  });
-
-  it("shows Manage Offerings button when canManage is true", () => {
-    render(<StaffingMatrix {...defaultProps} canManage={true} />);
-    expect(screen.getByText("Manage Offerings")).toBeInTheDocument();
-  });
-
-  it("hides management buttons when canManage is false", () => {
-    render(<StaffingMatrix {...defaultProps} canManage={false} />);
-    expect(screen.queryByText("Add Assignment")).not.toBeInTheDocument();
-    expect(screen.queryByText("Manage Offerings")).not.toBeInTheDocument();
+    // Over User should be visible (appears in multiple rows)
+    const overUserElements = screen.getAllByText("Over User");
+    expect(overUserElements.length).toBeGreaterThanOrEqual(1);
   });
 
   it("shows footer total FTE", () => {
     render(<StaffingMatrix {...defaultProps} />);
-    // Total FTE: 0.60 + 0.30 = 0.90
     const totalFteElements = screen.getAllByText("0.90");
     expect(totalFteElements.length).toBeGreaterThanOrEqual(1);
   });
@@ -251,48 +328,11 @@ describe("StaffingMatrix", () => {
     expect(screen.getByText("All Offerings")).toBeInTheDocument();
   });
 
-  it("shows project members without assignments as 'Project Staffing' rows", () => {
-    const userWithProjectOnly = makeUser({
-      id: "u4",
-      name: "Project Person",
-      assignments: [],
-      projectMembers: [
-        { role: "CONTRIBUTOR", project: { id: "p3", name: "Project Gamma", status: "ACTIVE", clientId: "c1" } },
-      ],
-    });
-    render(<StaffingMatrix {...defaultProps} users={[userWithProjectOnly]} />);
-    expect(screen.getByText("Project Person")).toBeInTheDocument();
-    expect(screen.getByText("Project Gamma")).toBeInTheDocument();
-    // Should show under "Project Staffing" offering group
-    const projectStaffing = screen.getAllByText("Project Staffing");
-    expect(projectStaffing.length).toBeGreaterThanOrEqual(1);
-  });
-
-  it("does not duplicate project members that already have assignments", () => {
-    // User has an assignment to p1 AND is a project member of p1
-    const userWithBoth = makeUser({
-      id: "u5",
-      name: "Dual Person",
-      projectMembers: [
-        { role: "CONTRIBUTOR", project: { id: "p1", name: "Project Alpha", status: "ACTIVE", clientId: "c1" } },
-      ],
-    });
-    render(<StaffingMatrix {...defaultProps} users={[userWithBoth]} />);
-    // "Dual Person" should appear but NOT under "Project Staffing" since they have an assignment for p1
-    const projectStaffing = screen.queryAllByText("Project Staffing");
-    expect(projectStaffing.length).toBe(0);
-  });
-
-  it("shows 'Create assignment' link for project-member rows when canManage", () => {
-    const userWithProjectOnly = makeUser({
-      id: "u6",
-      name: "Needs Assignment",
-      assignments: [],
-      projectMembers: [
-        { role: "DEVELOPER", project: { id: "p3", name: "Project Gamma", status: "ACTIVE", clientId: "c1" } },
-      ],
-    });
-    render(<StaffingMatrix {...defaultProps} users={[userWithProjectOnly]} canManage={true} />);
-    expect(screen.getByText("Create assignment")).toBeInTheDocument();
+  it("shows client sub-headers in hierarchy", () => {
+    render(<StaffingMatrix {...defaultProps} />);
+    // Within the Consulting offering group, Client One should appear as a sub-header
+    const clientOnes = screen.getAllByText("Client One");
+    // Should appear in filter dropdown + client sub-header + possibly data row
+    expect(clientOnes.length).toBeGreaterThanOrEqual(2);
   });
 });

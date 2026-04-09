@@ -4,13 +4,12 @@ import React, { useState, useMemo } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
-  ChevronDown, ChevronRight, AlertTriangle, Filter, BarChart3,
-  ArrowUpDown, Plus, MapPin,
+  ChevronDown, ChevronRight, ArrowUpDown, Plus, MapPin, X,
 } from "lucide-react";
 import Link from "next/link";
 import {
   UserData, ProjectData, ClientData, ServiceOfferingData,
-  getAllocationStatus, getAllocationBadge, computeEmployeeFte, formatFte,
+  AllocationStatus, getAllocationStatus, computeEmployeeFte, formatFte,
 } from "./team-types";
 import { AddAssignmentDialog } from "./add-assignment-dialog";
 import { ManageOfferingsDialog } from "./manage-offerings-dialog";
@@ -24,7 +23,7 @@ interface StaffingMatrixProps {
   canManage: boolean;
 }
 
-// One row per assignment line (like reference spreadsheet)
+// One row per assignment line
 interface MatrixRow {
   key: string;
   offering: string;
@@ -44,36 +43,57 @@ interface MatrixRow {
   source: "assignment" | "project-member" | "unassigned";
 }
 
-// Color bands for offering groups (matches reference image)
+// 3-level hierarchy: Offering → Client → rows
+interface ClientGroup {
+  clientName: string;
+  clientId: string | null;
+  rows: MatrixRow[];
+  totalFte: number;
+}
+
+interface OfferingGroup {
+  offering: string;
+  clients: ClientGroup[];
+  totalFte: number;
+  employeeCount: number;
+  hasProjectMembers: boolean;
+}
+
+// Color system for offering groups — parent color with shade variations
 const OFFERING_COLORS = [
-  { border: "border-l-emerald-500", bg: "bg-emerald-500/5", header: "bg-emerald-500/10" },
-  { border: "border-l-blue-500", bg: "bg-blue-500/5", header: "bg-blue-500/10" },
-  { border: "border-l-amber-500", bg: "bg-amber-500/5", header: "bg-amber-500/10" },
-  { border: "border-l-purple-500", bg: "bg-purple-500/5", header: "bg-purple-500/10" },
-  { border: "border-l-rose-500", bg: "bg-rose-500/5", header: "bg-rose-500/10" },
-  { border: "border-l-cyan-500", bg: "bg-cyan-500/5", header: "bg-cyan-500/10" },
-  { border: "border-l-orange-500", bg: "bg-orange-500/5", header: "bg-orange-500/10" },
-  { border: "border-l-pink-500", bg: "bg-pink-500/5", header: "bg-pink-500/10" },
-  { border: "border-l-teal-500", bg: "bg-teal-500/5", header: "bg-teal-500/10" },
-  { border: "border-l-indigo-500", bg: "bg-indigo-500/5", header: "bg-indigo-500/10" },
+  { name: "emerald", border: "border-l-emerald-500", offeringBg: "bg-emerald-500/10", clientBg: "bg-emerald-500/5", rowBg: "hover:bg-emerald-500/[0.03]" },
+  { name: "blue",    border: "border-l-blue-500",    offeringBg: "bg-blue-500/10",    clientBg: "bg-blue-500/5",    rowBg: "hover:bg-blue-500/[0.03]" },
+  { name: "amber",   border: "border-l-amber-500",   offeringBg: "bg-amber-500/10",   clientBg: "bg-amber-500/5",   rowBg: "hover:bg-amber-500/[0.03]" },
+  { name: "purple",  border: "border-l-purple-500",  offeringBg: "bg-purple-500/10",  clientBg: "bg-purple-500/5",  rowBg: "hover:bg-purple-500/[0.03]" },
+  { name: "rose",    border: "border-l-rose-500",    offeringBg: "bg-rose-500/10",    clientBg: "bg-rose-500/5",    rowBg: "hover:bg-rose-500/[0.03]" },
+  { name: "cyan",    border: "border-l-cyan-500",    offeringBg: "bg-cyan-500/10",    clientBg: "bg-cyan-500/5",    rowBg: "hover:bg-cyan-500/[0.03]" },
+  { name: "orange",  border: "border-l-orange-500",  offeringBg: "bg-orange-500/10",  clientBg: "bg-orange-500/5",  rowBg: "hover:bg-orange-500/[0.03]" },
+  { name: "pink",    border: "border-l-pink-500",    offeringBg: "bg-pink-500/10",    clientBg: "bg-pink-500/5",    rowBg: "hover:bg-pink-500/[0.03]" },
+  { name: "teal",    border: "border-l-teal-500",    offeringBg: "bg-teal-500/10",    clientBg: "bg-teal-500/5",    rowBg: "hover:bg-teal-500/[0.03]" },
+  { name: "indigo",  border: "border-l-indigo-500",  offeringBg: "bg-indigo-500/10",  clientBg: "bg-indigo-500/5",  rowBg: "hover:bg-indigo-500/[0.03]" },
 ];
 
 type SortField = "offering" | "manager" | "client" | "project" | "fte";
 type SortDir = "asc" | "desc";
+type CapacityFilter = AllocationStatus | null;
 
 export function StaffingMatrix({ users, projects, clients, serviceOfferings, search, canManage }: StaffingMatrixProps) {
   const [expandedOfferings, setExpandedOfferings] = useState<Set<string>>(new Set(["__all__"]));
+  const [expandedClients, setExpandedClients] = useState<Set<string>>(new Set(["__all__"]));
   const [offeringFilter, setOfferingFilter] = useState("");
   const [clientFilter, setClientFilter] = useState("");
   const [managerFilter, setManagerFilter] = useState("");
   const [locationFilter, setLocationFilter] = useState("");
+  const [capacityFilter, setCapacityFilter] = useState<CapacityFilter>(null);
   const [sortField, setSortField] = useState<SortField>("offering");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
   const [addDialogOpen, setAddDialogOpen] = useState(false);
+  const [addDialogKey, setAddDialogKey] = useState(0);
   const [offeringsDialogOpen, setOfferingsDialogOpen] = useState(false);
+  const [fteHighlight, setFteHighlight] = useState<string | null>(null);
 
-  const toggleOffering = (key: string) => {
-    setExpandedOfferings((prev) => {
+  const toggleExpand = (set: Set<string>, key: string, setter: React.Dispatch<React.SetStateAction<Set<string>>>) => {
+    setter((prev) => {
       const next = new Set(prev);
       if (next.has(key)) next.delete(key); else next.add(key);
       return next;
@@ -85,10 +105,23 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, sea
     else { setSortField(field); setSortDir("asc"); }
   };
 
-  // Build rows from Assignments AND ProjectMembers (single source of truth)
+  const openAddDialog = () => {
+    setAddDialogKey((k) => k + 1);
+    setAddDialogOpen(true);
+  };
+
+  // Compute per-user allocation status for capacity filtering
+  const userAllocationMap = useMemo(() => {
+    const map = new Map<string, AllocationStatus>();
+    for (const u of users) {
+      map.set(u.id, getAllocationStatus(computeEmployeeFte(u)));
+    }
+    return map;
+  }, [users]);
+
+  // Build rows from Assignments AND ProjectMembers
   const rows: MatrixRow[] = useMemo(() => {
     const rowMap = new Map<string, MatrixRow>();
-    // Track which user+project combos have Assignment rows, so we can fill in from ProjectMembers
     const assignmentProjectKeys = new Set<string>();
 
     for (const user of users) {
@@ -106,13 +139,12 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, sea
           a.function?.toLowerCase().includes(q)
         );
         const matchesProject = user.projectMembers.some((pm) =>
-          pm.project.name.toLowerCase().includes(q) ||
-          pm.project.clientId?.toLowerCase().includes(q)
+          pm.project.name.toLowerCase().includes(q)
         );
         if (!matchesUser && !matchesAssignment && !matchesProject) continue;
       }
 
-      // 1) Build rows from explicit Assignments
+      // 1) Rows from explicit Assignments
       for (const assignment of user.assignments) {
         const offeringName = assignment.serviceOffering?.name || assignment.function || "Unassigned";
         const offeringId = assignment.serviceOffering?.id || null;
@@ -120,6 +152,7 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, sea
         const clientId = assignment.client?.id || null;
         const projectName = assignment.project?.name || "";
         const projectId = assignment.project?.id || null;
+        // Functional role from the assignment — NOT the system role
         const role = assignment.role || "";
 
         if (projectId) assignmentProjectKeys.add(`${user.id}::${projectId}`);
@@ -129,21 +162,10 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, sea
 
         if (!rowMap.has(key)) {
           rowMap.set(key, {
-            key,
-            offering: offeringName,
-            offeringId,
-            managerName,
-            managerId: user.managerId,
-            clientName,
-            clientId,
-            projectName,
-            projectId,
-            location: user.location || "",
-            roleRequired: role,
-            fte: 0,
-            employees: [],
-            notes: assignment.notes || "",
-            assignmentIds: [],
+            key, offering: offeringName, offeringId, managerName,
+            managerId: user.managerId, clientName, clientId, projectName, projectId,
+            location: user.location || "", roleRequired: role, fte: 0,
+            employees: [], notes: assignment.notes || "", assignmentIds: [],
             source: "assignment",
           });
         }
@@ -158,7 +180,7 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, sea
         if (assignment.notes && !row.notes) row.notes = assignment.notes;
       }
 
-      // 2) Build rows from ProjectMembers that have no corresponding Assignment
+      // 2) Rows from ProjectMembers without a matching Assignment
       for (const pm of user.projectMembers) {
         if (assignmentProjectKeys.has(`${user.id}::${pm.project.id}`)) continue;
 
@@ -166,34 +188,20 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, sea
         const projectId = pm.project.id;
         const projectStatus = pm.project.status;
         const clientId = pm.project.clientId || null;
-        // Resolve client name from the clients prop if available
-        const clientName = clientId
-          ? (clients.find((c) => c.id === clientId)?.name || "")
-          : "";
-        const role = pm.role || "";
+        const clientName = clientId ? (clients.find((c) => c.id === clientId)?.name || "") : "";
         const managerName = user.manager?.name || "";
-
+        // Do NOT use pm.role — that's the system permission role (ADMIN/CONTRIBUTOR/etc.)
+        // Leave roleRequired empty for project-member rows
         const offeringName = "Project Staffing";
-        const key = `pm::${managerName}::${clientName}::${projectName}::${role}::${user.id}`;
+        const key = `pm::${managerName}::${clientName}::${projectName}::${user.id}`;
 
         if (!rowMap.has(key)) {
           rowMap.set(key, {
-            key,
-            offering: offeringName,
-            offeringId: null,
-            managerName,
-            managerId: user.managerId,
-            clientName,
-            clientId,
-            projectName,
-            projectId,
-            location: user.location || "",
-            roleRequired: role,
-            fte: 0,
-            employees: [],
-            notes: `From project membership (${projectStatus})`,
-            assignmentIds: [],
-            source: "project-member",
+            key, offering: offeringName, offeringId: null, managerName,
+            managerId: user.managerId, clientName, clientId, projectName, projectId,
+            location: user.location || "", roleRequired: "", fte: 0,
+            employees: [], notes: `From project membership (${projectStatus})`,
+            assignmentIds: [], source: "project-member",
           });
         }
 
@@ -203,26 +211,18 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, sea
         }
       }
 
-      // 3) Show unassigned employees (no assignments AND no project memberships)
+      // 3) Unassigned employees (no assignments AND no project memberships)
       if (user.assignments.length === 0 && user.projectMembers.length === 0) {
         const key = `Unassigned::::::::${user.id}`;
         rowMap.set(key, {
-          key,
-          offering: "Unassigned",
-          offeringId: null,
-          managerName: user.manager?.name || "",
-          managerId: user.managerId,
-          clientName: "",
-          clientId: null,
-          projectName: "",
-          projectId: null,
+          key, offering: "Unassigned", offeringId: null,
+          managerName: user.manager?.name || "", managerId: user.managerId,
+          clientName: "", clientId: null, projectName: "", projectId: null,
           location: user.location || "",
-          roleRequired: user.role || "",
-          fte: 0,
-          employees: [{ id: user.id, name: user.name, jobTitle: user.jobTitle }],
-          notes: "",
-          assignmentIds: [],
-          source: "unassigned",
+          // Don't use user.role (system role) — leave blank for unassigned
+          roleRequired: "",
+          fte: 0, employees: [{ id: user.id, name: user.name, jobTitle: user.jobTitle }],
+          notes: "", assignmentIds: [], source: "unassigned",
         });
       }
     }
@@ -230,7 +230,7 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, sea
     return Array.from(rowMap.values());
   }, [users, clients, search]);
 
-  // Apply filters
+  // Apply filters (including capacity filter)
   const filteredRows = useMemo(() => {
     let result = rows;
     if (offeringFilter) result = result.filter((r) => r.offering === offeringFilter);
@@ -238,32 +238,79 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, sea
     if (managerFilter) result = result.filter((r) => r.managerName === managerFilter);
     if (locationFilter) result = result.filter((r) => r.location === locationFilter);
 
+    // Capacity filter: show only rows whose employees match the selected allocation status
+    if (capacityFilter) {
+      const matchingUserIds = new Set(
+        users.filter((u) => userAllocationMap.get(u.id) === capacityFilter).map((u) => u.id)
+      );
+      result = result.filter((r) => r.employees.some((e) => matchingUserIds.has(e.id)));
+    }
+
     // Sort
     result = [...result].sort((a, b) => {
       let cmp = 0;
       switch (sortField) {
         case "offering": cmp = a.offering.localeCompare(b.offering) || a.clientName.localeCompare(b.clientName) || a.projectName.localeCompare(b.projectName); break;
         case "manager": cmp = a.managerName.localeCompare(b.managerName); break;
-        case "client": cmp = a.clientName.localeCompare(b.clientName); break;
+        case "client": cmp = a.clientName.localeCompare(b.clientName) || a.projectName.localeCompare(b.projectName); break;
         case "project": cmp = a.projectName.localeCompare(b.projectName); break;
         case "fte": cmp = a.fte - b.fte; break;
       }
       return sortDir === "desc" ? -cmp : cmp;
     });
     return result;
-  }, [rows, offeringFilter, clientFilter, managerFilter, locationFilter, sortField, sortDir]);
+  }, [rows, offeringFilter, clientFilter, managerFilter, locationFilter, capacityFilter, users, userAllocationMap, sortField, sortDir]);
 
-  // Group rows by offering
-  const offeringGroups = useMemo(() => {
-    const groups = new Map<string, MatrixRow[]>();
+  // Build 3-level hierarchy: Offering → Client → Rows
+  const offeringGroups: OfferingGroup[] = useMemo(() => {
+    const offeringMap = new Map<string, Map<string, MatrixRow[]>>();
+
     for (const row of filteredRows) {
-      if (!groups.has(row.offering)) groups.set(row.offering, []);
-      groups.get(row.offering)!.push(row);
+      if (!offeringMap.has(row.offering)) offeringMap.set(row.offering, new Map());
+      const clientMap = offeringMap.get(row.offering)!;
+      const clientKey = row.clientName || "(No Client)";
+      if (!clientMap.has(clientKey)) clientMap.set(clientKey, []);
+      clientMap.get(clientKey)!.push(row);
     }
+
+    const groups: OfferingGroup[] = [];
+    Array.from(offeringMap.entries()).forEach(([offering, clientMap]) => {
+      const clientGroups: ClientGroup[] = [];
+      let totalFte = 0;
+      const allEmployeeIds = new Set<string>();
+      let hasProjectMembers = false;
+
+      Array.from(clientMap.entries()).forEach(([clientName, clientRows]) => {
+        const clientFte = clientRows.reduce((s, r) => s + r.fte, 0);
+        const firstRow = clientRows[0];
+        clientGroups.push({
+          clientName: clientName === "(No Client)" ? "" : clientName,
+          clientId: firstRow?.clientId || null,
+          rows: clientRows,
+          totalFte: clientFte,
+        });
+        totalFte += clientFte;
+        clientRows.forEach((r) => {
+          r.employees.forEach((e) => allEmployeeIds.add(e.id));
+          if (r.source === "project-member") hasProjectMembers = true;
+        });
+      });
+
+      // Sort client groups by name
+      clientGroups.sort((a, b) => (a.clientName || "zzz").localeCompare(b.clientName || "zzz"));
+
+      groups.push({
+        offering,
+        clients: clientGroups,
+        totalFte,
+        employeeCount: allEmployeeIds.size,
+        hasProjectMembers,
+      });
+    });
     return groups;
   }, [filteredRows]);
 
-  // Extract unique values for filter dropdowns
+  // Filter options
   const filterOptions = useMemo(() => {
     const offerings = new Set(rows.map((r) => r.offering));
     const clientNames = new Set(rows.map((r) => r.clientName).filter(Boolean));
@@ -277,10 +324,9 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, sea
     };
   }, [rows]);
 
-  // Summary metrics
+  // Summary metrics (always computed from full user list, not filtered rows)
   const metrics = useMemo(() => {
     const totalFte = filteredRows.reduce((s, r) => s + r.fte, 0);
-    const uniqueEmployees = new Set(filteredRows.flatMap((r) => r.employees.map((e) => e.id)));
     let overCount = 0, fullyCount = 0, underCount = 0, unassignedCount = 0;
     for (const u of users) {
       const s = getAllocationStatus(computeEmployeeFte(u));
@@ -292,13 +338,20 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, sea
     return {
       totalFte,
       assignmentRows: filteredRows.length,
-      uniqueEmployees: uniqueEmployees.size,
       headcount: users.length,
       overCount, fullyCount, underCount, unassignedCount,
     };
   }, [filteredRows, users]);
 
-  const hasFilters = offeringFilter || clientFilter || managerFilter || locationFilter;
+  const hasFilters = offeringFilter || clientFilter || managerFilter || locationFilter || capacityFilter;
+
+  const clearAllFilters = () => {
+    setOfferingFilter("");
+    setClientFilter("");
+    setManagerFilter("");
+    setLocationFilter("");
+    setCapacityFilter(null);
+  };
 
   const SortHeader = ({ field, children, className = "" }: { field: SortField; children: React.ReactNode; className?: string }) => (
     <button onClick={() => toggleSort(field)} className={`flex items-center gap-1 font-semibold hover:text-primary transition-colors ${className}`}>
@@ -309,16 +362,35 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, sea
 
   return (
     <div className="space-y-4">
-      {/* Summary Metrics */}
+      {/* Summary Metrics — clickable as filters */}
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
-        <MetricCard label="Headcount" value={metrics.headcount} />
-        <MetricCard label="Total FTE" value={formatFte(metrics.totalFte)} />
-        <MetricCard label="Assignments" value={metrics.assignmentRows} />
-        <MetricCard label="Overallocated" value={metrics.overCount} variant={metrics.overCount > 0 ? "destructive" : "default"} />
-        <MetricCard label="Fully Allocated" value={metrics.fullyCount} variant="success" />
-        <MetricCard label="Available" value={metrics.underCount} variant="warning" />
-        <MetricCard label="Unassigned" value={metrics.unassignedCount} />
+        <MetricCard label="Headcount" value={metrics.headcount}
+          active={capacityFilter === null && !hasFilters} onClick={() => setCapacityFilter(null)} />
+        <MetricCard label="Total FTE" value={formatFte(metrics.totalFte)}
+          active={false} onClick={() => { toggleSort("fte"); }} />
+        <MetricCard label="Assignments" value={metrics.assignmentRows}
+          active={false} onClick={() => { toggleSort("offering"); }} />
+        <MetricCard label="Overallocated" value={metrics.overCount}
+          variant={metrics.overCount > 0 ? "destructive" : "default"}
+          active={capacityFilter === "overallocated"} onClick={() => setCapacityFilter(capacityFilter === "overallocated" ? null : "overallocated")} />
+        <MetricCard label="Fully Allocated" value={metrics.fullyCount} variant="success"
+          active={capacityFilter === "fully-allocated"} onClick={() => setCapacityFilter(capacityFilter === "fully-allocated" ? null : "fully-allocated")} />
+        <MetricCard label="Available" value={metrics.underCount} variant="warning"
+          active={capacityFilter === "underallocated"} onClick={() => setCapacityFilter(capacityFilter === "underallocated" ? null : "underallocated")} />
+        <MetricCard label="Unassigned" value={metrics.unassignedCount}
+          active={capacityFilter === "unassigned"} onClick={() => setCapacityFilter(capacityFilter === "unassigned" ? null : "unassigned")} />
       </div>
+
+      {/* Active filter indicator */}
+      {capacityFilter && (
+        <div className="flex items-center gap-2 text-sm">
+          <span className="text-muted-foreground">Filtering by:</span>
+          <Badge variant="secondary" className="gap-1">
+            {capacityFilter === "fully-allocated" ? "Fully Allocated" : capacityFilter.charAt(0).toUpperCase() + capacityFilter.slice(1)}
+            <button onClick={() => setCapacityFilter(null)} className="ml-1 hover:text-destructive"><X className="h-3 w-3" /></button>
+          </Badge>
+        </div>
+      )}
 
       {/* Controls */}
       <div className="flex items-center gap-2 flex-wrap">
@@ -351,7 +423,7 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, sea
           </select>
         )}
         {hasFilters && (
-          <button onClick={() => { setOfferingFilter(""); setClientFilter(""); setManagerFilter(""); setLocationFilter(""); }}
+          <button onClick={clearAllFilters}
             className="text-xs px-2 py-1.5 rounded-md bg-muted text-muted-foreground hover:bg-muted/80">
             Clear filters
           </button>
@@ -363,16 +435,12 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, sea
           </span>
           {canManage && (
             <>
-              <button
-                onClick={() => setOfferingsDialogOpen(true)}
-                className="flex items-center gap-1 px-3 py-1.5 text-sm font-medium border border-input rounded-md hover:bg-muted transition-colors"
-              >
+              <button onClick={() => setOfferingsDialogOpen(true)}
+                className="flex items-center gap-1 px-3 py-1.5 text-sm font-medium border border-input rounded-md hover:bg-muted transition-colors">
                 Manage Offerings
               </button>
-              <button
-                onClick={() => setAddDialogOpen(true)}
-                className="flex items-center gap-1 px-3 py-1.5 text-sm font-medium bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors"
-              >
+              <button onClick={openAddDialog}
+                className="flex items-center gap-1 px-3 py-1.5 text-sm font-medium bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors">
                 <Plus className="h-3.5 w-3.5" />
                 Add Assignment
               </button>
@@ -417,110 +485,175 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, sea
                     </td>
                   </tr>
                 )}
-                {Array.from(offeringGroups.entries()).map(([offering, groupRows], groupIdx) => {
+                {offeringGroups.map((group, groupIdx) => {
                   const color = OFFERING_COLORS[groupIdx % OFFERING_COLORS.length];
-                  const isExpanded = expandedOfferings.has("__all__") || expandedOfferings.has(offering);
-                  const groupFte = groupRows.reduce((s, r) => s + r.fte, 0);
-                  const groupEmployeeCount = new Set(groupRows.flatMap((r) => r.employees.map((e) => e.id))).size;
+                  const isOfferingExpanded = expandedOfferings.has("__all__") || expandedOfferings.has(group.offering);
+                  const showClientHeaders = group.clients.length > 1 || (group.clients.length === 1 && group.clients[0].clientName);
 
                   return (
-                    <React.Fragment key={offering}>
-                      {/* Offering group header */}
+                    <React.Fragment key={group.offering}>
+                      {/* ─── Offering Group Header (Level 1) ─── */}
                       <tr
-                        className={`border-b border-border/60 border-l-4 ${color.border} ${color.header} cursor-pointer hover:bg-muted/30 transition-colors`}
-                        onClick={() => toggleOffering(offering)}
+                        className={`border-b border-border/60 border-l-4 ${color.border} ${color.offeringBg} cursor-pointer hover:brightness-95 transition-all`}
+                        onClick={() => toggleExpand(expandedOfferings, group.offering, setExpandedOfferings)}
                       >
                         <td colSpan={6} className="py-2.5 px-4">
                           <div className="flex items-center gap-2">
-                            {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                            <span className="font-bold text-sm">{offering}</span>
-                            {groupRows.some((r) => r.source === "project-member") && (
+                            {isOfferingExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                            <span className="font-bold text-sm">{group.offering}</span>
+                            {group.hasProjectMembers && (
                               <Badge variant="outline" className="text-[9px] bg-blue-50 border-blue-200 text-blue-700">
                                 From Projects
                               </Badge>
                             )}
                             <span className="text-xs text-muted-foreground">
-                              ({groupRows.length} row{groupRows.length !== 1 ? "s" : ""} · {groupEmployeeCount} employee{groupEmployeeCount !== 1 ? "s" : ""})
+                              ({group.clients.reduce((s, c) => s + c.rows.length, 0)} row{group.clients.reduce((s, c) => s + c.rows.length, 0) !== 1 ? "s" : ""} · {group.employeeCount} employee{group.employeeCount !== 1 ? "s" : ""})
                             </span>
                           </div>
                         </td>
-                        <td className="py-2.5 px-3 text-center font-bold">{formatFte(groupFte)}</td>
+                        <td className="py-2.5 px-3 text-center font-bold">{formatFte(group.totalFte)}</td>
                         <td colSpan={2} className="py-2.5 px-3" />
                       </tr>
-                      {/* Assignment rows within offering */}
-                      {isExpanded && groupRows.map((row, rowIdx) => (
-                        <tr
-                          key={row.key}
-                          className={`border-b border-border/30 border-l-4 ${color.border} ${color.bg} hover:bg-muted/20 transition-colors`}
-                        >
-                          <td className="py-2 px-4 text-muted-foreground text-xs">
-                            {/* Show offering name only on first row if not grouped */}
-                          </td>
-                          <td className="py-2 px-3 text-sm">
-                            {row.managerId ? (
-                              <Link href={`/team/${row.managerId}`} className="hover:text-primary hover:underline">
-                                {row.managerName}
-                              </Link>
-                            ) : row.managerName || <span className="text-muted-foreground">—</span>}
-                          </td>
-                          <td className="py-2 px-3 text-sm font-medium">
-                            {row.clientName || <span className="text-muted-foreground">—</span>}
-                          </td>
-                          <td className="py-2 px-3 text-sm">
-                            {row.projectId ? (
-                              <Link href={`/projects/${row.projectId}`} className="font-medium hover:text-primary hover:underline">
-                                {row.projectName}
-                              </Link>
-                            ) : row.projectName || <span className="text-muted-foreground">—</span>}
-                          </td>
-                          <td className="py-2 px-3 text-sm text-muted-foreground hidden md:table-cell">
-                            {row.location ? (
-                              <span className="flex items-center gap-1"><MapPin className="h-3 w-3" />{row.location}</span>
-                            ) : "—"}
-                          </td>
-                          <td className="py-2 px-3 text-sm">
-                            {row.roleRequired ? (
-                              <Badge variant="outline" className="text-[10px]">{row.roleRequired}</Badge>
-                            ) : <span className="text-muted-foreground">—</span>}
-                          </td>
-                          <td className="py-2 px-3 text-center">
-                            {row.source === "project-member" ? (
-                              <span className="text-xs text-muted-foreground italic" title="No FTE assigned — create an assignment to set allocation">—</span>
-                            ) : (
-                              <span className={`font-bold text-sm ${row.fte > 1 ? "text-primary" : ""}`}>
-                                {formatFte(row.fte)}
-                              </span>
-                            )}
-                          </td>
-                          <td className="py-2 px-3">
-                            <div className="space-y-0.5">
-                              {row.employees.map((emp) => (
-                                <div key={emp.id}>
-                                  <Link href={`/team/${emp.id}`} className="text-xs hover:text-primary hover:underline">
-                                    {emp.name}
-                                  </Link>
-                                </div>
-                              ))}
-                              {row.employees.length === 0 && (
-                                <span className="text-xs text-muted-foreground italic">Unfilled</span>
-                              )}
-                            </div>
-                          </td>
-                          <td className="py-2 px-3 hidden lg:table-cell">
-                            {row.source === "project-member" && canManage ? (
-                              <button
-                                onClick={() => setAddDialogOpen(true)}
-                                className="text-xs text-primary hover:underline flex items-center gap-1"
+
+                      {isOfferingExpanded && group.clients.map((cg) => {
+                        const clientExpandKey = `${group.offering}::${cg.clientName || "__none__"}`;
+                        const isClientExpanded = expandedClients.has("__all__") || expandedClients.has(clientExpandKey);
+
+                        return (
+                          <React.Fragment key={clientExpandKey}>
+                            {/* ─── Client Sub-Header (Level 2) ─── */}
+                            {showClientHeaders && (
+                              <tr
+                                className={`border-b border-border/40 border-l-4 ${color.border} ${color.clientBg} cursor-pointer hover:brightness-95 transition-all`}
+                                onClick={() => toggleExpand(expandedClients, clientExpandKey, setExpandedClients)}
                               >
-                                <Plus className="h-3 w-3" />
-                                Create assignment
-                              </button>
-                            ) : row.notes ? (
-                              <span className="text-xs text-muted-foreground">{row.notes}</span>
-                            ) : null}
-                          </td>
-                        </tr>
-                      ))}
+                                <td className="py-2 px-4" />
+                                <td className="py-2 px-3" />
+                                <td colSpan={4} className="py-2 px-3">
+                                  <div className="flex items-center gap-2">
+                                    {isClientExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                                    {cg.clientId ? (
+                                      <Link href={`/clients/${cg.clientId}`}
+                                        className="font-semibold text-sm hover:text-primary hover:underline"
+                                        onClick={(e) => e.stopPropagation()}>
+                                        {cg.clientName}
+                                      </Link>
+                                    ) : (
+                                      <span className="font-semibold text-sm text-muted-foreground">{cg.clientName || "No Client"}</span>
+                                    )}
+                                    <span className="text-xs text-muted-foreground">
+                                      ({cg.rows.length} row{cg.rows.length !== 1 ? "s" : ""})
+                                    </span>
+                                  </div>
+                                </td>
+                                <td className="py-2 px-3 text-center font-semibold text-xs">{formatFte(cg.totalFte)}</td>
+                                <td colSpan={2} className="py-2 px-3" />
+                              </tr>
+                            )}
+
+                            {/* ─── Data Rows (Level 3) ─── */}
+                            {(showClientHeaders ? isClientExpanded : true) && cg.rows.map((row) => (
+                              <tr
+                                key={row.key}
+                                className={`border-b border-border/20 border-l-4 ${color.border} ${color.rowBg} transition-colors ${
+                                  fteHighlight && row.employees.some((e) => e.id === fteHighlight) ? "bg-primary/5" : ""
+                                }`}
+                              >
+                                <td className="py-2 px-4 text-muted-foreground text-xs" />
+                                <td className="py-2 px-3 text-sm">
+                                  {row.managerId ? (
+                                    <Link href={`/team/${row.managerId}`} className="hover:text-primary hover:underline">
+                                      {row.managerName}
+                                    </Link>
+                                  ) : row.managerName || <span className="text-muted-foreground">—</span>}
+                                </td>
+                                <td className="py-2 px-3 text-sm font-medium">
+                                  {row.clientId ? (
+                                    <Link href={`/clients/${row.clientId}`} className="hover:text-primary hover:underline">
+                                      {row.clientName}
+                                    </Link>
+                                  ) : row.clientName || <span className="text-muted-foreground">—</span>}
+                                </td>
+                                <td className="py-2 px-3 text-sm">
+                                  {row.projectId ? (
+                                    <Link href={`/projects/${row.projectId}`} className="font-medium hover:text-primary hover:underline">
+                                      {row.projectName}
+                                    </Link>
+                                  ) : row.projectName || <span className="text-muted-foreground">—</span>}
+                                </td>
+                                <td className="py-2 px-3 text-sm text-muted-foreground hidden md:table-cell">
+                                  {row.location ? (
+                                    <span className="flex items-center gap-1"><MapPin className="h-3 w-3" />{row.location}</span>
+                                  ) : "—"}
+                                </td>
+                                <td className="py-2 px-3 text-sm">
+                                  {row.roleRequired ? (
+                                    <Badge variant="outline" className="text-[10px]">{row.roleRequired}</Badge>
+                                  ) : <span className="text-muted-foreground">—</span>}
+                                </td>
+                                <td className="py-2 px-3 text-center">
+                                  {row.source === "project-member" ? (
+                                    <span className="text-xs text-muted-foreground italic" title="No FTE assigned — create an assignment to set allocation">—</span>
+                                  ) : row.fte > 0 && row.employees.length === 1 ? (
+                                    <Link
+                                      href={`/team/${row.employees[0].id}`}
+                                      className="font-bold text-sm hover:text-primary hover:underline cursor-pointer"
+                                      title={`View ${row.employees[0].name}'s allocation details`}
+                                      onMouseEnter={() => setFteHighlight(row.employees[0].id)}
+                                      onMouseLeave={() => setFteHighlight(null)}
+                                    >
+                                      {formatFte(row.fte)}
+                                    </Link>
+                                  ) : (
+                                    <button
+                                      onClick={() => toggleSort("fte")}
+                                      className={`font-bold text-sm hover:text-primary cursor-pointer ${row.fte > 1 ? "text-red-600" : ""}`}
+                                      title="Sort by FTE"
+                                    >
+                                      {formatFte(row.fte)}
+                                    </button>
+                                  )}
+                                </td>
+                                <td className="py-2 px-3">
+                                  <div className="space-y-0.5">
+                                    {row.employees.map((emp) => (
+                                      <div key={emp.id}>
+                                        <Link href={`/team/${emp.id}`} className="text-xs hover:text-primary hover:underline">
+                                          {emp.name}
+                                        </Link>
+                                      </div>
+                                    ))}
+                                    {row.employees.length === 0 && (
+                                      <span className="text-xs text-muted-foreground italic">Unfilled</span>
+                                    )}
+                                  </div>
+                                </td>
+                                <td className="py-2 px-3 hidden lg:table-cell">
+                                  {row.source === "project-member" && canManage ? (
+                                    <button
+                                      onClick={openAddDialog}
+                                      className="text-xs text-primary hover:underline flex items-center gap-1"
+                                    >
+                                      <Plus className="h-3 w-3" />
+                                      Create assignment
+                                    </button>
+                                  ) : row.source === "unassigned" && canManage ? (
+                                    <button
+                                      onClick={openAddDialog}
+                                      className="text-xs text-primary hover:underline flex items-center gap-1"
+                                    >
+                                      <Plus className="h-3 w-3" />
+                                      Assign
+                                    </button>
+                                  ) : row.notes ? (
+                                    <span className="text-xs text-muted-foreground">{row.notes}</span>
+                                  ) : null}
+                                </td>
+                              </tr>
+                            ))}
+                          </React.Fragment>
+                        );
+                      })}
                     </React.Fragment>
                   );
                 })}
@@ -542,10 +675,11 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, sea
         </CardContent>
       </Card>
 
-      {/* Dialogs */}
+      {/* Dialogs — key forces remount to reset useFormState */}
       {canManage && (
         <>
           <AddAssignmentDialog
+            key={`add-${addDialogKey}`}
             open={addDialogOpen}
             onClose={() => setAddDialogOpen(false)}
             users={users}
@@ -564,10 +698,12 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, sea
   );
 }
 
-function MetricCard({ label, value, variant = "default" }: {
+function MetricCard({ label, value, variant = "default", active = false, onClick }: {
   label: string;
   value: string | number;
   variant?: "default" | "success" | "warning" | "destructive";
+  active?: boolean;
+  onClick?: () => void;
 }) {
   const colorMap = {
     default: "",
@@ -576,9 +712,16 @@ function MetricCard({ label, value, variant = "default" }: {
     destructive: "text-red-600",
   };
   return (
-    <div className="text-left p-3 rounded-lg border border-border bg-card">
+    <button
+      onClick={onClick}
+      className={`text-left p-3 rounded-lg border bg-card transition-all ${
+        active
+          ? "border-primary ring-2 ring-primary/20 shadow-sm"
+          : "border-border hover:border-primary/40 hover:shadow-sm"
+      }`}
+    >
       <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">{label}</p>
       <p className={`text-xl font-bold mt-0.5 ${colorMap[variant]}`}>{value}</p>
-    </div>
+    </button>
   );
 }
