@@ -134,6 +134,7 @@ export async function updateUser(_prev: unknown, formData: FormData) {
   revalidatePath(`/admin/users/${id}`);
   revalidatePath("/admin/users");
   revalidatePath("/team");
+  revalidatePath(`/team/${id}`);
   return { success: true };
 }
 
@@ -195,6 +196,7 @@ export async function saveModulePermissions(_prev: unknown, formData: FormData) 
   }
 
   revalidatePath(`/admin/users/${userId}`);
+  revalidatePath(`/team/${userId}`);
   return { success: true };
 }
 
@@ -229,6 +231,7 @@ export async function saveEntityPermission(_prev: unknown, formData: FormData) {
   });
 
   revalidatePath(`/admin/users/${userId}`);
+  revalidatePath(`/team/${userId}`);
   return { success: true };
 }
 

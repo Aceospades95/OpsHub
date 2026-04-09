@@ -27,10 +27,10 @@ export default async function AdminSidebarPage() {
         description="Organize navigation sections and modules"
         actions={
           <Link
-            href="/admin/users"
+            href="/team"
             className="inline-flex items-center justify-center rounded font-medium transition-colors h-10 px-4 py-2 border border-border bg-background hover:bg-muted text-foreground text-sm"
           >
-            Back to Users
+            Back to Team
           </Link>
         }
       />

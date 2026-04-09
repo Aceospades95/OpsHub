@@ -250,4 +250,49 @@ describe("StaffingMatrix", () => {
     render(<StaffingMatrix {...defaultProps} />);
     expect(screen.getByText("All Offerings")).toBeInTheDocument();
   });
+
+  it("shows project members without assignments as 'Project Staffing' rows", () => {
+    const userWithProjectOnly = makeUser({
+      id: "u4",
+      name: "Project Person",
+      assignments: [],
+      projectMembers: [
+        { role: "CONTRIBUTOR", project: { id: "p3", name: "Project Gamma", status: "ACTIVE", clientId: "c1" } },
+      ],
+    });
+    render(<StaffingMatrix {...defaultProps} users={[userWithProjectOnly]} />);
+    expect(screen.getByText("Project Person")).toBeInTheDocument();
+    expect(screen.getByText("Project Gamma")).toBeInTheDocument();
+    // Should show under "Project Staffing" offering group
+    const projectStaffing = screen.getAllByText("Project Staffing");
+    expect(projectStaffing.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("does not duplicate project members that already have assignments", () => {
+    // User has an assignment to p1 AND is a project member of p1
+    const userWithBoth = makeUser({
+      id: "u5",
+      name: "Dual Person",
+      projectMembers: [
+        { role: "CONTRIBUTOR", project: { id: "p1", name: "Project Alpha", status: "ACTIVE", clientId: "c1" } },
+      ],
+    });
+    render(<StaffingMatrix {...defaultProps} users={[userWithBoth]} />);
+    // "Dual Person" should appear but NOT under "Project Staffing" since they have an assignment for p1
+    const projectStaffing = screen.queryAllByText("Project Staffing");
+    expect(projectStaffing.length).toBe(0);
+  });
+
+  it("shows 'Create assignment' link for project-member rows when canManage", () => {
+    const userWithProjectOnly = makeUser({
+      id: "u6",
+      name: "Needs Assignment",
+      assignments: [],
+      projectMembers: [
+        { role: "DEVELOPER", project: { id: "p3", name: "Project Gamma", status: "ACTIVE", clientId: "c1" } },
+      ],
+    });
+    render(<StaffingMatrix {...defaultProps} users={[userWithProjectOnly]} canManage={true} />);
+    expect(screen.getByText("Create assignment")).toBeInTheDocument();
+  });
 });

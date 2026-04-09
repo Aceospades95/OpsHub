@@ -41,6 +41,7 @@ interface MatrixRow {
   employees: { id: string; name: string; jobTitle: string | null }[];
   notes: string;
   assignmentIds: string[];
+  source: "assignment" | "project-member" | "unassigned";
 }
 
 // Color bands for offering groups (matches reference image)
@@ -84,9 +85,11 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, sea
     else { setSortField(field); setSortDir("asc"); }
   };
 
-  // Build assignment rows — one row per unique combo of offering+client+project+role
+  // Build rows from Assignments AND ProjectMembers (single source of truth)
   const rows: MatrixRow[] = useMemo(() => {
     const rowMap = new Map<string, MatrixRow>();
+    // Track which user+project combos have Assignment rows, so we can fill in from ProjectMembers
+    const assignmentProjectKeys = new Set<string>();
 
     for (const user of users) {
       // Search filter
@@ -95,7 +98,6 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, sea
         const matchesUser = user.name.toLowerCase().includes(q) ||
           user.jobTitle?.toLowerCase().includes(q) ||
           user.email.toLowerCase().includes(q);
-        // Also search by assignment fields
         const matchesAssignment = user.assignments.some((a) =>
           a.project?.name.toLowerCase().includes(q) ||
           a.client?.name.toLowerCase().includes(q) ||
@@ -103,9 +105,14 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, sea
           a.role?.toLowerCase().includes(q) ||
           a.function?.toLowerCase().includes(q)
         );
-        if (!matchesUser && !matchesAssignment) continue;
+        const matchesProject = user.projectMembers.some((pm) =>
+          pm.project.name.toLowerCase().includes(q) ||
+          pm.project.clientId?.toLowerCase().includes(q)
+        );
+        if (!matchesUser && !matchesAssignment && !matchesProject) continue;
       }
 
+      // 1) Build rows from explicit Assignments
       for (const assignment of user.assignments) {
         const offeringName = assignment.serviceOffering?.name || assignment.function || "Unassigned";
         const offeringId = assignment.serviceOffering?.id || null;
@@ -115,7 +122,8 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, sea
         const projectId = assignment.project?.id || null;
         const role = assignment.role || "";
 
-        // Group key: offering + manager + client + project + role
+        if (projectId) assignmentProjectKeys.add(`${user.id}::${projectId}`);
+
         const managerName = user.manager?.name || "";
         const key = `${offeringName}::${managerName}::${clientName}::${projectName}::${role}`;
 
@@ -136,6 +144,7 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, sea
             employees: [],
             notes: assignment.notes || "",
             assignmentIds: [],
+            source: "assignment",
           });
         }
 
@@ -145,14 +154,57 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, sea
         if (!row.employees.find((e) => e.id === user.id)) {
           row.employees.push({ id: user.id, name: user.name, jobTitle: user.jobTitle });
         }
-        // Merge location (pick first non-empty)
         if (!row.location && user.location) row.location = user.location;
-        // Merge notes
         if (assignment.notes && !row.notes) row.notes = assignment.notes;
       }
 
-      // Show unassigned employees too (no assignments)
-      if (user.assignments.length === 0) {
+      // 2) Build rows from ProjectMembers that have no corresponding Assignment
+      for (const pm of user.projectMembers) {
+        if (assignmentProjectKeys.has(`${user.id}::${pm.project.id}`)) continue;
+
+        const projectName = pm.project.name;
+        const projectId = pm.project.id;
+        const projectStatus = pm.project.status;
+        const clientId = pm.project.clientId || null;
+        // Resolve client name from the clients prop if available
+        const clientName = clientId
+          ? (clients.find((c) => c.id === clientId)?.name || "")
+          : "";
+        const role = pm.role || "";
+        const managerName = user.manager?.name || "";
+
+        const offeringName = "Project Staffing";
+        const key = `pm::${managerName}::${clientName}::${projectName}::${role}::${user.id}`;
+
+        if (!rowMap.has(key)) {
+          rowMap.set(key, {
+            key,
+            offering: offeringName,
+            offeringId: null,
+            managerName,
+            managerId: user.managerId,
+            clientName,
+            clientId,
+            projectName,
+            projectId,
+            location: user.location || "",
+            roleRequired: role,
+            fte: 0,
+            employees: [],
+            notes: `From project membership (${projectStatus})`,
+            assignmentIds: [],
+            source: "project-member",
+          });
+        }
+
+        const row = rowMap.get(key)!;
+        if (!row.employees.find((e) => e.id === user.id)) {
+          row.employees.push({ id: user.id, name: user.name, jobTitle: user.jobTitle });
+        }
+      }
+
+      // 3) Show unassigned employees (no assignments AND no project memberships)
+      if (user.assignments.length === 0 && user.projectMembers.length === 0) {
         const key = `Unassigned::::::::${user.id}`;
         rowMap.set(key, {
           key,
@@ -170,12 +222,13 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, sea
           employees: [{ id: user.id, name: user.name, jobTitle: user.jobTitle }],
           notes: "",
           assignmentIds: [],
+          source: "unassigned",
         });
       }
     }
 
     return Array.from(rowMap.values());
-  }, [users, search]);
+  }, [users, clients, search]);
 
   // Apply filters
   const filteredRows = useMemo(() => {
@@ -381,6 +434,11 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, sea
                           <div className="flex items-center gap-2">
                             {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                             <span className="font-bold text-sm">{offering}</span>
+                            {groupRows.some((r) => r.source === "project-member") && (
+                              <Badge variant="outline" className="text-[9px] bg-blue-50 border-blue-200 text-blue-700">
+                                From Projects
+                              </Badge>
+                            )}
                             <span className="text-xs text-muted-foreground">
                               ({groupRows.length} row{groupRows.length !== 1 ? "s" : ""} · {groupEmployeeCount} employee{groupEmployeeCount !== 1 ? "s" : ""})
                             </span>
@@ -426,9 +484,13 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, sea
                             ) : <span className="text-muted-foreground">—</span>}
                           </td>
                           <td className="py-2 px-3 text-center">
-                            <span className={`font-bold text-sm ${row.fte > 1 ? "text-primary" : ""}`}>
-                              {formatFte(row.fte)}
-                            </span>
+                            {row.source === "project-member" ? (
+                              <span className="text-xs text-muted-foreground italic" title="No FTE assigned — create an assignment to set allocation">—</span>
+                            ) : (
+                              <span className={`font-bold text-sm ${row.fte > 1 ? "text-primary" : ""}`}>
+                                {formatFte(row.fte)}
+                              </span>
+                            )}
                           </td>
                           <td className="py-2 px-3">
                             <div className="space-y-0.5">
@@ -445,7 +507,15 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, sea
                             </div>
                           </td>
                           <td className="py-2 px-3 hidden lg:table-cell">
-                            {row.notes ? (
+                            {row.source === "project-member" && canManage ? (
+                              <button
+                                onClick={() => setAddDialogOpen(true)}
+                                className="text-xs text-primary hover:underline flex items-center gap-1"
+                              >
+                                <Plus className="h-3 w-3" />
+                                Create assignment
+                              </button>
+                            ) : row.notes ? (
                               <span className="text-xs text-muted-foreground">{row.notes}</span>
                             ) : null}
                           </td>
