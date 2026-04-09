@@ -58,7 +58,11 @@ export default async function TeamPage() {
     }),
     db.project.findMany({
       where: { status: { in: ["PLANNING", "ACTIVE", "ON_HOLD", "COMPLETED"] } },
-      select: { id: true, name: true, status: true, clientId: true },
+      select: {
+        id: true, name: true, status: true, clientId: true,
+        serviceOfferingId: true,
+        serviceOffering: { select: { id: true, name: true } },
+      },
       orderBy: [{ status: "asc" }, { name: "asc" }],
     }),
     db.client.findMany({

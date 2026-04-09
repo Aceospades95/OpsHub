@@ -30,9 +30,12 @@ vi.mock("@/actions/assignments", () => ({
   updateAssignment: vi.fn(),
   deleteAssignment: vi.fn(),
   createServiceOffering: vi.fn(),
+  updateAssignmentNotes: vi.fn(),
+  updateAssignmentFte: vi.fn(),
+  updateProjectOffering: vi.fn(),
 }));
 
-const mockProject: ProjectData = { id: "p1", name: "Project Alpha", status: "ACTIVE", clientId: "c1" };
+const mockProject: ProjectData = { id: "p1", name: "Project Alpha", status: "ACTIVE", clientId: "c1", serviceOfferingId: "so1", serviceOffering: { id: "so1", name: "Consulting" } };
 const mockClient: ClientData = { id: "c1", name: "Client One" };
 const mockSO: ServiceOfferingData = { id: "so1", name: "Consulting" };
 

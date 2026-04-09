@@ -271,20 +271,22 @@ model ClientContact {
 // ─── PROJECTS ────────────────────────────────────────────
 
 model Project {
-  id              String        @id @default(cuid())
-  name            String
-  description     String?       @db.Text
-  status          ProjectStatus @default(PLANNING)
-  startDate       DateTime?
-  endDate         DateTime?
-  clientId        String
-  parentProjectId String?
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
+  id                String        @id @default(cuid())
+  name              String
+  description       String?       @db.Text
+  status            ProjectStatus @default(PLANNING)
+  startDate         DateTime?
+  endDate           DateTime?
+  clientId          String
+  parentProjectId   String?
+  serviceOfferingId String?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
 
-  client        Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  parentProject Project?  @relation("ProjectHierarchy", fields: [parentProjectId], references: [id])
-  childProjects Project[] @relation("ProjectHierarchy")
+  client          Client           @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  parentProject   Project?         @relation("ProjectHierarchy", fields: [parentProjectId], references: [id])
+  childProjects   Project[]        @relation("ProjectHierarchy")
+  serviceOffering ServiceOffering? @relation(fields: [serviceOfferingId], references: [id], onDelete: SetNull)
 
   contracts  Contract[]
   documents  Document[]
@@ -301,6 +303,8 @@ model Project {
   relations        ProjectRelation[] @relation("ProjectRelations")
   relatedRelations ProjectRelation[] @relation("RelatedProjectRelations")
   assignments      Assignment[]
+
+  @@index([serviceOfferingId])
 }
 
 model ProjectRelation {
@@ -711,6 +715,7 @@ model ServiceOffering {
   updatedAt   DateTime @updatedAt
 
   assignments Assignment[]
+  projects    Project[]
 }
 
 // ─── ASSIGNMENTS / ALLOCATIONS ─────────────────────────

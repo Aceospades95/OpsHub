@@ -106,6 +106,51 @@ export async function deleteAssignment(_prev: unknown, formData: FormData) {
   return { success: true, error: null };
 }
 
+// Inline field updates (for staffing matrix direct editing)
+export async function updateAssignmentNotes(assignmentId: string, notes: string) {
+  const user = await requireAuth();
+  requireAdminOrManager(user.role);
+
+  await db.assignment.update({
+    where: { id: assignmentId },
+    data: { notes: notes || null },
+  });
+
+  await logActivity("updated", "assignment", assignmentId, user.id, "Updated notes");
+  revalidatePath("/team");
+  return { success: true };
+}
+
+export async function updateAssignmentFte(assignmentId: string, allocationFte: number) {
+  const user = await requireAuth();
+  requireAdminOrManager(user.role);
+
+  if (allocationFte < 0 || allocationFte > 2) return { error: "FTE must be between 0 and 2" };
+
+  await db.assignment.update({
+    where: { id: assignmentId },
+    data: { allocationFte },
+  });
+
+  await logActivity("updated", "assignment", assignmentId, user.id, `Updated FTE to ${allocationFte}`);
+  revalidatePath("/team");
+  return { success: true };
+}
+
+export async function updateProjectOffering(projectId: string, serviceOfferingId: string | null) {
+  const user = await requireAuth();
+  requireAdminOrManager(user.role);
+
+  await db.project.update({
+    where: { id: projectId },
+    data: { serviceOfferingId },
+  });
+
+  await logActivity("updated", "project", projectId, user.id, "Updated service offering");
+  revalidatePath("/team");
+  return { success: true };
+}
+
 // Service Offering CRUD
 const serviceOfferingSchema = z.object({
   name: z.string().min(1, "Name is required"),

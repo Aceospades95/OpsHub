@@ -39,6 +39,8 @@ export interface ProjectData {
   name: string;
   status: string;
   clientId: string;
+  serviceOfferingId: string | null;
+  serviceOffering: { id: string; name: string } | null;
 }
 
 export interface ClientData {
