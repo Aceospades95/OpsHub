@@ -199,7 +199,7 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, sea
           rowMap.set(key, {
             key, offering: offeringName, offeringId: null, managerName,
             managerId: user.managerId, clientName, clientId, projectName, projectId,
-            location: user.location || "", roleRequired: "", fte: 0,
+            location: user.location || "", roleRequired: "", fte: 1,
             employees: [], notes: `From project membership (${projectStatus})`,
             assignmentIds: [], source: "project-member",
           });
@@ -527,10 +527,8 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, sea
                                 className={`border-b border-border/40 border-l-4 ${color.border} ${color.clientBg} cursor-pointer hover:brightness-95 transition-all`}
                                 onClick={() => toggleExpand(expandedClients, clientExpandKey, setExpandedClients)}
                               >
-                                <td className="py-2 px-4" />
-                                <td className="py-2 px-3" />
-                                <td colSpan={4} className="py-2 px-3">
-                                  <div className="flex items-center gap-2">
+                                <td colSpan={6} className="py-2 px-4">
+                                  <div className="flex items-center gap-2 pl-6">
                                     {isClientExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
                                     {cg.clientId ? (
                                       <Link href={`/clients/${cg.clientId}`}
@@ -593,7 +591,19 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, sea
                                 </td>
                                 <td className="py-2 px-3 text-center">
                                   {row.source === "project-member" ? (
-                                    <span className="text-xs text-muted-foreground italic" title="No FTE assigned — create an assignment to set allocation">—</span>
+                                    canManage ? (
+                                      <button
+                                        onClick={openAddDialog}
+                                        className="font-bold text-sm text-blue-600 hover:text-primary cursor-pointer"
+                                        title="Default FTE from project membership — click to create assignment"
+                                      >
+                                        {formatFte(row.fte)}
+                                      </button>
+                                    ) : (
+                                      <span className="font-bold text-sm text-muted-foreground" title="Default FTE from project membership">
+                                        {formatFte(row.fte)}
+                                      </span>
+                                    )
                                   ) : row.fte > 0 && row.employees.length === 1 ? (
                                     <Link
                                       href={`/team/${row.employees[0].id}`}

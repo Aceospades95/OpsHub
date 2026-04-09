@@ -87,7 +87,15 @@ export function getAllocationBadge(status: AllocationStatus): { label: string; c
 }
 
 export function computeEmployeeFte(user: UserData): number {
-  return user.assignments.reduce((sum, a) => sum + a.allocationFte, 0);
+  const assignmentFte = user.assignments.reduce((sum, a) => sum + a.allocationFte, 0);
+  // Project memberships without a matching assignment default to 1.0 FTE each
+  const assignedProjectIds = new Set(
+    user.assignments.map((a) => a.project?.id).filter(Boolean)
+  );
+  const unmatchedPmCount = user.projectMembers.filter(
+    (pm) => !assignedProjectIds.has(pm.project.id)
+  ).length;
+  return assignmentFte + unmatchedPmCount * 1.0;
 }
 
 export function formatFte(value: number): string {
