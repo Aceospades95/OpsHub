@@ -163,6 +163,7 @@ model User {
   managedClients       Client[]           @relation("ClientAccountManager")
   customWidgets        CustomWidget[]
   assignedCerts        Certification[]    @relation("CertificationAssignee")
+  assignments          Assignment[]
 }
 
 model ModulePermission {
@@ -249,6 +250,7 @@ model Client {
   comments       Comment[]
   tasks          Task[]
   sandboxPages   SandboxPage[]
+  assignments    Assignment[]
 }
 
 model ClientContact {
@@ -298,6 +300,7 @@ model Project {
 
   relations        ProjectRelation[] @relation("ProjectRelations")
   relatedRelations ProjectRelation[] @relation("RelatedProjectRelations")
+  assignments      Assignment[]
 }
 
 model ProjectRelation {
@@ -695,6 +698,56 @@ model Certification {
   comments Comment[]
   links    ExternalLink[]
   embeds   Embed[]
+}
+
+// ─── SERVICE OFFERINGS ─────────────────────────────────
+
+model ServiceOffering {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?  @db.Text
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  assignments Assignment[]
+}
+
+// ─── ASSIGNMENTS / ALLOCATIONS ─────────────────────────
+
+enum AssignmentStatus {
+  ACTIVE
+  PLANNED
+  COMPLETED
+  ON_HOLD
+}
+
+model Assignment {
+  id                String           @id @default(cuid())
+  employeeId        String
+  projectId         String?
+  clientId          String?
+  serviceOfferingId String?
+  function          String?          // work type / functional area
+  role              String?          // role on this assignment
+  allocationFte     Float            @default(0)
+  status            AssignmentStatus @default(ACTIVE)
+  startDate         DateTime?
+  endDate           DateTime?
+  notes             String?          @db.Text
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+
+  employee        User              @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  project         Project?          @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  client          Client?           @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  serviceOffering ServiceOffering?  @relation(fields: [serviceOfferingId], references: [id], onDelete: SetNull)
+
+  @@index([employeeId])
+  @@index([projectId])
+  @@index([clientId])
+  @@index([serviceOfferingId])
+  @@index([status])
 }
 
 // ─── CUSTOM WIDGETS ────────────────────────────────────

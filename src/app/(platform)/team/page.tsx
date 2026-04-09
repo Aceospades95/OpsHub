@@ -11,7 +11,7 @@ export default async function TeamPage() {
 
   const canManage = session.user.role === "ADMIN" || session.user.role === "MANAGER";
 
-  const [activeUsers, inactiveUsers, projects, allUsers] = await Promise.all([
+  const [activeUsers, inactiveUsers, projects, clients, serviceOfferings, allUsers] = await Promise.all([
     db.user.findMany({
       where: { isActive: true },
       select: {
@@ -19,8 +19,17 @@ export default async function TeamPage() {
         jobTitle: true, department: true, location: true,
         avatar: true, managerId: true, isActive: true,
         manager: { select: { id: true, name: true } },
+        directReports: { select: { id: true, name: true } },
         projectMembers: {
-          include: { project: { select: { id: true, name: true, status: true } } },
+          include: { project: { select: { id: true, name: true, status: true, clientId: true } } },
+        },
+        assignments: {
+          where: { status: { in: ["ACTIVE", "PLANNED"] } },
+          include: {
+            project: { select: { id: true, name: true, status: true } },
+            client: { select: { id: true, name: true } },
+            serviceOffering: { select: { id: true, name: true } },
+          },
         },
       },
       orderBy: { name: "asc" },
@@ -32,16 +41,35 @@ export default async function TeamPage() {
         jobTitle: true, department: true, location: true,
         avatar: true, managerId: true, isActive: true,
         manager: { select: { id: true, name: true } },
+        directReports: { select: { id: true, name: true } },
         projectMembers: {
-          include: { project: { select: { id: true, name: true, status: true } } },
+          include: { project: { select: { id: true, name: true, status: true, clientId: true } } },
+        },
+        assignments: {
+          where: { status: { in: ["ACTIVE", "PLANNED"] } },
+          include: {
+            project: { select: { id: true, name: true, status: true } },
+            client: { select: { id: true, name: true } },
+            serviceOffering: { select: { id: true, name: true } },
+          },
         },
       },
       orderBy: { name: "asc" },
     }),
     db.project.findMany({
       where: { status: { in: ["PLANNING", "ACTIVE", "ON_HOLD", "COMPLETED"] } },
-      select: { id: true, name: true, status: true },
+      select: { id: true, name: true, status: true, clientId: true },
       orderBy: [{ status: "asc" }, { name: "asc" }],
+    }),
+    db.client.findMany({
+      where: { status: "ACTIVE" },
+      select: { id: true, name: true },
+      orderBy: { name: "asc" },
+    }),
+    db.serviceOffering.findMany({
+      where: { isActive: true },
+      select: { id: true, name: true },
+      orderBy: { name: "asc" },
     }),
     db.user.findMany({
       where: { isActive: true },
@@ -61,7 +89,10 @@ export default async function TeamPage() {
         users={activeUsers as Parameters<typeof TeamPageClient>[0]["users"]}
         inactiveUsers={inactiveUsers as Parameters<typeof TeamPageClient>[0]["users"]}
         projects={projects}
+        clients={clients}
+        serviceOfferings={serviceOfferings}
         currentUserId={session.user.id}
+        canManage={canManage}
       />
     </div>
   );

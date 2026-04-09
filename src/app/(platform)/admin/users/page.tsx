@@ -49,7 +49,7 @@ export default async function AdminUsersPage() {
           {users.map((user) => (
             <tr key={user.id} className={`border-b border-border last:border-0 hover:bg-muted/50 ${dimmed ? "opacity-60" : ""}`}>
               <td className="p-4">
-                <Link href={`/admin/users/${user.id}`} className="flex items-center gap-3 hover:text-primary">
+                <Link href={`/team/${user.id}`} className="flex items-center gap-3 hover:text-primary">
                   <Avatar name={user.name} size="sm" />
                   <div>
                     <p className="text-sm font-medium">{user.name}</p>
@@ -78,7 +78,7 @@ export default async function AdminUsersPage() {
                 </div>
               </td>
               <td className="p-4">
-                <Link href={`/admin/users/${user.id}`} className="text-sm text-primary hover:underline">
+                <Link href={`/team/${user.id}`} className="text-sm text-primary hover:underline">
                   Manage
                 </Link>
               </td>
