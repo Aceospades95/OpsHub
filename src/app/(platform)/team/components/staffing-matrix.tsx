@@ -40,6 +40,7 @@ interface MatrixRow {
   projectId: string | null;
   location: string;
   roleRequired: string;
+  projectRoleId: string | null;
   fte: number;
   employees: { id: string; name: string; jobTitle: string | null }[];
   notes: string;
@@ -116,7 +117,7 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, rol
   const [sortDir, setSortDir] = useState<SortDir>("asc");
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [addDialogKey, setAddDialogKey] = useState(0);
-  const [addDialogDefaults, setAddDialogDefaults] = useState<{ employeeId?: string; projectId?: string; clientId?: string; serviceOfferingId?: string }>({});
+  const [addDialogDefaults, setAddDialogDefaults] = useState<{ employeeId?: string; projectId?: string; clientId?: string; serviceOfferingId?: string; projectRoleId?: string; roleName?: string; roleDefinitionId?: string }>({});
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [editDialogKey, setEditDialogKey] = useState(0);
   const [editAssignment, setEditAssignment] = useState<EditAssignmentData | null>(null);
@@ -187,7 +188,7 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, rol
     else { setSortField(field); setSortDir("asc"); }
   };
 
-  const openAddDialog = (defaults: { employeeId?: string; projectId?: string; clientId?: string; serviceOfferingId?: string } = {}) => {
+  const openAddDialog = (defaults: typeof addDialogDefaults = {}) => {
     setAddDialogKey((k) => k + 1);
     setAddDialogDefaults(defaults);
     setAddDialogOpen(true);
@@ -245,19 +246,21 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, rol
         const clientId = assignment.client?.id || null;
         const projectName = assignment.project?.name || "";
         const projectId = assignment.project?.id || null;
-        // Functional role from the assignment — NOT the system role
-        const role = assignment.role || "";
+        // Role: prefer projectRole > roleDefinition > freeform role
+        const role = assignment.projectRole?.roleDefinition?.name || assignment.roleDefinition?.name || assignment.role || "";
+        const prId = assignment.projectRoleId || null;
 
         if (projectId) assignmentProjectKeys.add(`${user.id}::${projectId}`);
 
         const managerName = user.manager?.name || "";
-        const key = `${offeringName}::${managerName}::${clientName}::${projectName}::${role}`;
+        // Include projectRoleId in key so assignments linked to a project role group together
+        const key = `${offeringName}::${managerName}::${clientName}::${projectName}::${prId || role}`;
 
         if (!rowMap.has(key)) {
           rowMap.set(key, {
             key, offering: offeringName, offeringId, managerName,
             managerId: user.managerId, clientName, clientId, projectName, projectId,
-            location: user.location || "", roleRequired: role, fte: 0,
+            location: user.location || "", roleRequired: role, projectRoleId: prId, fte: 0,
             employees: [], notes: assignment.notes || "", assignmentIds: [],
             source: "assignment",
           });
@@ -292,7 +295,7 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, rol
           rowMap.set(key, {
             key, offering: offeringName, offeringId: null, managerName,
             managerId: user.managerId, clientName, clientId, projectName, projectId,
-            location: user.location || "", roleRequired: "", fte: 1,
+            location: user.location || "", roleRequired: "", projectRoleId: null, fte: 1,
             employees: [], notes: `From project membership (${projectStatus})`,
             assignmentIds: [], source: "project-member",
           });
@@ -313,7 +316,7 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, rol
           clientName: "", clientId: null, projectName: "", projectId: null,
           location: user.location || "",
           // Don't use user.role (system role) — leave blank for unassigned
-          roleRequired: "",
+          roleRequired: "", projectRoleId: null,
           fte: 0, employees: [{ id: user.id, name: user.name, jobTitle: user.jobTitle }],
           notes: "", assignmentIds: [], source: "unassigned",
         });
@@ -416,7 +419,11 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, rol
           // 1) Create groups from defined ProjectRoles
           for (const pr of definedRoles) {
             const roleName = pr.roleDefinition.name;
-            const matchingRows = projectRows.filter((r) => r.roleRequired === roleName);
+            // Match by projectRoleId first, then fall back to role name
+            const matchingRows = projectRows.filter((r) =>
+              (r.projectRoleId && r.projectRoleId === pr.id) ||
+              (!r.projectRoleId && r.roleRequired === roleName)
+            );
             matchingRows.forEach((r) => usedRowKeys.add(r.key));
             const rFte = matchingRows.reduce((s, r) => s + r.fte, 0);
             const roleEmployees = new Set<string>();
@@ -1005,6 +1012,8 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, rol
                                                       onClick={canManage ? () => openAddDialog({
                                                         projectId: row.projectId || undefined,
                                                         clientId: row.clientId || undefined,
+                                                        projectRoleId: row.projectRoleId || undefined,
+                                                        roleName: row.roleRequired || undefined,
                                                       }) : undefined}
                                                     >
                                                       <UserPlus className="h-3 w-3" />
@@ -1071,6 +1080,9 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, rol
                                             onClick={canManage && pg.projectId ? () => openAddDialog({
                                               projectId: pg.projectId || undefined,
                                               clientId: cg.clientId || undefined,
+                                              projectRoleId: rg.projectRoleId || undefined,
+                                              roleName: rg.role || undefined,
+                                              roleDefinitionId: rg.projectRoleId ? projectRoles.find((pr) => pr.id === rg.projectRoleId)?.roleDefinition?.id : undefined,
                                             }) : undefined}
                                           >
                                             <td className="py-1.5 px-4" />
@@ -1143,6 +1155,9 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, rol
             defaultProjectId={addDialogDefaults.projectId}
             defaultClientId={addDialogDefaults.clientId}
             defaultServiceOfferingId={addDialogDefaults.serviceOfferingId}
+            defaultProjectRoleId={addDialogDefaults.projectRoleId}
+            defaultRoleName={addDialogDefaults.roleName}
+            defaultRoleDefinitionId={addDialogDefaults.roleDefinitionId}
           />
           <EditAssignmentDialog
             key={`edit-${editDialogKey}`}

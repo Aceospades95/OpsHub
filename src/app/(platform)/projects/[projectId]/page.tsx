@@ -88,7 +88,7 @@ export default async function ProjectDetailPage({ params }: Props) {
     orderBy: { name: "asc" },
   });
 
-  const [allUsers, projectTasks, allTools, allProjects] = await Promise.all([
+  const [allUsers, projectTasks, allTools, allProjects, serviceOfferings] = await Promise.all([
     db.user.findMany({
       where: { isActive: true },
       select: { id: true, name: true, email: true },
@@ -106,6 +106,11 @@ export default async function ProjectDetailPage({ params }: Props) {
     }),
     db.project.findMany({
       where: { id: { not: project.id } },
+      select: { id: true, name: true },
+      orderBy: { name: "asc" },
+    }),
+    db.serviceOffering.findMany({
+      where: { isActive: true },
       select: { id: true, name: true },
       orderBy: { name: "asc" },
     }),
@@ -361,6 +366,7 @@ export default async function ProjectDetailPage({ params }: Props) {
           <ProjectActions
             project={{ ...project, clientId: project.client.id }}
             clients={clients}
+            serviceOfferings={serviceOfferings}
             canEdit={perms.canEdit}
             canDelete={perms.canDelete}
           />
