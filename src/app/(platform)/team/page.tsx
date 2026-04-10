@@ -11,7 +11,7 @@ export default async function TeamPage() {
 
   const canManage = session.user.role === "ADMIN" || session.user.role === "MANAGER";
 
-  const [activeUsers, inactiveUsers, projects, clients, serviceOfferings, allUsers, roleDefinitions, projectRoles] = await Promise.all([
+  const [activeUsers, inactiveUsers, projects, clients, serviceOfferings, allUsers] = await Promise.all([
     db.user.findMany({
       where: { isActive: true },
       select: {
@@ -29,8 +29,6 @@ export default async function TeamPage() {
             project: { select: { id: true, name: true, status: true } },
             client: { select: { id: true, name: true } },
             serviceOffering: { select: { id: true, name: true } },
-            projectRole: { select: { id: true, roleDefinition: { select: { id: true, name: true } }, requiredFte: true } },
-            roleDefinition: { select: { id: true, name: true } },
           },
         },
       },
@@ -53,8 +51,6 @@ export default async function TeamPage() {
             project: { select: { id: true, name: true, status: true } },
             client: { select: { id: true, name: true } },
             serviceOffering: { select: { id: true, name: true } },
-            projectRole: { select: { id: true, roleDefinition: { select: { id: true, name: true } }, requiredFte: true } },
-            roleDefinition: { select: { id: true, name: true } },
           },
         },
       },
@@ -84,18 +80,6 @@ export default async function TeamPage() {
       select: { id: true, name: true },
       orderBy: { name: "asc" },
     }),
-    db.roleDefinition.findMany({
-      where: { isActive: true },
-      select: { id: true, name: true },
-      orderBy: { name: "asc" },
-    }),
-    db.projectRole.findMany({
-      select: {
-        id: true, projectId: true, requiredFte: true, quantity: true,
-        roleDefinition: { select: { id: true, name: true } },
-        assignments: { select: { id: true, employeeId: true } },
-      },
-    }),
   ]);
 
   return (
@@ -111,8 +95,6 @@ export default async function TeamPage() {
         projects={projects}
         clients={clients}
         serviceOfferings={serviceOfferings}
-        roleDefinitions={roleDefinitions}
-        projectRoles={projectRoles}
         currentUserId={session.user.id}
         canManage={canManage}
       />

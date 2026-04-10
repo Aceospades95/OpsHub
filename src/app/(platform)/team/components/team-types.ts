@@ -12,9 +12,6 @@ export interface AssignmentData {
   project: { id: string; name: string; status: string } | null;
   client: { id: string; name: string } | null;
   serviceOffering: { id: string; name: string } | null;
-  projectRoleId: string | null;
-  projectRole: { id: string; roleDefinition: { id: string; name: string }; requiredFte: number } | null;
-  roleDefinition: { id: string; name: string } | null;
 }
 
 export interface UserData {
@@ -54,20 +51,6 @@ export interface ClientData {
 export interface ServiceOfferingData {
   id: string;
   name: string;
-}
-
-export interface RoleDefinitionData {
-  id: string;
-  name: string;
-}
-
-export interface ProjectRoleData {
-  id: string;
-  projectId: string;
-  roleDefinition: { id: string; name: string };
-  requiredFte: number;
-  quantity: number;
-  assignments: { id: string; employeeId: string }[];
 }
 
 export type MatrixDimension = "project" | "client" | "serviceOffering" | "function" | "manager" | "role" | "location" | "department";

@@ -15,8 +15,6 @@ const assignmentSchema = z.object({
   projectId: z.string().optional(),
   clientId: z.string().optional(),
   serviceOfferingId: z.string().optional(),
-  projectRoleId: z.string().optional(),
-  roleDefinitionId: z.string().optional(),
   function: z.string().optional(),
   role: z.string().optional(),
   allocationFte: z.number().min(0).max(2),
@@ -35,8 +33,6 @@ export async function createAssignment(_prev: unknown, formData: FormData) {
     projectId: formData.get("projectId") || undefined,
     clientId: formData.get("clientId") || undefined,
     serviceOfferingId: formData.get("serviceOfferingId") || undefined,
-    projectRoleId: formData.get("projectRoleId") || undefined,
-    roleDefinitionId: formData.get("roleDefinitionId") || undefined,
     function: formData.get("function") || undefined,
     role: formData.get("role") || undefined,
     allocationFte: parseFloat(formData.get("allocationFte") as string) || 0,
@@ -72,8 +68,6 @@ export async function updateAssignment(_prev: unknown, formData: FormData) {
     projectId: formData.get("projectId") || undefined,
     clientId: formData.get("clientId") || undefined,
     serviceOfferingId: formData.get("serviceOfferingId") || undefined,
-    projectRoleId: formData.get("projectRoleId") || undefined,
-    roleDefinitionId: formData.get("roleDefinitionId") || undefined,
     function: formData.get("function") || undefined,
     role: formData.get("role") || undefined,
     allocationFte: parseFloat(formData.get("allocationFte") as string) || 0,
@@ -112,55 +106,6 @@ export async function deleteAssignment(_prev: unknown, formData: FormData) {
   return { success: true, error: null };
 }
 
-// Direct delete (for inline remove from staffing matrix)
-export async function removeAssignment(assignmentId: string) {
-  const user = await requireAuth();
-  requireAdminOrManager(user.role);
-
-  if (!assignmentId) return { error: "Assignment ID is required" };
-  await db.assignment.delete({ where: { id: assignmentId } });
-  await logActivity("deleted", "assignment", assignmentId, user.id);
-  revalidatePath("/team");
-  revalidatePath("/projects");
-  return { success: true };
-}
-
-// Direct create (for quick-assign from staffing matrix)
-export async function quickAssign(data: {
-  employeeId: string;
-  projectId: string;
-  clientId?: string;
-  projectRoleId?: string;
-  roleDefinitionId?: string;
-  role?: string;
-  allocationFte: number;
-  serviceOfferingId?: string;
-}) {
-  const user = await requireAuth();
-  requireAdminOrManager(user.role);
-
-  if (!data.employeeId || !data.projectId) return { error: "Employee and project are required" };
-
-  const assignment = await db.assignment.create({
-    data: {
-      employeeId: data.employeeId,
-      projectId: data.projectId,
-      clientId: data.clientId || undefined,
-      projectRoleId: data.projectRoleId || undefined,
-      roleDefinitionId: data.roleDefinitionId || undefined,
-      role: data.role || undefined,
-      allocationFte: data.allocationFte,
-      serviceOfferingId: data.serviceOfferingId || undefined,
-      status: "ACTIVE",
-    },
-  });
-
-  await logActivity("created", "assignment", assignment.id, user.id, `Quick-assigned to project`);
-  revalidatePath("/team");
-  revalidatePath("/projects");
-  return { success: true };
-}
-
 // Inline field updates (for staffing matrix direct editing)
 export async function updateAssignmentNotes(assignmentId: string, notes: string) {
   const user = await requireAuth();
@@ -172,20 +117,6 @@ export async function updateAssignmentNotes(assignmentId: string, notes: string)
   });
 
   await logActivity("updated", "assignment", assignmentId, user.id, "Updated notes");
-  revalidatePath("/team");
-  return { success: true };
-}
-
-export async function updateAssignmentRole(assignmentId: string, role: string, roleDefinitionId: string | null) {
-  const user = await requireAuth();
-  requireAdminOrManager(user.role);
-
-  await db.assignment.update({
-    where: { id: assignmentId },
-    data: { role: role || null, roleDefinitionId },
-  });
-
-  await logActivity("updated", "assignment", assignmentId, user.id, `Updated role to ${role}`);
   revalidatePath("/team");
   return { success: true };
 }
@@ -216,61 +147,6 @@ export async function updateProjectOffering(projectId: string, serviceOfferingId
   });
 
   await logActivity("updated", "project", projectId, user.id, "Updated service offering");
-  revalidatePath("/team");
-  return { success: true };
-}
-
-// Role Definition CRUD
-export async function createRoleDefinition(name: string) {
-  const user = await requireAuth();
-  requireAdminOrManager(user.role);
-
-  if (!name.trim()) return { error: "Name is required" };
-
-  const existing = await db.roleDefinition.findUnique({ where: { name: name.trim() } });
-  if (existing) return { error: "Role already exists", id: existing.id };
-
-  const rd = await db.roleDefinition.create({ data: { name: name.trim() } });
-  await logActivity("created", "roleDefinition", rd.id, user.id, rd.name);
-  revalidatePath("/team");
-  return { success: true, id: rd.id };
-}
-
-// Project Role CRUD
-export async function createProjectRole(projectId: string, roleDefinitionId: string, requiredFte: number, quantity: number) {
-  const user = await requireAuth();
-  requireAdminOrManager(user.role);
-
-  if (!projectId || !roleDefinitionId) return { error: "Project and role are required" };
-  if (requiredFte < 0 || requiredFte > 2) return { error: "FTE must be between 0 and 2" };
-  if (quantity < 1 || quantity > 50) return { error: "Quantity must be between 1 and 50" };
-
-  const pr = await db.projectRole.create({
-    data: { projectId, roleDefinitionId, requiredFte, quantity },
-  });
-  await logActivity("created", "projectRole", pr.id, user.id, `Added role to project`);
-  revalidatePath("/team");
-  return { success: true, id: pr.id };
-}
-
-export async function updateProjectRole(id: string, requiredFte: number, quantity: number) {
-  const user = await requireAuth();
-  requireAdminOrManager(user.role);
-
-  await db.projectRole.update({ where: { id }, data: { requiredFte, quantity } });
-  await logActivity("updated", "projectRole", id, user.id);
-  revalidatePath("/team");
-  return { success: true };
-}
-
-export async function deleteProjectRole(id: string) {
-  const user = await requireAuth();
-  requireAdminOrManager(user.role);
-
-  // Unlink assignments from this project role before deleting
-  await db.assignment.updateMany({ where: { projectRoleId: id }, data: { projectRoleId: null } });
-  await db.projectRole.delete({ where: { id } });
-  await logActivity("deleted", "projectRole", id, user.id);
   revalidatePath("/team");
   return { success: true };
 }

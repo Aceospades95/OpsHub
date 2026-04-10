@@ -48,7 +48,7 @@ export default async function EmployeeDetailPage({ params }: Props) {
   const isAdmin = session.user.role === "ADMIN";
 
   // Fetch admin-related data
-  const [recentActivity, allUsers, allClients, allProjects, serviceOfferings, roleDefinitions] = await Promise.all([
+  const [recentActivity, allUsers, allClients, allProjects, serviceOfferings] = await Promise.all([
     db.activityLog.findMany({
       where: { userId: employeeId },
       take: 10,
@@ -70,11 +70,6 @@ export default async function EmployeeDetailPage({ params }: Props) {
       orderBy: { name: "asc" },
     }),
     db.serviceOffering.findMany({
-      where: { isActive: true },
-      select: { id: true, name: true },
-      orderBy: { name: "asc" },
-    }),
-    db.roleDefinition.findMany({
       where: { isActive: true },
       select: { id: true, name: true },
       orderBy: { name: "asc" },
@@ -120,7 +115,6 @@ export default async function EmployeeDetailPage({ params }: Props) {
         allClients={allClients}
         allProjects={allProjects}
         serviceOfferings={serviceOfferings}
-        roleDefinitions={roleDefinitions}
       />
     </div>
   );
