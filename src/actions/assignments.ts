@@ -151,6 +151,61 @@ export async function updateProjectOffering(projectId: string, serviceOfferingId
   return { success: true };
 }
 
+// Role Definition CRUD
+export async function createRoleDefinition(name: string) {
+  const user = await requireAuth();
+  requireAdminOrManager(user.role);
+
+  if (!name.trim()) return { error: "Name is required" };
+
+  const existing = await db.roleDefinition.findUnique({ where: { name: name.trim() } });
+  if (existing) return { error: "Role already exists", id: existing.id };
+
+  const rd = await db.roleDefinition.create({ data: { name: name.trim() } });
+  await logActivity("created", "roleDefinition", rd.id, user.id, rd.name);
+  revalidatePath("/team");
+  return { success: true, id: rd.id };
+}
+
+// Project Role CRUD
+export async function createProjectRole(projectId: string, roleDefinitionId: string, requiredFte: number, quantity: number) {
+  const user = await requireAuth();
+  requireAdminOrManager(user.role);
+
+  if (!projectId || !roleDefinitionId) return { error: "Project and role are required" };
+  if (requiredFte < 0 || requiredFte > 2) return { error: "FTE must be between 0 and 2" };
+  if (quantity < 1 || quantity > 50) return { error: "Quantity must be between 1 and 50" };
+
+  const pr = await db.projectRole.create({
+    data: { projectId, roleDefinitionId, requiredFte, quantity },
+  });
+  await logActivity("created", "projectRole", pr.id, user.id, `Added role to project`);
+  revalidatePath("/team");
+  return { success: true, id: pr.id };
+}
+
+export async function updateProjectRole(id: string, requiredFte: number, quantity: number) {
+  const user = await requireAuth();
+  requireAdminOrManager(user.role);
+
+  await db.projectRole.update({ where: { id }, data: { requiredFte, quantity } });
+  await logActivity("updated", "projectRole", id, user.id);
+  revalidatePath("/team");
+  return { success: true };
+}
+
+export async function deleteProjectRole(id: string) {
+  const user = await requireAuth();
+  requireAdminOrManager(user.role);
+
+  // Unlink assignments from this project role before deleting
+  await db.assignment.updateMany({ where: { projectRoleId: id }, data: { projectRoleId: null } });
+  await db.projectRole.delete({ where: { id } });
+  await logActivity("deleted", "projectRole", id, user.id);
+  revalidatePath("/team");
+  return { success: true };
+}
+
 // Service Offering CRUD
 const serviceOfferingSchema = z.object({
   name: z.string().min(1, "Name is required"),

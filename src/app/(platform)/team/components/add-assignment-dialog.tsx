@@ -5,8 +5,8 @@ import { useRouter } from "next/navigation";
 import { useFormState } from "react-dom";
 import { Dialog } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { createAssignment } from "@/actions/assignments";
-import type { UserData, ProjectData, ClientData, ServiceOfferingData } from "./team-types";
+import { createAssignment, createRoleDefinition } from "@/actions/assignments";
+import type { UserData, ProjectData, ClientData, ServiceOfferingData, RoleDefinitionData } from "./team-types";
 
 interface Props {
   open: boolean;
@@ -15,16 +15,21 @@ interface Props {
   projects: ProjectData[];
   clients: ClientData[];
   serviceOfferings: ServiceOfferingData[];
+  roleDefinitions: RoleDefinitionData[];
   defaultEmployeeId?: string;
   defaultProjectId?: string;
   defaultClientId?: string;
   defaultServiceOfferingId?: string;
 }
 
-export function AddAssignmentDialog({ open, onClose, users, projects, clients, serviceOfferings, defaultEmployeeId, defaultProjectId, defaultClientId, defaultServiceOfferingId }: Props) {
+export function AddAssignmentDialog({ open, onClose, users, projects, clients, serviceOfferings, roleDefinitions, defaultEmployeeId, defaultProjectId, defaultClientId }: Props) {
   const [state, action] = useFormState(createAssignment, null);
   const router = useRouter();
   const [selectedClient, setSelectedClient] = useState(defaultClientId || "");
+  const [selectedProject, setSelectedProject] = useState(defaultProjectId || "");
+  const [roleMode, setRoleMode] = useState<"select" | "new">("select");
+  const [newRoleName, setNewRoleName] = useState("");
+  const [selectedRoleDefId, setSelectedRoleDefId] = useState("");
 
   useEffect(() => {
     if (state?.success) {
@@ -38,6 +43,51 @@ export function AddAssignmentDialog({ open, onClose, users, projects, clients, s
     ? projects.filter((p) => p.clientId === selectedClient)
     : projects;
 
+  // Get the selected project's offering (shown as read-only info)
+  const selectedProjectData = projects.find((p) => p.id === selectedProject);
+  const projectOffering = selectedProjectData?.serviceOffering?.name;
+
+  // Auto-set client when project is selected
+  const handleProjectChange = (projectId: string) => {
+    setSelectedProject(projectId);
+    if (projectId) {
+      const proj = projects.find((p) => p.id === projectId);
+      if (proj?.clientId && !selectedClient) {
+        setSelectedClient(proj.clientId);
+      }
+    }
+  };
+
+  const handleRoleSelect = (value: string) => {
+    if (value === "__new__") {
+      setRoleMode("new");
+      setSelectedRoleDefId("");
+    } else {
+      setRoleMode("select");
+      setSelectedRoleDefId(value);
+    }
+  };
+
+  // Handle new role creation before form submit
+  const handleSubmit = async (formData: FormData) => {
+    if (roleMode === "new" && newRoleName.trim()) {
+      const result = await createRoleDefinition(newRoleName.trim());
+      if (result.id) {
+        formData.set("roleDefinitionId", result.id);
+        formData.set("role", newRoleName.trim());
+      }
+    } else if (selectedRoleDefId) {
+      formData.set("roleDefinitionId", selectedRoleDefId);
+      const rd = roleDefinitions.find((r) => r.id === selectedRoleDefId);
+      if (rd) formData.set("role", rd.name);
+    }
+    // Set serviceOfferingId from project if available
+    if (selectedProjectData?.serviceOfferingId) {
+      formData.set("serviceOfferingId", selectedProjectData.serviceOfferingId);
+    }
+    action(formData);
+  };
+
   if (!open) return null;
 
   return (
@@ -47,7 +97,7 @@ export function AddAssignmentDialog({ open, onClose, users, projects, clients, s
           {state.error}
         </div>
       )}
-      <form action={action} className="space-y-4">
+      <form action={handleSubmit} className="space-y-4">
         {/* Employee */}
         <div className="space-y-1">
           <label className="block text-sm font-medium">Employee *</label>
@@ -58,27 +108,6 @@ export function AddAssignmentDialog({ open, onClose, users, projects, clients, s
               <option key={u.id} value={u.id}>{u.name}{u.jobTitle ? ` — ${u.jobTitle}` : ""}</option>
             ))}
           </select>
-        </div>
-
-        <div className="grid grid-cols-2 gap-3">
-          {/* Service Offering */}
-          <div className="space-y-1">
-            <label className="block text-sm font-medium">Service Offering</label>
-            <select name="serviceOfferingId" defaultValue={defaultServiceOfferingId || ""}
-              className="w-full h-10 rounded border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary">
-              <option value="">None</option>
-              {serviceOfferings.map((so) => (
-                <option key={so.id} value={so.id}>{so.name}</option>
-              ))}
-            </select>
-          </div>
-
-          {/* Function */}
-          <div className="space-y-1">
-            <label className="block text-sm font-medium">Function / Work Type</label>
-            <input name="function" placeholder="e.g. Development, QA, PM"
-              className="w-full h-10 rounded border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
-          </div>
         </div>
 
         <div className="grid grid-cols-2 gap-3">
@@ -97,7 +126,7 @@ export function AddAssignmentDialog({ open, onClose, users, projects, clients, s
           {/* Project */}
           <div className="space-y-1">
             <label className="block text-sm font-medium">Project</label>
-            <select name="projectId" defaultValue={defaultProjectId || ""}
+            <select name="projectId" value={selectedProject} onChange={(e) => handleProjectChange(e.target.value)}
               className="w-full h-10 rounded border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary">
               <option value="">None</option>
               {filteredProjects.map((p) => (
@@ -107,12 +136,38 @@ export function AddAssignmentDialog({ open, onClose, users, projects, clients, s
           </div>
         </div>
 
+        {/* Offering info (from project, read-only) */}
+        {projectOffering && (
+          <div className="text-xs text-muted-foreground bg-muted/50 rounded px-3 py-1.5">
+            Offering: <span className="font-medium text-foreground">{projectOffering}</span> (from project)
+          </div>
+        )}
+
         <div className="grid grid-cols-3 gap-3">
-          {/* Role */}
+          {/* Role - dropdown with add-new */}
           <div className="space-y-1">
             <label className="block text-sm font-medium">Role</label>
-            <input name="role" placeholder="e.g. Lead, Technician"
-              className="w-full h-10 rounded border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+            {roleMode === "select" ? (
+              <select value={selectedRoleDefId} onChange={(e) => handleRoleSelect(e.target.value)}
+                className="w-full h-10 rounded border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary">
+                <option value="">Select role...</option>
+                {roleDefinitions.map((rd) => (
+                  <option key={rd.id} value={rd.id}>{rd.name}</option>
+                ))}
+                <option value="__new__">+ Add new role...</option>
+              </select>
+            ) : (
+              <div className="flex gap-1">
+                <input
+                  value={newRoleName}
+                  onChange={(e) => setNewRoleName(e.target.value)}
+                  placeholder="New role name"
+                  className="w-full h-10 rounded border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+                <button type="button" onClick={() => { setRoleMode("select"); setNewRoleName(""); }}
+                  className="px-2 h-10 rounded border border-input hover:bg-muted text-xs">Back</button>
+              </div>
+            )}
           </div>
 
           {/* FTE */}
