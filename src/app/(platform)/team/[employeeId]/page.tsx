@@ -62,7 +62,11 @@ export default async function EmployeeDetailPage({ params }: Props) {
     db.client.findMany({ where: { status: "ACTIVE" }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
     db.project.findMany({
       where: { status: { in: ["PLANNING", "ACTIVE", "ON_HOLD"] } },
-      select: { id: true, name: true, status: true, clientId: true },
+      select: {
+        id: true, name: true, status: true, clientId: true,
+        serviceOfferingId: true,
+        serviceOffering: { select: { id: true, name: true } },
+      },
       orderBy: { name: "asc" },
     }),
     db.serviceOffering.findMany({

@@ -86,7 +86,7 @@ export function EmployeeDetailClient({
   isAdmin: boolean;
   allUsers: { id: string; name: string }[];
   allClients: { id: string; name: string }[];
-  allProjects: { id: string; name: string; status: string; clientId: string }[];
+  allProjects: { id: string; name: string; status: string; clientId: string; serviceOfferingId: string | null; serviceOffering: { id: string; name: string } | null }[];
   serviceOfferings: { id: string; name: string }[];
 }) {
   const [activeTab, setActiveTab] = useState<TabKey>("overview");
