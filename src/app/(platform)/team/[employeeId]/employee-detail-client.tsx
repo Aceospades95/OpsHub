@@ -78,7 +78,7 @@ function formatFte(v: number): string {
 }
 
 export function EmployeeDetailClient({
-  employee, activity, canManage, isAdmin, allUsers, allClients, allProjects, serviceOfferings,
+  employee, activity, canManage, isAdmin, allUsers, allClients, allProjects, serviceOfferings, roleDefinitions,
 }: {
   employee: Employee;
   activity: ActivityLog[];
@@ -88,6 +88,7 @@ export function EmployeeDetailClient({
   allClients: { id: string; name: string }[];
   allProjects: { id: string; name: string; status: string; clientId: string; serviceOfferingId: string | null; serviceOffering: { id: string; name: string } | null }[];
   serviceOfferings: { id: string; name: string }[];
+  roleDefinitions: { id: string; name: string }[];
 }) {
   const [activeTab, setActiveTab] = useState<TabKey>("overview");
   const [editOpen, setEditOpen] = useState(false);
@@ -269,6 +270,7 @@ export function EmployeeDetailClient({
           projects={allProjects}
           clients={allClients}
           serviceOfferings={serviceOfferings}
+          roleDefinitions={roleDefinitions}
           defaultEmployeeId={employee.id}
         />
       )}

@@ -303,6 +303,7 @@ model Project {
   relations        ProjectRelation[] @relation("ProjectRelations")
   relatedRelations ProjectRelation[] @relation("RelatedProjectRelations")
   assignments      Assignment[]
+  projectRoles     ProjectRole[]
 
   @@index([serviceOfferingId])
 }
@@ -718,6 +719,38 @@ model ServiceOffering {
   projects    Project[]
 }
 
+// ─── ROLE DEFINITIONS ─────────────────────────────────
+
+model RoleDefinition {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  projectRoles ProjectRole[]
+  assignments  Assignment[]
+}
+
+// ─── PROJECT ROLES (Staffing Requirements) ───────────
+
+model ProjectRole {
+  id               String   @id @default(cuid())
+  projectId        String
+  roleDefinitionId String
+  requiredFte      Float    @default(1.0)
+  quantity         Int      @default(1)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  project        Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  roleDefinition RoleDefinition @relation(fields: [roleDefinitionId], references: [id])
+  assignments    Assignment[]
+
+  @@index([projectId])
+  @@index([roleDefinitionId])
+}
+
 // ─── ASSIGNMENTS / ALLOCATIONS ─────────────────────────
 
 enum AssignmentStatus {
@@ -733,8 +766,10 @@ model Assignment {
   projectId         String?
   clientId          String?
   serviceOfferingId String?
+  projectRoleId     String?
+  roleDefinitionId  String?
   function          String?          // work type / functional area
-  role              String?          // role on this assignment
+  role              String?          // legacy freeform role — prefer roleDefinition
   allocationFte     Float            @default(0)
   status            AssignmentStatus @default(ACTIVE)
   startDate         DateTime?
@@ -747,11 +782,15 @@ model Assignment {
   project         Project?          @relation(fields: [projectId], references: [id], onDelete: SetNull)
   client          Client?           @relation(fields: [clientId], references: [id], onDelete: SetNull)
   serviceOffering ServiceOffering?  @relation(fields: [serviceOfferingId], references: [id], onDelete: SetNull)
+  projectRole     ProjectRole?      @relation(fields: [projectRoleId], references: [id], onDelete: SetNull)
+  roleDefinition  RoleDefinition?   @relation(fields: [roleDefinitionId], references: [id], onDelete: SetNull)
 
   @@index([employeeId])
   @@index([projectId])
   @@index([clientId])
   @@index([serviceOfferingId])
+  @@index([projectRoleId])
+  @@index([roleDefinitionId])
   @@index([status])
 }
 

@@ -7,7 +7,7 @@ import { Network, Grid3x3, Users, Search } from "lucide-react";
 import { useMemo } from "react";
 import { StaffingMatrix } from "./components/staffing-matrix";
 import { EmployeeList } from "./components/employee-list";
-import type { UserData, ProjectData, ClientData, ServiceOfferingData } from "./components/team-types";
+import type { UserData, ProjectData, ClientData, ServiceOfferingData, RoleDefinitionData, ProjectRoleData } from "./components/team-types";
 
 type ViewType = "org-chart" | "staffing" | "breakdown";
 
@@ -17,6 +17,8 @@ interface TeamPageClientProps {
   projects: ProjectData[];
   clients: ClientData[];
   serviceOfferings: ServiceOfferingData[];
+  roleDefinitions: RoleDefinitionData[];
+  projectRoles: ProjectRoleData[];
   currentUserId: string;
   canManage: boolean;
 }
@@ -27,7 +29,7 @@ const VIEW_TABS: { key: ViewType; label: string; icon: React.ElementType }[] = [
   { key: "breakdown", label: "Employees", icon: Users },
 ];
 
-export function TeamPageClient({ users, inactiveUsers, projects, clients, serviceOfferings, currentUserId, canManage }: TeamPageClientProps) {
+export function TeamPageClient({ users, inactiveUsers, projects, clients, serviceOfferings, roleDefinitions, projectRoles, currentUserId, canManage }: TeamPageClientProps) {
   const [view, setView] = useState<ViewType>("org-chart");
   const [search, setSearch] = useState("");
 
@@ -75,6 +77,8 @@ export function TeamPageClient({ users, inactiveUsers, projects, clients, servic
           projects={projects}
           clients={clients}
           serviceOfferings={serviceOfferings}
+          roleDefinitions={roleDefinitions}
+          projectRoles={projectRoles}
           search={search}
           canManage={canManage}
         />

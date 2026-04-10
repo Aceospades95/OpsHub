@@ -4,23 +4,24 @@ import React, { useState, useMemo, useTransition } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
-  ChevronDown, ChevronRight, ArrowUpDown, Plus, MapPin, X, Pencil, AlertTriangle, UserPlus, UserCheck,
+  ChevronDown, ChevronRight, ArrowUpDown, Plus, MapPin, X, AlertTriangle, UserPlus, UserCheck,
 } from "lucide-react";
 import Link from "next/link";
 import {
-  UserData, ProjectData, ClientData, ServiceOfferingData,
+  UserData, ProjectData, ClientData, ServiceOfferingData, RoleDefinitionData, ProjectRoleData,
   AllocationStatus, getAllocationStatus, computeEmployeeFte, formatFte,
 } from "./team-types";
 import { AddAssignmentDialog } from "./add-assignment-dialog";
-import { EditAssignmentDialog, type EditAssignmentData } from "./edit-assignment-dialog";
 import { ManageOfferingsDialog } from "./manage-offerings-dialog";
-import { updateAssignmentFte } from "@/actions/assignments";
+import { updateAssignmentFte, updateAssignmentRole, createProjectRole, createRoleDefinition, deleteProjectRole, updateProjectRole, removeAssignment, quickAssign } from "@/actions/assignments";
 
 interface StaffingMatrixProps {
   users: UserData[];
   projects: ProjectData[];
   clients: ClientData[];
   serviceOfferings: ServiceOfferingData[];
+  roleDefinitions: RoleDefinitionData[];
+  projectRoles: ProjectRoleData[];
   search: string;
   canManage: boolean;
 }
@@ -38,6 +39,7 @@ interface MatrixRow {
   projectId: string | null;
   location: string;
   roleRequired: string;
+  projectRoleId: string | null;
   fte: number;
   employees: { id: string; name: string; jobTitle: string | null }[];
   notes: string;
@@ -48,10 +50,14 @@ interface MatrixRow {
 // 5-level hierarchy: Offering → Client → Project → Role → rows
 interface RoleGroup {
   role: string;
+  projectRoleId: string | null;
+  requiredFte: number;
+  requiredQuantity: number;
   rows: MatrixRow[];
   totalFte: number;
   employeeCount: number;
-  neededPositions: number;
+  filledCount: number;
+  unfilledCount: number;
 }
 
 interface ProjectGroup {
@@ -96,7 +102,7 @@ type SortField = "offering" | "manager" | "client" | "project" | "fte";
 type SortDir = "asc" | "desc";
 type CapacityFilter = AllocationStatus | null;
 
-export function StaffingMatrix({ users, projects, clients, serviceOfferings, search, canManage }: StaffingMatrixProps) {
+export function StaffingMatrix({ users, projects, clients, serviceOfferings, roleDefinitions, projectRoles, search, canManage }: StaffingMatrixProps) {
   // Track collapsed groups (inverted: everything starts expanded)
   const [collapsedOfferings, setCollapsedOfferings] = useState<Set<string>>(new Set());
   const [collapsedClients, setCollapsedClients] = useState<Set<string>>(new Set());
@@ -110,20 +116,87 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, sea
   const [sortDir, setSortDir] = useState<SortDir>("asc");
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [addDialogKey, setAddDialogKey] = useState(0);
-  const [addDialogDefaults, setAddDialogDefaults] = useState<{ employeeId?: string; projectId?: string; clientId?: string; serviceOfferingId?: string }>({});
-  const [editDialogOpen, setEditDialogOpen] = useState(false);
-  const [editDialogKey, setEditDialogKey] = useState(0);
-  const [editAssignment, setEditAssignment] = useState<EditAssignmentData | null>(null);
+  const [addDialogDefaults, setAddDialogDefaults] = useState<{ employeeId?: string; projectId?: string; clientId?: string; serviceOfferingId?: string; projectRoleId?: string; roleName?: string; roleDefinitionId?: string }>({});
   const [offeringsDialogOpen, setOfferingsDialogOpen] = useState(false);
   const [fteHighlight, setFteHighlight] = useState<string | null>(null);
   const [editingFte, setEditingFte] = useState<{ assignmentId: string; value: number } | null>(null);
   const [collapsedRoles, setCollapsedRoles] = useState<Set<string>>(new Set());
   const [isPending, startTransition] = useTransition();
+  const [editingRole, setEditingRole] = useState<{ assignmentId: string; value: string } | null>(null);
+  const [editingProjectRoleFte, setEditingProjectRoleFte] = useState<{ projectRoleId: string; quantity: number; requiredFte: number } | null>(null);
+  const [addRoleProjectId, setAddRoleProjectId] = useState<string | null>(null);
+  const [addRoleForm, setAddRoleForm] = useState({ roleDefinitionId: "", newRoleName: "", requiredFte: 1, quantity: 1 });
+  const [quickAssignCtx, setQuickAssignCtx] = useState<{
+    projectId: string; clientId?: string; projectRoleId?: string;
+    roleDefinitionId?: string; roleName?: string; requiredFte: number;
+    serviceOfferingId?: string;
+  } | null>(null);
 
   const saveFte = (assignmentId: string, value: number) => {
     startTransition(async () => {
       await updateAssignmentFte(assignmentId, value);
       setEditingFte(null);
+    });
+  };
+
+  const saveRole = (assignmentId: string, roleDefId: string) => {
+    const rd = roleDefinitions.find((r) => r.id === roleDefId);
+    if (!rd) { setEditingRole(null); return; }
+    startTransition(async () => {
+      await updateAssignmentRole(assignmentId, rd.name, rd.id);
+      setEditingRole(null);
+    });
+  };
+
+  const saveProjectRoleQuantity = (projectRoleId: string, quantity: number, requiredFte: number) => {
+    startTransition(async () => {
+      await updateProjectRole(projectRoleId, requiredFte, Math.max(1, quantity));
+      setEditingProjectRoleFte(null);
+    });
+  };
+
+  const handleAddRole = async () => {
+    if (!addRoleProjectId) return;
+    let roleDefId = addRoleForm.roleDefinitionId;
+    if (roleDefId === "__new__") {
+      if (!addRoleForm.newRoleName.trim()) return;
+      const result = await createRoleDefinition(addRoleForm.newRoleName.trim());
+      if (result.id) roleDefId = result.id;
+      else return;
+    }
+    if (!roleDefId) return;
+    await createProjectRole(addRoleProjectId, roleDefId, addRoleForm.requiredFte, addRoleForm.quantity);
+    setAddRoleProjectId(null);
+    setAddRoleForm({ roleDefinitionId: "", newRoleName: "", requiredFte: 1, quantity: 1 });
+  };
+
+  const handleQuickAssign = (employeeId: string) => {
+    if (!quickAssignCtx) return;
+    startTransition(async () => {
+      await quickAssign({
+        employeeId,
+        projectId: quickAssignCtx.projectId,
+        clientId: quickAssignCtx.clientId,
+        projectRoleId: quickAssignCtx.projectRoleId,
+        roleDefinitionId: quickAssignCtx.roleDefinitionId,
+        role: quickAssignCtx.roleName,
+        allocationFte: quickAssignCtx.requiredFte,
+        serviceOfferingId: quickAssignCtx.serviceOfferingId,
+      });
+      setQuickAssignCtx(null);
+    });
+  };
+
+  const handleRemoveAssignment = (assignmentId: string, employeeName: string) => {
+    if (!confirm(`Remove ${employeeName} from this assignment?`)) return;
+    startTransition(async () => {
+      await removeAssignment(assignmentId);
+    });
+  };
+
+  const handleDeleteRole = (projectRoleId: string) => {
+    startTransition(async () => {
+      await deleteProjectRole(projectRoleId);
     });
   };
 
@@ -140,16 +213,10 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, sea
     else { setSortField(field); setSortDir("asc"); }
   };
 
-  const openAddDialog = (defaults: { employeeId?: string; projectId?: string; clientId?: string; serviceOfferingId?: string } = {}) => {
+  const openAddDialog = (defaults: typeof addDialogDefaults = {}) => {
     setAddDialogKey((k) => k + 1);
     setAddDialogDefaults(defaults);
     setAddDialogOpen(true);
-  };
-
-  const openEditDialog = (data: EditAssignmentData) => {
-    setEditDialogKey((k) => k + 1);
-    setEditAssignment(data);
-    setEditDialogOpen(true);
   };
 
   // Compute per-user allocation status for capacity filtering
@@ -198,19 +265,21 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, sea
         const clientId = assignment.client?.id || null;
         const projectName = assignment.project?.name || "";
         const projectId = assignment.project?.id || null;
-        // Functional role from the assignment — NOT the system role
-        const role = assignment.role || "";
+        // Role: prefer projectRole > roleDefinition > freeform role
+        const role = assignment.projectRole?.roleDefinition?.name || assignment.roleDefinition?.name || assignment.role || "";
+        const prId = assignment.projectRoleId || null;
 
         if (projectId) assignmentProjectKeys.add(`${user.id}::${projectId}`);
 
         const managerName = user.manager?.name || "";
-        const key = `${offeringName}::${managerName}::${clientName}::${projectName}::${role}`;
+        // Include projectRoleId in key so assignments linked to a project role group together
+        const key = `${offeringName}::${managerName}::${clientName}::${projectName}::${prId || role}`;
 
         if (!rowMap.has(key)) {
           rowMap.set(key, {
             key, offering: offeringName, offeringId, managerName,
             managerId: user.managerId, clientName, clientId, projectName, projectId,
-            location: user.location || "", roleRequired: role, fte: 0,
+            location: user.location || "", roleRequired: role, projectRoleId: prId, fte: 0,
             employees: [], notes: assignment.notes || "", assignmentIds: [],
             source: "assignment",
           });
@@ -245,7 +314,7 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, sea
           rowMap.set(key, {
             key, offering: offeringName, offeringId: null, managerName,
             managerId: user.managerId, clientName, clientId, projectName, projectId,
-            location: user.location || "", roleRequired: "", fte: 1,
+            location: user.location || "", roleRequired: "", projectRoleId: null, fte: 1,
             employees: [], notes: `From project membership (${projectStatus})`,
             assignmentIds: [], source: "project-member",
           });
@@ -266,7 +335,7 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, sea
           clientName: "", clientId: null, projectName: "", projectId: null,
           location: user.location || "",
           // Don't use user.role (system role) — leave blank for unassigned
-          roleRequired: "",
+          roleRequired: "", projectRoleId: null,
           fte: 0, employees: [{ id: user.id, name: user.name, jobTitle: user.jobTitle }],
           notes: "", assignmentIds: [], source: "unassigned",
         });
@@ -307,10 +376,20 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, sea
     return result;
   }, [rows, offeringFilter, clientFilter, managerFilter, locationFilter, capacityFilter, users, userAllocationMap, sortField, sortDir]);
 
+  // Build lookup: projectId → ProjectRoles
+  const projectRolesMap = useMemo(() => {
+    const map = new Map<string, ProjectRoleData[]>();
+    for (const pr of projectRoles) {
+      if (!map.has(pr.projectId)) map.set(pr.projectId, []);
+      map.get(pr.projectId)!.push(pr);
+    }
+    return map;
+  }, [projectRoles]);
+
   // Build 5-level hierarchy: Offering → Client → Project → Role → Rows
   const offeringGroups: OfferingGroup[] = useMemo(() => {
-    const offeringMap = new Map<string, Map<string, Map<string, Map<string, MatrixRow[]>>>>();
-
+    // Group rows by offering → client → project
+    const offeringMap = new Map<string, Map<string, Map<string, MatrixRow[]>>>();
     for (const row of filteredRows) {
       if (!offeringMap.has(row.offering)) offeringMap.set(row.offering, new Map());
       const clientMap = offeringMap.get(row.offering)!;
@@ -318,11 +397,21 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, sea
       if (!clientMap.has(clientKey)) clientMap.set(clientKey, new Map());
       const projectMap = clientMap.get(clientKey)!;
       const projectKey = row.projectName || "(No Project)";
-      if (!projectMap.has(projectKey)) projectMap.set(projectKey, new Map());
-      const roleMap = projectMap.get(projectKey)!;
-      const roleKey = row.roleRequired || "(No Role)";
-      if (!roleMap.has(roleKey)) roleMap.set(roleKey, []);
-      roleMap.get(roleKey)!.push(row);
+      if (!projectMap.has(projectKey)) projectMap.set(projectKey, []);
+      projectMap.get(projectKey)!.push(row);
+    }
+
+    // Also ensure projects with defined roles appear even if no assignments yet
+    for (const project of projects) {
+      const pRoles = projectRolesMap.get(project.id);
+      if (!pRoles || pRoles.length === 0) continue;
+      const offering = project.serviceOffering?.name || "Unassigned";
+      const clientName = clients.find((c) => c.id === project.clientId)?.name || "(No Client)";
+      if (!offeringMap.has(offering)) offeringMap.set(offering, new Map());
+      const clientMap = offeringMap.get(offering)!;
+      if (!clientMap.has(clientName)) clientMap.set(clientName, new Map());
+      const projectMap = clientMap.get(clientName)!;
+      if (!projectMap.has(project.name)) projectMap.set(project.name, []);
     }
 
     const groups: OfferingGroup[] = [];
@@ -336,22 +425,69 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, sea
         const projectGroups: ProjectGroup[] = [];
         let clientFte = 0;
 
-        Array.from(projectMap.entries()).forEach(([projectName, roleMap]) => {
+        Array.from(projectMap.entries()).forEach(([projectName, projectRows]) => {
+          const projectId = projectRows[0]?.projectId || projects.find((p) => p.name === projectName)?.id || null;
+          const definedRoles = projectId ? (projectRolesMap.get(projectId) || []) : [];
+
+          // Build role groups: merge defined ProjectRoles with assignment rows
           const roleGroups: RoleGroup[] = [];
           let pFte = 0;
           const totalEmployees = new Set<string>();
+          const usedRowKeys = new Set<string>();
 
-          Array.from(roleMap.entries()).forEach(([roleName, roleRows]) => {
+          // 1) Create groups from defined ProjectRoles
+          for (const pr of definedRoles) {
+            const roleName = pr.roleDefinition.name;
+            // Match by projectRoleId first, then fall back to role name
+            const matchingRows = projectRows.filter((r) =>
+              (r.projectRoleId && r.projectRoleId === pr.id) ||
+              (!r.projectRoleId && r.roleRequired === roleName)
+            );
+            matchingRows.forEach((r) => usedRowKeys.add(r.key));
+            const rFte = matchingRows.reduce((s, r) => s + r.fte, 0);
+            const roleEmployees = new Set<string>();
+            matchingRows.forEach((r) => r.employees.forEach((e) => roleEmployees.add(e.id)));
+            const filledCount = roleEmployees.size;
+            roleGroups.push({
+              role: roleName,
+              projectRoleId: pr.id,
+              requiredFte: pr.requiredFte,
+              requiredQuantity: pr.quantity,
+              rows: matchingRows,
+              totalFte: rFte,
+              employeeCount: filledCount,
+              filledCount,
+              unfilledCount: Math.max(0, pr.quantity - filledCount),
+            });
+            pFte += rFte;
+            matchingRows.forEach((r) => {
+              r.employees.forEach((e) => { totalEmployees.add(e.id); allEmployeeIds.add(e.id); });
+              if (r.source === "project-member") hasProjectMembers = true;
+            });
+          }
+
+          // 2) Remaining rows not matched to a defined ProjectRole
+          const remainingRows = projectRows.filter((r) => !usedRowKeys.has(r.key));
+          const remainingByRole = new Map<string, MatrixRow[]>();
+          for (const r of remainingRows) {
+            const roleKey = r.roleRequired || "(No Role)";
+            if (!remainingByRole.has(roleKey)) remainingByRole.set(roleKey, []);
+            remainingByRole.get(roleKey)!.push(r);
+          }
+          Array.from(remainingByRole.entries()).forEach(([roleName, roleRows]) => {
             const rFte = roleRows.reduce((s, r) => s + r.fte, 0);
             const roleEmployees = new Set<string>();
             roleRows.forEach((r) => r.employees.forEach((e) => roleEmployees.add(e.id)));
-            const neededPos = Math.max(Math.ceil(rFte), roleEmployees.size);
             roleGroups.push({
               role: roleName === "(No Role)" ? "" : roleName,
+              projectRoleId: null,
+              requiredFte: 0,
+              requiredQuantity: 0,
               rows: roleRows,
               totalFte: rFte,
               employeeCount: roleEmployees.size,
-              neededPositions: neededPos,
+              filledCount: roleEmployees.size,
+              unfilledCount: 0,
             });
             pFte += rFte;
             roleRows.forEach((r) => {
@@ -361,11 +497,12 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, sea
           });
 
           roleGroups.sort((a, b) => (a.role || "zzz").localeCompare(b.role || "zzz"));
-          const neededPositions = Math.max(Math.ceil(pFte), totalEmployees.size);
+          const totalRequired = definedRoles.reduce((s, pr) => s + pr.quantity, 0);
+          const neededPositions = Math.max(totalRequired, totalEmployees.size);
 
           projectGroups.push({
             projectName: projectName === "(No Project)" ? "" : projectName,
-            projectId: roleGroups[0]?.rows[0]?.projectId || null,
+            projectId,
             roles: roleGroups,
             totalFte: pFte,
             neededPositions,
@@ -397,7 +534,7 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, sea
       });
     });
     return groups;
-  }, [filteredRows]);
+  }, [filteredRows, projects, clients, projectRolesMap]);
 
   // Filter options
   const filterOptions = useMemo(() => {
@@ -666,7 +803,7 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, sea
                                             ({pg.roles.length} role{pg.roles.length !== 1 ? "s" : ""} · {pg.filledPositions}/{pg.neededPositions} filled)
                                           </span>
                                           {unfilled > 0 && (
-                                            <Badge variant="outline" className="text-[9px] bg-amber-50 border-amber-300 text-amber-700 gap-0.5">
+                                            <Badge variant="outline" className="text-[9px] bg-amber-500/15 border-amber-500/50 text-amber-700 dark:text-amber-300 gap-0.5">
                                               <AlertTriangle className="h-2.5 w-2.5" />
                                               {unfilled} unfilled
                                             </Badge>
@@ -674,7 +811,16 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, sea
                                         </div>
                                       </td>
                                       <td className="py-1.5 px-3 text-center font-semibold text-xs">{formatFte(pg.totalFte)}</td>
-                                      <td colSpan={2} className="py-1.5 px-3" />
+                                      <td colSpan={2} className="py-1.5 px-3">
+                                        {canManage && pg.projectId && (
+                                          <button
+                                            onClick={(e) => { e.stopPropagation(); setAddRoleProjectId(pg.projectId); }}
+                                            className="text-[10px] text-primary hover:underline flex items-center gap-0.5"
+                                          >
+                                            <Plus className="h-3 w-3" /> Add Role
+                                          </button>
+                                        )}
+                                      </td>
                                     </tr>
                                   )}
 
@@ -682,8 +828,7 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, sea
                                   {(showProjectHeader ? isProjectExpanded : true) && pg.roles.map((rg) => {
                                     const roleExpandKey = `${projectExpandKey}::${rg.role || "__none__"}`;
                                     const isRoleExpanded = !collapsedRoles.has(roleExpandKey);
-                                    const showRoleHeader = rg.role && (pg.roles.length > 1 || rg.rows.length > 1);
-                                    const roleUnfilled = Math.max(0, rg.neededPositions - rg.employeeCount);
+                                    const showRoleHeader = rg.role && (pg.roles.length > 1 || rg.rows.length > 1 || rg.projectRoleId);
 
                                     return (
                                       <React.Fragment key={roleExpandKey}>
@@ -696,26 +841,67 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, sea
                                               <div className="flex items-center gap-2 pl-[72px]">
                                                 {isRoleExpanded ? <ChevronDown className="h-2.5 w-2.5" /> : <ChevronRight className="h-2.5 w-2.5" />}
                                                 <Badge variant="outline" className="text-[10px]">{rg.role}</Badge>
-                                                <span className="text-[10px] text-muted-foreground">
-                                                  ({rg.employeeCount} employee{rg.employeeCount !== 1 ? "s" : ""})
-                                                </span>
-                                                {roleUnfilled > 0 && (
-                                                  <Badge variant="outline" className="text-[9px] bg-amber-50 border-amber-300 text-amber-700 gap-0.5">
+                                                {rg.projectRoleId ? (
+                                                  <span className="text-[10px] text-muted-foreground">
+                                                    ({rg.filledCount}/{rg.requiredQuantity} filled · {formatFte(rg.requiredFte)} FTE each)
+                                                  </span>
+                                                ) : (
+                                                  <span className="text-[10px] text-muted-foreground">
+                                                    ({rg.employeeCount} employee{rg.employeeCount !== 1 ? "s" : ""})
+                                                  </span>
+                                                )}
+                                                {rg.unfilledCount > 0 && (
+                                                  <Badge variant="outline" className="text-[9px] bg-amber-500/15 border-amber-500/50 text-amber-700 dark:text-amber-300 gap-0.5">
                                                     <AlertTriangle className="h-2.5 w-2.5" />
-                                                    {roleUnfilled} unfilled
+                                                    {rg.unfilledCount} unfilled
                                                   </Badge>
                                                 )}
                                               </div>
                                             </td>
                                             <td className="py-1 px-3" />
-                                            <td className="py-1 px-3 text-center font-semibold text-[11px]">{formatFte(rg.totalFte)}</td>
-                                            <td colSpan={2} className="py-1 px-3" />
+                                            <td className="py-1 px-3 text-center font-semibold text-[11px]">
+                                              {editingProjectRoleFte?.projectRoleId === rg.projectRoleId && rg.projectRoleId ? (
+                                                <form onSubmit={(e) => { e.preventDefault(); saveProjectRoleQuantity(rg.projectRoleId!, editingProjectRoleFte.quantity, editingProjectRoleFte.requiredFte); }} className="flex items-center gap-1 justify-center" onClick={(e) => e.stopPropagation()}>
+                                                  <input
+                                                    type="number" min="1" max="50"
+                                                    value={editingProjectRoleFte.quantity}
+                                                    onChange={(e) => setEditingProjectRoleFte((p) => p ? { ...p, quantity: parseInt(e.target.value) || 1 } : p)}
+                                                    onBlur={() => saveProjectRoleQuantity(rg.projectRoleId!, editingProjectRoleFte.quantity, editingProjectRoleFte.requiredFte)}
+                                                    autoFocus
+                                                    className="w-10 h-5 text-[10px] text-center border border-primary rounded bg-background focus:outline-none"
+                                                    title="Number of positions"
+                                                  />
+                                                  <span className="text-[9px] text-muted-foreground">slots</span>
+                                                </form>
+                                              ) : canManage && rg.projectRoleId ? (
+                                                <button
+                                                  onClick={(e) => { e.stopPropagation(); setEditingProjectRoleFte({ projectRoleId: rg.projectRoleId!, quantity: rg.requiredQuantity, requiredFte: rg.requiredFte }); }}
+                                                  className="text-blue-600 hover:text-primary cursor-pointer"
+                                                  title="Click to edit positions needed"
+                                                >
+                                                  {formatFte(rg.totalFte)}
+                                                </button>
+                                              ) : (
+                                                formatFte(rg.totalFte)
+                                              )}
+                                            </td>
+                                            <td className="py-1 px-3" />
+                                            <td className="py-1 px-2">
+                                              {canManage && rg.projectRoleId && (
+                                                <button
+                                                  onClick={(e) => { e.stopPropagation(); if (confirm("Delete this role requirement?")) handleDeleteRole(rg.projectRoleId!); }}
+                                                  className="p-0.5 rounded hover:bg-destructive/10 text-muted-foreground/40 hover:text-destructive transition-colors"
+                                                  title="Remove role requirement"
+                                                >
+                                                  <X className="h-3 w-3" />
+                                                </button>
+                                              )}
+                                            </td>
                                           </tr>
                                         )}
 
                                         {/* ─── Employee Rows (Level 5) ─── */}
                                         {(showRoleHeader ? isRoleExpanded : true) && rg.rows.map((row) => {
-                                          const rowUnfilled = Math.max(0, Math.ceil(row.fte) - row.employees.length);
                                           const singleAssignment = row.source === "assignment" && row.assignmentIds.length === 1 && row.employees.length === 1;
                                           const assignmentId = singleAssignment ? row.assignmentIds[0] : null;
 
@@ -758,9 +944,32 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, sea
                                                   </Link>
                                                 ) : row.managerName || <span className="text-muted-foreground/60">—</span>}
                                               </td>
-                                              {/* Role Required */}
+                                              {/* Role Required - inline editable dropdown */}
                                               <td className="py-1.5 px-3 text-xs">
-                                                {row.roleRequired ? (
+                                                {editingRole?.assignmentId === assignmentId && assignmentId ? (
+                                                  <select
+                                                    value={editingRole.value}
+                                                    onChange={(e) => { saveRole(assignmentId, e.target.value); }}
+                                                    onBlur={() => setEditingRole(null)}
+                                                    autoFocus
+                                                    className="h-6 text-[10px] rounded border border-primary bg-background px-1 focus:outline-none"
+                                                  >
+                                                    <option value="">Select role...</option>
+                                                    {roleDefinitions.map((rd) => (
+                                                      <option key={rd.id} value={rd.id}>{rd.name}</option>
+                                                    ))}
+                                                  </select>
+                                                ) : singleAssignment && canManage ? (
+                                                  <button
+                                                    onClick={() => setEditingRole({ assignmentId: assignmentId!, value: "" })}
+                                                    className="cursor-pointer hover:opacity-70"
+                                                    title="Click to change role"
+                                                  >
+                                                    {row.roleRequired ? (
+                                                      <Badge variant="outline" className="text-[10px] font-normal">{row.roleRequired}</Badge>
+                                                    ) : <span className="text-muted-foreground/60 hover:text-primary">Set role</span>}
+                                                  </button>
+                                                ) : row.roleRequired ? (
                                                   <Badge variant="outline" className="text-[10px] font-normal">{row.roleRequired}</Badge>
                                                 ) : <span className="text-muted-foreground/60">—</span>}
                                               </td>
@@ -815,75 +1024,69 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, sea
                                                       </Link>
                                                     </div>
                                                   ))}
-                                                  {rowUnfilled > 0 && Array.from({ length: rowUnfilled }).map((_, i) => (
-                                                    <div key={`unfilled-${i}`} className="flex items-center gap-1 text-xs text-amber-600 italic">
-                                                      <UserPlus className="h-3 w-3" />
-                                                      <span>Unfilled</span>
-                                                      {canManage && (
-                                                        <button
-                                                          onClick={() => openAddDialog({
-                                                            projectId: row.projectId || undefined,
-                                                            clientId: row.clientId || undefined,
-                                                            serviceOfferingId: row.offeringId || undefined,
-                                                          })}
-                                                          className="text-primary hover:underline ml-1"
-                                                        >
-                                                          Assign
-                                                        </button>
-                                                      )}
-                                                    </div>
-                                                  ))}
-                                                  {row.employees.length === 0 && rowUnfilled === 0 && (
-                                                    <span className="text-xs text-muted-foreground italic">Unfilled</span>
+                                                  {row.employees.length === 0 && (
+                                                    <span className="text-xs text-muted-foreground italic">—</span>
                                                   )}
                                                 </div>
                                               </td>
-                                              {/* Edit icon */}
+                                              {/* Remove button */}
                                               <td className="py-1.5 px-2">
                                                 {singleAssignment && canManage ? (
                                                   <button
-                                                    onClick={() => {
-                                                      const emp = row.employees[0];
-                                                      const a = users.find((u) => u.id === emp.id)?.assignments.find((a) => a.id === row.assignmentIds[0]);
-                                                      if (a) openEditDialog({
-                                                        id: a.id, employeeId: emp.id, employeeName: emp.name,
-                                                        projectId: a.project?.id || null, clientId: a.client?.id || null,
-                                                        serviceOfferingId: a.serviceOffering?.id || null,
-                                                        function: a.function || "", role: a.role || "",
-                                                        allocationFte: a.allocationFte, status: a.status,
-                                                        startDate: a.startDate, endDate: a.endDate, notes: a.notes || "",
-                                                      });
-                                                    }}
-                                                    className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-primary transition-colors"
-                                                    title="Edit assignment"
+                                                    onClick={() => handleRemoveAssignment(row.assignmentIds[0], row.employees[0].name)}
+                                                    className="p-1 rounded hover:bg-destructive/10 text-muted-foreground/40 hover:text-destructive transition-colors"
+                                                    title={`Remove ${row.employees[0].name} from this assignment`}
                                                   >
-                                                    <Pencil className="h-3.5 w-3.5" />
-                                                  </button>
-                                                ) : row.source === "project-member" && canManage ? (
-                                                  <button
-                                                    onClick={() => openAddDialog({
-                                                      employeeId: row.employees[0]?.id,
-                                                      projectId: row.projectId || undefined,
-                                                      clientId: row.clientId || undefined,
-                                                    })}
-                                                    className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-primary transition-colors"
-                                                    title="Create assignment"
-                                                  >
-                                                    <UserCheck className="h-3.5 w-3.5" />
-                                                  </button>
-                                                ) : row.source === "unassigned" && canManage ? (
-                                                  <button
-                                                    onClick={() => openAddDialog({ employeeId: row.employees[0]?.id })}
-                                                    className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-primary transition-colors"
-                                                    title="Assign employee"
-                                                  >
-                                                    <UserCheck className="h-3.5 w-3.5" />
+                                                    <X className="h-3.5 w-3.5" />
                                                   </button>
                                                 ) : null}
                                               </td>
                                             </tr>
                                           );
                                         })}
+
+                                        {/* ─── Unfilled Slots from ProjectRole ─── */}
+                                        {(showRoleHeader ? isRoleExpanded : true) && rg.unfilledCount > 0 && Array.from({ length: rg.unfilledCount }).map((_, i) => (
+                                          <tr
+                                            key={`unfilled-${roleExpandKey}-${i}`}
+                                            className={`border-b border-border/10 border-l-4 ${color.border} transition-colors bg-background ${canManage ? "hover:bg-amber-50/50 cursor-pointer" : ""}`}
+                                            onClick={canManage && pg.projectId ? () => {
+                                              const proj = projects.find((p) => p.id === pg.projectId);
+                                              setQuickAssignCtx({
+                                                projectId: pg.projectId!,
+                                                clientId: cg.clientId || undefined,
+                                                projectRoleId: rg.projectRoleId || undefined,
+                                                roleDefinitionId: rg.projectRoleId ? projectRoles.find((pr) => pr.id === rg.projectRoleId)?.roleDefinition?.id : undefined,
+                                                roleName: rg.role || undefined,
+                                                requiredFte: rg.requiredFte || 1,
+                                                serviceOfferingId: proj?.serviceOfferingId || undefined,
+                                              });
+                                            } : undefined}
+                                          >
+                                            <td className="py-1.5 px-4" />
+                                            <td className="py-1.5 px-3" />
+                                            <td className="py-1.5 px-3" />
+                                            <td className="py-1.5 px-3 hidden md:table-cell" />
+                                            <td className="py-1.5 px-3" />
+                                            <td className="py-1.5 px-3">
+                                              <Badge variant="outline" className="text-[10px] font-normal border-dashed border-amber-500/50 text-amber-700 dark:text-amber-300">{rg.role}</Badge>
+                                            </td>
+                                            <td className="py-1.5 px-3 text-center">
+                                              <span className="text-xs text-muted-foreground">{formatFte(rg.requiredFte)}</span>
+                                            </td>
+                                            <td className="py-1.5 px-3">
+                                              <div className="flex items-center gap-1.5 text-xs text-amber-600">
+                                                <UserPlus className="h-3.5 w-3.5" />
+                                                <span className="font-medium">Open — click to fill</span>
+                                              </div>
+                                            </td>
+                                            <td className="py-1.5 px-2">
+                                              {canManage && (
+                                                <UserCheck className="h-3.5 w-3.5 text-muted-foreground/40" />
+                                              )}
+                                            </td>
+                                          </tr>
+                                        ))}
                                       </React.Fragment>
                                     );
                                   })}
@@ -925,19 +1128,14 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, sea
             projects={projects}
             clients={clients}
             serviceOfferings={serviceOfferings}
+            roleDefinitions={roleDefinitions}
             defaultEmployeeId={addDialogDefaults.employeeId}
             defaultProjectId={addDialogDefaults.projectId}
             defaultClientId={addDialogDefaults.clientId}
             defaultServiceOfferingId={addDialogDefaults.serviceOfferingId}
-          />
-          <EditAssignmentDialog
-            key={`edit-${editDialogKey}`}
-            open={editDialogOpen}
-            onClose={() => setEditDialogOpen(false)}
-            assignment={editAssignment}
-            projects={projects}
-            clients={clients}
-            serviceOfferings={serviceOfferings}
+            defaultProjectRoleId={addDialogDefaults.projectRoleId}
+            defaultRoleName={addDialogDefaults.roleName}
+            defaultRoleDefinitionId={addDialogDefaults.roleDefinitionId}
           />
           <ManageOfferingsDialog
             open={offeringsDialogOpen}
@@ -945,6 +1143,109 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, sea
             serviceOfferings={serviceOfferings}
           />
         </>
+      )}
+
+      {/* Quick Assign Dialog — simple employee picker */}
+      {quickAssignCtx && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setQuickAssignCtx(null)}>
+          <div className="bg-background rounded-lg shadow-xl border p-5 w-full max-w-sm space-y-4" onClick={(e) => e.stopPropagation()}>
+            <div>
+              <h3 className="font-semibold text-sm">Assign Employee</h3>
+              <p className="text-xs text-muted-foreground mt-1">
+                {projects.find((p) => p.id === quickAssignCtx.projectId)?.name}
+                {quickAssignCtx.roleName && <> — <span className="font-medium">{quickAssignCtx.roleName}</span></>}
+                {" "}({formatFte(quickAssignCtx.requiredFte)} FTE)
+              </p>
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium">Select Employee</label>
+              <select
+                autoFocus
+                onChange={(e) => {
+                  if (e.target.value) handleQuickAssign(e.target.value);
+                }}
+                className="w-full h-10 rounded border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+              >
+                <option value="">Choose employee...</option>
+                {users.map((u) => (
+                  <option key={u.id} value={u.id}>{u.name}{u.jobTitle ? ` — ${u.jobTitle}` : ""}</option>
+                ))}
+              </select>
+            </div>
+            <div className="flex justify-end">
+              <button onClick={() => setQuickAssignCtx(null)}
+                className="px-3 py-1.5 text-sm rounded border border-input hover:bg-muted">Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add Project Role Dialog */}
+      {addRoleProjectId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setAddRoleProjectId(null)}>
+          <div className="bg-background rounded-lg shadow-xl border p-5 w-full max-w-md space-y-4" onClick={(e) => e.stopPropagation()}>
+            <h3 className="font-semibold text-sm">Add Role to Project</h3>
+            <p className="text-xs text-muted-foreground">
+              {projects.find((p) => p.id === addRoleProjectId)?.name}
+            </p>
+            <div className="space-y-3">
+              <div className="space-y-1">
+                <label className="text-xs font-medium">Role *</label>
+                <select
+                  value={addRoleForm.roleDefinitionId}
+                  onChange={(e) => setAddRoleForm((f) => ({ ...f, roleDefinitionId: e.target.value, newRoleName: "" }))}
+                  className="w-full h-9 rounded border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                >
+                  <option value="">Select role...</option>
+                  {roleDefinitions.map((rd) => (
+                    <option key={rd.id} value={rd.id}>{rd.name}</option>
+                  ))}
+                  <option value="__new__">+ Add new role...</option>
+                </select>
+              </div>
+              {addRoleForm.roleDefinitionId === "__new__" && (
+                <div className="space-y-1">
+                  <label className="text-xs font-medium">New Role Name *</label>
+                  <input
+                    value={addRoleForm.newRoleName}
+                    onChange={(e) => setAddRoleForm((f) => ({ ...f, newRoleName: e.target.value }))}
+                    placeholder="e.g. Lead Technician"
+                    className="w-full h-9 rounded border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                  />
+                </div>
+              )}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-xs font-medium">FTE per Position</label>
+                  <input
+                    type="number" step="0.05" min="0.05" max="2"
+                    value={addRoleForm.requiredFte}
+                    onChange={(e) => setAddRoleForm((f) => ({ ...f, requiredFte: parseFloat(e.target.value) || 1 }))}
+                    className="w-full h-9 rounded border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-medium">Quantity Needed</label>
+                  <input
+                    type="number" min="1" max="50"
+                    value={addRoleForm.quantity}
+                    onChange={(e) => setAddRoleForm((f) => ({ ...f, quantity: parseInt(e.target.value) || 1 }))}
+                    className="w-full h-9 rounded border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                  />
+                </div>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 pt-1">
+              <button onClick={() => setAddRoleProjectId(null)}
+                className="px-3 py-1.5 text-sm rounded border border-input hover:bg-muted">Cancel</button>
+              <button
+                onClick={handleAddRole}
+                disabled={!addRoleForm.roleDefinitionId || (addRoleForm.roleDefinitionId === "__new__" && !addRoleForm.newRoleName.trim())}
+                className="px-3 py-1.5 text-sm rounded bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+              >Add Role</button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
