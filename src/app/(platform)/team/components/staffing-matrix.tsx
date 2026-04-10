@@ -44,7 +44,7 @@ interface MatrixRow {
   employees: { id: string; name: string; jobTitle: string | null }[];
   notes: string;
   assignmentIds: string[];
-  source: "assignment" | "project-member" | "unassigned";
+  source: "assignment" | "unassigned";
 }
 
 // 5-level hierarchy: Offering → Client → Project → Role → rows
@@ -81,7 +81,6 @@ interface OfferingGroup {
   clients: ClientGroup[];
   totalFte: number;
   employeeCount: number;
-  hasProjectMembers: boolean;
 }
 
 // Color system for offering groups — parent color with shade variations
@@ -228,10 +227,9 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, rol
     return map;
   }, [users]);
 
-  // Build rows from Assignments AND ProjectMembers
+  // Build rows from Assignments only (project-members don't create staffing rows)
   const rows: MatrixRow[] = useMemo(() => {
     const rowMap = new Map<string, MatrixRow>();
-    const assignmentProjectKeys = new Set<string>();
 
     for (const user of users) {
       // Search filter
@@ -255,12 +253,14 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, rol
 
       // 1) Rows from explicit Assignments
       for (const assignment of user.assignments) {
-        // Use project's offering if available, fall back to assignment's offering
-        const projOffering = assignment.project?.id
-          ? projects.find((p) => p.id === assignment.project!.id)?.serviceOffering
+        // Offering comes ONLY from the linked project. No fallbacks.
+        // If the project has no offering (or there's no project), the row
+        // goes into the "Unassigned" offering group.
+        const projData = assignment.project?.id
+          ? projects.find((p) => p.id === assignment.project!.id)
           : null;
-        const offeringName = projOffering?.name || assignment.serviceOffering?.name || assignment.function || "Unassigned";
-        const offeringId = projOffering?.id || assignment.serviceOffering?.id || null;
+        const offeringName = projData?.serviceOffering?.name || "Unassigned";
+        const offeringId = projData?.serviceOffering?.id || null;
         const clientName = assignment.client?.name || "";
         const clientId = assignment.client?.id || null;
         const projectName = assignment.project?.name || "";
@@ -268,8 +268,6 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, rol
         // Role: prefer projectRole > roleDefinition > freeform role
         const role = assignment.projectRole?.roleDefinition?.name || assignment.roleDefinition?.name || assignment.role || "";
         const prId = assignment.projectRoleId || null;
-
-        if (projectId) assignmentProjectKeys.add(`${user.id}::${projectId}`);
 
         const managerName = user.manager?.name || "";
         // Include projectRoleId in key so assignments linked to a project role group together
@@ -295,39 +293,10 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, rol
         if (assignment.notes && !row.notes) row.notes = assignment.notes;
       }
 
-      // 2) Rows from ProjectMembers without a matching Assignment
-      for (const pm of user.projectMembers) {
-        if (assignmentProjectKeys.has(`${user.id}::${pm.project.id}`)) continue;
-
-        const projectName = pm.project.name;
-        const projectId = pm.project.id;
-        const projectStatus = pm.project.status;
-        const clientId = pm.project.clientId || null;
-        const clientName = clientId ? (clients.find((c) => c.id === clientId)?.name || "") : "";
-        const managerName = user.manager?.name || "";
-        // Do NOT use pm.role — that's the system permission role (ADMIN/CONTRIBUTOR/etc.)
-        // Leave roleRequired empty for project-member rows
-        const offeringName = "Project Staffing";
-        const key = `pm::${managerName}::${clientName}::${projectName}::${user.id}`;
-
-        if (!rowMap.has(key)) {
-          rowMap.set(key, {
-            key, offering: offeringName, offeringId: null, managerName,
-            managerId: user.managerId, clientName, clientId, projectName, projectId,
-            location: user.location || "", roleRequired: "", projectRoleId: null, fte: 1,
-            employees: [], notes: `From project membership (${projectStatus})`,
-            assignmentIds: [], source: "project-member",
-          });
-        }
-
-        const row = rowMap.get(key)!;
-        if (!row.employees.find((e) => e.id === user.id)) {
-          row.employees.push({ id: user.id, name: user.name, jobTitle: user.jobTitle });
-        }
-      }
-
-      // 3) Unassigned employees (no assignments AND no project memberships)
-      if (user.assignments.length === 0 && user.projectMembers.length === 0) {
+      // 2) Unassigned employees (no active assignments)
+      // Project memberships alone don't create staffing rows — the matrix
+      // is driven by real Assignment records + defined ProjectRoles only.
+      if (user.assignments.length === 0) {
         const key = `Unassigned::::::::${user.id}`;
         rowMap.set(key, {
           key, offering: "Unassigned", offeringId: null,
@@ -343,7 +312,7 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, rol
     }
 
     return Array.from(rowMap.values());
-  }, [users, clients, projects, search]);
+  }, [users, projects, search]);
 
   // Apply filters (including capacity filter)
   const filteredRows = useMemo(() => {
@@ -419,7 +388,6 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, rol
       const clientGroups: ClientGroup[] = [];
       let totalFte = 0;
       const allEmployeeIds = new Set<string>();
-      let hasProjectMembers = false;
 
       Array.from(clientMap.entries()).forEach(([clientName, projectMap]) => {
         const projectGroups: ProjectGroup[] = [];
@@ -462,7 +430,6 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, rol
             pFte += rFte;
             matchingRows.forEach((r) => {
               r.employees.forEach((e) => { totalEmployees.add(e.id); allEmployeeIds.add(e.id); });
-              if (r.source === "project-member") hasProjectMembers = true;
             });
           }
 
@@ -492,7 +459,6 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, rol
             pFte += rFte;
             roleRows.forEach((r) => {
               r.employees.forEach((e) => { totalEmployees.add(e.id); allEmployeeIds.add(e.id); });
-              if (r.source === "project-member") hasProjectMembers = true;
             });
           });
 
@@ -530,7 +496,6 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, rol
         clients: clientGroups,
         totalFte,
         employeeCount: allEmployeeIds.size,
-        hasProjectMembers,
       });
     });
     return groups;
@@ -777,7 +742,9 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, rol
                               const projectExpandKey = `${clientExpandKey}::${pg.projectName || "__none__"}`;
                               const isProjectExpanded = !collapsedProjects.has(projectExpandKey);
                               const totalRoleRows = pg.roles.reduce((s, r) => s + r.rows.length, 0);
-                              const showProjectHeader = pg.projectName && (cg.projects.length > 1 || totalRoleRows > 1);
+                              // Always show project header when there's a real project, so
+                              // the Add Role button is accessible on every project.
+                              const showProjectHeader = !!pg.projectId;
                               const unfilled = Math.max(0, pg.neededPositions - pg.filledPositions);
 
                               return (
@@ -993,18 +960,6 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, rol
                                                     title="Click to edit FTE"
                                                     onMouseEnter={() => setFteHighlight(row.employees[0]?.id)}
                                                     onMouseLeave={() => setFteHighlight(null)}
-                                                  >
-                                                    {formatFte(row.fte)}
-                                                  </button>
-                                                ) : row.source === "project-member" && canManage ? (
-                                                  <button
-                                                    onClick={() => openAddDialog({
-                                                      employeeId: row.employees[0]?.id,
-                                                      projectId: row.projectId || undefined,
-                                                      clientId: row.clientId || undefined,
-                                                    })}
-                                                    className="font-bold text-sm text-blue-600 hover:text-primary cursor-pointer"
-                                                    title="Default FTE — click to create assignment"
                                                   >
                                                     {formatFte(row.fte)}
                                                   </button>

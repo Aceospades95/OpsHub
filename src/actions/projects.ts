@@ -76,6 +76,7 @@ export async function createProject(_prev: unknown, formData: FormData) {
   await logActivity("created", "project", project.id, user.id, project.name);
   revalidatePath("/projects");
   revalidatePath("/clients");
+  revalidatePath("/team", "layout");
   return { success: true };
 }
 
@@ -112,6 +113,9 @@ export async function updateProject(_prev: unknown, formData: FormData) {
   await logActivity("updated", "project", id, user.id, parsed.data.name);
   revalidatePath(`/projects/${id}`);
   revalidatePath("/projects");
+  // Also revalidate the staffing matrix since project offering/client/status
+  // all affect how the project appears there.
+  revalidatePath("/team", "layout");
   return { success: true };
 }
 
@@ -127,6 +131,7 @@ export async function deleteProject(_prev: unknown, formData: FormData) {
   await db.project.delete({ where: { id } });
   await logActivity("deleted", "project", id, user.id, project.name);
   revalidatePath("/projects");
+  revalidatePath("/team", "layout");
   return { success: true };
 }
 
