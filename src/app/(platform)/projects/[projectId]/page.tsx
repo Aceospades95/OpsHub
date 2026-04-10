@@ -13,6 +13,7 @@ import { CheckSquare, Clock } from "lucide-react";
 import Link from "next/link";
 import { ProjectActions } from "./project-actions";
 import { MemberSection } from "./member-section";
+import { ProjectStaffingSection } from "./project-staffing-section";
 import { MilestoneSection } from "./milestone-section";
 import { ProjectAttachments } from "./project-attachments";
 import { ProjectCreateButton } from "../project-create-button";
@@ -60,6 +61,21 @@ export default async function ProjectDetailPage({ params }: Props) {
       members: {
         include: { user: { select: { id: true, name: true, email: true, managerId: true, jobTitle: true, department: true, location: true } } },
       },
+      assignments: {
+        where: { status: { in: ["ACTIVE", "PLANNED"] } },
+        include: {
+          employee: { select: { id: true, name: true, jobTitle: true, location: true } },
+          roleDefinition: { select: { id: true, name: true } },
+          projectRole: { select: { id: true, roleDefinition: { select: { id: true, name: true } }, requiredFte: true, quantity: true } },
+        },
+        orderBy: { createdAt: "desc" },
+      },
+      projectRoles: {
+        include: {
+          roleDefinition: { select: { id: true, name: true } },
+          assignments: { select: { id: true, employeeId: true } },
+        },
+      },
       milestones: {
         include: {
           assignees: {
@@ -88,10 +104,10 @@ export default async function ProjectDetailPage({ params }: Props) {
     orderBy: { name: "asc" },
   });
 
-  const [allUsers, projectTasks, allTools, allProjects, serviceOfferings] = await Promise.all([
+  const [allUsers, projectTasks, allTools, allProjects, serviceOfferings, roleDefinitions] = await Promise.all([
     db.user.findMany({
       where: { isActive: true },
-      select: { id: true, name: true, email: true },
+      select: { id: true, name: true, email: true, jobTitle: true, location: true },
       orderBy: { name: "asc" },
     }),
     db.task.findMany({
@@ -110,6 +126,11 @@ export default async function ProjectDetailPage({ params }: Props) {
       orderBy: { name: "asc" },
     }),
     db.serviceOffering.findMany({
+      where: { isActive: true },
+      select: { id: true, name: true },
+      orderBy: { name: "asc" },
+    }),
+    db.roleDefinition.findMany({
       where: { isActive: true },
       select: { id: true, name: true },
       orderBy: { name: "asc" },
@@ -248,16 +269,30 @@ export default async function ProjectDetailPage({ params }: Props) {
     team: (
       <Card className="h-full">
         <CardHeader>
-          <CardTitle>Team ({project.members.length})</CardTitle>
+          <CardTitle>Staffing ({project.assignments.length})</CardTitle>
         </CardHeader>
-        <CardContent>
-          <TeamHierarchy members={project.members as Parameters<typeof TeamHierarchy>[0]["members"]} />
-          <MemberSection
-            members={project.members}
+        <CardContent className="space-y-4">
+          <ProjectStaffingSection
             projectId={project.id}
+            projectName={project.name}
+            clientId={project.client.id}
+            serviceOfferingId={project.serviceOfferingId}
+            assignments={project.assignments as Parameters<typeof ProjectStaffingSection>[0]["assignments"]}
+            projectRoles={project.projectRoles as Parameters<typeof ProjectStaffingSection>[0]["projectRoles"]}
+            roleDefinitions={roleDefinitions}
             allUsers={allUsers}
             canEdit={perms.canEdit}
           />
+          <div className="pt-4 border-t border-border space-y-2">
+            <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Project Access ({project.members.length})</h4>
+            <TeamHierarchy members={project.members as Parameters<typeof TeamHierarchy>[0]["members"]} />
+            <MemberSection
+              members={project.members}
+              projectId={project.id}
+              allUsers={allUsers}
+              canEdit={perms.canEdit}
+            />
+          </div>
         </CardContent>
       </Card>
     ),
