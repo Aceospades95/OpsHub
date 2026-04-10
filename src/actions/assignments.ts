@@ -200,9 +200,30 @@ export async function updateAssignmentRole(assignmentId: string, role: string, r
   const user = await requireAuth();
   requireAdminOrManager(user.role);
 
+  // Look up the assignment's project so we can re-link projectRoleId
+  // to a matching ProjectRole on the same project (if one exists).
+  // Otherwise the row stays bound to the old ProjectRole group.
+  const existing = await db.assignment.findUnique({
+    where: { id: assignmentId },
+    select: { projectId: true },
+  });
+
+  let newProjectRoleId: string | null = null;
+  if (existing?.projectId && roleDefinitionId) {
+    const matching = await db.projectRole.findFirst({
+      where: { projectId: existing.projectId, roleDefinitionId },
+      select: { id: true },
+    });
+    newProjectRoleId = matching?.id || null;
+  }
+
   const updated = await db.assignment.update({
     where: { id: assignmentId },
-    data: { role: role || null, roleDefinitionId },
+    data: {
+      role: role || null,
+      roleDefinitionId,
+      projectRoleId: newProjectRoleId,
+    },
     select: { employeeId: true, projectId: true },
   });
 

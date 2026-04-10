@@ -118,20 +118,21 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, rol
   const [addDialogDefaults, setAddDialogDefaults] = useState<{ employeeId?: string; projectId?: string; clientId?: string; serviceOfferingId?: string; projectRoleId?: string; roleName?: string; roleDefinitionId?: string }>({});
   const [offeringsDialogOpen, setOfferingsDialogOpen] = useState(false);
   const [fteHighlight, setFteHighlight] = useState<string | null>(null);
-  const [editingFte, setEditingFte] = useState<{ assignmentId: string; value: number } | null>(null);
+  const [editingFte, setEditingFte] = useState<{ assignmentId: string; value: string } | null>(null);
   const [collapsedRoles, setCollapsedRoles] = useState<Set<string>>(new Set());
   const [isPending, startTransition] = useTransition();
   const [editingRole, setEditingRole] = useState<{ assignmentId: string; value: string } | null>(null);
-  const [editingProjectRoleFte, setEditingProjectRoleFte] = useState<{ projectRoleId: string; quantity: number; requiredFte: number } | null>(null);
+  const [editingProjectRoleFte, setEditingProjectRoleFte] = useState<{ projectRoleId: string; quantity: string; requiredFte: number } | null>(null);
   const [addRoleProjectId, setAddRoleProjectId] = useState<string | null>(null);
-  const [addRoleForm, setAddRoleForm] = useState({ roleDefinitionId: "", newRoleName: "", requiredFte: 1, quantity: 1 });
+  const [addRoleForm, setAddRoleForm] = useState({ roleDefinitionId: "", newRoleName: "", requiredFte: "1", quantity: "1" });
   const [quickAssignCtx, setQuickAssignCtx] = useState<{
     projectId: string; clientId?: string; projectRoleId?: string;
     roleDefinitionId?: string; roleName?: string; requiredFte: number;
     serviceOfferingId?: string;
   } | null>(null);
 
-  const saveFte = (assignmentId: string, value: number) => {
+  const saveFte = (assignmentId: string, valueStr: string) => {
+    const value = Math.max(0, Math.min(2, parseFloat(valueStr) || 0));
     startTransition(async () => {
       await updateAssignmentFte(assignmentId, value);
       setEditingFte(null);
@@ -147,9 +148,10 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, rol
     });
   };
 
-  const saveProjectRoleQuantity = (projectRoleId: string, quantity: number, requiredFte: number) => {
+  const saveProjectRoleQuantity = (projectRoleId: string, quantityStr: string, requiredFte: number) => {
+    const qty = Math.max(1, Math.min(50, parseInt(quantityStr) || 1));
     startTransition(async () => {
-      await updateProjectRole(projectRoleId, requiredFte, Math.max(1, quantity));
+      await updateProjectRole(projectRoleId, requiredFte, qty);
       setEditingProjectRoleFte(null);
     });
   };
@@ -164,9 +166,11 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, rol
       else return;
     }
     if (!roleDefId) return;
-    await createProjectRole(addRoleProjectId, roleDefId, addRoleForm.requiredFte, addRoleForm.quantity);
+    const fte = Math.max(0.05, Math.min(2, parseFloat(addRoleForm.requiredFte) || 1));
+    const qty = Math.max(1, Math.min(50, parseInt(addRoleForm.quantity) || 1));
+    await createProjectRole(addRoleProjectId, roleDefId, fte, qty);
     setAddRoleProjectId(null);
-    setAddRoleForm({ roleDefinitionId: "", newRoleName: "", requiredFte: 1, quantity: 1 });
+    setAddRoleForm({ roleDefinitionId: "", newRoleName: "", requiredFte: "1", quantity: "1" });
   };
 
   const handleQuickAssign = (employeeId: string) => {
@@ -253,16 +257,22 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, rol
 
       // 1) Rows from explicit Assignments
       for (const assignment of user.assignments) {
-        // Offering comes ONLY from the linked project. No fallbacks.
-        // If the project has no offering (or there's no project), the row
-        // goes into the "Unassigned" offering group.
+        // Offering and client both come from the linked project (source of truth).
+        // If the project has no offering, the row goes into the "Unassigned" group.
+        // If the project has no client, it goes under "(No Client)".
         const projData = assignment.project?.id
           ? projects.find((p) => p.id === assignment.project!.id)
           : null;
         const offeringName = projData?.serviceOffering?.name || "Unassigned";
         const offeringId = projData?.serviceOffering?.id || null;
-        const clientName = assignment.client?.name || "";
-        const clientId = assignment.client?.id || null;
+        // Derive client from project, not from assignment.client — this keeps
+        // the row under the correct client group even if the assignment's
+        // clientId is stale or null.
+        const clientData = projData?.clientId
+          ? clients.find((c) => c.id === projData.clientId)
+          : null;
+        const clientName = clientData?.name || assignment.client?.name || "";
+        const clientId = clientData?.id || assignment.client?.id || null;
         const projectName = assignment.project?.name || "";
         const projectId = assignment.project?.id || null;
         // Role: prefer projectRole > roleDefinition > freeform role
@@ -312,7 +322,7 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, rol
     }
 
     return Array.from(rowMap.values());
-  }, [users, projects, search]);
+  }, [users, projects, clients, search]);
 
   // Apply filters (including capacity filter)
   const filteredRows = useMemo(() => {
@@ -832,7 +842,7 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, rol
                                                   <input
                                                     type="number" min="1" max="50"
                                                     value={editingProjectRoleFte.quantity}
-                                                    onChange={(e) => setEditingProjectRoleFte((p) => p ? { ...p, quantity: parseInt(e.target.value) || 1 } : p)}
+                                                    onChange={(e) => setEditingProjectRoleFte((p) => p ? { ...p, quantity: e.target.value } : p)}
                                                     onBlur={() => saveProjectRoleQuantity(rg.projectRoleId!, editingProjectRoleFte.quantity, editingProjectRoleFte.requiredFte)}
                                                     autoFocus
                                                     className="w-10 h-5 text-[10px] text-center border border-primary rounded bg-background focus:outline-none"
@@ -842,7 +852,7 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, rol
                                                 </form>
                                               ) : canManage && rg.projectRoleId ? (
                                                 <button
-                                                  onClick={(e) => { e.stopPropagation(); setEditingProjectRoleFte({ projectRoleId: rg.projectRoleId!, quantity: rg.requiredQuantity, requiredFte: rg.requiredFte }); }}
+                                                  onClick={(e) => { e.stopPropagation(); setEditingProjectRoleFte({ projectRoleId: rg.projectRoleId!, quantity: String(rg.requiredQuantity), requiredFte: rg.requiredFte }); }}
                                                   className="text-blue-600 hover:text-primary cursor-pointer"
                                                   title="Click to edit positions needed"
                                                 >
@@ -947,7 +957,7 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, rol
                                                     <input
                                                       type="number" step="0.05" min="0" max="2"
                                                       value={editingFte.value}
-                                                      onChange={(e) => setEditingFte({ assignmentId, value: parseFloat(e.target.value) || 0 })}
+                                                      onChange={(e) => setEditingFte({ assignmentId, value: e.target.value })}
                                                       onBlur={() => saveFte(assignmentId, editingFte.value)}
                                                       autoFocus
                                                       className="w-14 h-6 text-xs text-center border border-primary rounded bg-background focus:outline-none"
@@ -955,7 +965,7 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, rol
                                                   </form>
                                                 ) : singleAssignment && canManage ? (
                                                   <button
-                                                    onClick={() => setEditingFte({ assignmentId: assignmentId!, value: row.fte })}
+                                                    onClick={() => setEditingFte({ assignmentId: assignmentId!, value: String(row.fte) })}
                                                     className="font-bold text-sm text-blue-600 hover:text-primary cursor-pointer"
                                                     title="Click to edit FTE"
                                                     onMouseEnter={() => setFteHighlight(row.employees[0]?.id)}
@@ -1009,7 +1019,8 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, rol
                                               const proj = projects.find((p) => p.id === pg.projectId);
                                               setQuickAssignCtx({
                                                 projectId: pg.projectId!,
-                                                clientId: cg.clientId || undefined,
+                                                // Always use the project's own clientId as source of truth
+                                                clientId: proj?.clientId || undefined,
                                                 projectRoleId: rg.projectRoleId || undefined,
                                                 roleDefinitionId: rg.projectRoleId ? projectRoles.find((pr) => pr.id === rg.projectRoleId)?.roleDefinition?.id : undefined,
                                                 roleName: rg.role || undefined,
@@ -1019,8 +1030,12 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, rol
                                             } : undefined}
                                           >
                                             <td className="py-1.5 px-4" />
-                                            <td className="py-1.5 px-3" />
-                                            <td className="py-1.5 px-3" />
+                                            <td className="py-1.5 px-3 text-xs text-muted-foreground">
+                                              {cg.clientName || <span className="text-muted-foreground/60">—</span>}
+                                            </td>
+                                            <td className="py-1.5 px-3 text-xs text-muted-foreground">
+                                              {pg.projectName || <span className="text-muted-foreground/60">—</span>}
+                                            </td>
                                             <td className="py-1.5 px-3 hidden md:table-cell" />
                                             <td className="py-1.5 px-3" />
                                             <td className="py-1.5 px-3">
@@ -1175,7 +1190,7 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, rol
                   <input
                     type="number" step="0.05" min="0.05" max="2"
                     value={addRoleForm.requiredFte}
-                    onChange={(e) => setAddRoleForm((f) => ({ ...f, requiredFte: parseFloat(e.target.value) || 1 }))}
+                    onChange={(e) => setAddRoleForm((f) => ({ ...f, requiredFte: e.target.value }))}
                     className="w-full h-9 rounded border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
                   />
                 </div>
@@ -1184,7 +1199,7 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, rol
                   <input
                     type="number" min="1" max="50"
                     value={addRoleForm.quantity}
-                    onChange={(e) => setAddRoleForm((f) => ({ ...f, quantity: parseInt(e.target.value) || 1 }))}
+                    onChange={(e) => setAddRoleForm((f) => ({ ...f, quantity: e.target.value }))}
                     className="w-full h-9 rounded border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
                   />
                 </div>
