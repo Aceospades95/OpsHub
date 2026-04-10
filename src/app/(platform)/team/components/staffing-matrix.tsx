@@ -4,7 +4,7 @@ import React, { useState, useMemo, useTransition } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
-  ChevronDown, ChevronRight, ArrowUpDown, Plus, MapPin, X, Pencil, AlertTriangle, UserPlus, MessageSquare, Check, XCircle,
+  ChevronDown, ChevronRight, ArrowUpDown, Plus, MapPin, X, Pencil, AlertTriangle, UserPlus, UserCheck,
 } from "lucide-react";
 import Link from "next/link";
 import {
@@ -14,7 +14,7 @@ import {
 import { AddAssignmentDialog } from "./add-assignment-dialog";
 import { EditAssignmentDialog, type EditAssignmentData } from "./edit-assignment-dialog";
 import { ManageOfferingsDialog } from "./manage-offerings-dialog";
-import { updateAssignmentNotes, updateAssignmentFte } from "@/actions/assignments";
+import { updateAssignmentFte } from "@/actions/assignments";
 
 interface StaffingMatrixProps {
   users: UserData[];
@@ -116,17 +116,9 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, sea
   const [editAssignment, setEditAssignment] = useState<EditAssignmentData | null>(null);
   const [offeringsDialogOpen, setOfferingsDialogOpen] = useState(false);
   const [fteHighlight, setFteHighlight] = useState<string | null>(null);
-  const [editingNotes, setEditingNotes] = useState<{ assignmentId: string; value: string } | null>(null);
   const [editingFte, setEditingFte] = useState<{ assignmentId: string; value: number } | null>(null);
   const [collapsedRoles, setCollapsedRoles] = useState<Set<string>>(new Set());
   const [isPending, startTransition] = useTransition();
-
-  const saveNotes = (assignmentId: string, value: string) => {
-    startTransition(async () => {
-      await updateAssignmentNotes(assignmentId, value);
-      setEditingNotes(null);
-    });
-  };
 
   const saveFte = (assignmentId: string, value: number) => {
     startTransition(async () => {
@@ -571,14 +563,13 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, sea
                     <SortHeader field="fte" className="justify-center">FTE</SortHeader>
                   </th>
                   <th className="text-left py-3 px-3 font-semibold min-w-[150px]">Employee(s)</th>
-                  <th className="text-left py-3 px-3 font-semibold hidden lg:table-cell min-w-[180px]">Notes</th>
                   <th className="py-3 px-2 w-10" />
                 </tr>
               </thead>
               <tbody>
                 {filteredRows.length === 0 && (
                   <tr>
-                    <td colSpan={10} className="py-12 text-center text-muted-foreground">
+                    <td colSpan={9} className="py-12 text-center text-muted-foreground">
                       No assignments match the current filters.
                     </td>
                   </tr>
@@ -600,18 +591,13 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, sea
                           <div className="flex items-center gap-2">
                             {isOfferingExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                             <span className="font-bold text-sm">{group.offering}</span>
-                            {group.hasProjectMembers && (
-                              <Badge variant="outline" className="text-[9px] bg-blue-50 border-blue-200 text-blue-700">
-                                From Projects
-                              </Badge>
-                            )}
                             <span className="text-xs text-muted-foreground">
                               ({totalRows} row{totalRows !== 1 ? "s" : ""} · {group.employeeCount} employee{group.employeeCount !== 1 ? "s" : ""})
                             </span>
                           </div>
                         </td>
                         <td className="py-2.5 px-3 text-center font-bold">{formatFte(group.totalFte)}</td>
-                        <td colSpan={3} className="py-2.5 px-3" />
+                        <td colSpan={2} className="py-2.5 px-3" />
                       </tr>
 
                       {isOfferingExpanded && group.clients.map((cg) => {
@@ -645,7 +631,7 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, sea
                                   </div>
                                 </td>
                                 <td className="py-2 px-3 text-center font-semibold text-xs">{formatFte(cg.totalFte)}</td>
-                                <td colSpan={3} className="py-2 px-3" />
+                                <td colSpan={2} className="py-2 px-3" />
                               </tr>
                             )}
 
@@ -661,7 +647,7 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, sea
                                 <React.Fragment key={projectExpandKey}>
                                   {showProjectHeader && (
                                     <tr
-                                      className={`border-b border-border/30 border-l-4 ${color.border} cursor-pointer hover:brightness-95 transition-all bg-muted/20`}
+                                      className={`border-b border-border/40 border-l-4 ${color.border} cursor-pointer hover:brightness-95 transition-all bg-muted/30`}
                                       onClick={() => toggleCollapse(projectExpandKey, setCollapsedProjects)}
                                     >
                                       <td colSpan={6} className="py-1.5 px-4">
@@ -688,7 +674,7 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, sea
                                         </div>
                                       </td>
                                       <td className="py-1.5 px-3 text-center font-semibold text-xs">{formatFte(pg.totalFte)}</td>
-                                      <td colSpan={3} className="py-1.5 px-3" />
+                                      <td colSpan={2} className="py-1.5 px-3" />
                                     </tr>
                                   )}
 
@@ -723,7 +709,7 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, sea
                                             </td>
                                             <td className="py-1 px-3" />
                                             <td className="py-1 px-3 text-center font-semibold text-[11px]">{formatFte(rg.totalFte)}</td>
-                                            <td colSpan={3} className="py-1 px-3" />
+                                            <td colSpan={2} className="py-1 px-3" />
                                           </tr>
                                         )}
 
@@ -736,50 +722,50 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, sea
                                           return (
                                             <tr
                                               key={row.key}
-                                              className={`border-b border-border/20 border-l-4 ${color.border} ${color.rowBg} transition-colors ${
-                                                fteHighlight && row.employees.some((e) => e.id === fteHighlight) ? "bg-primary/5" : ""
+                                              className={`border-b border-border/10 border-l-4 ${color.border} ${color.rowBg} transition-colors bg-background ${
+                                                fteHighlight && row.employees.some((e) => e.id === fteHighlight) ? "!bg-primary/5" : ""
                                               }`}
                                             >
                                               {/* Offering (empty - shown in header) */}
-                                              <td className="py-2 px-4 text-muted-foreground text-xs" />
+                                              <td className="py-1.5 px-4 text-muted-foreground text-xs" />
                                               {/* Client */}
-                                              <td className="py-2 px-3 text-sm font-medium">
+                                              <td className="py-1.5 px-3 text-xs text-muted-foreground">
                                                 {row.clientId ? (
                                                   <Link href={`/clients/${row.clientId}`} className="hover:text-primary hover:underline">
                                                     {row.clientName}
                                                   </Link>
-                                                ) : row.clientName || <span className="text-muted-foreground">—</span>}
+                                                ) : row.clientName || <span className="text-muted-foreground/60">—</span>}
                                               </td>
                                               {/* Project */}
-                                              <td className="py-2 px-3 text-sm">
+                                              <td className="py-1.5 px-3 text-xs text-muted-foreground">
                                                 {row.projectId ? (
-                                                  <Link href={`/projects/${row.projectId}`} className="font-medium hover:text-primary hover:underline">
+                                                  <Link href={`/projects/${row.projectId}`} className="hover:text-primary hover:underline">
                                                     {row.projectName}
                                                   </Link>
-                                                ) : row.projectName || <span className="text-muted-foreground">—</span>}
+                                                ) : row.projectName || <span className="text-muted-foreground/60">—</span>}
                                               </td>
                                               {/* Location */}
-                                              <td className="py-2 px-3 text-sm text-muted-foreground hidden md:table-cell">
+                                              <td className="py-1.5 px-3 text-xs text-muted-foreground hidden md:table-cell">
                                                 {row.location ? (
                                                   <span className="flex items-center gap-1"><MapPin className="h-3 w-3" />{row.location}</span>
-                                                ) : "—"}
+                                                ) : <span className="text-muted-foreground/60">—</span>}
                                               </td>
                                               {/* Manager / Lead */}
-                                              <td className="py-2 px-3 text-sm">
+                                              <td className="py-1.5 px-3 text-xs text-muted-foreground">
                                                 {row.managerId ? (
                                                   <Link href={`/team/${row.managerId}`} className="hover:text-primary hover:underline">
                                                     {row.managerName}
                                                   </Link>
-                                                ) : row.managerName || <span className="text-muted-foreground">—</span>}
+                                                ) : row.managerName || <span className="text-muted-foreground/60">—</span>}
                                               </td>
                                               {/* Role Required */}
-                                              <td className="py-2 px-3 text-sm">
+                                              <td className="py-1.5 px-3 text-xs">
                                                 {row.roleRequired ? (
-                                                  <Badge variant="outline" className="text-[10px]">{row.roleRequired}</Badge>
-                                                ) : <span className="text-muted-foreground">—</span>}
+                                                  <Badge variant="outline" className="text-[10px] font-normal">{row.roleRequired}</Badge>
+                                                ) : <span className="text-muted-foreground/60">—</span>}
                                               </td>
                                               {/* FTE - inline editable */}
-                                              <td className="py-2 px-3 text-center">
+                                              <td className="py-1.5 px-3 text-center">
                                                 {editingFte?.assignmentId === assignmentId && assignmentId ? (
                                                   <form onSubmit={(e) => { e.preventDefault(); saveFte(assignmentId, editingFte.value); }} className="flex items-center gap-0.5">
                                                     <input
@@ -820,11 +806,11 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, sea
                                                 )}
                                               </td>
                                               {/* Employee(s) */}
-                                              <td className="py-2 px-3">
+                                              <td className="py-1.5 px-3">
                                                 <div className="space-y-0.5">
                                                   {row.employees.map((emp) => (
                                                     <div key={emp.id}>
-                                                      <Link href={`/team/${emp.id}`} className="text-xs hover:text-primary hover:underline">
+                                                      <Link href={`/team/${emp.id}`} className="text-xs font-semibold text-foreground hover:text-primary hover:underline">
                                                         {emp.name}
                                                       </Link>
                                                     </div>
@@ -852,64 +838,8 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, sea
                                                   )}
                                                 </div>
                                               </td>
-                                              {/* Notes - inline editable */}
-                                              <td className="py-2 px-3 hidden lg:table-cell">
-                                                {singleAssignment && canManage ? (
-                                                  editingNotes?.assignmentId === assignmentId ? (
-                                                    <div className="relative">
-                                                      <div className="absolute z-20 bottom-0 left-0 w-72 bg-background border border-border rounded-lg shadow-lg p-2 space-y-2">
-                                                        <textarea
-                                                          value={editingNotes.value}
-                                                          onChange={(e) => setEditingNotes({ assignmentId: assignmentId!, value: e.target.value })}
-                                                          autoFocus
-                                                          rows={4}
-                                                          className="w-full text-xs border border-input rounded bg-background px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-primary resize-y"
-                                                          placeholder="Add notes..."
-                                                        />
-                                                        <div className="flex justify-end gap-1">
-                                                          <button
-                                                            type="button"
-                                                            onClick={() => setEditingNotes(null)}
-                                                            className="px-2 py-1 text-[10px] rounded border border-input hover:bg-muted"
-                                                          >
-                                                            Cancel
-                                                          </button>
-                                                          <button
-                                                            type="button"
-                                                            onClick={() => saveNotes(assignmentId!, editingNotes.value)}
-                                                            disabled={isPending}
-                                                            className="px-2 py-1 text-[10px] rounded bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-                                                          >
-                                                            {isPending ? "Saving..." : "Save"}
-                                                          </button>
-                                                        </div>
-                                                      </div>
-                                                    </div>
-                                                  ) : (
-                                                    <button
-                                                      onClick={() => setEditingNotes({ assignmentId: assignmentId!, value: row.notes })}
-                                                      className="text-xs text-left text-muted-foreground hover:text-foreground cursor-pointer max-w-[180px] truncate block"
-                                                      title={row.notes || "Click to add notes"}
-                                                    >
-                                                      {row.notes ? (
-                                                        <span className="flex items-center gap-1">
-                                                          <MessageSquare className="h-3 w-3 shrink-0" />
-                                                          <span className="truncate">{row.notes}</span>
-                                                        </span>
-                                                      ) : (
-                                                        <span className="text-muted-foreground/50 flex items-center gap-1">
-                                                          <MessageSquare className="h-3 w-3" />
-                                                          Add note
-                                                        </span>
-                                                      )}
-                                                    </button>
-                                                  )
-                                                ) : row.notes ? (
-                                                  <span className="text-xs text-muted-foreground max-w-[180px] truncate block" title={row.notes}>{row.notes}</span>
-                                                ) : null}
-                                              </td>
                                               {/* Edit icon */}
-                                              <td className="py-2 px-2">
+                                              <td className="py-1.5 px-2">
                                                 {singleAssignment && canManage ? (
                                                   <button
                                                     onClick={() => {
@@ -939,7 +869,7 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, sea
                                                     className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-primary transition-colors"
                                                     title="Create assignment"
                                                   >
-                                                    <Plus className="h-3.5 w-3.5" />
+                                                    <UserCheck className="h-3.5 w-3.5" />
                                                   </button>
                                                 ) : row.source === "unassigned" && canManage ? (
                                                   <button
@@ -947,7 +877,7 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, sea
                                                     className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-primary transition-colors"
                                                     title="Assign employee"
                                                   >
-                                                    <Plus className="h-3.5 w-3.5" />
+                                                    <UserCheck className="h-3.5 w-3.5" />
                                                   </button>
                                                 ) : null}
                                               </td>
@@ -975,7 +905,7 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, sea
                     <td className="py-2.5 px-3 text-center font-bold">
                       {formatFte(filteredRows.reduce((s, r) => s + r.fte, 0))}
                     </td>
-                    <td colSpan={3} className="py-2.5 px-3" />
+                    <td colSpan={2} className="py-2.5 px-3" />
                   </tr>
                 </tfoot>
               )}
