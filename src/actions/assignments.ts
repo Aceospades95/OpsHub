@@ -121,6 +121,20 @@ export async function updateAssignmentNotes(assignmentId: string, notes: string)
   return { success: true };
 }
 
+export async function updateAssignmentRole(assignmentId: string, role: string, roleDefinitionId: string | null) {
+  const user = await requireAuth();
+  requireAdminOrManager(user.role);
+
+  await db.assignment.update({
+    where: { id: assignmentId },
+    data: { role: role || null, roleDefinitionId },
+  });
+
+  await logActivity("updated", "assignment", assignmentId, user.id, `Updated role to ${role}`);
+  revalidatePath("/team");
+  return { success: true };
+}
+
 export async function updateAssignmentFte(assignmentId: string, allocationFte: number) {
   const user = await requireAuth();
   requireAdminOrManager(user.role);

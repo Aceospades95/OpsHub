@@ -14,7 +14,7 @@ import {
 import { AddAssignmentDialog } from "./add-assignment-dialog";
 import { EditAssignmentDialog, type EditAssignmentData } from "./edit-assignment-dialog";
 import { ManageOfferingsDialog } from "./manage-offerings-dialog";
-import { updateAssignmentFte, createProjectRole, createRoleDefinition, deleteProjectRole } from "@/actions/assignments";
+import { updateAssignmentFte, updateAssignmentRole, createProjectRole, createRoleDefinition, deleteProjectRole, updateProjectRole } from "@/actions/assignments";
 
 interface StaffingMatrixProps {
   users: UserData[];
@@ -125,6 +125,8 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, rol
   const [editingFte, setEditingFte] = useState<{ assignmentId: string; value: number } | null>(null);
   const [collapsedRoles, setCollapsedRoles] = useState<Set<string>>(new Set());
   const [isPending, startTransition] = useTransition();
+  const [editingRole, setEditingRole] = useState<{ assignmentId: string; value: string } | null>(null);
+  const [editingProjectRoleFte, setEditingProjectRoleFte] = useState<{ projectRoleId: string; quantity: number; requiredFte: number } | null>(null);
   const [addRoleProjectId, setAddRoleProjectId] = useState<string | null>(null);
   const [addRoleForm, setAddRoleForm] = useState({ roleDefinitionId: "", newRoleName: "", requiredFte: 1, quantity: 1 });
 
@@ -135,10 +137,27 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, rol
     });
   };
 
+  const saveRole = (assignmentId: string, roleDefId: string) => {
+    const rd = roleDefinitions.find((r) => r.id === roleDefId);
+    if (!rd) { setEditingRole(null); return; }
+    startTransition(async () => {
+      await updateAssignmentRole(assignmentId, rd.name, rd.id);
+      setEditingRole(null);
+    });
+  };
+
+  const saveProjectRoleQuantity = (projectRoleId: string, quantity: number, requiredFte: number) => {
+    startTransition(async () => {
+      await updateProjectRole(projectRoleId, requiredFte, Math.max(1, quantity));
+      setEditingProjectRoleFte(null);
+    });
+  };
+
   const handleAddRole = async () => {
     if (!addRoleProjectId) return;
     let roleDefId = addRoleForm.roleDefinitionId;
-    if (!roleDefId && addRoleForm.newRoleName.trim()) {
+    if (roleDefId === "__new__") {
+      if (!addRoleForm.newRoleName.trim()) return;
       const result = await createRoleDefinition(addRoleForm.newRoleName.trim());
       if (result.id) roleDefId = result.id;
       else return;
@@ -814,7 +833,32 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, rol
                                               </div>
                                             </td>
                                             <td className="py-1 px-3" />
-                                            <td className="py-1 px-3 text-center font-semibold text-[11px]">{formatFte(rg.totalFte)}</td>
+                                            <td className="py-1 px-3 text-center font-semibold text-[11px]">
+                                              {editingProjectRoleFte?.projectRoleId === rg.projectRoleId && rg.projectRoleId ? (
+                                                <form onSubmit={(e) => { e.preventDefault(); saveProjectRoleQuantity(rg.projectRoleId!, editingProjectRoleFte.quantity, editingProjectRoleFte.requiredFte); }} className="flex items-center gap-1 justify-center" onClick={(e) => e.stopPropagation()}>
+                                                  <input
+                                                    type="number" min="1" max="50"
+                                                    value={editingProjectRoleFte.quantity}
+                                                    onChange={(e) => setEditingProjectRoleFte((p) => p ? { ...p, quantity: parseInt(e.target.value) || 1 } : p)}
+                                                    onBlur={() => saveProjectRoleQuantity(rg.projectRoleId!, editingProjectRoleFte.quantity, editingProjectRoleFte.requiredFte)}
+                                                    autoFocus
+                                                    className="w-10 h-5 text-[10px] text-center border border-primary rounded bg-background focus:outline-none"
+                                                    title="Number of positions"
+                                                  />
+                                                  <span className="text-[9px] text-muted-foreground">slots</span>
+                                                </form>
+                                              ) : canManage && rg.projectRoleId ? (
+                                                <button
+                                                  onClick={(e) => { e.stopPropagation(); setEditingProjectRoleFte({ projectRoleId: rg.projectRoleId!, quantity: rg.requiredQuantity, requiredFte: rg.requiredFte }); }}
+                                                  className="text-blue-600 hover:text-primary cursor-pointer"
+                                                  title="Click to edit positions needed"
+                                                >
+                                                  {formatFte(rg.totalFte)}
+                                                </button>
+                                              ) : (
+                                                formatFte(rg.totalFte)
+                                              )}
+                                            </td>
                                             <td className="py-1 px-3" />
                                             <td className="py-1 px-2">
                                               {canManage && rg.projectRoleId && (
@@ -875,9 +919,32 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, rol
                                                   </Link>
                                                 ) : row.managerName || <span className="text-muted-foreground/60">—</span>}
                                               </td>
-                                              {/* Role Required */}
+                                              {/* Role Required - inline editable dropdown */}
                                               <td className="py-1.5 px-3 text-xs">
-                                                {row.roleRequired ? (
+                                                {editingRole?.assignmentId === assignmentId && assignmentId ? (
+                                                  <select
+                                                    value={editingRole.value}
+                                                    onChange={(e) => { saveRole(assignmentId, e.target.value); }}
+                                                    onBlur={() => setEditingRole(null)}
+                                                    autoFocus
+                                                    className="h-6 text-[10px] rounded border border-primary bg-background px-1 focus:outline-none"
+                                                  >
+                                                    <option value="">Select role...</option>
+                                                    {roleDefinitions.map((rd) => (
+                                                      <option key={rd.id} value={rd.id}>{rd.name}</option>
+                                                    ))}
+                                                  </select>
+                                                ) : singleAssignment && canManage ? (
+                                                  <button
+                                                    onClick={() => setEditingRole({ assignmentId: assignmentId!, value: "" })}
+                                                    className="cursor-pointer hover:opacity-70"
+                                                    title="Click to change role"
+                                                  >
+                                                    {row.roleRequired ? (
+                                                      <Badge variant="outline" className="text-[10px] font-normal">{row.roleRequired}</Badge>
+                                                    ) : <span className="text-muted-foreground/60 hover:text-primary">Set role</span>}
+                                                  </button>
+                                                ) : row.roleRequired ? (
                                                   <Badge variant="outline" className="text-[10px] font-normal">{row.roleRequired}</Badge>
                                                 ) : <span className="text-muted-foreground/60">—</span>}
                                               </td>
@@ -933,21 +1000,15 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, rol
                                                     </div>
                                                   ))}
                                                   {rowUnfilled > 0 && Array.from({ length: rowUnfilled }).map((_, i) => (
-                                                    <div key={`unfilled-${i}`} className="flex items-center gap-1 text-xs text-amber-600 italic">
+                                                    <div key={`unfilled-${i}`}
+                                                      className={`flex items-center gap-1.5 text-xs text-amber-600 ${canManage ? "cursor-pointer hover:text-primary" : ""}`}
+                                                      onClick={canManage ? () => openAddDialog({
+                                                        projectId: row.projectId || undefined,
+                                                        clientId: row.clientId || undefined,
+                                                      }) : undefined}
+                                                    >
                                                       <UserPlus className="h-3 w-3" />
-                                                      <span>Unfilled</span>
-                                                      {canManage && (
-                                                        <button
-                                                          onClick={() => openAddDialog({
-                                                            projectId: row.projectId || undefined,
-                                                            clientId: row.clientId || undefined,
-                                                            serviceOfferingId: row.offeringId || undefined,
-                                                          })}
-                                                          className="text-primary hover:underline ml-1"
-                                                        >
-                                                          Assign
-                                                        </button>
-                                                      )}
+                                                      <span className="font-medium">Open — click to fill</span>
                                                     </div>
                                                   ))}
                                                   {row.employees.length === 0 && rowUnfilled === 0 && (
@@ -1006,7 +1067,11 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, rol
                                         {(showRoleHeader ? isRoleExpanded : true) && rg.unfilledCount > 0 && Array.from({ length: rg.unfilledCount }).map((_, i) => (
                                           <tr
                                             key={`unfilled-${roleExpandKey}-${i}`}
-                                            className={`border-b border-border/10 border-l-4 ${color.border} transition-colors bg-background`}
+                                            className={`border-b border-border/10 border-l-4 ${color.border} transition-colors bg-background ${canManage ? "hover:bg-amber-50/50 cursor-pointer" : ""}`}
+                                            onClick={canManage && pg.projectId ? () => openAddDialog({
+                                              projectId: pg.projectId || undefined,
+                                              clientId: cg.clientId || undefined,
+                                            }) : undefined}
                                           >
                                             <td className="py-1.5 px-4" />
                                             <td className="py-1.5 px-3" />
@@ -1020,24 +1085,16 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, rol
                                               <span className="text-xs text-muted-foreground">{formatFte(rg.requiredFte)}</span>
                                             </td>
                                             <td className="py-1.5 px-3">
-                                              <div className="flex items-center gap-1 text-xs text-amber-600 italic">
-                                                <UserPlus className="h-3 w-3" />
-                                                <span>Open position</span>
-                                                {canManage && pg.projectId && (
-                                                  <button
-                                                    onClick={() => openAddDialog({
-                                                      projectId: pg.projectId || undefined,
-                                                      clientId: cg.clientId || undefined,
-                                                      serviceOfferingId: undefined,
-                                                    })}
-                                                    className="text-primary hover:underline ml-1"
-                                                  >
-                                                    Fill
-                                                  </button>
-                                                )}
+                                              <div className="flex items-center gap-1.5 text-xs text-amber-600">
+                                                <UserPlus className="h-3.5 w-3.5" />
+                                                <span className="font-medium">Open — click to fill</span>
                                               </div>
                                             </td>
-                                            <td className="py-1.5 px-2" />
+                                            <td className="py-1.5 px-2">
+                                              {canManage && (
+                                                <UserCheck className="h-3.5 w-3.5 text-muted-foreground/40" />
+                                              )}
+                                            </td>
                                           </tr>
                                         ))}
                                       </React.Fragment>
