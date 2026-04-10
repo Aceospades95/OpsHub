@@ -4,7 +4,7 @@ import React, { useState, useMemo, useTransition } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
-  ChevronDown, ChevronRight, ArrowUpDown, Plus, MapPin, X, Pencil, AlertTriangle, UserPlus, UserCheck,
+  ChevronDown, ChevronRight, ArrowUpDown, Plus, MapPin, X, AlertTriangle, UserPlus, UserCheck,
 } from "lucide-react";
 import Link from "next/link";
 import {
@@ -12,9 +12,8 @@ import {
   AllocationStatus, getAllocationStatus, computeEmployeeFte, formatFte,
 } from "./team-types";
 import { AddAssignmentDialog } from "./add-assignment-dialog";
-import { EditAssignmentDialog, type EditAssignmentData } from "./edit-assignment-dialog";
 import { ManageOfferingsDialog } from "./manage-offerings-dialog";
-import { updateAssignmentFte, updateAssignmentRole, createProjectRole, createRoleDefinition, deleteProjectRole, updateProjectRole } from "@/actions/assignments";
+import { updateAssignmentFte, updateAssignmentRole, createProjectRole, createRoleDefinition, deleteProjectRole, updateProjectRole, removeAssignment, quickAssign } from "@/actions/assignments";
 
 interface StaffingMatrixProps {
   users: UserData[];
@@ -118,9 +117,6 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, rol
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [addDialogKey, setAddDialogKey] = useState(0);
   const [addDialogDefaults, setAddDialogDefaults] = useState<{ employeeId?: string; projectId?: string; clientId?: string; serviceOfferingId?: string; projectRoleId?: string; roleName?: string; roleDefinitionId?: string }>({});
-  const [editDialogOpen, setEditDialogOpen] = useState(false);
-  const [editDialogKey, setEditDialogKey] = useState(0);
-  const [editAssignment, setEditAssignment] = useState<EditAssignmentData | null>(null);
   const [offeringsDialogOpen, setOfferingsDialogOpen] = useState(false);
   const [fteHighlight, setFteHighlight] = useState<string | null>(null);
   const [editingFte, setEditingFte] = useState<{ assignmentId: string; value: number } | null>(null);
@@ -130,6 +126,11 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, rol
   const [editingProjectRoleFte, setEditingProjectRoleFte] = useState<{ projectRoleId: string; quantity: number; requiredFte: number } | null>(null);
   const [addRoleProjectId, setAddRoleProjectId] = useState<string | null>(null);
   const [addRoleForm, setAddRoleForm] = useState({ roleDefinitionId: "", newRoleName: "", requiredFte: 1, quantity: 1 });
+  const [quickAssignCtx, setQuickAssignCtx] = useState<{
+    projectId: string; clientId?: string; projectRoleId?: string;
+    roleDefinitionId?: string; roleName?: string; requiredFte: number;
+    serviceOfferingId?: string;
+  } | null>(null);
 
   const saveFte = (assignmentId: string, value: number) => {
     startTransition(async () => {
@@ -169,6 +170,30 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, rol
     setAddRoleForm({ roleDefinitionId: "", newRoleName: "", requiredFte: 1, quantity: 1 });
   };
 
+  const handleQuickAssign = (employeeId: string) => {
+    if (!quickAssignCtx) return;
+    startTransition(async () => {
+      await quickAssign({
+        employeeId,
+        projectId: quickAssignCtx.projectId,
+        clientId: quickAssignCtx.clientId,
+        projectRoleId: quickAssignCtx.projectRoleId,
+        roleDefinitionId: quickAssignCtx.roleDefinitionId,
+        role: quickAssignCtx.roleName,
+        allocationFte: quickAssignCtx.requiredFte,
+        serviceOfferingId: quickAssignCtx.serviceOfferingId,
+      });
+      setQuickAssignCtx(null);
+    });
+  };
+
+  const handleRemoveAssignment = (assignmentId: string, employeeName: string) => {
+    if (!confirm(`Remove ${employeeName} from this assignment?`)) return;
+    startTransition(async () => {
+      await removeAssignment(assignmentId);
+    });
+  };
+
   const handleDeleteRole = (projectRoleId: string) => {
     startTransition(async () => {
       await deleteProjectRole(projectRoleId);
@@ -192,12 +217,6 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, rol
     setAddDialogKey((k) => k + 1);
     setAddDialogDefaults(defaults);
     setAddDialogOpen(true);
-  };
-
-  const openEditDialog = (data: EditAssignmentData) => {
-    setEditDialogKey((k) => k + 1);
-    setEditAssignment(data);
-    setEditDialogOpen(true);
   };
 
   // Compute per-user allocation status for capacity filtering
@@ -883,7 +902,6 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, rol
 
                                         {/* ─── Employee Rows (Level 5) ─── */}
                                         {(showRoleHeader ? isRoleExpanded : true) && rg.rows.map((row) => {
-                                          const rowUnfilled = Math.max(0, Math.ceil(row.fte) - row.employees.length);
                                           const singleAssignment = row.source === "assignment" && row.assignmentIds.length === 1 && row.employees.length === 1;
                                           const assignmentId = singleAssignment ? row.assignmentIds[0] : null;
 
@@ -1006,65 +1024,20 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, rol
                                                       </Link>
                                                     </div>
                                                   ))}
-                                                  {rowUnfilled > 0 && Array.from({ length: rowUnfilled }).map((_, i) => (
-                                                    <div key={`unfilled-${i}`}
-                                                      className={`flex items-center gap-1.5 text-xs text-amber-600 ${canManage ? "cursor-pointer hover:text-primary" : ""}`}
-                                                      onClick={canManage ? () => openAddDialog({
-                                                        projectId: row.projectId || undefined,
-                                                        clientId: row.clientId || undefined,
-                                                        projectRoleId: row.projectRoleId || undefined,
-                                                        roleName: row.roleRequired || undefined,
-                                                      }) : undefined}
-                                                    >
-                                                      <UserPlus className="h-3 w-3" />
-                                                      <span className="font-medium">Open — click to fill</span>
-                                                    </div>
-                                                  ))}
-                                                  {row.employees.length === 0 && rowUnfilled === 0 && (
-                                                    <span className="text-xs text-muted-foreground italic">Unfilled</span>
+                                                  {row.employees.length === 0 && (
+                                                    <span className="text-xs text-muted-foreground italic">—</span>
                                                   )}
                                                 </div>
                                               </td>
-                                              {/* Edit icon */}
+                                              {/* Remove button */}
                                               <td className="py-1.5 px-2">
                                                 {singleAssignment && canManage ? (
                                                   <button
-                                                    onClick={() => {
-                                                      const emp = row.employees[0];
-                                                      const a = users.find((u) => u.id === emp.id)?.assignments.find((a) => a.id === row.assignmentIds[0]);
-                                                      if (a) openEditDialog({
-                                                        id: a.id, employeeId: emp.id, employeeName: emp.name,
-                                                        projectId: a.project?.id || null, clientId: a.client?.id || null,
-                                                        serviceOfferingId: a.serviceOffering?.id || null,
-                                                        function: a.function || "", role: a.role || "",
-                                                        allocationFte: a.allocationFte, status: a.status,
-                                                        startDate: a.startDate, endDate: a.endDate, notes: a.notes || "",
-                                                      });
-                                                    }}
-                                                    className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-primary transition-colors"
-                                                    title="Edit assignment"
+                                                    onClick={() => handleRemoveAssignment(row.assignmentIds[0], row.employees[0].name)}
+                                                    className="p-1 rounded hover:bg-destructive/10 text-muted-foreground/40 hover:text-destructive transition-colors"
+                                                    title={`Remove ${row.employees[0].name} from this assignment`}
                                                   >
-                                                    <Pencil className="h-3.5 w-3.5" />
-                                                  </button>
-                                                ) : row.source === "project-member" && canManage ? (
-                                                  <button
-                                                    onClick={() => openAddDialog({
-                                                      employeeId: row.employees[0]?.id,
-                                                      projectId: row.projectId || undefined,
-                                                      clientId: row.clientId || undefined,
-                                                    })}
-                                                    className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-primary transition-colors"
-                                                    title="Create assignment"
-                                                  >
-                                                    <UserCheck className="h-3.5 w-3.5" />
-                                                  </button>
-                                                ) : row.source === "unassigned" && canManage ? (
-                                                  <button
-                                                    onClick={() => openAddDialog({ employeeId: row.employees[0]?.id })}
-                                                    className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-primary transition-colors"
-                                                    title="Assign employee"
-                                                  >
-                                                    <UserCheck className="h-3.5 w-3.5" />
+                                                    <X className="h-3.5 w-3.5" />
                                                   </button>
                                                 ) : null}
                                               </td>
@@ -1077,13 +1050,18 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, rol
                                           <tr
                                             key={`unfilled-${roleExpandKey}-${i}`}
                                             className={`border-b border-border/10 border-l-4 ${color.border} transition-colors bg-background ${canManage ? "hover:bg-amber-50/50 cursor-pointer" : ""}`}
-                                            onClick={canManage && pg.projectId ? () => openAddDialog({
-                                              projectId: pg.projectId || undefined,
-                                              clientId: cg.clientId || undefined,
-                                              projectRoleId: rg.projectRoleId || undefined,
-                                              roleName: rg.role || undefined,
-                                              roleDefinitionId: rg.projectRoleId ? projectRoles.find((pr) => pr.id === rg.projectRoleId)?.roleDefinition?.id : undefined,
-                                            }) : undefined}
+                                            onClick={canManage && pg.projectId ? () => {
+                                              const proj = projects.find((p) => p.id === pg.projectId);
+                                              setQuickAssignCtx({
+                                                projectId: pg.projectId!,
+                                                clientId: cg.clientId || undefined,
+                                                projectRoleId: rg.projectRoleId || undefined,
+                                                roleDefinitionId: rg.projectRoleId ? projectRoles.find((pr) => pr.id === rg.projectRoleId)?.roleDefinition?.id : undefined,
+                                                roleName: rg.role || undefined,
+                                                requiredFte: rg.requiredFte || 1,
+                                                serviceOfferingId: proj?.serviceOfferingId || undefined,
+                                              });
+                                            } : undefined}
                                           >
                                             <td className="py-1.5 px-4" />
                                             <td className="py-1.5 px-3" />
@@ -1159,21 +1137,47 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, rol
             defaultRoleName={addDialogDefaults.roleName}
             defaultRoleDefinitionId={addDialogDefaults.roleDefinitionId}
           />
-          <EditAssignmentDialog
-            key={`edit-${editDialogKey}`}
-            open={editDialogOpen}
-            onClose={() => setEditDialogOpen(false)}
-            assignment={editAssignment}
-            projects={projects}
-            clients={clients}
-            serviceOfferings={serviceOfferings}
-          />
           <ManageOfferingsDialog
             open={offeringsDialogOpen}
             onClose={() => setOfferingsDialogOpen(false)}
             serviceOfferings={serviceOfferings}
           />
         </>
+      )}
+
+      {/* Quick Assign Dialog — simple employee picker */}
+      {quickAssignCtx && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setQuickAssignCtx(null)}>
+          <div className="bg-background rounded-lg shadow-xl border p-5 w-full max-w-sm space-y-4" onClick={(e) => e.stopPropagation()}>
+            <div>
+              <h3 className="font-semibold text-sm">Assign Employee</h3>
+              <p className="text-xs text-muted-foreground mt-1">
+                {projects.find((p) => p.id === quickAssignCtx.projectId)?.name}
+                {quickAssignCtx.roleName && <> — <span className="font-medium">{quickAssignCtx.roleName}</span></>}
+                {" "}({formatFte(quickAssignCtx.requiredFte)} FTE)
+              </p>
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium">Select Employee</label>
+              <select
+                autoFocus
+                onChange={(e) => {
+                  if (e.target.value) handleQuickAssign(e.target.value);
+                }}
+                className="w-full h-10 rounded border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+              >
+                <option value="">Choose employee...</option>
+                {users.map((u) => (
+                  <option key={u.id} value={u.id}>{u.name}{u.jobTitle ? ` — ${u.jobTitle}` : ""}</option>
+                ))}
+              </select>
+            </div>
+            <div className="flex justify-end">
+              <button onClick={() => setQuickAssignCtx(null)}
+                className="px-3 py-1.5 text-sm rounded border border-input hover:bg-muted">Cancel</button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Add Project Role Dialog */}

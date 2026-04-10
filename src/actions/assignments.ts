@@ -112,6 +112,55 @@ export async function deleteAssignment(_prev: unknown, formData: FormData) {
   return { success: true, error: null };
 }
 
+// Direct delete (for inline remove from staffing matrix)
+export async function removeAssignment(assignmentId: string) {
+  const user = await requireAuth();
+  requireAdminOrManager(user.role);
+
+  if (!assignmentId) return { error: "Assignment ID is required" };
+  await db.assignment.delete({ where: { id: assignmentId } });
+  await logActivity("deleted", "assignment", assignmentId, user.id);
+  revalidatePath("/team");
+  revalidatePath("/projects");
+  return { success: true };
+}
+
+// Direct create (for quick-assign from staffing matrix)
+export async function quickAssign(data: {
+  employeeId: string;
+  projectId: string;
+  clientId?: string;
+  projectRoleId?: string;
+  roleDefinitionId?: string;
+  role?: string;
+  allocationFte: number;
+  serviceOfferingId?: string;
+}) {
+  const user = await requireAuth();
+  requireAdminOrManager(user.role);
+
+  if (!data.employeeId || !data.projectId) return { error: "Employee and project are required" };
+
+  const assignment = await db.assignment.create({
+    data: {
+      employeeId: data.employeeId,
+      projectId: data.projectId,
+      clientId: data.clientId || undefined,
+      projectRoleId: data.projectRoleId || undefined,
+      roleDefinitionId: data.roleDefinitionId || undefined,
+      role: data.role || undefined,
+      allocationFte: data.allocationFte,
+      serviceOfferingId: data.serviceOfferingId || undefined,
+      status: "ACTIVE",
+    },
+  });
+
+  await logActivity("created", "assignment", assignment.id, user.id, `Quick-assigned to project`);
+  revalidatePath("/team");
+  revalidatePath("/projects");
+  return { success: true };
+}
+
 // Inline field updates (for staffing matrix direct editing)
 export async function updateAssignmentNotes(assignmentId: string, notes: string) {
   const user = await requireAuth();
