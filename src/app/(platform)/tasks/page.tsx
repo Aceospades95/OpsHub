@@ -174,10 +174,13 @@ export default async function TasksPage({
                           </div>
                         </div>
                         {task.assignee && (
-                          <div className="flex items-center gap-1.5 shrink-0">
+                          <Link
+                            href={`/team/${task.assignee.id}`}
+                            className="flex items-center gap-1.5 shrink-0 hover:text-primary"
+                          >
                             <Avatar name={task.assignee.name} size="xs" />
-                            <span className="text-xs text-muted-foreground hidden sm:inline">{task.assignee.name}</span>
-                          </div>
+                            <span className="text-xs text-muted-foreground hover:text-primary hidden sm:inline">{task.assignee.name}</span>
+                          </Link>
                         )}
                       </div>
                     </CardContent>
@@ -203,7 +206,11 @@ export default async function TasksPage({
                           <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
                             {task.project && <span>{task.project.name}</span>}
                             {task.client && <span>{task.client.name}</span>}
-                            {task.assignee && <span>{task.assignee.name}</span>}
+                            {task.assignee && (
+                              <Link href={`/team/${task.assignee.id}`} className="hover:text-primary hover:underline">
+                                {task.assignee.name}
+                              </Link>
+                            )}
                             <span>{statusLabels[task.status]}</span>
                           </div>
                         </div>

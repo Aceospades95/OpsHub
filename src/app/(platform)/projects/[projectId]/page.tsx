@@ -113,7 +113,7 @@ export default async function ProjectDetailPage({ params }: Props) {
     db.task.findMany({
       where: { projectId: project.id, status: { in: ["TODO", "IN_PROGRESS"] } },
       orderBy: [{ priority: "asc" }, { dueDate: "asc" }],
-      include: { assignee: { select: { name: true } } },
+      include: { assignee: { select: { id: true, name: true } } },
       take: 10,
     }),
     db.tool.findMany({
@@ -319,7 +319,11 @@ export default async function ProjectDetailPage({ params }: Props) {
                     <div className="min-w-0">
                       <p className="text-sm font-medium truncate">{task.title}</p>
                       <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                        {task.assignee && <span>{task.assignee.name}</span>}
+                        {task.assignee && (
+                          <Link href={`/team/${task.assignee.id}`} className="hover:text-primary hover:underline">
+                            {task.assignee.name}
+                          </Link>
+                        )}
                         {task.dueDate && (
                           <span className={`flex items-center gap-1 ${new Date(task.dueDate) < new Date() ? "text-destructive" : ""}`}>
                             <Clock className="h-3 w-3" />

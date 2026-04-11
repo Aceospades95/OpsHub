@@ -52,7 +52,7 @@ export default async function ClientDetailPage({ params }: Props) {
   const tasks = await db.task.findMany({
     where: { clientId: client.id, status: { in: ["TODO", "IN_PROGRESS"] } },
     orderBy: [{ priority: "asc" }, { dueDate: "asc" }],
-    include: { assignee: { select: { name: true } } },
+    include: { assignee: { select: { id: true, name: true } } },
     take: 10,
   });
 
@@ -190,10 +190,10 @@ export default async function ClientDetailPage({ params }: Props) {
           </CardHeader>
           <CardContent>
             {client.accountManager ? (
-              <div className="flex items-center gap-3">
+              <Link href={`/team/${client.accountManager.id}`} className="flex items-center gap-3 hover:text-primary">
                 <Avatar name={client.accountManager.name || "?"} size="sm" />
-                <span className="text-sm font-medium">{client.accountManager.name}</span>
-              </div>
+                <span className="text-sm font-medium hover:underline">{client.accountManager.name}</span>
+              </Link>
             ) : (
               <p className="text-sm text-muted-foreground">Not assigned</p>
             )}
@@ -237,7 +237,11 @@ export default async function ClientDetailPage({ params }: Props) {
                   <div className="min-w-0">
                     <p className="font-medium truncate">{task.title}</p>
                     <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                      {task.assignee && <span>{task.assignee.name}</span>}
+                      {task.assignee && (
+                        <Link href={`/team/${task.assignee.id}`} className="hover:text-primary hover:underline">
+                          {task.assignee.name}
+                        </Link>
+                      )}
                       {task.dueDate && (
                         <span className={`flex items-center gap-1 ${new Date(task.dueDate) < new Date() ? "text-destructive" : ""}`}>
                           <Clock className="h-3 w-3" />

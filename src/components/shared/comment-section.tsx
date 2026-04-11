@@ -3,6 +3,7 @@
 import { useFormState } from "react-dom";
 import { useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -76,22 +77,35 @@ export function CommentSection({
     router.refresh();
   }
 
+  // Display comments chronologically with oldest at top and newest at bottom,
+  // so the newest comment sits right above the compose box. Callers often pass
+  // data already sorted descending — we normalize here so every place that
+  // uses this component gets the same behavior.
+  const sortedComments = [...comments].sort(
+    (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+  );
+
   return (
     <div className="space-y-4">
       <h3 className="text-sm font-semibold text-foreground">Comments</h3>
 
-      {comments.length === 0 && (
+      {sortedComments.length === 0 && (
         <p className="text-sm text-muted-foreground">No comments yet</p>
       )}
 
       <div className="space-y-3">
-        {comments.map((comment) => (
+        {sortedComments.map((comment) => (
           <div key={comment.id} className="flex gap-3">
             <Avatar name={comment.author.name} size="sm" />
             <div className="flex-1 rounded border border-border bg-card p-3">
               <div className="flex items-center justify-between mb-1">
                 <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium">{comment.author.name}</span>
+                  <Link
+                    href={`/team/${comment.author.id}`}
+                    className="text-sm font-medium hover:text-primary hover:underline"
+                  >
+                    {comment.author.name}
+                  </Link>
                   <span className="text-xs text-muted-foreground">
                     {formatDistanceToNow(comment.createdAt, { addSuffix: true })}
                   </span>

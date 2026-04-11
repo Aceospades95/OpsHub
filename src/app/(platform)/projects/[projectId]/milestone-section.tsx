@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -111,7 +112,9 @@ export function MilestoneSection({ milestones, projectId, allUsers, canEdit, can
                 <div className="flex items-center gap-1">
                   {ms.assignees.map((a) => (
                     <div key={a.id} className="flex items-center gap-1">
-                      <Avatar name={a.user.name} size="xs" />
+                      <Link href={`/team/${a.user.id}`} title={a.user.name} className="hover:opacity-80">
+                        <Avatar name={a.user.name} size="xs" />
+                      </Link>
                       {canEdit && (
                         <button onClick={() => handleUnassign(a.id)} className="text-muted-foreground hover:text-destructive">
                           <X className="h-2.5 w-2.5" />

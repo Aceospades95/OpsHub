@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { requireAuth } from "@/lib/permissions";
 import { logActivity } from "@/lib/activity";
 import { revalidatePath } from "next/cache";
+import { revalidateUser } from "@/lib/revalidate-entity";
 import { hash } from "bcryptjs";
 import { z } from "zod";
 
@@ -67,8 +68,7 @@ export async function createUser(_prev: unknown, formData: FormData) {
   });
 
   await logActivity("created", "user", user.id, admin.id, user.name);
-  revalidatePath("/admin/users");
-  revalidatePath("/team");
+  revalidateUser(user.id, { managerId: user.managerId });
   return { success: true };
 }
 
@@ -125,16 +125,22 @@ export async function updateUser(_prev: unknown, formData: FormData) {
     }
   }
 
+  // Look up the previous manager so we can revalidate their page too if it changed
+  const previous = await db.user.findUnique({
+    where: { id },
+    select: { managerId: true },
+  });
+
   // Use null instead of undefined to actually clear the field
   await db.user.update({
     where: { id },
     data: { ...parsed.data, managerId: managerId },
   });
   await logActivity("updated", "user", id, admin.id, parsed.data.name);
-  revalidatePath(`/admin/users/${id}`);
-  revalidatePath("/admin/users");
-  revalidatePath("/team");
-  revalidatePath(`/team/${id}`);
+  revalidateUser(id, {
+    managerId,
+    previousManagerId: previous?.managerId ?? null,
+  });
   return { success: true };
 }
 
@@ -150,8 +156,7 @@ export async function deleteUser(_prev: unknown, formData: FormData) {
 
   await db.user.delete({ where: { id } });
   await logActivity("deleted", "user", id, admin.id, user.name);
-  revalidatePath("/admin/users");
-  revalidatePath("/team");
+  revalidateUser(id, { managerId: user.managerId });
   return { success: true };
 }
 
@@ -168,8 +173,7 @@ export async function toggleUserActive(_prev: unknown, formData: FormData) {
     data: { isActive: !user.isActive },
   });
 
-  revalidatePath("/admin/users");
-  revalidatePath("/team");
+  revalidateUser(id, { managerId: user.managerId });
   return { success: true };
 }
 
@@ -195,8 +199,7 @@ export async function saveModulePermissions(_prev: unknown, formData: FormData) 
     });
   }
 
-  revalidatePath(`/admin/users/${userId}`);
-  revalidatePath(`/team/${userId}`);
+  revalidateUser(userId);
   return { success: true };
 }
 
@@ -230,8 +233,7 @@ export async function saveEntityPermission(_prev: unknown, formData: FormData) {
     },
   });
 
-  revalidatePath(`/admin/users/${userId}`);
-  revalidatePath(`/team/${userId}`);
+  revalidateUser(userId);
   return { success: true };
 }
 
@@ -240,8 +242,8 @@ export async function deleteEntityPermission(_prev: unknown, formData: FormData)
   requireAdminOrManager(admin.role);
 
   const id = formData.get("id") as string;
+  const perm = await db.entityPermission.findUnique({ where: { id }, select: { userId: true } });
   await db.entityPermission.delete({ where: { id } });
-  revalidatePath("/admin/users");
-  revalidatePath("/team");
+  if (perm?.userId) revalidateUser(perm.userId);
   return { success: true };
 }

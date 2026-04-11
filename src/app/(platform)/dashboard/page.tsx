@@ -61,7 +61,7 @@ export default async function DashboardPage() {
     db.activityLog.findMany({
       take: 10,
       orderBy: { createdAt: "desc" },
-      include: { user: { select: { name: true } } },
+      include: { user: { select: { id: true, name: true } } },
     }),
     db.task.findMany({
       where: {
@@ -235,7 +235,9 @@ export default async function DashboardPage() {
                   <Avatar name={log.user.name} size="xs" />
                   <div className="flex-1 min-w-0">
                     <p className="text-sm">
-                      <span className="font-medium">{log.user.name}</span>{" "}
+                      <Link href={`/team/${log.user.id}`} className="font-medium hover:text-primary hover:underline">
+                        {log.user.name}
+                      </Link>{" "}
                       <span className="text-muted-foreground">{log.action}</span>{" "}
                       <span className="text-muted-foreground">
                         {log.entityType}
