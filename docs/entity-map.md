@@ -619,6 +619,92 @@ The sandbox edit form uses the picker; the sandbox list page renders
 the icon next to each page title via `<Icon>`. Adding more pages or
 modules that want a custom icon is just two lines per place.
 
+## CSV import workflow
+
+Bulk-create records from CSV uploads. Same registry pattern as the email,
+storage, jobs, and notification layers — definitions in a registry, single
+commit() entry point per importer, admin wizard with auto-mapping, audit
+log of every run.
+
+### Adding a new importer
+
+```ts
+// src/lib/importers/importers/clients.ts
+import type { ImporterDefinition } from "../types";
+
+export const clientsImporter: ImporterDefinition = {
+  key: "clients",
+  name: "Clients",
+  description: "Bulk-create client records from a CSV.",
+  module: "clients",
+  fields: [
+    { key: "name", label: "Name", required: true, aliases: ["company name"] },
+    { key: "industry", label: "Industry", required: false },
+    // ...
+  ],
+  async commit(rows, ctx) {
+    // Validate, dedupe, write, return ImportResult
+  },
+};
+```
+
+Then register it in `src/lib/importers/registry.ts`. The admin wizard at
+`/admin/import` picks it up automatically.
+
+### Wizard flow
+
+1. **Pick importer** at `/admin/import`
+2. **Upload CSV** (max 10MB)
+3. **Preview + map** — first 20 rows + auto-mapped form, user can override
+4. **Commit** — runs the importer's commit handler, persists ImportLog
+5. **Result** — imported / skipped / failed counts + per-row errors
+
+The mapping form is pre-populated by `autoMapHeaders()` which matches CSV
+headers against each importer field's key, label, and aliases
+case-insensitively. Aliases let an importer accept common header
+variations (e.g. "Email" / "email address" / "work email") without
+forcing the user to manually map every column.
+
+### CSV parser
+
+`src/lib/importers/csv-parser.ts` is a small dependency-free parser that
+handles quoted fields with embedded commas, newlines, and escaped quotes,
+plus LF/CRLF/CR line endings and trimmed headers. Doesn't support custom
+delimiters or comment lines. Public API is a single `parseCsv()` function
+so swapping in papaparse later is a one-file change.
+
+### Built-in importers
+
+| Key | Target | Required | Notes |
+|---|---|---|---|
+| `users` | User table | name, email | Resolves managerEmail in a second pass so manager + reports can be in the same file |
+
+The users importer demonstrates the patterns to copy: required field
+validation, case-insensitive duplicate detection against existing rows
+AND prior rows in the same file, enum validation, boolean parsing with
+multiple accepted forms, cross-row resolution, activity logging on
+every successful row.
+
+### ImportLog model
+
+Every commit run records `importerKey`, `filename`, `rowCount`,
+`imported`, `skipped`, `errors` (JSON of `{row, status, message}`),
+`triggeredBy`, `createdAt`. Indexed on `(importerKey, createdAt)` for
+the per-importer history view and on `createdAt` for the global recent
+list. Visible at `/admin/import` (last 20 runs).
+
+### Server actions
+
+`src/actions/import.ts`:
+
+- `previewImport(formData)` — parses the file, returns headers + auto
+  mapping + first 20 rows. Does NOT write any data.
+- `commitImport(formData)` — re-parses, applies the user mapping, runs
+  the importer's commit handler, persists ImportLog, revalidates the
+  layout so newly-imported records show up everywhere
+
+Both are admin-only, file size capped at 10MB.
+
 ## How to extend this document
 
 When you add a new module or feature:

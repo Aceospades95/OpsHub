@@ -31,7 +31,8 @@ export type ModuleKey =
   | "emails"
   | "files"
   | "notifications"
-  | "jobs";
+  | "jobs"
+  | "import";
 
 export type PermissionFlag =
   | "canView"
@@ -276,6 +277,15 @@ export const MODULES: ModuleDefinition[] = [
     href: "/admin/jobs",
     icon: "Repeat",
     description: "Recurring background jobs and run history",
+    section: "admin",
+    permissioned: false,
+  },
+  {
+    key: "import",
+    label: "Data Import",
+    href: "/admin/import",
+    icon: "FileSpreadsheet",
+    description: "Bulk-create records from CSV uploads",
     section: "admin",
     permissioned: false,
   },

@@ -808,6 +808,29 @@ model Assignment {
   @@index([status])
 }
 
+// ─── DATA IMPORTS ──────────────────────────────────────
+//
+// Audit log for CSV imports through src/lib/importers/. Each row records
+// one import run — what was uploaded, who did it, how many rows were
+// created vs skipped, and any per-row error messages.
+
+model ImportLog {
+  id          String   @id @default(cuid())
+  importerKey String   // matches a key in the importer registry
+  filename    String
+  rowCount    Int      // total parsed rows
+  imported    Int      // successfully created
+  skipped     Int      // skipped (duplicates, dry-run, etc.)
+  /** JSON array of { row, message } error entries */
+  errors      String?  @db.Text
+  triggeredBy String   // user id
+  createdAt   DateTime @default(now())
+
+  @@index([importerKey, createdAt])
+  @@index([createdAt])
+  @@index([triggeredBy])
+}
+
 // ─── SCHEDULED JOBS ────────────────────────────────────
 //
 // Audit log for scheduled job runs. Each row records one execution of a

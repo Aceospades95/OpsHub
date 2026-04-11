@@ -24,6 +24,7 @@ import {
   HardDrive,
   Bell,
   Repeat,
+  FileSpreadsheet,
   ChevronLeft,
   ChevronRight,
   Menu,
@@ -71,6 +72,7 @@ const ICON_MAP: Record<string, LucideIcon> = {
   HardDrive,
   Bell,
   Repeat,
+  FileSpreadsheet,
 };
 
 // Default labels/hrefs/icons come from the canonical module registry so there
@@ -88,6 +90,7 @@ const ROLE_GATED: Record<string, (role: string) => boolean> = {
   files: (role) => role === "ADMIN",
   notifications: (role) => role === "ADMIN",
   jobs: (role) => role === "ADMIN",
+  import: (role) => role === "ADMIN",
 };
 
 // Modules always visible regardless of permissions
