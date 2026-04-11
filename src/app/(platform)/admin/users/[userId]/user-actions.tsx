@@ -13,7 +13,7 @@ import { Pencil, Trash2 } from "lucide-react";
 interface Props {
   user: {
     id: string; name: string; email: string; role: string;
-    department: string | null; jobTitle: string | null; phone: string | null;
+    department: string | null; jobTitle: string | null; location: string | null; phone: string | null;
     managerId: string | null; isActive: boolean;
   };
   allUsers: { id: string; name: string }[];
@@ -45,6 +45,7 @@ export function UserActions({ user, allUsers }: Props) {
             <Select name="role" label="Role" defaultValue={user.role} options={[{label:"Viewer",value:"VIEWER"},{label:"Contributor",value:"CONTRIBUTOR"},{label:"Developer",value:"DEVELOPER"},{label:"Manager",value:"MANAGER"},{label:"Admin",value:"ADMIN"}]} />
             <Input name="department" label="Department" defaultValue={user.department || ""} />
             <Input name="jobTitle" label="Job Title" defaultValue={user.jobTitle || ""} />
+            <Input name="location" label="Location" defaultValue={user.location || ""} placeholder="e.g. New York, NY" />
             <Input name="phone" label="Phone" defaultValue={user.phone || ""} />
             <Select name="managerId" label="Manager" defaultValue={user.managerId || ""} options={allUsers.map(u => ({ label: u.name, value: u.id }))} placeholder="None" />
             <label className="flex items-center gap-2 text-sm">

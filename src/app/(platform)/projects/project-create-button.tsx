@@ -20,6 +20,7 @@ interface Props {
 export function ProjectCreateButton({ clients, projects, serviceOfferings, defaultClientId, defaultParentId }: Props) {
   const [open, setOpen] = useState(false);
   const [creatingNewClient, setCreatingNewClient] = useState(false);
+  const [creatingNewOffering, setCreatingNewOffering] = useState(false);
   const [selectedRelated, setSelectedRelated] = useState<string[]>([]);
 
   const toggleRelated = (id: string) => {
@@ -31,6 +32,7 @@ export function ProjectCreateButton({ clients, projects, serviceOfferings, defau
   const handleClose = () => {
     setOpen(false);
     setCreatingNewClient(false);
+    setCreatingNewOffering(false);
     setSelectedRelated([]);
   };
 
@@ -108,14 +110,42 @@ export function ProjectCreateButton({ clients, projects, serviceOfferings, defau
                 ]}
               />
 
-              {serviceOfferings && serviceOfferings.length > 0 && (
-                <Select
-                  name="serviceOfferingId"
-                  label="Service Offering"
-                  options={serviceOfferings.map((so) => ({ label: so.name, value: so.id }))}
-                  placeholder="Select offering..."
-                />
-              )}
+              {/* Service Offering: select existing or create new inline */}
+              <div>
+                {creatingNewOffering ? (
+                  <>
+                    <Input
+                      name="newServiceOfferingName"
+                      label="New Service Offering"
+                      placeholder="e.g. Cloud Migration"
+                      required
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setCreatingNewOffering(false)}
+                      className="mt-1 text-xs text-primary hover:underline"
+                    >
+                      Select existing offering instead
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <Select
+                      name="serviceOfferingId"
+                      label="Service Offering"
+                      options={(serviceOfferings || []).map((so) => ({ label: so.name, value: so.id }))}
+                      placeholder="Select offering..."
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setCreatingNewOffering(true)}
+                      className="mt-1 text-xs text-primary hover:underline"
+                    >
+                      + Create new offering
+                    </button>
+                  </>
+                )}
+              </div>
             </div>
 
             <div className="grid grid-cols-2 gap-4">

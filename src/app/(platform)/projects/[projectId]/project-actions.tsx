@@ -31,7 +31,14 @@ interface Props {
 export function ProjectActions({ project, clients, serviceOfferings, canEdit, canDelete }: Props) {
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [creatingNewOffering, setCreatingNewOffering] = useState(false);
   const router = useRouter();
+
+  // Reset the "new offering" toggle when the edit dialog closes
+  function handleCloseEdit() {
+    setEditOpen(false);
+    setCreatingNewOffering(false);
+  }
 
   async function handleDelete() {
     const fd = new FormData();
@@ -47,7 +54,7 @@ export function ProjectActions({ project, clients, serviceOfferings, canEdit, ca
           <Button variant="outline" size="sm" onClick={() => setEditOpen(true)}>
             <Pencil className="h-4 w-4 mr-1" /> Edit
           </Button>
-          <FormDialog open={editOpen} onClose={() => setEditOpen(false)} title="Edit Project" action={updateProject}>
+          <FormDialog open={editOpen} onClose={handleCloseEdit} title="Edit Project" action={updateProject}>
             {({ fieldErrors }) => (
               <>
                 <input type="hidden" name="id" value={project.id} />
@@ -72,15 +79,43 @@ export function ProjectActions({ project, clients, serviceOfferings, canEdit, ca
                       { label: "Archived", value: "ARCHIVED" },
                     ]}
                   />
-                  {serviceOfferings.length > 0 && (
-                    <Select
-                      name="serviceOfferingId"
-                      label="Service Offering"
-                      defaultValue={project.serviceOfferingId || ""}
-                      options={serviceOfferings.map((so) => ({ label: so.name, value: so.id }))}
-                      placeholder="Select offering..."
-                    />
-                  )}
+                  {/* Service Offering: select existing or create new inline */}
+                  <div>
+                    {creatingNewOffering ? (
+                      <>
+                        <Input
+                          name="newServiceOfferingName"
+                          label="New Service Offering"
+                          placeholder="e.g. Cloud Migration"
+                          required
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setCreatingNewOffering(false)}
+                          className="mt-1 text-xs text-primary hover:underline"
+                        >
+                          Select existing offering instead
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <Select
+                          name="serviceOfferingId"
+                          label="Service Offering"
+                          defaultValue={project.serviceOfferingId || ""}
+                          options={serviceOfferings.map((so) => ({ label: so.name, value: so.id }))}
+                          placeholder="Select offering..."
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setCreatingNewOffering(true)}
+                          className="mt-1 text-xs text-primary hover:underline"
+                        >
+                          + Create new offering
+                        </button>
+                      </>
+                    )}
+                  </div>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <Input name="startDate" label="Start Date" type="date" defaultValue={project.startDate?.toISOString().split("T")[0] || ""} />

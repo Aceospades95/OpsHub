@@ -35,6 +35,32 @@ export async function createProject(_prev: unknown, formData: FormData) {
     await logActivity("created", "client", newClient.id, user.id, newClient.name);
   }
 
+  // Handle inline service offering creation — same pattern as inline client.
+  // If the user picked "+ Add new..." and typed a name, create the offering
+  // first so it's in the dropdown's list for future forms.
+  let serviceOfferingId = formData.get("serviceOfferingId") as string;
+  const newServiceOfferingName = (formData.get("newServiceOfferingName") as string)?.trim();
+
+  if ((!serviceOfferingId || serviceOfferingId === "__new__") && newServiceOfferingName) {
+    // Reuse an existing offering by name if one already exists (case-insensitive)
+    // so duplicate typing doesn't create parallel rows
+    const existing = await db.serviceOffering.findFirst({
+      where: { name: { equals: newServiceOfferingName, mode: "insensitive" } },
+    });
+    if (existing) {
+      serviceOfferingId = existing.id;
+    } else {
+      const newOffering = await db.serviceOffering.create({
+        data: { name: newServiceOfferingName, isActive: true },
+      });
+      serviceOfferingId = newOffering.id;
+      await logActivity("created", "serviceOffering", newOffering.id, user.id, newOffering.name);
+    }
+  } else if (serviceOfferingId === "__new__") {
+    // Sentinel left over without a name — treat as no selection
+    serviceOfferingId = "";
+  }
+
   const parsed = projectSchema.safeParse({
     name: formData.get("name"),
     description: formData.get("description") || undefined,
@@ -43,7 +69,7 @@ export async function createProject(_prev: unknown, formData: FormData) {
     endDate: formData.get("endDate") || undefined,
     clientId,
     parentProjectId: formData.get("parentProjectId") || undefined,
-    serviceOfferingId: formData.get("serviceOfferingId") || undefined,
+    serviceOfferingId: serviceOfferingId || undefined,
   });
 
   if (!parsed.success) return { error: "Invalid input", fieldErrors: parsed.error.flatten().fieldErrors };
@@ -85,6 +111,29 @@ export async function updateProject(_prev: unknown, formData: FormData) {
   if (!perms.canEdit) return { error: "Permission denied" };
 
   const id = formData.get("id") as string;
+
+  // Handle inline service offering creation on edit too — same pattern
+  // as createProject.
+  let serviceOfferingId = formData.get("serviceOfferingId") as string;
+  const newServiceOfferingName = (formData.get("newServiceOfferingName") as string)?.trim();
+
+  if ((!serviceOfferingId || serviceOfferingId === "__new__") && newServiceOfferingName) {
+    const existing = await db.serviceOffering.findFirst({
+      where: { name: { equals: newServiceOfferingName, mode: "insensitive" } },
+    });
+    if (existing) {
+      serviceOfferingId = existing.id;
+    } else {
+      const newOffering = await db.serviceOffering.create({
+        data: { name: newServiceOfferingName, isActive: true },
+      });
+      serviceOfferingId = newOffering.id;
+      await logActivity("created", "serviceOffering", newOffering.id, user.id, newOffering.name);
+    }
+  } else if (serviceOfferingId === "__new__") {
+    serviceOfferingId = "";
+  }
+
   const parsed = projectSchema.safeParse({
     name: formData.get("name"),
     description: formData.get("description") || undefined,
@@ -93,7 +142,7 @@ export async function updateProject(_prev: unknown, formData: FormData) {
     endDate: formData.get("endDate") || undefined,
     clientId: formData.get("clientId"),
     parentProjectId: formData.get("parentProjectId") || undefined,
-    serviceOfferingId: formData.get("serviceOfferingId") || undefined,
+    serviceOfferingId: serviceOfferingId || undefined,
   });
 
   if (!parsed.success) return { error: "Invalid input", fieldErrors: parsed.error.flatten().fieldErrors };
