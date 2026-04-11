@@ -805,6 +805,33 @@ model Assignment {
   @@index([status])
 }
 
+// ─── SCHEDULED JOBS ────────────────────────────────────
+//
+// Audit log for scheduled job runs. Each row records one execution of a
+// job defined in src/lib/jobs/. Jobs can be triggered by the cron endpoint
+// (/api/jobs/run) or manually from /admin/jobs.
+
+model JobLog {
+  id          String    @id @default(cuid())
+  jobKey      String    // matches a key in the job registry
+  status      String    // "running" | "completed" | "failed"
+  startedAt   DateTime  @default(now())
+  finishedAt  DateTime?
+  durationMs  Int?
+  /** Free-form summary string the job handler returns */
+  output      String?   @db.Text
+  /** Stack/message when status = "failed" */
+  error       String?   @db.Text
+  /** Number of items the job processed (for at-a-glance metrics) */
+  processed   Int?
+  /** "cron" for scheduled runs, or a user id for manual runs */
+  triggeredBy String
+
+  @@index([jobKey, startedAt])
+  @@index([startedAt])
+  @@index([status])
+}
+
 // ─── NOTIFICATIONS ─────────────────────────────────────
 //
 // In-app notification for a user. Written by src/lib/notifications/notify().

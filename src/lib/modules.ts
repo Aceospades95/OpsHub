@@ -30,7 +30,8 @@ export type ModuleKey =
   | "sidebar"
   | "emails"
   | "files"
-  | "notifications";
+  | "notifications"
+  | "jobs";
 
 export type PermissionFlag =
   | "canView"
@@ -266,6 +267,15 @@ export const MODULES: ModuleDefinition[] = [
     href: "/admin/notifications",
     icon: "Bell",
     description: "In-app notification audit and test sender",
+    section: "admin",
+    permissioned: false,
+  },
+  {
+    key: "jobs",
+    label: "Scheduled Jobs",
+    href: "/admin/jobs",
+    icon: "Repeat",
+    description: "Recurring background jobs and run history",
     section: "admin",
     permissioned: false,
   },

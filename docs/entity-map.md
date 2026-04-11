@@ -424,6 +424,109 @@ contract renewal warnings (needs a scheduled job), certification expiry
 warnings (same), and onboarding workflow steps (needs the workflow
 engine from a later session).
 
+## Scheduled jobs infrastructure
+
+Recurring background tasks live in `src/lib/jobs/`. Same shape as the
+email and storage layers: definitions in a registry, single `runJob()`
+entry point, admin viewer with run history.
+
+### Adding a new job
+
+```ts
+// src/lib/jobs/jobs/my-job.ts
+import type { JobDefinition } from "../types";
+
+export const myJob: JobDefinition = {
+  key: "my-job",
+  name: "My job",
+  description: "What this job does",
+  schedule: "Daily",
+  async handler(ctx) {
+    // ...do work...
+    return { output: "Summary string", processed: 5 };
+  },
+};
+```
+
+Then register it:
+
+```ts
+// src/lib/jobs/registry.ts
+import { myJob } from "./jobs/my-job";
+
+export const JOBS: JobDefinition[] = [
+  // ...existing jobs...
+  myJob,
+];
+```
+
+The admin page `/admin/jobs` and the cron endpoint pick it up
+automatically. Handlers should be **idempotent** — they may run more
+than once in a window if cron retries or admins manually trigger.
+
+### Triggering jobs
+
+Three ways:
+
+1. **External cron** — `POST /api/jobs/run` with the `x-cron-secret`
+   header set to `CRON_SECRET`. Add `?job=KEY` to run a single job, or
+   omit it to run every registered job sequentially. Compatible with
+   Vercel Cron, GitHub Actions schedules, OS cron + curl, etc.
+
+2. **Manual via admin UI** — `/admin/jobs` shows every registered job
+   with a "Run now" button. Manual runs are recorded with
+   `triggeredBy = user.id` so they're distinguishable from cron runs
+   in the history.
+
+3. **In-process from another action** — `import { runJob } from
+   "@/lib/jobs"` and call directly. Used when a job needs to fire
+   in response to a user action (rare).
+
+### Concurrency
+
+The runner has a built-in concurrency guard: if a job is currently
+running (status="running" within the last hour), the next call returns
+`status: "skipped"` instead of starting a duplicate. Manual admin
+triggers bypass this with `force: true` so a stuck job can be re-run.
+
+### Built-in starter jobs
+
+| Key | Purpose | Schedule |
+|---|---|---|
+| `contract-expiry-check` | Notifies account managers when contracts are within 30 days of end/renewal | Daily |
+| `certification-expiry-check` | Notifies responsible parties when certifications enter their renewal lead window | Daily |
+| `cleanup-stale-notifications` | Deletes read notifications older than 60 days | Weekly |
+
+The first two demonstrate the notify() integration pattern. The third
+is pure DB maintenance.
+
+### JobLog model
+
+Every run lands in `JobLog` with `jobKey`, `status`, `startedAt`,
+`finishedAt`, `durationMs`, `output`, `error`, `processed`,
+`triggeredBy`. Indexed on `(jobKey, startedAt)` for the per-job last-run
+lookup and on `startedAt` for the global recent-runs view.
+
+### Production setup
+
+1. Set `CRON_SECRET` in env to a long random string
+2. Configure your cron provider to POST to `/api/jobs/run` on the
+   schedules you need (typically: daily for expiry checks, weekly for
+   cleanup). Vercel Cron syntax example:
+
+   ```json
+   {
+     "crons": [
+       { "path": "/api/jobs/run?job=contract-expiry-check", "schedule": "0 6 * * *" },
+       { "path": "/api/jobs/run?job=certification-expiry-check", "schedule": "0 6 * * *" },
+       { "path": "/api/jobs/run?job=cleanup-stale-notifications", "schedule": "0 3 * * 0" }
+     ]
+   }
+   ```
+
+   Vercel Cron will need to send the secret. For other providers,
+   include the `x-cron-secret` header with the configured value.
+
 ## How to extend this document
 
 When you add a new module or feature:
