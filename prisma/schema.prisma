@@ -670,6 +670,9 @@ model SandboxPage {
   description String?  @db.Text
   content     String?  @db.Text
   layout      String   @default("default") // default, wide, full
+  /** Lucide icon name (e.g., "FileText", "BookOpen"). Resolved at render
+      time via the icon picker's IconMap. Null = use the default. */
+  icon        String?
   published   Boolean  @default(false)
   createdById String
   projectId   String?

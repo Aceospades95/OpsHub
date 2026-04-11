@@ -1,68 +1,37 @@
-"use client";
+import { getBranding } from "@/lib/branding";
+import { LoginForm } from "./login-form";
 
-import { useFormState } from "react-dom";
-import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
-import { loginAction } from "@/actions/auth";
-import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
-import Link from "next/link";
-
-export default function LoginPage() {
-  const [state, formAction] = useFormState(loginAction, null);
-  const [pending, setPending] = useState(false);
-  const router = useRouter();
-
-  useEffect(() => {
-    setPending(false);
-    if (state?.success) {
-      router.push("/dashboard");
-    }
-  }, [state, router]);
+/**
+ * Login page — server component so we can fetch branding (company name,
+ * logo, background image) before rendering. The form interaction lives
+ * in LoginForm as a client component.
+ *
+ * The background image is rendered behind a semi-transparent overlay so
+ * the card stays readable even with photographic backgrounds.
+ */
+export default async function LoginPage() {
+  const branding = await getBranding();
+  const companyName = branding.companyName || "OpsHub";
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-muted px-4">
-      <div className="w-full max-w-md rounded border border-border bg-card p-6 sm:p-8 shadow-sm">
-        <div className="mb-8 text-center">
-          <h1 className="text-2xl font-bold text-primary">OpsHub</h1>
-          <p className="mt-1 text-sm text-muted-foreground">Sign in to your account</p>
-        </div>
-
-        {state?.error && (
-          <div className="mb-4 rounded bg-destructive/10 p-3 text-sm text-destructive">
-            {state.error}
-          </div>
-        )}
-
-        <form action={formAction} onSubmit={() => setPending(true)} className="space-y-4">
-          <Input
-            name="email"
-            type="email"
-            label="Email"
-            placeholder="you@company.com"
-            required
-            error={state?.fieldErrors?.email?.[0]}
+    <div className="relative flex min-h-screen items-center justify-center bg-muted px-4">
+      {branding.backgroundImageUrl && (
+        <>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={branding.backgroundImageUrl}
+            alt=""
+            aria-hidden="true"
+            className="absolute inset-0 h-full w-full object-cover"
           />
-          <Input
-            name="password"
-            type="password"
-            label="Password"
-            placeholder="Enter your password"
-            required
-            error={state?.fieldErrors?.password?.[0]}
-          />
-          <Button type="submit" className="w-full" disabled={pending}>
-            {pending ? "Signing in..." : "Sign In"}
-          </Button>
-        </form>
-
-        <p className="mt-4 text-center text-sm text-muted-foreground">
-          Don&apos;t have an account?{" "}
-          <Link href="/register" className="text-primary hover:underline">
-            Register
-          </Link>
-        </p>
-      </div>
+          {/* Dark overlay for readability of the login card */}
+          <div className="absolute inset-0 bg-background/70" aria-hidden="true" />
+        </>
+      )}
+      <LoginForm
+        companyName={companyName}
+        companyLogoUrl={branding.companyLogoUrl}
+      />
     </div>
   );
 }

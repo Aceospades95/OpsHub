@@ -44,6 +44,10 @@ interface SidebarProps {
   userRole?: string;
   customPages?: CustomPage[];
   sidebarConfig?: SidebarConfig;
+  /** Company name override (defaults to "OpsHub") */
+  companyName?: string | null;
+  /** Public URL of the uploaded company logo, or null to use the text fallback */
+  companyLogoUrl?: string | null;
 }
 
 const ICON_MAP: Record<string, LucideIcon> = {
@@ -89,7 +93,14 @@ const ROLE_GATED: Record<string, (role: string) => boolean> = {
 // Modules always visible regardless of permissions
 const ALWAYS_VISIBLE = new Set(["dashboard", "tasks"]);
 
-export function Sidebar({ visibleModules, userRole = "", customPages = [], sidebarConfig }: SidebarProps) {
+export function Sidebar({
+  visibleModules,
+  userRole = "",
+  customPages = [],
+  sidebarConfig,
+  companyName,
+  companyLogoUrl,
+}: SidebarProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const pathname = usePathname();
@@ -197,8 +208,21 @@ export function Sidebar({ visibleModules, userRole = "", customPages = [], sideb
     <>
       <div className="flex h-16 items-center justify-between border-b border-border px-4">
         {!collapsed && (
-          <Link href="/dashboard" className="text-xl font-bold text-primary">
-            OpsHub
+          <Link href="/dashboard" className="flex items-center gap-2 min-w-0">
+            {companyLogoUrl ? (
+              // Custom uploaded logo. Plain <img> instead of next/image so
+              // we don't need to whitelist /api/files in next.config.js.
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={companyLogoUrl}
+                alt={companyName || "OpsHub"}
+                className="h-8 w-auto max-w-[160px] object-contain"
+              />
+            ) : (
+              <span className="text-xl font-bold text-primary truncate">
+                {companyName || "OpsHub"}
+              </span>
+            )}
           </Link>
         )}
         <button

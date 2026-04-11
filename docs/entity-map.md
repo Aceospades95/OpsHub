@@ -527,6 +527,98 @@ lookup and on `startedAt` for the global recent-runs view.
    Vercel Cron will need to send the secret. For other providers,
    include the `x-cron-secret` header with the configured value.
 
+## Branding & icons
+
+Built on top of the file storage layer (session 6) and the existing
+ThemeSetting key/value store. No schema migration was needed for branding
+itself — just three new keys in `ThemeSetting`:
+
+| Key | Type | Purpose |
+|---|---|---|
+| `branding.companyName` | string | Display name shown in sidebar/login. Falls back to "OpsHub". |
+| `branding.companyLogoFileId` | File id | Public-visibility logo. Sidebar renders it instead of the company name text. |
+| `branding.backgroundImageFileId` | File id | Public-visibility background image. Login page renders it behind a dark overlay. |
+
+### Public API
+
+```ts
+import { getBranding } from "@/lib/branding";
+
+const branding = await getBranding();
+// {
+//   companyName: "Acme Corp" | null,
+//   companyLogoFileId: "file_..." | null,
+//   companyLogoUrl: "/api/files/file_..." | null,
+//   backgroundImageFileId: "file_..." | null,
+//   backgroundImageUrl: "/api/files/file_..." | null,
+// }
+```
+
+`getBranding()` verifies the file rows still exist before returning URLs,
+so a stale ThemeSetting pointing at a deleted File reports as null
+instead of producing a broken `<img src>`.
+
+### Where branding is rendered
+
+- **Sidebar** (`src/components/layout/sidebar.tsx`) — logo if set,
+  otherwise company name text, otherwise "OpsHub". Pulled from the
+  platform layout via `getBranding()`.
+- **Login page** (`src/app/login/page.tsx`) — server component fetches
+  branding and passes to a client `LoginForm`. The background image is
+  rendered absolute behind a `bg-background/70` overlay so the card stays
+  readable. Logo replaces the "OpsHub" text in the card header.
+- **Admin theme editor** (`/admin/theme`) — `BrandingSection` component
+  with company name input, logo uploader (with preview + remove), and
+  background image uploader (with preview + remove). Uploads route
+  through `uploadBrandingImage()` which uses the file storage layer
+  with `visibility: "public"` and replaces any previous file in storage
+  to avoid orphans.
+
+### Server actions
+
+Located in `src/actions/branding.ts`:
+
+- `uploadBrandingImage(formData)` — accepts `file` + `target` (one of
+  `companyLogoFileId` or `backgroundImageFileId`), uploads, replaces any
+  previous file, updates the ThemeSetting key
+- `clearBrandingImage(target)` — deletes the underlying file and clears
+  the key
+- `setCompanyName(name)` — updates or clears `branding.companyName`
+
+All three are admin-only and call `revalidatePath("/", "layout")` so the
+sidebar and login page pick up the change immediately.
+
+### Page icon picker
+
+The `SandboxPage` model gained an `icon` column (migration
+`20260415000000_add_sandbox_page_icon`) storing a Lucide icon name as a
+string. The `IconPicker` component in `src/components/ui/icon-picker.tsx`
+provides:
+
+- A button showing the current icon + name
+- A popover with a grid of ~70 curated icons (documents, people, places,
+  tools, status, etc.)
+- A clear button
+- A hidden `<input name="icon">` so it slots into any existing form
+
+The `Icon` component from the same file renders an icon by name with a
+fallback for unknown/null values — useful when displaying persisted icons
+on detail or list pages.
+
+```tsx
+import { IconPicker, Icon } from "@/components/ui/icon-picker";
+
+// In a form:
+<IconPicker name="icon" value={page.icon} label="Page icon" />
+
+// Rendering:
+<Icon name={page.icon} className="h-4 w-4" />
+```
+
+The sandbox edit form uses the picker; the sandbox list page renders
+the icon next to each page title via `<Icon>`. Adding more pages or
+modules that want a custom icon is just two lines per place.
+
 ## How to extend this document
 
 When you add a new module or feature:

@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { getVisibleModules } from "@/lib/permissions";
 import { getSidebarConfig } from "@/actions/sidebar";
 import { getUnreadCount, getUserNotifications } from "@/lib/notifications";
+import { getBranding } from "@/lib/branding";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Header } from "@/components/layout/header";
 
@@ -15,7 +16,7 @@ export default async function PlatformLayout({
   const session = await auth();
   if (!session?.user) redirect("/login");
 
-  const [visibleModules, sidebarConfig, customPages, unreadCount, recentNotifications] = await Promise.all([
+  const [visibleModules, sidebarConfig, customPages, unreadCount, recentNotifications, branding] = await Promise.all([
     getVisibleModules(session.user.id, session.user.role),
     getSidebarConfig(),
     db.sandboxPage.findMany({
@@ -25,6 +26,7 @@ export default async function PlatformLayout({
     }),
     getUnreadCount(session.user.id),
     getUserNotifications(session.user.id, { limit: 10 }),
+    getBranding(),
   ]);
 
   // Serialize notification dates for the client component boundary
@@ -45,6 +47,8 @@ export default async function PlatformLayout({
         userRole={session.user.role}
         customPages={customPages}
         sidebarConfig={sidebarConfig}
+        companyName={branding.companyName}
+        companyLogoUrl={branding.companyLogoUrl}
       />
       <div className="flex flex-1 flex-col overflow-hidden">
         <Header
