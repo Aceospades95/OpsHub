@@ -34,6 +34,48 @@ where the entity could appear.**
 | Task | (list page `/tasks`) | `revalidateTask({ projectId?, assigneeId?, clientId?, previousAssigneeId? })` | `/tasks`, `/dashboard`, project detail, client detail, assignee profile |
 | Comment | (attached to parent entity) | `revalidateComment({ entityType, entityId, authorId? })` | parent entity's detail page, `/dashboard`, author profile |
 
+## Where the Client entity appears (and how to link)
+
+Every `client.name`, `project.client.name`, `task.client.name`, etc. must link
+to `/clients/{client.id}`.
+
+| Location | Component | Linked? |
+|---|---|---|
+| Clients list page | `clients/page.tsx` | ✅ |
+| Client detail (canonical) | `clients/[clientId]/page.tsx` | N/A (self) |
+| Projects list grouped by client | `projects-page-client.tsx` | ✅ |
+| Contracts tree by client | `contracts/page.tsx` | ✅ |
+| Tasks page task rows | `tasks/page.tsx` | ✅ |
+| Dashboard task rows | `dashboard/page.tsx` | ✅ |
+| Staffing matrix client header | `staffing-matrix.tsx` | ✅ |
+| Staffing matrix data rows | `staffing-matrix.tsx` | ✅ |
+| Staffing matrix unfilled slots | `staffing-matrix.tsx` | ✅ |
+| Search results | `search/page.tsx` | ✅ |
+
+Known limitations (not bugs, HTML constraint):
+- Certification list rows show `cert.client.name` as text because the whole row
+  is a `<Link>` to `/certifications/{id}` — can't nest links. The cert detail
+  page itself properly links to the client.
+- Widget cards with a clickable card wrapper (widget-recent-projects, widget-
+  contract-alerts, widget-recent-contracts) show client name as text for the
+  same reason.
+
+## Global Search coverage
+
+`search/page.tsx` queries and returns results for:
+
+- **Clients** — by name, description (permission-gated)
+- **Projects** — by name, description (permission-gated)
+- **Contracts** — by title, description (permission-gated)
+- **Suppliers** — by name, notes (permission-gated)
+- **Tasks** — by title, description — results deep-link to parent project or client
+- **Team members** — by name, email, jobTitle, department — links to `/team/{id}`
+- **Intranet resources** — by title, description, content — only published items,
+  permission-gated (fixes the Time Off bug where HR entries were invisible)
+
+When you add a new module that has user-facing content, add it to this list and
+to the search query.
+
 ## Where the Project entity appears (and how to link)
 
 Every `project.name`, `task.project.name`, `cert.project.name`, etc. must link to

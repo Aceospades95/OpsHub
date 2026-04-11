@@ -1031,10 +1031,26 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, rol
                                           >
                                             <td className="py-1.5 px-4" />
                                             <td className="py-1.5 px-3 text-xs text-muted-foreground">
-                                              {cg.clientName || <span className="text-muted-foreground/60">—</span>}
+                                              {cg.clientId ? (
+                                                <Link
+                                                  href={`/clients/${cg.clientId}`}
+                                                  className="hover:text-primary hover:underline"
+                                                  onClick={(e) => e.stopPropagation()}
+                                                >
+                                                  {cg.clientName}
+                                                </Link>
+                                              ) : cg.clientName || <span className="text-muted-foreground/60">—</span>}
                                             </td>
                                             <td className="py-1.5 px-3 text-xs text-muted-foreground">
-                                              {pg.projectName || <span className="text-muted-foreground/60">—</span>}
+                                              {pg.projectId ? (
+                                                <Link
+                                                  href={`/projects/${pg.projectId}`}
+                                                  className="hover:text-primary hover:underline"
+                                                  onClick={(e) => e.stopPropagation()}
+                                                >
+                                                  {pg.projectName}
+                                                </Link>
+                                              ) : pg.projectName || <span className="text-muted-foreground/60">—</span>}
                                             </td>
                                             <td className="py-1.5 px-3 hidden md:table-cell" />
                                             <td className="py-1.5 px-3" />

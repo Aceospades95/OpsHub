@@ -14,6 +14,7 @@ import Link from "next/link";
 import { ClientActions } from "./client-actions";
 import { ContactSection } from "./contact-section";
 import { PageLayout } from "@/components/shared/page-layout";
+import { TaskCheckbox } from "@/app/(platform)/tasks/task-checkbox";
 
 interface Props {
   params: Promise<{ clientId: string }>;
@@ -232,10 +233,10 @@ export default async function ClientDetailPage({ params }: Props) {
           ) : (
             <div className="space-y-2">
               {tasks.map((task) => (
-                <div key={task.id} className="flex items-start gap-2 text-sm">
-                  <CheckSquare className={`h-4 w-4 mt-0.5 shrink-0 ${task.status === "IN_PROGRESS" ? "text-primary" : "text-muted-foreground"}`} />
-                  <div className="min-w-0">
-                    <p className="font-medium truncate">{task.title}</p>
+                <div key={task.id} className="flex items-start gap-3 text-sm">
+                  <TaskCheckbox taskId={task.id} status={task.status} />
+                  <div className="min-w-0 flex-1">
+                    <p className={`font-medium truncate ${task.status === "DONE" ? "line-through text-muted-foreground" : ""}`}>{task.title}</p>
                     <div className="flex items-center gap-2 text-xs text-muted-foreground">
                       {task.assignee && (
                         <Link href={`/team/${task.assignee.id}`} className="hover:text-primary hover:underline">
