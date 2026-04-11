@@ -5,8 +5,8 @@ import { useRouter } from "next/navigation";
 import { useFormState } from "react-dom";
 import { Dialog } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { createAssignment } from "@/actions/assignments";
-import type { UserData, ProjectData, ClientData, ServiceOfferingData } from "./team-types";
+import { createAssignment, createRoleDefinition } from "@/actions/assignments";
+import type { UserData, ProjectData, ClientData, ServiceOfferingData, RoleDefinitionData } from "./team-types";
 
 interface Props {
   open: boolean;
@@ -15,16 +15,28 @@ interface Props {
   projects: ProjectData[];
   clients: ClientData[];
   serviceOfferings: ServiceOfferingData[];
+  roleDefinitions: RoleDefinitionData[];
   defaultEmployeeId?: string;
   defaultProjectId?: string;
   defaultClientId?: string;
   defaultServiceOfferingId?: string;
+  defaultProjectRoleId?: string;
+  defaultRoleName?: string;
+  defaultRoleDefinitionId?: string;
 }
 
-export function AddAssignmentDialog({ open, onClose, users, projects, clients, serviceOfferings, defaultEmployeeId, defaultProjectId, defaultClientId, defaultServiceOfferingId }: Props) {
+export function AddAssignmentDialog({
+  open, onClose, users, projects, clients, serviceOfferings, roleDefinitions,
+  defaultEmployeeId, defaultProjectId, defaultClientId,
+  defaultProjectRoleId, defaultRoleName, defaultRoleDefinitionId,
+}: Props) {
   const [state, action] = useFormState(createAssignment, null);
   const router = useRouter();
   const [selectedClient, setSelectedClient] = useState(defaultClientId || "");
+  const [selectedProject, setSelectedProject] = useState(defaultProjectId || "");
+  const [roleMode, setRoleMode] = useState<"select" | "new">("select");
+  const [newRoleName, setNewRoleName] = useState("");
+  const [selectedRoleDefId, setSelectedRoleDefId] = useState(defaultRoleDefinitionId || "");
 
   useEffect(() => {
     if (state?.success) {
@@ -38,6 +50,57 @@ export function AddAssignmentDialog({ open, onClose, users, projects, clients, s
     ? projects.filter((p) => p.clientId === selectedClient)
     : projects;
 
+  // Get the selected project's offering
+  const selectedProjectData = projects.find((p) => p.id === selectedProject);
+  const projectOffering = selectedProjectData?.serviceOffering?.name;
+
+  // Auto-set client when project is selected
+  const handleProjectChange = (projectId: string) => {
+    setSelectedProject(projectId);
+    if (projectId) {
+      const proj = projects.find((p) => p.id === projectId);
+      if (proj?.clientId) setSelectedClient(proj.clientId);
+    }
+  };
+
+  const handleRoleSelect = (value: string) => {
+    if (value === "__new__") {
+      setRoleMode("new");
+      setSelectedRoleDefId("");
+    } else {
+      setRoleMode("select");
+      setSelectedRoleDefId(value);
+    }
+  };
+
+  // Handle form submit - inject role fields
+  const handleSubmit = async (formData: FormData) => {
+    // Handle new role creation
+    let roleDefId = selectedRoleDefId;
+    if (roleMode === "new" && newRoleName.trim()) {
+      const result = await createRoleDefinition(newRoleName.trim());
+      if (result.id) {
+        roleDefId = result.id;
+        formData.set("role", newRoleName.trim());
+      }
+    } else if (roleDefId) {
+      const rd = roleDefinitions.find((r) => r.id === roleDefId);
+      if (rd) formData.set("role", rd.name);
+    } else if (defaultRoleName) {
+      formData.set("role", defaultRoleName);
+    }
+
+    if (roleDefId) formData.set("roleDefinitionId", roleDefId);
+    if (defaultProjectRoleId) formData.set("projectRoleId", defaultProjectRoleId);
+
+    // Set serviceOfferingId from project
+    if (selectedProjectData?.serviceOfferingId) {
+      formData.set("serviceOfferingId", selectedProjectData.serviceOfferingId);
+    }
+
+    action(formData);
+  };
+
   if (!open) return null;
 
   return (
@@ -47,7 +110,7 @@ export function AddAssignmentDialog({ open, onClose, users, projects, clients, s
           {state.error}
         </div>
       )}
-      <form action={action} className="space-y-4">
+      <form action={handleSubmit} className="space-y-4">
         {/* Employee */}
         <div className="space-y-1">
           <label className="block text-sm font-medium">Employee *</label>
@@ -58,27 +121,6 @@ export function AddAssignmentDialog({ open, onClose, users, projects, clients, s
               <option key={u.id} value={u.id}>{u.name}{u.jobTitle ? ` — ${u.jobTitle}` : ""}</option>
             ))}
           </select>
-        </div>
-
-        <div className="grid grid-cols-2 gap-3">
-          {/* Service Offering */}
-          <div className="space-y-1">
-            <label className="block text-sm font-medium">Service Offering</label>
-            <select name="serviceOfferingId" defaultValue={defaultServiceOfferingId || ""}
-              className="w-full h-10 rounded border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary">
-              <option value="">None</option>
-              {serviceOfferings.map((so) => (
-                <option key={so.id} value={so.id}>{so.name}</option>
-              ))}
-            </select>
-          </div>
-
-          {/* Function */}
-          <div className="space-y-1">
-            <label className="block text-sm font-medium">Function / Work Type</label>
-            <input name="function" placeholder="e.g. Development, QA, PM"
-              className="w-full h-10 rounded border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
-          </div>
         </div>
 
         <div className="grid grid-cols-2 gap-3">
@@ -97,7 +139,7 @@ export function AddAssignmentDialog({ open, onClose, users, projects, clients, s
           {/* Project */}
           <div className="space-y-1">
             <label className="block text-sm font-medium">Project</label>
-            <select name="projectId" defaultValue={defaultProjectId || ""}
+            <select name="projectId" value={selectedProject} onChange={(e) => handleProjectChange(e.target.value)}
               className="w-full h-10 rounded border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary">
               <option value="">None</option>
               {filteredProjects.map((p) => (
@@ -107,12 +149,38 @@ export function AddAssignmentDialog({ open, onClose, users, projects, clients, s
           </div>
         </div>
 
+        {/* Offering info (from project) */}
+        {projectOffering && (
+          <div className="text-xs text-muted-foreground bg-muted/50 rounded px-3 py-1.5">
+            Offering: <span className="font-medium text-foreground">{projectOffering}</span> (from project)
+          </div>
+        )}
+
         <div className="grid grid-cols-3 gap-3">
           {/* Role */}
           <div className="space-y-1">
-            <label className="block text-sm font-medium">Role</label>
-            <input name="role" placeholder="e.g. Lead, Technician"
-              className="w-full h-10 rounded border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+            <label className="block text-sm font-medium">Role {defaultRoleName && `(${defaultRoleName})`}</label>
+            {roleMode === "select" ? (
+              <select value={selectedRoleDefId} onChange={(e) => handleRoleSelect(e.target.value)}
+                className="w-full h-10 rounded border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary">
+                <option value="">{defaultRoleName ? defaultRoleName : "Select role..."}</option>
+                {roleDefinitions.map((rd) => (
+                  <option key={rd.id} value={rd.id}>{rd.name}</option>
+                ))}
+                <option value="__new__">+ Add new role...</option>
+              </select>
+            ) : (
+              <div className="flex gap-1">
+                <input
+                  value={newRoleName}
+                  onChange={(e) => setNewRoleName(e.target.value)}
+                  placeholder="New role name"
+                  className="w-full h-10 rounded border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+                <button type="button" onClick={() => { setRoleMode("select"); setNewRoleName(""); }}
+                  className="px-2 h-10 rounded border border-input hover:bg-muted text-xs shrink-0">Back</button>
+              </div>
+            )}
           </div>
 
           {/* FTE */}
@@ -136,14 +204,11 @@ export function AddAssignmentDialog({ open, onClose, users, projects, clients, s
         </div>
 
         <div className="grid grid-cols-2 gap-3">
-          {/* Start Date */}
           <div className="space-y-1">
             <label className="block text-sm font-medium">Start Date</label>
             <input name="startDate" type="date"
               className="w-full h-10 rounded border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
           </div>
-
-          {/* End Date */}
           <div className="space-y-1">
             <label className="block text-sm font-medium">End Date</label>
             <input name="endDate" type="date"
@@ -154,7 +219,7 @@ export function AddAssignmentDialog({ open, onClose, users, projects, clients, s
         {/* Notes */}
         <div className="space-y-1">
           <label className="block text-sm font-medium">Notes</label>
-          <textarea name="notes" rows={2} placeholder="Additional notes about this assignment..."
+          <textarea name="notes" rows={2} placeholder="Additional notes..."
             className="w-full rounded border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
         </div>
 

@@ -15,7 +15,7 @@ export default async function ProjectsPage() {
   const perms = await resolveModulePerms(session.user.id, session.user.role, "projects");
   if (!perms.canView) redirect("/dashboard");
 
-  const [clients, rootProjects, allProjects] = await Promise.all([
+  const [clients, rootProjects, allProjects, serviceOfferings] = await Promise.all([
     db.client.findMany({
       where: { status: "ACTIVE" },
       select: { id: true, name: true },
@@ -45,6 +45,11 @@ export default async function ProjectsPage() {
       select: { id: true, name: true },
       orderBy: { name: "asc" },
     }),
+    db.serviceOffering.findMany({
+      where: { isActive: true },
+      select: { id: true, name: true },
+      orderBy: { name: "asc" },
+    }),
   ]);
 
   // Group by client
@@ -64,7 +69,7 @@ export default async function ProjectsPage() {
       <PageHeader
         title="Projects"
         description="Manage projects across all clients"
-        actions={perms.canCreate ? <ProjectCreateButton clients={clients} projects={allProjects} /> : undefined}
+        actions={perms.canCreate ? <ProjectCreateButton clients={clients} projects={allProjects} serviceOfferings={serviceOfferings} /> : undefined}
       />
 
       {rootProjects.length === 0 ? (

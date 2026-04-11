@@ -48,7 +48,7 @@ export default async function EmployeeDetailPage({ params }: Props) {
   const isAdmin = session.user.role === "ADMIN";
 
   // Fetch admin-related data
-  const [recentActivity, allUsers, allClients, allProjects, serviceOfferings] = await Promise.all([
+  const [recentActivity, allUsers, allClients, allProjects, serviceOfferings, roleDefinitions] = await Promise.all([
     db.activityLog.findMany({
       where: { userId: employeeId },
       take: 10,
@@ -62,10 +62,19 @@ export default async function EmployeeDetailPage({ params }: Props) {
     db.client.findMany({ where: { status: "ACTIVE" }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
     db.project.findMany({
       where: { status: { in: ["PLANNING", "ACTIVE", "ON_HOLD"] } },
-      select: { id: true, name: true, status: true, clientId: true },
+      select: {
+        id: true, name: true, status: true, clientId: true,
+        serviceOfferingId: true,
+        serviceOffering: { select: { id: true, name: true } },
+      },
       orderBy: { name: "asc" },
     }),
     db.serviceOffering.findMany({
+      where: { isActive: true },
+      select: { id: true, name: true },
+      orderBy: { name: "asc" },
+    }),
+    db.roleDefinition.findMany({
       where: { isActive: true },
       select: { id: true, name: true },
       orderBy: { name: "asc" },
@@ -111,6 +120,7 @@ export default async function EmployeeDetailPage({ params }: Props) {
         allClients={allClients}
         allProjects={allProjects}
         serviceOfferings={serviceOfferings}
+        roleDefinitions={roleDefinitions}
       />
     </div>
   );

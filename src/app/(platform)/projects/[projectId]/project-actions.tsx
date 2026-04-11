@@ -20,13 +20,15 @@ interface Props {
     startDate: Date | null;
     endDate: Date | null;
     clientId: string;
+    serviceOfferingId: string | null;
   };
   clients: { id: string; name: string }[];
+  serviceOfferings: { id: string; name: string }[];
   canEdit: boolean;
   canDelete: boolean;
 }
 
-export function ProjectActions({ project, clients, canEdit, canDelete }: Props) {
+export function ProjectActions({ project, clients, serviceOfferings, canEdit, canDelete }: Props) {
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const router = useRouter();
@@ -57,18 +59,29 @@ export function ProjectActions({ project, clients, canEdit, canDelete }: Props) 
                   options={clients.map((c) => ({ label: c.name, value: c.id }))}
                 />
                 <Textarea name="description" label="Description" defaultValue={project.description || ""} />
-                <Select
-                  name="status"
-                  label="Status"
-                  defaultValue={project.status}
-                  options={[
-                    { label: "Planning", value: "PLANNING" },
-                    { label: "Active", value: "ACTIVE" },
-                    { label: "On Hold", value: "ON_HOLD" },
-                    { label: "Completed", value: "COMPLETED" },
-                    { label: "Archived", value: "ARCHIVED" },
-                  ]}
-                />
+                <div className="grid grid-cols-2 gap-4">
+                  <Select
+                    name="status"
+                    label="Status"
+                    defaultValue={project.status}
+                    options={[
+                      { label: "Planning", value: "PLANNING" },
+                      { label: "Active", value: "ACTIVE" },
+                      { label: "On Hold", value: "ON_HOLD" },
+                      { label: "Completed", value: "COMPLETED" },
+                      { label: "Archived", value: "ARCHIVED" },
+                    ]}
+                  />
+                  {serviceOfferings.length > 0 && (
+                    <Select
+                      name="serviceOfferingId"
+                      label="Service Offering"
+                      defaultValue={project.serviceOfferingId || ""}
+                      options={serviceOfferings.map((so) => ({ label: so.name, value: so.id }))}
+                      placeholder="Select offering..."
+                    />
+                  )}
+                </div>
                 <div className="grid grid-cols-2 gap-4">
                   <Input name="startDate" label="Start Date" type="date" defaultValue={project.startDate?.toISOString().split("T")[0] || ""} />
                   <Input name="endDate" label="End Date" type="date" defaultValue={project.endDate?.toISOString().split("T")[0] || ""} />

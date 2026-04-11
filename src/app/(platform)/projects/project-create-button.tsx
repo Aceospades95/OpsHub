@@ -12,11 +12,12 @@ import { Plus } from "lucide-react";
 interface Props {
   clients: { id: string; name: string }[];
   projects?: { id: string; name: string }[];
+  serviceOfferings?: { id: string; name: string }[];
   defaultClientId?: string;
   defaultParentId?: string;
 }
 
-export function ProjectCreateButton({ clients, projects, defaultClientId, defaultParentId }: Props) {
+export function ProjectCreateButton({ clients, projects, serviceOfferings, defaultClientId, defaultParentId }: Props) {
   const [open, setOpen] = useState(false);
   const [creatingNewClient, setCreatingNewClient] = useState(false);
   const [selectedRelated, setSelectedRelated] = useState<string[]>([]);
@@ -94,17 +95,28 @@ export function ProjectCreateButton({ clients, projects, defaultClientId, defaul
 
             <Textarea name="description" label="Description" />
 
-            <Select
-              name="status"
-              label="Status"
-              options={[
-                { label: "Planning", value: "PLANNING" },
-                { label: "Active", value: "ACTIVE" },
-                { label: "On Hold", value: "ON_HOLD" },
-                { label: "Completed", value: "COMPLETED" },
-                { label: "Archived", value: "ARCHIVED" },
-              ]}
-            />
+            <div className="grid grid-cols-2 gap-4">
+              <Select
+                name="status"
+                label="Status"
+                options={[
+                  { label: "Planning", value: "PLANNING" },
+                  { label: "Active", value: "ACTIVE" },
+                  { label: "On Hold", value: "ON_HOLD" },
+                  { label: "Completed", value: "COMPLETED" },
+                  { label: "Archived", value: "ARCHIVED" },
+                ]}
+              />
+
+              {serviceOfferings && serviceOfferings.length > 0 && (
+                <Select
+                  name="serviceOfferingId"
+                  label="Service Offering"
+                  options={serviceOfferings.map((so) => ({ label: so.name, value: so.id }))}
+                  placeholder="Select offering..."
+                />
+              )}
+            </div>
 
             <div className="grid grid-cols-2 gap-4">
               <Input name="startDate" label="Start Date" type="date" />
