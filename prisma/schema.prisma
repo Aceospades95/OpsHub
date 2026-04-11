@@ -164,6 +164,8 @@ model User {
   customWidgets        CustomWidget[]
   assignedCerts        Certification[]    @relation("CertificationAssignee")
   assignments          Assignment[]
+  notificationsReceived Notification[]    @relation("NotificationRecipient")
+  notificationsSent     Notification[]    @relation("NotificationActor")
 }
 
 model ModulePermission {
@@ -801,6 +803,39 @@ model Assignment {
   @@index([projectRoleId])
   @@index([roleDefinitionId])
   @@index([status])
+}
+
+// ─── NOTIFICATIONS ─────────────────────────────────────
+//
+// In-app notification for a user. Written by src/lib/notifications/notify().
+// Optionally paired with an outbound email — that's handled by notify()
+// itself which delegates to the email layer after writing the row.
+
+model Notification {
+  id          String    @id @default(cuid())
+  recipientId String
+  /** Free-form type key for filtering/grouping — see NotificationType in code */
+  type        String
+  title       String
+  body        String?   @db.Text
+  /** Where clicking the notification should navigate */
+  href        String?
+  /** Optional entity this notification is about, for context and routing */
+  entityType  String?
+  entityId    String?
+  /** Who triggered this (null for system notifications) */
+  actorId     String?
+  /** Read timestamp — null means unread */
+  readAt      DateTime?
+  createdAt   DateTime  @default(now())
+
+  recipient User  @relation("NotificationRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
+  actor     User? @relation("NotificationActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([recipientId, readAt])
+  @@index([recipientId, createdAt])
+  @@index([entityType, entityId])
+  @@index([type])
 }
 
 // ─── EMAIL LOG ─────────────────────────────────────────

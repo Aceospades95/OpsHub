@@ -5,14 +5,33 @@ import { useRouter } from "next/navigation";
 import { Search, LogOut } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
 import { signOut } from "next-auth/react";
+import { NotificationBell } from "./notification-bell";
+
+interface NotificationLite {
+  id: string;
+  type: string;
+  title: string;
+  body: string | null;
+  href: string | null;
+  readAt: string | null;
+  createdAt: string;
+}
 
 interface HeaderProps {
   userName: string;
   userEmail: string;
   userRole: string;
+  unreadNotifications: number;
+  recentNotifications: NotificationLite[];
 }
 
-export function Header({ userName, userEmail, userRole }: HeaderProps) {
+export function Header({
+  userName,
+  userEmail,
+  userRole,
+  unreadNotifications,
+  recentNotifications,
+}: HeaderProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [showMenu, setShowMenu] = useState(false);
   const router = useRouter();
@@ -39,6 +58,13 @@ export function Header({ userName, userEmail, userRole }: HeaderProps) {
           className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground min-w-0"
         />
       </form>
+
+      <div className="flex items-center gap-1 shrink-0">
+        <NotificationBell
+          initialUnreadCount={unreadNotifications}
+          initialNotifications={recentNotifications}
+        />
+      </div>
 
       <div className="relative shrink-0">
         <button

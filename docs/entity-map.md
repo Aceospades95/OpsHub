@@ -304,6 +304,103 @@ can keep reading `file.url` directly.
 
 Module registered as `files` in the registry, gated to ADMIN.
 
+## Notifications infrastructure
+
+All in-app notifications route through `src/lib/notifications/`. One helper
+(`notify()`) creates rows in the `Notification` table and, optionally, fires
+a matching email through the email layer from session 5.
+
+### Sending a notification
+
+```ts
+import { notify } from "@/lib/notifications";
+
+await notify({
+  recipientId: task.assigneeId,
+  type: "task-assigned",
+  title: "You were assigned a task",
+  body: task.title,
+  href: `/projects/${task.projectId}`,
+  entityType: "task",
+  entityId: task.id,
+  actorId: currentUser.id,
+  // Optional — also sends an email to the recipient
+  email: {
+    templateKey: "notification",
+    data: {
+      recipientName: assignee.name,
+      heading: "You were assigned a task",
+      body: task.title,
+      cta: { label: "Open task", url: absoluteUrl(`/projects/${task.projectId}`) },
+    },
+  },
+});
+```
+
+Broadcasting to many recipients is done by passing an array to
+`recipientId`. Each recipient gets their own `Notification` row (so per-user
+read state works) and one email. Duplicates are silently deduplicated.
+
+### Notification types
+
+The set of known types lives as `NotificationType` in
+`src/lib/notifications/types.ts` with human-readable labels in
+`NOTIFICATION_TYPE_LABELS`. Types are stored as strings so new ones don't
+need a migration — but adding them to the union gives TypeScript checking
+at every call site.
+
+Current types:
+- `task-assigned`, `task-completed`, `task-due-soon`
+- `mention`
+- `assignment-created`, `assignment-removed`
+- `project-updated`
+- `comment-added`
+- `milestone-assigned`
+- `certification-expiring`
+- `system`, `test`
+
+### User-facing UI
+
+- **Top-nav bell** — `NotificationBell` component in
+  `src/components/layout/notification-bell.tsx`. Shows unread count,
+  dropdown with recent 10, mark-read/delete buttons, polls every 60s
+  while the tab is visible. Gets initial state from the server layout
+  so first paint has data.
+- **`/notifications` page** — full list with All / Unread filters,
+  mark-all-read, per-item mark-read and delete. Clicking a notification
+  with an `href` marks it read and navigates.
+
+### Admin UI
+
+`/admin/notifications` shows every notification across every user, with:
+- Total unread/read counts
+- Breakdown by type
+- Last 100 rows with recipient and actor linked to `/team/{id}`
+- A **Send test** button with an "also send email" checkbox so admins
+  can verify both the in-app and email paths end-to-end.
+
+### How mutations should use notify()
+
+When a feature mutation affects a user (task assignment, mention in a
+comment, milestone deadline approaching, etc.), call `notify()` from the
+server action after the DB write completes. Example pattern:
+
+```ts
+const task = await db.task.update({ where: { id }, data: {...} });
+if (task.assigneeId && task.assigneeId !== previousAssigneeId) {
+  await notify({
+    recipientId: task.assigneeId,
+    type: "task-assigned",
+    title: "You were assigned a task",
+    body: task.title,
+    href: `/tasks#${task.id}`,
+    actorId: currentUser.id,
+    entityType: "task",
+    entityId: task.id,
+  });
+}
+```
+
 ## How to extend this document
 
 When you add a new module or feature:

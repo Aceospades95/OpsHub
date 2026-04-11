@@ -29,7 +29,8 @@ export type ModuleKey =
   | "theme"
   | "sidebar"
   | "emails"
-  | "files";
+  | "files"
+  | "notifications";
 
 export type PermissionFlag =
   | "canView"
@@ -256,6 +257,15 @@ export const MODULES: ModuleDefinition[] = [
     href: "/admin/files",
     icon: "HardDrive",
     description: "Storage driver status and uploaded file audit",
+    section: "admin",
+    permissioned: false,
+  },
+  {
+    key: "notifications",
+    label: "Notifications",
+    href: "/admin/notifications",
+    icon: "Bell",
+    description: "In-app notification audit and test sender",
     section: "admin",
     permissioned: false,
   },
