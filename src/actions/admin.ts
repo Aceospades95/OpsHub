@@ -6,6 +6,8 @@ import { logActivity } from "@/lib/activity";
 import { revalidatePath } from "next/cache";
 import { revalidateUser } from "@/lib/revalidate-entity";
 import { getPermissionedModules, ALL_PERMISSION_FLAGS } from "@/lib/modules";
+import { sendFromTemplate } from "@/lib/email";
+import { absoluteUrl } from "@/lib/url";
 import { hash } from "bcryptjs";
 import { z } from "zod";
 
@@ -70,6 +72,33 @@ export async function createUser(_prev: unknown, formData: FormData) {
 
   await logActivity("created", "user", user.id, admin.id, user.name);
   revalidateUser(user.id, { managerId: user.managerId });
+
+  // Send a welcome email to login-enabled users so they know their account
+  // exists and where to sign in. No-login placeholder users (e.g., tracked
+  // employees who don't actually use the system) skip this since their
+  // email column is a fake placeholder.
+  if (hasLogin && parsed.data.email) {
+    try {
+      await sendFromTemplate(
+        "welcome",
+        {
+          name: user.name,
+          loginUrl: absoluteUrl("/login"),
+        },
+        {
+          to: user.email,
+          entityType: "user",
+          entityId: user.id,
+        }
+      );
+    } catch (err) {
+      // Don't fail user creation if the welcome email errors out — the
+      // failure is logged in EmailLog and visible at /admin/emails
+      // eslint-disable-next-line no-console
+      console.error("[admin] welcome email failed:", err);
+    }
+  }
+
   return { success: true };
 }
 

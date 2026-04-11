@@ -401,6 +401,29 @@ if (task.assigneeId && task.assigneeId !== previousAssigneeId) {
 }
 ```
 
+### Where notify() is currently called
+
+Live wiring as of the notification rollout. Each call site is wrapped in
+a try/catch and skips self-actions (don't notify yourself for things you
+just did).
+
+| Trigger | File | Type | Email? |
+|---|---|---|---|
+| `createUser` (welcome email only — no in-app row) | `actions/admin.ts` | n/a — direct `sendFromTemplate("welcome", …)` | yes |
+| `createAssignment` | `actions/assignments.ts` | `assignment-created` | yes |
+| `quickAssign` | `actions/assignments.ts` | `assignment-created` | yes |
+| `removeAssignment` | `actions/assignments.ts` | `assignment-removed` | no — too awkward via email |
+| `addProjectMember` | `actions/projects.ts` | `project-updated` | no |
+| `addMilestoneAssignee` | `actions/projects.ts` | `milestone-assigned` | no |
+| `createTask` (with assigneeId) | `actions/tasks.ts` | `task-assigned` | yes |
+| `updateTask` (assigneeId changed) | `actions/tasks.ts` | `task-assigned` | yes |
+
+Adding more notify call sites is the natural way to fill out the bell.
+Likely future additions: comment mentions (needs `@user` parsing first),
+contract renewal warnings (needs a scheduled job), certification expiry
+warnings (same), and onboarding workflow steps (needs the workflow
+engine from a later session).
+
 ## How to extend this document
 
 When you add a new module or feature:

@@ -3,7 +3,72 @@
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { revalidateTask } from "@/lib/revalidate-entity";
+import { notify } from "@/lib/notifications";
+import { absoluteUrl } from "@/lib/url";
 import { z } from "zod";
+
+/**
+ * Notify a user that they've been assigned a task. Best-effort — failures
+ * are logged but never break the underlying mutation.
+ */
+async function notifyTaskAssigned(opts: {
+  taskId: string;
+  assigneeId: string;
+  actorId: string;
+  title: string;
+  projectId: string | null;
+}) {
+  // Skip self-assignment
+  if (opts.assigneeId === opts.actorId) return;
+
+  try {
+    const [assignee, project] = await Promise.all([
+      db.user.findUnique({
+        where: { id: opts.assigneeId },
+        select: { name: true, hasLoginAccess: true },
+      }),
+      opts.projectId
+        ? db.project.findUnique({
+            where: { id: opts.projectId },
+            select: { name: true },
+          })
+        : Promise.resolve(null),
+    ]);
+
+    if (!assignee) return;
+
+    const heading = `Task assigned: ${opts.title}`;
+    const body = project ? `On ${project.name}` : "Standalone task";
+    // Tasks don't have their own detail page yet — link to the task list
+    // or the parent project, whichever is more useful
+    const href = opts.projectId ? `/projects/${opts.projectId}` : "/tasks";
+
+    await notify({
+      recipientId: opts.assigneeId,
+      type: "task-assigned",
+      title: heading,
+      body,
+      href,
+      actorId: opts.actorId,
+      entityType: "task",
+      entityId: opts.taskId,
+      email: {
+        templateKey: "notification",
+        data: {
+          recipientName: assignee.name,
+          heading,
+          body: project
+            ? `You were assigned a task on ${project.name}: ${opts.title}`
+            : `You were assigned a task: ${opts.title}`,
+          cta: { label: "View task", url: absoluteUrl(href) },
+        },
+      },
+    });
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error("[tasks] notify failed:", err);
+  }
+}
 
 const taskSchema = z.object({
   title: z.string().min(1, "Title is required"),
@@ -67,6 +132,17 @@ export async function createTask(_prevState: unknown, formData: FormData) {
     clientId: task.clientId,
     assigneeId: task.assigneeId,
   });
+
+  if (task.assigneeId) {
+    await notifyTaskAssigned({
+      taskId: task.id,
+      assigneeId: task.assigneeId,
+      actorId: session.user.id,
+      title: task.title,
+      projectId: task.projectId,
+    });
+  }
+
   return { success: true };
 }
 
@@ -153,6 +229,19 @@ export async function updateTask(_prevState: unknown, formData: FormData) {
   if (previous?.clientId && previous.clientId !== updated.clientId) {
     revalidateTask({ clientId: previous.clientId });
   }
+
+  // Notify the new assignee if the assignment changed (or someone was just
+  // added). Don't fire if it's the same person — that's a no-op edit.
+  if (updated.assigneeId && updated.assigneeId !== previous?.assigneeId) {
+    await notifyTaskAssigned({
+      taskId: updated.id,
+      assigneeId: updated.assigneeId,
+      actorId: session.user.id,
+      title: updated.title,
+      projectId: updated.projectId,
+    });
+  }
+
   return { success: true };
 }
 

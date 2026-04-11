@@ -5,6 +5,8 @@ import { requireAuth, resolveModulePerms } from "@/lib/permissions";
 import { logActivity } from "@/lib/activity";
 import { revalidatePath } from "next/cache";
 import { revalidateProject, revalidateUser } from "@/lib/revalidate-entity";
+import { notify } from "@/lib/notifications";
+import { absoluteUrl } from "@/lib/url";
 import { z } from "zod";
 
 const projectSchema = z.object({
@@ -211,6 +213,32 @@ export async function addProjectMember(_prev: unknown, formData: FormData) {
   // The new member's /team/{userId} page shows project memberships, so it needs
   // to be revalidated too.
   revalidateUser(userId);
+
+  // Notify the new member (skip if they added themselves)
+  if (userId !== user.id) {
+    try {
+      const project = await db.project.findUnique({
+        where: { id: projectId },
+        select: { name: true },
+      });
+      if (project) {
+        await notify({
+          recipientId: userId,
+          type: "project-updated",
+          title: `Added to project: ${project.name}`,
+          body: `You were added as a ${role.toLowerCase()} on ${project.name}.`,
+          href: `/projects/${projectId}`,
+          actorId: user.id,
+          entityType: "project",
+          entityId: projectId,
+        });
+      }
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error("[projects] addProjectMember notify failed:", err);
+    }
+  }
+
   return { success: true };
 }
 
@@ -314,14 +342,38 @@ export async function addMilestoneAssignee(_prev: unknown, formData: FormData) {
   if (existing) return { error: "Already assigned" };
 
   await db.milestoneAssignee.create({ data: { milestoneId, userId } });
-  // Look up the milestone to find its project so we can revalidate the specific
-  // project detail page and the user's team profile.
+  // Look up the milestone (including project + title) so we can revalidate
+  // the right pages and notify the new assignee with useful context.
   const milestone = await db.milestone.findUnique({
     where: { id: milestoneId },
-    select: { projectId: true },
+    select: {
+      title: true,
+      projectId: true,
+      project: { select: { name: true } },
+    },
   });
   if (milestone?.projectId) revalidatePath(`/projects/${milestone.projectId}`);
   revalidateUser(userId);
+
+  // Notify the new assignee (skip self-assignment)
+  if (milestone && userId !== user.id) {
+    try {
+      await notify({
+        recipientId: userId,
+        type: "milestone-assigned",
+        title: `Milestone assigned: ${milestone.title}`,
+        body: milestone.project ? `On ${milestone.project.name}` : undefined,
+        href: milestone.projectId ? `/projects/${milestone.projectId}` : undefined,
+        actorId: user.id,
+        entityType: "milestone",
+        entityId: milestoneId,
+      });
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error("[projects] addMilestoneAssignee notify failed:", err);
+    }
+  }
+
   return { success: true };
 }
 
