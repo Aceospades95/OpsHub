@@ -189,6 +189,55 @@ The full list of permission flags (`canView`, `canEdit`, `canCreate`,
 `ALL_PERMISSION_FLAGS` in the same file, with human-readable labels in
 `PERMISSION_FLAG_LABELS`. Don't hardcode flag names in UIs — import from there.
 
+## Email infrastructure
+
+All outbound email routes through `src/lib/email/`. There's one public API
+(`sendFromTemplate()`) and a driver abstraction so adding a new provider is
+a single-file change.
+
+### Sending an email
+
+```ts
+import { sendFromTemplate } from "@/lib/email";
+
+await sendFromTemplate(
+  "welcome",
+  { name: user.name, loginUrl: "https://opshub.local/login" },
+  { to: user.email, entityType: "user", entityId: user.id }
+);
+```
+
+The audit context (`entityType`, `entityId`) is optional but recommended — it
+makes the `/admin/emails` log searchable by entity later.
+
+### Adding a template
+
+1. Add a typed `EmailTemplate<YourData>` function to `src/lib/email/templates.ts`
+2. Register it in the `TEMPLATES` map and `TemplateDataMap` interface
+3. Call `sendFromTemplate("your-key", data, { to: ... })` from anywhere
+
+### Adding a provider
+
+1. Create `src/lib/email/resend-driver.ts` (or postmark/ses/etc.) exporting
+   an `EmailDriver` with a `send()` that returns `EmailSendResult`
+2. Add it to the `DRIVERS` map in `src/lib/email/drivers.ts`
+3. Set `EMAIL_DRIVER=resend` in env (plus any provider-specific secrets)
+4. Done — the log table records which driver handled each send
+
+### Default behavior
+
+If `EMAIL_DRIVER` is unset or points to an unregistered driver, the `log`
+driver is used. It writes to the `EmailLog` table and logs to stdout but
+does **not** actually send anything. This is the safe default for dev and
+staging so no email accidentally goes to real addresses.
+
+### Admin page
+
+`/admin/emails` shows the 100 most recent log rows, sent/failed counts, the
+active driver, and a "Send test email" button that sends the `test` template
+to the signed-in admin. Useful for verifying the pipeline without touching
+customer-facing templates.
+
 ## How to extend this document
 
 When you add a new module or feature:

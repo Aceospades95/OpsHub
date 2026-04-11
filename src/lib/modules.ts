@@ -27,7 +27,8 @@ export type ModuleKey =
   | "admin"
   | "widgets"
   | "theme"
-  | "sidebar";
+  | "sidebar"
+  | "emails";
 
 export type PermissionFlag =
   | "canView"
@@ -236,6 +237,15 @@ export const MODULES: ModuleDefinition[] = [
     href: "/admin/sidebar",
     icon: "PanelLeft",
     description: "Sidebar section and ordering configuration",
+    section: "admin",
+    permissioned: false,
+  },
+  {
+    key: "emails",
+    label: "Email Log",
+    href: "/admin/emails",
+    icon: "Mail",
+    description: "Outbound email audit log and test sender",
     section: "admin",
     permissioned: false,
   },

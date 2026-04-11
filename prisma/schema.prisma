@@ -794,6 +794,34 @@ model Assignment {
   @@index([status])
 }
 
+// ─── EMAIL LOG ─────────────────────────────────────────
+//
+// Every outbound email routed through src/lib/email/ lands here for audit
+// and debugging. In dev the "log" driver ONLY writes to this table and
+// doesn't actually send, so it's safe to test templates without spamming.
+
+model EmailLog {
+  id          String   @id @default(cuid())
+  toAddresses String   // comma-separated recipient list
+  fromAddress String
+  subject     String
+  bodyHtml    String   @db.Text
+  bodyText    String?  @db.Text
+  driver      String   // which driver handled send: "log", "resend", etc
+  status      String   // "sent" | "failed" | "queued"
+  messageId   String?  // provider's message ID when available
+  error       String?  @db.Text
+  templateKey String?  // which template was used
+  entityType  String?  // optional audit: entity this email is about
+  entityId    String?
+  sentAt      DateTime @default(now())
+
+  @@index([sentAt])
+  @@index([status])
+  @@index([templateKey])
+  @@index([entityType, entityId])
+}
+
 // ─── CUSTOM WIDGETS ────────────────────────────────────
 
 model CustomWidget {
