@@ -10,8 +10,8 @@ export async function WidgetMyTasks({ userId }: { userId: string }) {
     orderBy: [{ priority: "asc" }, { dueDate: "asc" }],
     take: 8,
     include: {
-      project: { select: { name: true } },
-      client: { select: { name: true } },
+      project: { select: { id: true, name: true } },
+      client: { select: { id: true, name: true } },
     },
   });
 
@@ -46,7 +46,11 @@ export async function WidgetMyTasks({ userId }: { userId: string }) {
                     </span>
                   </div>
                   <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                    {task.project && <span>{task.project.name}</span>}
+                    {task.project && (
+                      <Link href={`/projects/${task.project.id}`} className="hover:text-primary hover:underline">
+                        {task.project.name}
+                      </Link>
+                    )}
                     {task.dueDate && (
                       <span className={`flex items-center gap-1 ${new Date(task.dueDate) < new Date() ? "text-destructive" : ""}`}>
                         <Clock className="h-3 w-3" /> {format(new Date(task.dueDate), "MMM d")}

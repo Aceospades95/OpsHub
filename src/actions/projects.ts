@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { requireAuth, resolveModulePerms } from "@/lib/permissions";
 import { logActivity } from "@/lib/activity";
 import { revalidatePath } from "next/cache";
+import { revalidateProject, revalidateUser } from "@/lib/revalidate-entity";
 import { z } from "zod";
 
 const projectSchema = z.object({
@@ -74,9 +75,7 @@ export async function createProject(_prev: unknown, formData: FormData) {
   }
 
   await logActivity("created", "project", project.id, user.id, project.name);
-  revalidatePath("/projects");
-  revalidatePath("/clients");
-  revalidatePath("/team", "layout");
+  revalidateProject(project.id, { clientId: project.clientId });
   return { success: true };
 }
 
@@ -99,6 +98,13 @@ export async function updateProject(_prev: unknown, formData: FormData) {
 
   if (!parsed.success) return { error: "Invalid input", fieldErrors: parsed.error.flatten().fieldErrors };
 
+  // Look up the previous clientId so we can revalidate the old client's page too
+  // if the client changed (the old client's project list needs to drop this project).
+  const previous = await db.project.findUnique({
+    where: { id },
+    select: { clientId: true },
+  });
+
   await db.project.update({
     where: { id },
     data: {
@@ -111,11 +117,10 @@ export async function updateProject(_prev: unknown, formData: FormData) {
   });
 
   await logActivity("updated", "project", id, user.id, parsed.data.name);
-  revalidatePath(`/projects/${id}`);
-  revalidatePath("/projects");
-  // Also revalidate the staffing matrix since project offering/client/status
-  // all affect how the project appears there.
-  revalidatePath("/team", "layout");
+  revalidateProject(id, {
+    clientId: parsed.data.clientId,
+    previousClientId: previous?.clientId ?? null,
+  });
   return { success: true };
 }
 
@@ -130,8 +135,7 @@ export async function deleteProject(_prev: unknown, formData: FormData) {
 
   await db.project.delete({ where: { id } });
   await logActivity("deleted", "project", id, user.id, project.name);
-  revalidatePath("/projects");
-  revalidatePath("/team", "layout");
+  revalidateProject(id, { clientId: project.clientId });
   return { success: true };
 }
 
@@ -155,6 +159,9 @@ export async function addProjectMember(_prev: unknown, formData: FormData) {
   });
 
   revalidatePath(`/projects/${projectId}`);
+  // The new member's /team/{userId} page shows project memberships, so it needs
+  // to be revalidated too.
+  revalidateUser(userId);
   return { success: true };
 }
 
@@ -164,8 +171,15 @@ export async function removeProjectMember(_prev: unknown, formData: FormData) {
   if (!perms.canEdit) return { error: "Permission denied" };
 
   const id = formData.get("id") as string;
+  // Look up what we're removing so we can revalidate the specific project detail
+  // page and the specific user's team profile (both show the membership).
+  const member = await db.projectMember.findUnique({
+    where: { id },
+    select: { projectId: true, userId: true },
+  });
   await db.projectMember.delete({ where: { id } });
-  revalidatePath("/projects");
+  if (member?.projectId) revalidatePath(`/projects/${member.projectId}`);
+  if (member?.userId) revalidateUser(member.userId);
   return { success: true };
 }
 
@@ -251,7 +265,14 @@ export async function addMilestoneAssignee(_prev: unknown, formData: FormData) {
   if (existing) return { error: "Already assigned" };
 
   await db.milestoneAssignee.create({ data: { milestoneId, userId } });
-  revalidatePath("/projects");
+  // Look up the milestone to find its project so we can revalidate the specific
+  // project detail page and the user's team profile.
+  const milestone = await db.milestone.findUnique({
+    where: { id: milestoneId },
+    select: { projectId: true },
+  });
+  if (milestone?.projectId) revalidatePath(`/projects/${milestone.projectId}`);
+  revalidateUser(userId);
   return { success: true };
 }
 
@@ -261,8 +282,15 @@ export async function removeMilestoneAssignee(_prev: unknown, formData: FormData
   if (!perms.canEdit) return { error: "Permission denied" };
 
   const id = formData.get("id") as string;
+  // Look up the assignee (to get userId and milestone's project) before delete
+  // so we can revalidate both the project and the user profile.
+  const assignee = await db.milestoneAssignee.findUnique({
+    where: { id },
+    select: { userId: true, milestone: { select: { projectId: true } } },
+  });
   await db.milestoneAssignee.delete({ where: { id } });
-  revalidatePath("/projects");
+  if (assignee?.milestone?.projectId) revalidatePath(`/projects/${assignee.milestone.projectId}`);
+  if (assignee?.userId) revalidateUser(assignee.userId);
   return { success: true };
 }
 

@@ -34,6 +34,50 @@ where the entity could appear.**
 | Task | (list page `/tasks`) | `revalidateTask({ projectId?, assigneeId?, clientId?, previousAssigneeId? })` | `/tasks`, `/dashboard`, project detail, client detail, assignee profile |
 | Comment | (attached to parent entity) | `revalidateComment({ entityType, entityId, authorId? })` | parent entity's detail page, `/dashboard`, author profile |
 
+## Where the Project entity appears (and how to link)
+
+Every `project.name`, `task.project.name`, `cert.project.name`, etc. must link to
+`/projects/{project.id}`.
+
+| Location | Component | Linked? |
+|---|---|---|
+| Projects list page | `projects-page-client.tsx` | ✅ |
+| Project detail (canonical) | `projects/[projectId]/page.tsx` | N/A (self) |
+| Dashboard My Tasks widget | `dashboard/page.tsx` | ✅ |
+| Dashboard widget file | `widget-my-tasks.tsx` | ✅ |
+| Dashboard recent projects | `widget-recent-projects.tsx` | ✅ |
+| Dashboard project status | `widget-project-status.tsx` | ✅ |
+| Dashboard recent documents | `widget-recent-documents.tsx` | ✅ |
+| Tasks page | `tasks/page.tsx` | ✅ |
+| Team staffing matrix | `staffing-matrix.tsx` | ✅ |
+| Team profile projects tab | `employee-detail-client.tsx` | ✅ |
+| Team employee list grid | `employee-list.tsx` | ✅ |
+| Client detail project list | `clients/[clientId]/page.tsx` | ✅ |
+| Contract detail project link | `contracts/[contractId]/page.tsx` | ✅ |
+| Search results | `search/page.tsx` | ✅ |
+| Tool detail project list | `tools/[toolId]/tool-projects.tsx` | ✅ |
+
+## Mutation audit for Project
+
+| Action | File | Helper call | Notes |
+|---|---|---|---|
+| `createProject` | `projects.ts` | `revalidateProject(id, { clientId })` | Revalidates new client |
+| `updateProject` | `projects.ts` | `revalidateProject(id, { clientId, previousClientId })` | Looks up previous client before update |
+| `deleteProject` | `projects.ts` | `revalidateProject(id, { clientId })` | Revalidates client too |
+| `addProjectMember` | `projects.ts` | `revalidatePath(project)` + `revalidateUser(userId)` | Member's team page shows projects |
+| `removeProjectMember` | `projects.ts` | `revalidatePath(project)` + `revalidateUser(userId)` | Looks up member before delete |
+| `createMilestone` / `toggleMilestone` / `deleteMilestone` | `projects.ts` | `revalidatePath(project)` | Scoped to the parent project |
+| `addMilestoneAssignee` | `projects.ts` | Looks up milestone's project + `revalidateUser(userId)` | Both project + user profile refresh |
+| `removeMilestoneAssignee` | `projects.ts` | Looks up before delete + revalidates both | |
+| `linkToolToProject` | `projects.ts` | `revalidatePath(project)` | Only affects project detail |
+| `createContract` | `contracts.ts` | `revalidatePath(contracts/client/project)` | If contract has projectId/clientId |
+| `updateContract` | `contracts.ts` | Revalidates old + new project/client | Looks up previous before update |
+| `deleteContract` | `contracts.ts` | `revalidatePath(contracts/client/project)` | If contract had projectId/clientId |
+| `createDocument` / `deleteDocument` | `documents.ts` | `revalidatePath(/projects/{id})` | |
+| `updateDocument` / `restoreDocumentVersion` | `documents.ts` | Revalidates both document page and parent project | |
+| `createTask` / `updateTask` / `deleteTask` / `updateTaskStatus` | `tasks.ts` | `revalidateTask({ projectId, clientId, assigneeId, previousAssigneeId? })` | |
+| `createClient` / `updateClient` / `deleteClient` | `clients.ts` | `revalidateClient(id)` | Cascades to `/projects` and `/team` via helper |
+
 ## Where the User entity appears (and how to link)
 
 This is the reference for anyone adding a new component that touches Users.

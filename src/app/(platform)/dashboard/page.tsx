@@ -200,8 +200,16 @@ export default async function DashboardPage() {
                       </span>
                     </div>
                     <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                      {task.project && <span>{task.project.name}</span>}
-                      {task.client && <span>{task.client.name}</span>}
+                      {task.project && (
+                        <Link href={`/projects/${task.project.id}`} className="hover:text-primary hover:underline">
+                          {task.project.name}
+                        </Link>
+                      )}
+                      {task.client && (
+                        <Link href={`/clients/${task.client.id}`} className="hover:text-primary hover:underline">
+                          {task.client.name}
+                        </Link>
+                      )}
                       {task.dueDate && (
                         <span className={`flex items-center gap-1 ${new Date(task.dueDate) < new Date() ? "text-destructive" : ""}`}>
                           <Clock className="h-3 w-3" />

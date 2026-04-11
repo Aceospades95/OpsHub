@@ -4,18 +4,17 @@ import { db } from "@/lib/db";
 import { requireAuth } from "@/lib/permissions";
 import { logActivity } from "@/lib/activity";
 import { revalidatePath } from "next/cache";
+import { revalidateAssignment } from "@/lib/revalidate-entity";
 import { z } from "zod";
 
 function requireAdminOrManager(role: string) {
   if (role !== "ADMIN" && role !== "MANAGER") throw new Error("Admin or Manager access required");
 }
 
-// Revalidate all paths where an assignment could appear
+// Revalidate all paths where an assignment could appear.
+// Local alias for the central helper to keep existing call sites short.
 function revalidateAssignmentPaths(employeeId?: string | null, projectId?: string | null) {
-  revalidatePath("/team", "layout");
-  revalidatePath("/projects", "layout");
-  if (employeeId) revalidatePath(`/team/${employeeId}`);
-  if (projectId) revalidatePath(`/projects/${projectId}`);
+  revalidateAssignment({ employeeId, projectId });
 }
 
 const assignmentSchema = z.object({

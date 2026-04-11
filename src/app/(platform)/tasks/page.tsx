@@ -204,8 +204,16 @@ export default async function TasksPage({
                         <div className="flex-1 min-w-0">
                           <span className="font-medium text-foreground line-through">{task.title}</span>
                           <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
-                            {task.project && <span>{task.project.name}</span>}
-                            {task.client && <span>{task.client.name}</span>}
+                            {task.project && (
+                              <Link href={`/projects/${task.project.id}`} className="hover:text-primary hover:underline">
+                                {task.project.name}
+                              </Link>
+                            )}
+                            {task.client && (
+                              <Link href={`/clients/${task.client.id}`} className="hover:text-primary hover:underline">
+                                {task.client.name}
+                              </Link>
+                            )}
                             {task.assignee && (
                               <Link href={`/team/${task.assignee.id}`} className="hover:text-primary hover:underline">
                                 {task.assignee.name}

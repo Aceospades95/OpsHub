@@ -2,7 +2,7 @@
 
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { revalidatePath } from "next/cache";
+import { revalidateTask } from "@/lib/revalidate-entity";
 import { z } from "zod";
 
 const taskSchema = z.object({
@@ -38,7 +38,7 @@ export async function createTask(_prevState: unknown, formData: FormData) {
 
   const data = parsed.data;
 
-  await db.task.create({
+  const task = await db.task.create({
     data: {
       title: data.title,
       description: data.description || null,
@@ -56,14 +56,17 @@ export async function createTask(_prevState: unknown, formData: FormData) {
     data: {
       action: "created",
       entityType: "task",
-      entityId: "new",
+      entityId: task.id,
       details: data.title,
       userId: session.user.id,
     },
   });
 
-  revalidatePath("/dashboard");
-  revalidatePath("/tasks");
+  revalidateTask({
+    projectId: task.projectId,
+    clientId: task.clientId,
+    assigneeId: task.assigneeId,
+  });
   return { success: true };
 }
 
@@ -81,11 +84,11 @@ export async function updateTaskStatus(taskId: string, status: string) {
     },
   });
 
-  revalidatePath("/dashboard");
-  revalidatePath("/tasks");
-  if (task.projectId) {
-    revalidatePath(`/projects/${task.projectId}`);
-  }
+  revalidateTask({
+    projectId: task.projectId,
+    clientId: task.clientId,
+    assigneeId: task.assigneeId,
+  });
   return { success: true };
 }
 
@@ -113,7 +116,14 @@ export async function updateTask(_prevState: unknown, formData: FormData) {
   const data = parsed.data;
   const completedAt = data.status === "DONE" ? new Date() : null;
 
-  await db.task.update({
+  // Look up the previous state so we can revalidate pages the task is moving
+  // away from (old project, old client, old assignee).
+  const previous = await db.task.findUnique({
+    where: { id: taskId },
+    select: { projectId: true, clientId: true, assigneeId: true },
+  });
+
+  const updated = await db.task.update({
     where: { id: taskId },
     data: {
       title: data.title,
@@ -128,8 +138,21 @@ export async function updateTask(_prevState: unknown, formData: FormData) {
     },
   });
 
-  revalidatePath("/dashboard");
-  revalidatePath("/tasks");
+  // Revalidate the new location
+  revalidateTask({
+    projectId: updated.projectId,
+    clientId: updated.clientId,
+    assigneeId: updated.assigneeId,
+    previousAssigneeId: previous?.assigneeId,
+  });
+  // If project/client changed, also revalidate the previous project/client pages
+  // so the task disappears from them.
+  if (previous?.projectId && previous.projectId !== updated.projectId) {
+    revalidateTask({ projectId: previous.projectId });
+  }
+  if (previous?.clientId && previous.clientId !== updated.clientId) {
+    revalidateTask({ clientId: previous.clientId });
+  }
   return { success: true };
 }
 
@@ -137,9 +160,17 @@ export async function deleteTask(taskId: string) {
   const session = await auth();
   if (!session?.user) return { error: "Unauthorized" };
 
+  // Look up before delete so we can revalidate the right pages
+  const task = await db.task.findUnique({
+    where: { id: taskId },
+    select: { projectId: true, clientId: true, assigneeId: true },
+  });
   await db.task.delete({ where: { id: taskId } });
 
-  revalidatePath("/dashboard");
-  revalidatePath("/tasks");
+  revalidateTask({
+    projectId: task?.projectId,
+    clientId: task?.clientId,
+    assigneeId: task?.assigneeId,
+  });
   return { success: true };
 }
