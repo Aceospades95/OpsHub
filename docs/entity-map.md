@@ -238,6 +238,72 @@ active driver, and a "Send test email" button that sends the `test` template
 to the signed-in admin. Useful for verifying the pipeline without touching
 customer-facing templates.
 
+## File storage infrastructure
+
+All file uploads route through `src/lib/storage/`. Same pattern as the email
+layer: public API, driver interface, driver registry, default local driver.
+
+### Uploading a file
+
+```ts
+import { uploadFile } from "@/lib/storage";
+
+const file = await uploadFile({
+  content: buffer,
+  filename: "logo.png",
+  contentType: "image/png",
+  uploadedById: user.id,
+  visibility: "public",          // or "private"
+  // Optional legacy FKs so existing entity pages find the file
+  projectId: "proj_abc",
+});
+
+// file.url === "/api/files/{file.id}" — use this in <img src> / <a href>
+```
+
+### Serving files
+
+`GET /api/files/{id}` looks up the `File` row, reads the bytes through
+whichever driver stored them, and streams back with correct `Content-Type`
+and `Content-Disposition`. Public files are readable without auth; private
+files require a signed-in session. Per-entity permission checks can be
+added to the route handler when a specific feature needs them.
+
+### Drivers
+
+- **local** (default) — writes to `.storage/files/` at the project root (or
+  `STORAGE_LOCAL_DIR` if set). Safe for dev and self-hosted. Directory is
+  gitignored so uploads never get committed.
+- **s3 / drive / postmark / …** — add a driver file exporting a
+  `StorageDriver` and register it in `src/lib/storage/drivers.ts`. Set
+  `STORAGE_DRIVER=<name>` in env to switch. No call-site changes needed.
+
+### File model
+
+Extended in session 6 with three new columns on the existing `File` model
+(added via migration `20260412000000_add_file_storage_fields`):
+
+- `storageDriver` — which driver stored the bytes (nullable for legacy rows)
+- `storageKey` — driver-specific key, unique per driver (nullable)
+- `visibility` — `"public"` or `"private"` (default private)
+
+Legacy `File` rows with just a `url` column continue to work — the route
+handler only serves files with `storageDriver` set, and other code paths
+can keep reading `file.url` directly.
+
+### Admin page
+
+`/admin/files` shows:
+- Active driver badge + explanation
+- Total file count and cumulative size
+- Per-driver breakdown (when multiple drivers are in use)
+- Most recent 50 uploads with filename link, MIME type, size, uploader,
+  and the driver-specific storage key
+- An inline **"Upload test file"** form (public/private toggle) so admins
+  can verify the pipeline end-to-end
+
+Module registered as `files` in the registry, gated to ADMIN.
+
 ## How to extend this document
 
 When you add a new module or feature:

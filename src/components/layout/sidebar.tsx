@@ -21,6 +21,7 @@ import {
   PanelLeft,
   Puzzle,
   Mail,
+  HardDrive,
   ChevronLeft,
   ChevronRight,
   Menu,
@@ -61,6 +62,7 @@ const ICON_MAP: Record<string, LucideIcon> = {
   PanelLeft,
   Puzzle,
   Mail,
+  HardDrive,
 };
 
 // Default labels/hrefs/icons come from the canonical module registry so there
@@ -75,6 +77,7 @@ const ROLE_GATED: Record<string, (role: string) => boolean> = {
   theme: (role) => role === "ADMIN",
   sidebar: (role) => role === "ADMIN",
   emails: (role) => role === "ADMIN",
+  files: (role) => role === "ADMIN",
 };
 
 // Modules always visible regardless of permissions

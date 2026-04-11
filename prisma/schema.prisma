@@ -539,6 +539,12 @@ model File {
   size               Int?
   mimeType           String?
   source             String   @default("upload")
+  // Storage-layer fields. When set, this file was uploaded through
+  // src/lib/storage/ and can be served via /api/files/{id}. Legacy rows
+  // have these fields null and store an external url directly.
+  storageDriver      String?  // "local", "s3", etc
+  storageKey         String?  @unique
+  visibility         String   @default("private") // "public" | "private"
   uploadedById       String
   projectId          String?
   contractId         String?
@@ -556,6 +562,9 @@ model File {
   supplier         Supplier?         @relation(fields: [supplierId], references: [id])
   intranetResource IntranetResource? @relation(fields: [intranetResourceId], references: [id])
   certification    Certification?    @relation(fields: [certificationId], references: [id])
+
+  @@index([storageDriver])
+  @@index([uploadedById])
 }
 
 model ExternalLink {
