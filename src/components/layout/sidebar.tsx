@@ -27,6 +27,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import type { SidebarConfig, SidebarItemConfig } from "@/lib/sidebar-config";
+import { SYSTEM_MODULES } from "@/lib/modules";
 
 interface CustomPage {
   id: string;
@@ -60,23 +61,9 @@ const ICON_MAP: Record<string, LucideIcon> = {
   Puzzle,
 };
 
-const SYSTEM_DEFAULTS: Record<string, { label: string; href: string; icon: string }> = {
-  dashboard: { label: "Dashboard", href: "/dashboard", icon: "LayoutDashboard" },
-  clients: { label: "Clients", href: "/clients", icon: "Building2" },
-  projects: { label: "Projects", href: "/projects", icon: "FolderKanban" },
-  tasks: { label: "Tasks", href: "/tasks", icon: "CheckSquare" },
-  team: { label: "Team", href: "/team", icon: "Users" },
-  contracts: { label: "Contracts", href: "/contracts", icon: "FileText" },
-  certifications: { label: "Certifications", href: "/certifications", icon: "Award" },
-  suppliers: { label: "Suppliers", href: "/suppliers", icon: "Truck" },
-  tools: { label: "Tools", href: "/tools", icon: "Wrench" },
-  intranet: { label: "Intranet", href: "/intranet", icon: "Globe" },
-  sandbox: { label: "Custom Pages", href: "/sandbox", icon: "Blocks" },
-  admin: { label: "Admin", href: "/admin/users", icon: "Shield" },
-  widgets: { label: "Widget Builder", href: "/admin/widgets", icon: "Puzzle" },
-  theme: { label: "Theme", href: "/admin/theme", icon: "Palette" },
-  sidebar: { label: "Sidebar", href: "/admin/sidebar", icon: "PanelLeft" },
-};
+// Default labels/hrefs/icons come from the canonical module registry so there
+// are no divergent hardcoded lists. Use a local alias for readability.
+const SYSTEM_DEFAULTS = SYSTEM_MODULES;
 
 // Modules that require specific roles
 const ROLE_GATED: Record<string, (role: string) => boolean> = {

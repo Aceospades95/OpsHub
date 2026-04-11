@@ -160,6 +160,35 @@ the correct link.
 | `saveEntityPermission` | `admin.ts` | `revalidateUser(userId)` | Permission display |
 | `deleteEntityPermission` | `admin.ts` | `revalidateUser(perm.userId)` | Looks up owner before delete |
 
+## Module registry
+
+The canonical list of modules lives in `src/lib/modules.ts`. Adding a new
+module should be a one-line change there (or a handful of lines for the full
+metadata). The registry is consumed by:
+
+- **Sidebar** (`src/components/layout/sidebar.tsx` and `admin/sidebar/sidebar-editor.tsx`) via the re-exported `SYSTEM_MODULES`
+- **Permissions gating** (`src/lib/permissions.ts` `getVisibleModules`) via `getPermissionedModules()`
+- **Admin permission editor** (`admin/users/[userId]/module-permissions.tsx`) via `getPermissionedModules()` and `ALL_PERMISSION_FLAGS`
+- **Employee permissions tab** (`team/[employeeId]/employee-detail-client.tsx`) same
+- **Module permission save action** (`actions/admin.ts` `saveModulePermissions`) same
+
+When you add a new module:
+1. Add an entry to `MODULES` in `src/lib/modules.ts` with the key, label, href,
+   icon, description, section, and whether it's permissioned
+2. If it should be permission-gated, set `permissioned: true` and it will
+   automatically appear in the admin permission UI and be enforced by
+   `getVisibleModules()`
+3. If it's an admin-only module, set `adminOnly: true`
+4. No other files need to change. Sidebar, admin UI, and permissions will
+   pick it up on next build.
+
+### Permission flags
+
+The full list of permission flags (`canView`, `canEdit`, `canCreate`,
+`canDelete`, `canComment`, `canUpload`, `canManage`) lives as
+`ALL_PERMISSION_FLAGS` in the same file, with human-readable labels in
+`PERMISSION_FLAG_LABELS`. Don't hardcode flag names in UIs — import from there.
+
 ## How to extend this document
 
 When you add a new module or feature:

@@ -5,6 +5,7 @@ import { requireAuth } from "@/lib/permissions";
 import { logActivity } from "@/lib/activity";
 import { revalidatePath } from "next/cache";
 import { revalidateUser } from "@/lib/revalidate-entity";
+import { getPermissionedModules, ALL_PERMISSION_FLAGS } from "@/lib/modules";
 import { hash } from "bcryptjs";
 import { z } from "zod";
 
@@ -183,18 +184,21 @@ export async function saveModulePermissions(_prev: unknown, formData: FormData) 
   requireAdminOrManager(admin.role);
 
   const userId = formData.get("userId") as string;
-  const modules = ["clients", "projects", "contracts", "suppliers", "tools", "intranet", "admin"];
-  const flags = ["canView", "canEdit", "canCreate", "canDelete", "canComment", "canUpload", "canManage"];
 
-  for (const mod of modules) {
+  // Iterate the module registry instead of hardcoding the list — adding a new
+  // permissioned module in src/lib/modules.ts makes it automatically appear
+  // in this save path with no changes here.
+  const permissionedModules = getPermissionedModules();
+
+  for (const mod of permissionedModules) {
     const data: Record<string, boolean> = {};
-    for (const flag of flags) {
-      data[flag] = formData.get(`${mod}_${flag}`) === "true";
+    for (const flag of ALL_PERMISSION_FLAGS) {
+      data[flag] = formData.get(`${mod.key}_${flag}`) === "true";
     }
 
     await db.modulePermission.upsert({
-      where: { userId_module: { userId, module: mod } },
-      create: { userId, module: mod, ...data },
+      where: { userId_module: { userId, module: mod.key } },
+      create: { userId, module: mod.key, ...data },
       update: data,
     });
   }

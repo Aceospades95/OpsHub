@@ -2,6 +2,7 @@ import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import type { Role } from "@prisma/client";
 import { redirect } from "next/navigation";
+import { getPermissionedModules } from "@/lib/modules";
 
 export type PermissionFlags = {
   canView: boolean;
@@ -128,25 +129,19 @@ export async function getVisibleModules(
   userId: string,
   role: Role
 ): Promise<string[]> {
-  const allModules = [
-    "clients",
-    "projects",
-    "contracts",
-    "certifications",
-    "team",
-    "suppliers",
-    "tools",
-    "intranet",
-    "admin",
-  ];
+  // Drive visibility from the module registry so adding a new permissioned
+  // module automatically adds it to the visible list without editing this file.
+  const permissioned = getPermissionedModules();
 
-  if (role === "ADMIN") return allModules;
+  if (role === "ADMIN") return permissioned.map((m) => m.key);
 
   const visible: string[] = [];
-  for (const mod of allModules) {
-    if (mod === "admin") continue; // admin module only for ADMIN role
-    const perms = await resolveModulePerms(userId, role, mod);
-    if (perms.canView) visible.push(mod);
+  for (const mod of permissioned) {
+    // Admin-only modules are never visible to non-ADMIN users regardless
+    // of their individual module permission rows.
+    if (mod.adminOnly) continue;
+    const perms = await resolveModulePerms(userId, role, mod.key);
+    if (perms.canView) visible.push(mod.key);
   }
   return visible;
 }

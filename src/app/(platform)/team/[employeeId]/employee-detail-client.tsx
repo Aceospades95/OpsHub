@@ -21,6 +21,7 @@ import { formatDistanceToNow } from "date-fns";
 import { updateUser, deleteUser, saveModulePermissions, saveEntityPermission, deleteEntityPermission } from "@/actions/admin";
 import { deleteAssignment } from "@/actions/assignments";
 import { AddAssignmentDialog } from "../components/add-assignment-dialog";
+import { getPermissionedModules, ALL_PERMISSION_FLAGS, PERMISSION_FLAG_LABELS } from "@/lib/modules";
 
 interface Assignment {
   id: string;
@@ -569,9 +570,6 @@ function ProjectsTab({ employee }: { employee: Employee }) {
 
 // ─── Permissions Tab (Admin only) ──────────────
 
-const MODULES = ["clients", "projects", "contracts", "suppliers", "tools", "intranet", "admin"];
-const FLAGS = ["canView", "canEdit", "canCreate", "canDelete", "canComment", "canUpload", "canManage"];
-
 function PermissionsTab({ employee, allClients, allProjects }: {
   employee: Employee;
   allClients: { id: string; name: string }[];
@@ -582,6 +580,9 @@ function PermissionsTab({ employee, allClients, allProjects }: {
   const [addEntityOpen, setAddEntityOpen] = useState(false);
   const [entityType, setEntityType] = useState("client");
 
+  // Driven from the module registry — adding a new permissioned module in
+  // src/lib/modules.ts automatically adds a row here.
+  const modules = getPermissionedModules();
   const permMap = new Map(employee.modulePermissions.map((p) => [p.module, p]));
   const entities = entityType === "client" ? allClients : allProjects;
   const nameMap = new Map([...allClients.map((c) => [c.id, c.name] as const), ...allProjects.map((p) => [p.id, p.name] as const)]);
@@ -622,20 +623,23 @@ function PermissionsTab({ employee, allClients, allProjects }: {
                 <thead>
                   <tr className="border-b border-border">
                     <th className="text-left p-2 font-medium">Module</th>
-                    {FLAGS.map((flag) => (
-                      <th key={flag} className="p-2 font-medium text-center text-xs">{flag.replace("can", "")}</th>
+                    {ALL_PERMISSION_FLAGS.map((flag) => (
+                      <th key={flag} className="p-2 font-medium text-center text-xs">{PERMISSION_FLAG_LABELS[flag]}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {MODULES.map((mod) => {
-                    const perm = permMap.get(mod);
+                  {modules.map((mod) => {
+                    const perm = permMap.get(mod.key);
                     return (
-                      <tr key={mod} className="border-b border-border">
-                        <td className="p-2 font-medium capitalize">{mod}</td>
-                        {FLAGS.map((flag) => (
+                      <tr key={mod.key} className="border-b border-border">
+                        <td className="p-2 font-medium">
+                          <div>{mod.label}</div>
+                          <div className="text-[11px] text-muted-foreground font-normal">{mod.description}</div>
+                        </td>
+                        {ALL_PERMISSION_FLAGS.map((flag) => (
                           <td key={flag} className="p-2 text-center">
-                            <input type="checkbox" name={`${mod}_${flag}`} value="true"
+                            <input type="checkbox" name={`${mod.key}_${flag}`} value="true"
                               defaultChecked={perm ? (perm as unknown as Record<string, boolean>)[flag] : false} className="rounded" />
                           </td>
                         ))}
