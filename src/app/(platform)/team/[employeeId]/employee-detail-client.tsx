@@ -15,8 +15,9 @@ import Link from "next/link";
 import {
   User, Briefcase, BarChart3, FolderOpen, MapPin, Phone,
   Mail, Calendar, Users, FileText, ChevronRight, Shield,
-  AlertTriangle, Pencil, Trash2, Plus,
+  AlertTriangle, Pencil, Trash2, Plus, Paperclip,
 } from "lucide-react";
+import { EmployeeFilesTab } from "./employee-files-tab";
 import { formatDistanceToNow } from "date-fns";
 import { updateUser, deleteUser, saveModulePermissions, saveEntityPermission, deleteEntityPermission } from "@/actions/admin";
 import { deleteAssignment } from "@/actions/assignments";
@@ -72,14 +73,25 @@ interface ActivityLog {
   createdAt: string;
 }
 
-type TabKey = "overview" | "assignments" | "reporting" | "projects" | "permissions" | "activity";
+type TabKey = "overview" | "assignments" | "reporting" | "projects" | "files" | "permissions" | "activity";
+
+interface EmployeeFileItem {
+  id: string;
+  name: string;
+  url: string;
+  size: number | null;
+  mimeType: string | null;
+  category: string | null;
+  createdAt: string;
+  uploadedBy: { id: string; name: string } | null;
+}
 
 function formatFte(v: number): string {
   return v % 1 === 0 ? v.toFixed(0) : v.toFixed(2);
 }
 
 export function EmployeeDetailClient({
-  employee, activity, canManage, isAdmin, allUsers, allClients, allProjects, serviceOfferings, roleDefinitions,
+  employee, activity, canManage, isAdmin, allUsers, allClients, allProjects, serviceOfferings, roleDefinitions, files, canViewFiles,
 }: {
   employee: Employee;
   activity: ActivityLog[];
@@ -90,6 +102,8 @@ export function EmployeeDetailClient({
   allProjects: { id: string; name: string; status: string; clientId: string; serviceOfferingId: string | null; serviceOffering: { id: string; name: string } | null }[];
   serviceOfferings: { id: string; name: string }[];
   roleDefinitions: { id: string; name: string }[];
+  files: EmployeeFileItem[];
+  canViewFiles: boolean;
 }) {
   const [activeTab, setActiveTab] = useState<TabKey>("overview");
   const [editOpen, setEditOpen] = useState(false);
@@ -108,6 +122,7 @@ export function EmployeeDetailClient({
     { key: "assignments", label: "Assignments & Capacity", icon: BarChart3 },
     { key: "reporting", label: "Reporting", icon: Users },
     { key: "projects", label: "Projects", icon: FolderOpen },
+    ...(canViewFiles ? [{ key: "files" as TabKey, label: "Files", icon: Paperclip }] : []),
     ...(isAdmin ? [{ key: "permissions" as TabKey, label: "Permissions", icon: Shield }] : []),
     { key: "activity", label: "Activity", icon: FileText },
   ];
@@ -221,6 +236,15 @@ export function EmployeeDetailClient({
       {activeTab === "assignments" && <AssignmentsTab employee={employee} totalFte={totalFte} canManage={canManage} onAddAssignment={() => setAddAssignmentOpen(true)} />}
       {activeTab === "reporting" && <ReportingTab employee={employee} />}
       {activeTab === "projects" && <ProjectsTab employee={employee} />}
+      {activeTab === "files" && canViewFiles && (
+        <EmployeeFilesTab
+          employeeId={employee.id}
+          employeeName={employee.name}
+          files={files}
+          canUpload={canViewFiles}
+          canDelete={canViewFiles}
+        />
+      )}
       {activeTab === "permissions" && isAdmin && <PermissionsTab employee={employee} allClients={allClients} allProjects={allProjects} />}
       {activeTab === "activity" && <ActivityTab activity={activity} />}
 

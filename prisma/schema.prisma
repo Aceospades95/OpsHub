@@ -154,7 +154,8 @@ model User {
   milestoneAssignments MilestoneAssignee[]
   comments             Comment[]
   activityLogs         ActivityLog[]
-  files                File[]
+  uploadedFiles        File[]             @relation("FileUploader")
+  profileFiles         File[]             @relation("FileOwner")
   modulePermissions    ModulePermission[]
   entityPermissions    EntityPermission[]
   assignedTasks        Task[]             @relation("TaskAssignee")
@@ -556,17 +557,24 @@ model File {
   createdAt          DateTime @default(now())
 
   certificationId  String?
+  userId           String?
+  // Optional freeform tag used by the employee files UI (resume, id,
+  // certification, training, other). Null for files attached to other
+  // entities.
+  category         String?
 
-  uploadedBy       User              @relation(fields: [uploadedById], references: [id])
+  uploadedBy       User              @relation("FileUploader", fields: [uploadedById], references: [id])
   project          Project?          @relation(fields: [projectId], references: [id])
   contract         Contract?         @relation(fields: [contractId], references: [id])
   document         Document?         @relation(fields: [documentId], references: [id])
   supplier         Supplier?         @relation(fields: [supplierId], references: [id])
   intranetResource IntranetResource? @relation(fields: [intranetResourceId], references: [id])
   certification    Certification?    @relation(fields: [certificationId], references: [id])
+  user             User?             @relation("FileOwner", fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([storageDriver])
   @@index([uploadedById])
+  @@index([userId])
 }
 
 model ExternalLink {

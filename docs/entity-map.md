@@ -304,6 +304,35 @@ can keep reading `file.url` directly.
 
 Module registered as `files` in the registry, gated to ADMIN.
 
+### Employee profile files
+
+The `File` model has two additional columns for employee profile uploads:
+
+- `userId` — target employee id (nullable; one File row still references
+  exactly one parent entity)
+- `category` — freeform tag used by the UI; bounded by the
+  `EMPLOYEE_FILE_CATEGORIES` constant in `src/actions/employee-files.ts`
+  to `resume | id | certification | training | contract | other`
+
+The `uploadFile()` storage helper accepts `userId` + `category` alongside
+the existing per-entity FKs. Employee uploads go through the dedicated
+server actions in `src/actions/employee-files.ts`:
+
+- `uploadEmployeeFile(formData)` — validates MIME type (PDF, Word,
+  Excel, PowerPoint, text, common images), 10MB cap, permission gate
+- `deleteEmployeeFile(fileId)` — looks up the file's userId and
+  applies the same permission gate
+
+**Permission gate**: employees can manage their own files, ADMIN and
+MANAGER can manage anyone's, everyone else has no access at all. The
+server action and the server component that fetches files both apply
+the same check so file metadata isn't leaked to unauthorized viewers.
+
+**UI**: new "Files" tab on `/team/[employeeId]` driven by
+`employee-files-tab.tsx`. Groups files by category, shows size + uploader
++ timestamp, supports upload (with category picker) and delete. Tab only
+appears when the viewer passes `canViewFiles`.
+
 ## Notifications infrastructure
 
 All in-app notifications route through `src/lib/notifications/`. One helper

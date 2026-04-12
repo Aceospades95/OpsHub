@@ -61,6 +61,10 @@ export async function uploadFile(params: {
   supplierId?: string;
   intranetResourceId?: string;
   certificationId?: string;
+  /** Target user id when attaching a file to an employee profile. */
+  userId?: string;
+  /** Freeform category tag, currently used by the employee files UI. */
+  category?: string;
 }) {
   const driver = getActiveDriver();
 
@@ -97,6 +101,8 @@ export async function uploadFile(params: {
       supplierId: params.supplierId,
       intranetResourceId: params.intranetResourceId,
       certificationId: params.certificationId,
+      userId: params.userId,
+      category: params.category,
     },
   });
 
