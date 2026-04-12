@@ -113,6 +113,56 @@ ${cta ? `${cta.label}: ${cta.url}\n\n` : ""}— OpsHub`;
   return { subject, html, text };
 };
 
+export interface ReportTemplateData {
+  recipientName: string;
+  /** Report display name, e.g., "Contracts expiring soon" */
+  reportName: string;
+  /** One-line description shown under the heading */
+  description: string;
+  /** Summary line like "12 contracts expiring in the next 60 days" */
+  summary: string;
+  /**
+   * Pre-rendered HTML body — usually the output of renderHtml(report) from
+   * the reports module. We inject it raw so formatters don't have to think
+   * about escaping. The caller is responsible for producing safe HTML.
+   */
+  htmlBody: string;
+  /** Plain-text fallback matching the HTML body */
+  textBody: string;
+  /** Optional CTA (e.g., link to the live admin view) */
+  cta?: { label: string; url: string };
+}
+
+const report: EmailTemplate<ReportTemplateData> = ({
+  recipientName,
+  reportName,
+  description,
+  htmlBody,
+  textBody,
+  cta,
+}) => {
+  const subject = `OpsHub report · ${reportName}`;
+  const ctaHtml = cta
+    ? `<p style="margin:16px 0 0;"><a href="${escapeHtml(cta.url)}" style="display:inline-block;padding:10px 18px;background:#1a1a1a;color:#fff;text-decoration:none;border-radius:6px;">${escapeHtml(cta.label)}</a></p>`
+    : "";
+  const html = shell(
+    reportName,
+    `<p style="margin:0 0 8px;">Hi ${escapeHtml(recipientName)},</p>
+     <p style="margin:0 0 16px;color:#555;">${escapeHtml(description)}</p>
+     ${htmlBody}
+     ${ctaHtml}`
+  );
+  const text = `Hi ${recipientName},
+
+${reportName}
+${description}
+
+${textBody}
+
+${cta ? `${cta.label}: ${cta.url}\n\n` : ""}— OpsHub`;
+  return { subject, html, text };
+};
+
 export interface TestTemplateData {
   to: string;
 }
@@ -145,6 +195,7 @@ If you're seeing this, the email pipeline is wired up correctly.
 export const TEMPLATES: Record<string, EmailTemplate<unknown>> = {
   welcome: welcome as EmailTemplate<unknown>,
   notification: notification as EmailTemplate<unknown>,
+  report: report as EmailTemplate<unknown>,
   test: test as EmailTemplate<unknown>,
 };
 
@@ -152,6 +203,7 @@ export const TEMPLATES: Record<string, EmailTemplate<unknown>> = {
 export interface TemplateDataMap {
   welcome: WelcomeTemplateData;
   notification: NotificationTemplateData;
+  report: ReportTemplateData;
   test: TestTemplateData;
 }
 

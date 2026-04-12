@@ -56,6 +56,7 @@ export const DEFAULT_SIDEBAR_CONFIG: SidebarConfig = {
         { key: "notifications", visible: true },
         { key: "jobs", visible: true },
         { key: "import", visible: true },
+        { key: "reports", visible: true },
       ],
     },
   ],

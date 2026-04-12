@@ -25,6 +25,7 @@ import {
   Bell,
   Repeat,
   FileSpreadsheet,
+  BarChart3,
   ChevronLeft,
   ChevronRight,
   Menu,
@@ -73,6 +74,7 @@ const ICON_MAP: Record<string, LucideIcon> = {
   Bell,
   Repeat,
   FileSpreadsheet,
+  BarChart3,
 };
 
 // Default labels/hrefs/icons come from the canonical module registry so there
@@ -91,6 +93,7 @@ const ROLE_GATED: Record<string, (role: string) => boolean> = {
   notifications: (role) => role === "ADMIN",
   jobs: (role) => role === "ADMIN",
   import: (role) => role === "ADMIN",
+  reports: (role) => role === "ADMIN",
 };
 
 // Modules always visible regardless of permissions

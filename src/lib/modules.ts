@@ -32,7 +32,8 @@ export type ModuleKey =
   | "files"
   | "notifications"
   | "jobs"
-  | "import";
+  | "import"
+  | "reports";
 
 export type PermissionFlag =
   | "canView"
@@ -286,6 +287,15 @@ export const MODULES: ModuleDefinition[] = [
     href: "/admin/import",
     icon: "FileSpreadsheet",
     description: "Bulk-create records from CSV uploads",
+    section: "admin",
+    permissioned: false,
+  },
+  {
+    key: "reports",
+    label: "Reports",
+    href: "/admin/reports",
+    icon: "BarChart3",
+    description: "Saved reports, CSV download, and email digests",
     section: "admin",
     permissioned: false,
   },

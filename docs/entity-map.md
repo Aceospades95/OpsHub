@@ -761,6 +761,81 @@ name and href, then calls `notify()` with the full list as the
 row and (if emails are configured) their own email using the
 `notification` template. The notification type is `"mention"`.
 
+## Reports
+
+Reports are named, read-only queries that produce a structured table
+and can be viewed, downloaded as CSV, or emailed. Same registry
+pattern as the email / jobs / notifications / importers layers.
+
+### Adding a new report
+
+```ts
+// src/lib/reports/reports/my-report.ts
+import { db } from "@/lib/db";
+import type { ReportDefinition } from "../types";
+
+export const myReport: ReportDefinition = {
+  key: "my-report",
+  name: "My report",
+  description: "What this report answers.",
+  module: "projects",
+  schedulable: true,
+  async run() {
+    const rows = await db.something.findMany({ ... });
+    return {
+      summary: `${rows.length} items match`,
+      columns: [
+        { key: "name", label: "Name" },
+        { key: "count", label: "Count", align: "right" },
+      ],
+      rows,
+      emptyMessage: "Nothing to report.",
+    };
+  },
+};
+```
+
+Then register it in `src/lib/reports/registry.ts` and it appears
+automatically in the admin `/admin/reports` list, grouped by the
+`module` field.
+
+### Rendering
+
+`src/lib/reports/format.ts` provides three renderers that work on any
+`ReportOutput`:
+
+- `renderCsv(output)` — RFC 4180 CSV with CRLF endings and proper
+  quote escaping for Excel compatibility
+- `renderHtml(output)` — inline-styled HTML table suitable for email
+  bodies (no `<style>` tags, since email clients strip them)
+- `renderText(output)` — summary + bullet list plain-text fallback
+
+All three use the `format` callback on a column if provided, otherwise
+default formatting handles Dates, booleans, and nulls sensibly.
+
+### Download + email flow
+
+- **CSV download** — `GET /api/reports/{key}/csv` (admin-only) runs the
+  report and streams a CSV attachment with a dated filename
+- **On-demand email** — `emailReportAction(key, recipients)` renders
+  HTML + text, sends one email per recipient via the `report` template,
+  and logs each send to the email log. Accepts a mix of user ids
+  (resolved against the user table) and raw email addresses
+- **Scheduled digest** — the `daily-reports-digest` job in
+  `src/lib/jobs/jobs/` runs every `schedulable: true` report and
+  emails a combined digest to all login-capable admins. Register it
+  with the cron endpoint to receive it daily
+
+### Built-in reports
+
+| Key | What it answers |
+|---|---|
+| `contracts-expiring` | Contracts with end or renewal date in next 60 days |
+| `certifications-expiring` | Certifications lapsing within 90 days with renewal cost |
+| `team-utilization` | Total active FTE per employee + assigned projects |
+| `project-status` | Active portfolio with milestone + task progress |
+| `activity-audit` | ActivityLog events in last 7 days grouped by user |
+
 ## How to extend this document
 
 When you add a new module or feature:
