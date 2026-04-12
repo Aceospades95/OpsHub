@@ -271,7 +271,7 @@ export function PageLayoutClient({
 
     return (
       <>
-        <div className="grid grid-cols-12" style={{ gap: `${gap}px`, gridAutoRows: `${ROW_HEIGHT}px` }}>
+        <div className="grid grid-cols-12 min-w-[768px]" style={{ gap: `${gap}px`, gridAutoRows: `${ROW_HEIGHT}px` }}>
           {sortedCards.map((card) => (
             <div
               key={card.id}

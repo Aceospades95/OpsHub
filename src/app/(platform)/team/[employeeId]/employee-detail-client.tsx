@@ -351,7 +351,7 @@ function OverviewTab({ employee, totalFte, activeAssignments, canManage, onAddAs
                 style={{ width: `${Math.min(totalFte * 100, 100)}%` }}
               />
             </div>
-            <div className="grid grid-cols-3 gap-4 text-center">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-center">
               <div className="p-3 rounded-lg bg-muted/50"><p className="text-xs text-muted-foreground">Allocated</p><p className="text-lg font-bold">{formatFte(totalFte)}</p></div>
               <div className="p-3 rounded-lg bg-muted/50"><p className="text-xs text-muted-foreground">Available</p><p className={`text-lg font-bold ${remaining < 0 ? "text-red-600" : remaining > 0 ? "text-green-600" : ""}`}>{formatFte(Math.max(remaining, 0))}</p></div>
               <div className="p-3 rounded-lg bg-muted/50"><p className="text-xs text-muted-foreground">Assignments</p><p className="text-lg font-bold">{activeAssignments.length}</p></div>

@@ -290,7 +290,7 @@ export function WidgetBuilder({
             </div>
 
             {/* Sort & Limit */}
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
               <div>
                 <label className="text-xs font-medium text-muted-foreground">Sort By</label>
                 <select value={config.sort.field} onChange={(e) => updateConfig({ sort: { ...config.sort, field: e.target.value } })}

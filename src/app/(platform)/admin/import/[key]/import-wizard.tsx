@@ -143,7 +143,7 @@ export function ImportWizard({ importerKey, fields }: Props) {
           <CardTitle>Import complete</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div className="rounded border border-border p-4 text-center">
               <p className="text-3xl font-bold text-emerald-600">{outcome.imported}</p>
               <p className="text-xs text-muted-foreground mt-1">Imported</p>
@@ -207,7 +207,7 @@ export function ImportWizard({ importerKey, fields }: Props) {
           {/* Mapping form */}
           <div className="space-y-3">
             {fields.map((field) => (
-              <div key={field.key} className="grid grid-cols-3 gap-3 items-start">
+              <div key={field.key} className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-start">
                 <div>
                   <p className="text-sm font-medium">
                     {field.label}

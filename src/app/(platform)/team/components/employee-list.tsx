@@ -257,7 +257,7 @@ export function EmployeeList({ users, inactiveUsers, search }: EmployeeListProps
 
       {/* Employee Table */}
       <Card>
-        <CardContent className="p-0">
+        <CardContent className="p-0 overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border bg-muted/50">
@@ -292,7 +292,7 @@ export function EmployeeList({ users, inactiveUsers, search }: EmployeeListProps
           </button>
           {showInactive && (
             <Card className="opacity-75">
-              <CardContent className="p-0">
+              <CardContent className="p-0 overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-border bg-muted/50">

@@ -156,7 +156,7 @@ export function AddAssignmentDialog({
           </div>
         )}
 
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           {/* Role */}
           <div className="space-y-1">
             <label className="block text-sm font-medium">Role {defaultRoleName && `(${defaultRoleName})`}</label>

@@ -58,8 +58,8 @@ export default async function PlatformLayout({
           unreadNotifications={unreadCount}
           recentNotifications={serializedNotifications}
         />
-        <main className="flex-1 overflow-y-auto page-bg p-4 sm:p-6 lg:p-8">
-          <div className="mx-auto max-w-7xl">
+        <main className="flex-1 overflow-auto page-bg p-4 sm:p-6 lg:p-8">
+          <div className="mx-auto max-w-[1600px]">
             {children}
           </div>
         </main>
