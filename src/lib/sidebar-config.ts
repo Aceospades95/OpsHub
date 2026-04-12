@@ -52,7 +52,6 @@ export const DEFAULT_SIDEBAR_CONFIG: SidebarConfig = {
         { key: "theme", visible: true },
         { key: "sidebar", visible: true },
         { key: "emails", visible: true },
-        { key: "files", visible: true },
         { key: "notifications", visible: true },
         { key: "jobs", visible: true },
         { key: "import", visible: true },

@@ -70,3 +70,31 @@ export function applyMapping(
     return mapped;
   });
 }
+
+/**
+ * Generate a sample CSV template for an importer. Contains the header row
+ * (using field keys as column names) plus one example row showing the
+ * expected format for each field. Used by the "Download template" button
+ * in the wizard UI.
+ */
+export function generateSampleCsv(importer: ImporterDefinition): string {
+  const header = importer.fields.map((f) => f.key).join(",");
+  const example = importer.fields.map((f) => {
+    // Generate a plausible placeholder based on field key / description
+    if (f.description?.includes("Defaults to")) {
+      const match = f.description.match(/Defaults to (\w+)/);
+      if (match) return match[1];
+    }
+    if (f.key.toLowerCase().includes("email")) return "example@company.com";
+    if (f.key.toLowerCase().includes("date")) return "2025-01-15";
+    if (f.key.toLowerCase().includes("phone")) return "+1-555-0100";
+    if (f.key.toLowerCase().includes("url") || f.key.toLowerCase().includes("website")) return "https://example.com";
+    if (f.key.toLowerCase().includes("cost") || f.key.toLowerCase().includes("value")) return "1000";
+    if (f.key.toLowerCase().includes("currency")) return "USD";
+    if (f.key === "name" || f.key === "title") return `Sample ${importer.name.replace(/s$/, "")}`;
+    if (f.required) return `Example ${f.label}`;
+    return "";
+  }).join(",");
+
+  return `${header}\r\n${example}\r\n`;
+}

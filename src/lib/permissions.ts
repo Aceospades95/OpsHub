@@ -22,7 +22,7 @@ const ROLE_LEVEL: Record<Role, number> = {
   VIEWER: 1,
 };
 
-function getRoleDefaults(role: Role): PermissionFlags {
+export function getRoleDefaults(role: Role): PermissionFlags {
   const level = ROLE_LEVEL[role];
   return {
     canView: level >= 1,

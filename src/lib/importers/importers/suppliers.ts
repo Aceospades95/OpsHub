@@ -1,0 +1,97 @@
+/**
+ * Suppliers importer — bulk-create supplier records from CSV.
+ *
+ * Required: name, category
+ * Optional: contactName, contactEmail, contactPhone, address, website,
+ *           notes, status, isPreferred
+ */
+
+import type { SupplierStatus } from "@prisma/client";
+import { db } from "@/lib/db";
+import { logActivity } from "@/lib/activity";
+import type { ImporterDefinition, ImportResult, ImportRowResult } from "../types";
+
+const VALID_STATUSES: SupplierStatus[] = ["ACTIVE", "INACTIVE", "ARCHIVED"];
+
+function parseBool(value: string | undefined, defaultValue: boolean): boolean {
+  if (value === undefined || value === "") return defaultValue;
+  const v = value.trim().toLowerCase();
+  if (["false", "no", "0", "off"].includes(v)) return false;
+  if (["true", "yes", "1", "on"].includes(v)) return true;
+  return defaultValue;
+}
+
+export const suppliersImporter: ImporterDefinition = {
+  key: "suppliers",
+  name: "Suppliers",
+  description:
+    "Bulk-create supplier records. Required: name, category. Optional: contact info, status, preferred flag.",
+  module: "suppliers",
+
+  fields: [
+    { key: "name", label: "Supplier name", required: true, aliases: ["vendor", "company name", "supplier"] },
+    { key: "category", label: "Category", required: true, aliases: ["type", "vendor type", "supplier type"] },
+    { key: "status", label: "Status", required: false, description: "ACTIVE, INACTIVE, ARCHIVED. Defaults to ACTIVE.", aliases: ["supplier status"] },
+    { key: "contactName", label: "Contact name", required: false, aliases: ["contact", "primary contact", "rep"] },
+    { key: "contactEmail", label: "Contact email", required: false, aliases: ["email", "contact email address"] },
+    { key: "contactPhone", label: "Contact phone", required: false, aliases: ["phone", "telephone"] },
+    { key: "address", label: "Address", required: false, aliases: ["street address", "location"] },
+    { key: "website", label: "Website", required: false, aliases: ["url", "site"] },
+    { key: "notes", label: "Notes", required: false, aliases: ["description", "comments"] },
+    { key: "isPreferred", label: "Preferred supplier", required: false, description: "true/false. Defaults to false.", aliases: ["preferred", "is preferred"] },
+  ],
+
+  async commit(rows, ctx) {
+    const results: ImportRowResult[] = [];
+    let imported = 0, skipped = 0, failed = 0;
+
+    // Duplicate detection by name
+    const existing = new Set(
+      (await db.supplier.findMany({ select: { name: true } }))
+        .map((s) => s.name.toLowerCase())
+    );
+
+    for (let i = 0; i < rows.length; i++) {
+      const rowNumber = i + 1;
+      const raw = rows[i];
+      const name = (raw.name || "").trim();
+      const category = (raw.category || "").trim();
+
+      if (!name) { failed++; results.push({ row: rowNumber, status: "failed", message: "Missing name" }); continue; }
+      if (!category) { failed++; results.push({ row: rowNumber, status: "failed", message: "Missing category" }); continue; }
+
+      if (existing.has(name.toLowerCase())) {
+        skipped++; results.push({ row: rowNumber, status: "skipped", message: `Supplier already exists: "${name}"` });
+        continue;
+      }
+
+      const statusRaw = (raw.status || "ACTIVE").trim().toUpperCase();
+      const status = VALID_STATUSES.includes(statusRaw as SupplierStatus) ? (statusRaw as SupplierStatus) : null;
+      if (!status) { failed++; results.push({ row: rowNumber, status: "failed", message: `Invalid status "${raw.status}"` }); continue; }
+
+      try {
+        const supplier = await db.supplier.create({
+          data: {
+            name,
+            category,
+            status,
+            contactName: raw.contactName?.trim() || null,
+            contactEmail: raw.contactEmail?.trim() || null,
+            contactPhone: raw.contactPhone?.trim() || null,
+            address: raw.address?.trim() || null,
+            website: raw.website?.trim() || null,
+            notes: raw.notes?.trim() || null,
+            isPreferred: parseBool(raw.isPreferred, false),
+          },
+        });
+        existing.add(name.toLowerCase());
+        imported++; results.push({ row: rowNumber, status: "imported" });
+        await logActivity("imported", "supplier", supplier.id, ctx.triggeredBy, name);
+      } catch (err) {
+        failed++; results.push({ row: rowNumber, status: "failed", message: err instanceof Error ? err.message : "DB error" });
+      }
+    }
+
+    return { imported, skipped, failed, rows: results };
+  },
+};

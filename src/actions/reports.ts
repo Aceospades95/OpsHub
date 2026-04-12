@@ -40,7 +40,13 @@ export async function runReportAction(key: string) {
       triggeredAt: new Date(),
       triggeredBy: user.id,
     });
-    return { success: true as const, name, description, output };
+    // Strip non-serializable `format` callbacks from columns before
+    // returning to the client — the client has its own formatCell.
+    const safeOutput = {
+      ...output,
+      columns: output.columns.map(({ format: _f, ...rest }) => rest),
+    };
+    return { success: true as const, name, description, output: safeOutput };
   } catch (err) {
     return {
       success: false as const,

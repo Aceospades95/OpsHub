@@ -29,7 +29,6 @@ export type ModuleKey =
   | "theme"
   | "sidebar"
   | "emails"
-  | "files"
   | "notifications"
   | "jobs"
   | "import"
@@ -251,15 +250,6 @@ export const MODULES: ModuleDefinition[] = [
     href: "/admin/emails",
     icon: "Mail",
     description: "Outbound email audit log and test sender",
-    section: "admin",
-    permissioned: false,
-  },
-  {
-    key: "files",
-    label: "File Storage",
-    href: "/admin/files",
-    icon: "HardDrive",
-    description: "Storage driver status and uploaded file audit",
     section: "admin",
     permissioned: false,
   },

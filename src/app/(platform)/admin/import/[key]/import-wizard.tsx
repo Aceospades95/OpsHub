@@ -11,6 +11,7 @@ import {
   AlertCircle,
   ArrowRight,
   RotateCcw,
+  Download,
 } from "lucide-react";
 import { previewImport, commitImport } from "@/actions/import";
 
@@ -298,7 +299,17 @@ export function ImportWizard({ importerKey, fields }: Props) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Upload CSV</CardTitle>
+        <div className="flex items-center justify-between">
+          <CardTitle>Upload CSV</CardTitle>
+          <a
+            href={`/api/import/${importerKey}/template`}
+            download
+            className="inline-flex items-center rounded border border-border px-3 py-1.5 text-xs hover:bg-muted transition-colors"
+          >
+            <Download className="h-3 w-3 mr-1.5" />
+            Download template
+          </a>
+        </div>
         <p className="text-sm text-muted-foreground">
           Pick a CSV file to import. After upload you&rsquo;ll see a preview
           of the first 20 rows and can map columns before committing.

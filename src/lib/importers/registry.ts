@@ -13,11 +13,17 @@
 
 import type { ImporterDefinition } from "./types";
 import { usersImporter } from "./importers/users";
+import { certificationsImporter } from "./importers/certifications";
+import { contractsImporter } from "./importers/contracts";
+import { projectsImporter } from "./importers/projects";
+import { suppliersImporter } from "./importers/suppliers";
 
 export const IMPORTERS: ImporterDefinition[] = [
   usersImporter,
-  // clientsImporter,
-  // projectsImporter,
+  certificationsImporter,
+  contractsImporter,
+  projectsImporter,
+  suppliersImporter,
 ];
 
 const IMPORTER_MAP = new Map<string, ImporterDefinition>(

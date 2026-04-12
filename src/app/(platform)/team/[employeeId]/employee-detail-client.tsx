@@ -23,6 +23,7 @@ import { updateUser, deleteUser, saveModulePermissions, saveEntityPermission, de
 import { deleteAssignment } from "@/actions/assignments";
 import { AddAssignmentDialog } from "../components/add-assignment-dialog";
 import { getPermissionedModules, ALL_PERMISSION_FLAGS, PERMISSION_FLAG_LABELS } from "@/lib/modules";
+import { getRoleDefaults } from "@/lib/permissions";
 
 interface Assignment {
   id: string;
@@ -608,6 +609,9 @@ function PermissionsTab({ employee, allClients, allProjects }: {
   // src/lib/modules.ts automatically adds a row here.
   const modules = getPermissionedModules();
   const permMap = new Map(employee.modulePermissions.map((p) => [p.module, p]));
+  // ADMIN always has full access; for other roles, fall back to role
+  // defaults when no explicit permission row exists.
+  const roleDefaults = getRoleDefaults(employee.role as import("@prisma/client").Role);
   const entities = entityType === "client" ? allClients : allProjects;
   const nameMap = new Map([...allClients.map((c) => [c.id, c.name] as const), ...allProjects.map((p) => [p.id, p.name] as const)]);
 
@@ -661,12 +665,17 @@ function PermissionsTab({ employee, allClients, allProjects }: {
                           <div>{mod.label}</div>
                           <div className="text-[11px] text-muted-foreground font-normal">{mod.description}</div>
                         </td>
-                        {ALL_PERMISSION_FLAGS.map((flag) => (
-                          <td key={flag} className="p-2 text-center">
-                            <input type="checkbox" name={`${mod.key}_${flag}`} value="true"
-                              defaultChecked={perm ? (perm as unknown as Record<string, boolean>)[flag] : false} className="rounded" />
-                          </td>
-                        ))}
+                        {ALL_PERMISSION_FLAGS.map((flag) => {
+                          const checked = perm
+                            ? (perm as unknown as Record<string, boolean>)[flag]
+                            : (roleDefaults as unknown as Record<string, boolean>)[flag];
+                          return (
+                            <td key={flag} className="p-2 text-center">
+                              <input type="checkbox" name={`${mod.key}_${flag}`} value="true"
+                                defaultChecked={checked} className="rounded" />
+                            </td>
+                          );
+                        })}
                       </tr>
                     );
                   })}

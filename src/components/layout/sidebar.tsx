@@ -21,7 +21,7 @@ import {
   PanelLeft,
   Puzzle,
   Mail,
-  HardDrive,
+
   Bell,
   Repeat,
   FileSpreadsheet,
@@ -70,7 +70,7 @@ const ICON_MAP: Record<string, LucideIcon> = {
   PanelLeft,
   Puzzle,
   Mail,
-  HardDrive,
+
   Bell,
   Repeat,
   FileSpreadsheet,
@@ -89,7 +89,7 @@ const ROLE_GATED: Record<string, (role: string) => boolean> = {
   theme: (role) => role === "ADMIN",
   sidebar: (role) => role === "ADMIN",
   emails: (role) => role === "ADMIN",
-  files: (role) => role === "ADMIN",
+
   notifications: (role) => role === "ADMIN",
   jobs: (role) => role === "ADMIN",
   import: (role) => role === "ADMIN",
