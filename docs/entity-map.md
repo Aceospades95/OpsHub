@@ -705,6 +705,62 @@ list. Visible at `/admin/import` (last 20 runs).
 
 Both are admin-only, file size capped at 10MB.
 
+## @mentions in comments
+
+Comments support @mention autocomplete. The author types `@` in the
+compose box, picks an employee from the dropdown, and the mention is
+stored as `@[Display Name](userId)` in the comment text. On save, the
+action notifies each mentioned user in-app and by email.
+
+### Storage format
+
+Mentions are embedded in plain text — no separate Mention table. The
+format is `@[Name](cuid)` where the display name is what the author
+saw at compose time, and the cuid is the target user's id. This
+survives user renames (the link still works) while keeping old mention
+display text stable.
+
+The tokenizer lives in `src/lib/mentions.ts` and exposes:
+
+- `parseMentions(text)` — positions and names/ids of every token
+- `extractMentionedUserIds(text)` — unique user ids only (used for
+  notification fan-out)
+- `stripMentionFormatting(text)` — `@[Alice](u1)` → `@Alice` for places
+  that show comment excerpts without full rendering (activity log,
+  recent-comments widget)
+- `segmentMentions(text)` — splits into alternating text/mention
+  segments for React rendering
+- `detectMentionTrigger(value, cursor)` — the autocomplete hook uses
+  this to know when the user is mid-mention
+- `formatMentionToken(userId, name)` — builds the canonical token
+
+### Compose UI
+
+`src/components/shared/mention-textarea.tsx` is a plain textarea that
+layers an autocomplete dropdown on top. It calls the server action
+`searchMentionableUsers(query)` (in `src/actions/comments.ts`) as the
+user types. Arrow keys navigate, Enter/Tab accept, Escape closes.
+
+The compose field writes the raw `@[Name](id)` format into a hidden
+input that rides along with the form submission — existing callers of
+`addComment` needed no changes beyond swapping their `<Textarea>` for
+`<MentionTextarea>`.
+
+### Render path
+
+`CommentSection` uses `segmentMentions` to split the raw content and
+renders each mention as a `<Link href="/team/{id}">@Name</Link>`. Text
+segments pass through untouched so `whitespace-pre-wrap` still works.
+
+### Notification fan-out
+
+`addComment` extracts mentioned user ids, drops the author and any
+inactive / no-login users, resolves the comment's host entity to a
+name and href, then calls `notify()` with the full list as the
+`recipientId` array. Each recipient gets their own in-app notification
+row and (if emails are configured) their own email using the
+`notification` template. The notification type is `"mention"`.
+
 ## How to extend this document
 
 When you add a new module or feature:

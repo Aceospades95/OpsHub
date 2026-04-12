@@ -1,15 +1,16 @@
 "use client";
 
 import { useFormState } from "react-dom";
-import { useRef, useEffect } from "react";
+import { useRef, useEffect, useState, Fragment } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
 import { Trash2 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { addComment, deleteComment } from "@/actions/comments";
+import { MentionTextarea } from "./mention-textarea";
+import { segmentMentions } from "@/lib/mentions";
 
 interface CommentData {
   id: string;
@@ -27,6 +28,32 @@ interface CommentSectionProps {
   currentUserId: string;
 }
 
+/**
+ * Render comment content, turning `@[Name](userId)` tokens into links to
+ * the referenced employee. Plain-text segments keep their whitespace and
+ * line breaks so the surrounding `whitespace-pre-wrap` still works.
+ */
+function RenderedCommentContent({ content }: { content: string }) {
+  const segments = segmentMentions(content);
+  return (
+    <p className="text-sm text-foreground whitespace-pre-wrap">
+      {segments.map((seg, i) =>
+        seg.type === "text" ? (
+          <Fragment key={`t-${i}`}>{seg.value}</Fragment>
+        ) : (
+          <Link
+            key={`m-${i}`}
+            href={`/team/${seg.userId}`}
+            className="inline-flex items-center rounded bg-primary/10 px-1 text-primary hover:bg-primary/20 hover:underline"
+          >
+            @{seg.name}
+          </Link>
+        )
+      )}
+    </p>
+  );
+}
+
 function AddCommentForm({
   entityType,
   entityId,
@@ -36,11 +63,13 @@ function AddCommentForm({
 }) {
   const [state, formAction] = useFormState(addComment, null);
   const formRef = useRef<HTMLFormElement>(null);
+  const [value, setValue] = useState("");
   const router = useRouter();
 
   useEffect(() => {
     if (state?.success) {
       formRef.current?.reset();
+      setValue("");
       router.refresh();
     }
   }, [state, router]);
@@ -49,10 +78,16 @@ function AddCommentForm({
     <form ref={formRef} action={formAction} className="space-y-2">
       <input type="hidden" name="entityType" value={entityType} />
       <input type="hidden" name="entityId" value={entityId} />
-      <Textarea name="content" placeholder="Add a comment..." required />
+      <MentionTextarea
+        name="content"
+        value={value}
+        onChange={setValue}
+        placeholder="Add a comment… use @ to mention an employee"
+        required
+      />
       {state?.error && <p className="text-sm text-destructive">{state.error}</p>}
       <div className="flex justify-end">
-        <Button type="submit" size="sm">
+        <Button type="submit" size="sm" disabled={value.trim().length === 0}>
           Post Comment
         </Button>
       </div>
@@ -119,7 +154,7 @@ export function CommentSection({
                   </button>
                 )}
               </div>
-              <p className="text-sm text-foreground whitespace-pre-wrap">{comment.content}</p>
+              <RenderedCommentContent content={comment.content} />
             </div>
           </div>
         ))}
