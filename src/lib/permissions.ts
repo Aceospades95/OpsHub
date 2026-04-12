@@ -117,8 +117,80 @@ export async function resolveEntityPerms(
     };
   }
 
+  // For projects: an active assignment grants view + comment access even
+  // without explicit entity or module permissions. This ties the staffing
+  // matrix to the permission system — assign someone to a project and
+  // they automatically get access.
+  if (entityType === "project") {
+    const assignment = await db.assignment.findFirst({
+      where: {
+        employeeId: userId,
+        projectId: entityId,
+        status: { in: ["ACTIVE", "PLANNED"] },
+      },
+      select: { id: true },
+    });
+    if (assignment) {
+      const modulePerms = await resolveModulePerms(userId, role, module);
+      return {
+        ...modulePerms,
+        canView: true,
+        canComment: true,
+      };
+    }
+  }
+
   // Fall back to module perms
   return resolveModulePerms(userId, role, module);
+}
+
+/**
+ * Check whether a user has access to a specific project — either through
+ * explicit permissions or through an active staffing assignment.
+ *
+ * This is the query used by project list views to filter which projects
+ * a non-admin user can see.
+ */
+export async function getAccessibleProjectIds(
+  userId: string,
+  role: Role
+): Promise<string[] | "all"> {
+  if (role === "ADMIN" || role === "MANAGER") return "all";
+
+  // Projects the user is actively assigned to (staffing)
+  const assignments = await db.assignment.findMany({
+    where: {
+      employeeId: userId,
+      status: { in: ["ACTIVE", "PLANNED"] },
+      projectId: { not: null },
+    },
+    select: { projectId: true },
+  });
+
+  // Projects with explicit entity permission
+  const entityPerms = await db.entityPermission.findMany({
+    where: {
+      userId,
+      entityType: "project",
+      canView: true,
+    },
+    select: { entityId: true },
+  });
+
+  // Projects through project membership (legacy relation)
+  const members = await db.projectMember.findMany({
+    where: { userId },
+    select: { projectId: true },
+  });
+
+  const ids = new Set<string>();
+  for (const a of assignments) {
+    if (a.projectId) ids.add(a.projectId);
+  }
+  for (const p of entityPerms) ids.add(p.entityId);
+  for (const m of members) ids.add(m.projectId);
+
+  return Array.from(ids);
 }
 
 export function canAccessSandbox(role: Role): boolean {

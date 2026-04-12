@@ -219,15 +219,29 @@ export async function saveModulePermissions(_prev: unknown, formData: FormData) 
   // in this save path with no changes here.
   const permissionedModules = getPermissionedModules();
 
-  for (const mod of permissionedModules) {
+  // Collect all module keys from the form — includes both registry modules
+  // and dynamic custom-page-{id} keys from the permissions grid.
+  const allKeys: string[] = permissionedModules.map((m) => m.key);
+
+  // Detect custom page keys in the form submission (the permissions UI adds
+  // checkboxes named `custom-page-{id}_canView`, etc.)
+  const formEntries = Array.from(formData.keys());
+  for (const key of formEntries) {
+    const match = key.match(/^(custom-page-[^_]+)_/);
+    if (match && !allKeys.includes(match[1])) {
+      allKeys.push(match[1]);
+    }
+  }
+
+  for (const modKey of allKeys) {
     const data: Record<string, boolean> = {};
     for (const flag of ALL_PERMISSION_FLAGS) {
-      data[flag] = formData.get(`${mod.key}_${flag}`) === "true";
+      data[flag] = formData.get(`${modKey}_${flag}`) === "true";
     }
 
     await db.modulePermission.upsert({
-      where: { userId_module: { userId, module: mod.key } },
-      create: { userId, module: mod.key, ...data },
+      where: { userId_module: { userId, module: modKey } },
+      create: { userId, module: modKey, ...data },
       update: data,
     });
   }

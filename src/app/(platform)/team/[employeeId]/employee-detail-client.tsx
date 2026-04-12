@@ -92,7 +92,7 @@ function formatFte(v: number): string {
 }
 
 export function EmployeeDetailClient({
-  employee, activity, canManage, isAdmin, allUsers, allClients, allProjects, serviceOfferings, roleDefinitions, files, canViewFiles,
+  employee, activity, canManage, isAdmin, allUsers, allClients, allProjects, serviceOfferings, roleDefinitions, files, canViewFiles, customPages,
 }: {
   employee: Employee;
   activity: ActivityLog[];
@@ -105,6 +105,7 @@ export function EmployeeDetailClient({
   roleDefinitions: { id: string; name: string }[];
   files: EmployeeFileItem[];
   canViewFiles: boolean;
+  customPages: { id: string; title: string; slug: string }[];
 }) {
   const [activeTab, setActiveTab] = useState<TabKey>("overview");
   const [editOpen, setEditOpen] = useState(false);
@@ -246,7 +247,7 @@ export function EmployeeDetailClient({
           canDelete={canViewFiles}
         />
       )}
-      {activeTab === "permissions" && isAdmin && <PermissionsTab employee={employee} allClients={allClients} allProjects={allProjects} />}
+      {activeTab === "permissions" && isAdmin && <PermissionsTab employee={employee} allClients={allClients} allProjects={allProjects} customPages={customPages} />}
       {activeTab === "activity" && <ActivityTab activity={activity} />}
 
       {/* Edit Dialog */}
@@ -595,10 +596,11 @@ function ProjectsTab({ employee }: { employee: Employee }) {
 
 // ─── Permissions Tab (Admin only) ──────────────
 
-function PermissionsTab({ employee, allClients, allProjects }: {
+function PermissionsTab({ employee, allClients, allProjects, customPages }: {
   employee: Employee;
   allClients: { id: string; name: string }[];
   allProjects: { id: string; name: string }[];
+  customPages: { id: string; title: string; slug: string }[];
 }) {
   const router = useRouter();
   const [saving, setSaving] = useState(false);
@@ -672,6 +674,33 @@ function PermissionsTab({ employee, allClients, allProjects }: {
                           return (
                             <td key={flag} className="p-2 text-center">
                               <input type="checkbox" name={`${mod.key}_${flag}`} value="true"
+                                defaultChecked={checked} className="rounded" />
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    );
+                  })}
+                  {/* Custom pages — appear dynamically as they're published */}
+                  {customPages.length > 0 && (
+                    <tr><td colSpan={ALL_PERMISSION_FLAGS.length + 1} className="p-2 pt-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Custom Pages</td></tr>
+                  )}
+                  {customPages.map((page) => {
+                    const pageKey = `custom-page-${page.id}`;
+                    const perm = permMap.get(pageKey);
+                    return (
+                      <tr key={pageKey} className="border-b border-border">
+                        <td className="p-2 font-medium">
+                          <div>{page.title}</div>
+                          <div className="text-[11px] text-muted-foreground font-normal">/sandbox/{page.slug}</div>
+                        </td>
+                        {ALL_PERMISSION_FLAGS.map((flag) => {
+                          const checked = perm
+                            ? (perm as unknown as Record<string, boolean>)[flag]
+                            : (roleDefaults as unknown as Record<string, boolean>)[flag];
+                          return (
+                            <td key={flag} className="p-2 text-center">
+                              <input type="checkbox" name={`${pageKey}_${flag}`} value="true"
                                 defaultChecked={checked} className="rounded" />
                             </td>
                           );

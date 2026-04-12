@@ -62,7 +62,7 @@ export default async function EmployeeDetailPage({ params }: Props) {
     : [];
 
   // Fetch admin-related data
-  const [recentActivity, allUsers, allClients, allProjects, serviceOfferings, roleDefinitions] = await Promise.all([
+  const [recentActivity, allUsers, allClients, allProjects, serviceOfferings, roleDefinitions, customPages] = await Promise.all([
     db.activityLog.findMany({
       where: { userId: employeeId },
       take: 10,
@@ -93,6 +93,13 @@ export default async function EmployeeDetailPage({ params }: Props) {
       select: { id: true, name: true },
       orderBy: { name: "asc" },
     }),
+    isAdmin
+      ? db.sandboxPage.findMany({
+          where: { published: true },
+          select: { id: true, title: true, slug: true },
+          orderBy: { title: "asc" },
+        })
+      : Promise.resolve([]),
   ]);
 
   // Serialize dates for client component
@@ -148,6 +155,7 @@ export default async function EmployeeDetailPage({ params }: Props) {
         roleDefinitions={roleDefinitions}
         files={serializedFiles}
         canViewFiles={canViewFiles}
+        customPages={customPages}
       />
     </div>
   );
