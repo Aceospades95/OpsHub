@@ -436,7 +436,7 @@ export default async function ProjectDetailPage({ params }: Props) {
         )}
       </div>
 
-      <PageLayout pageType="project-detail" cards={cardMap} canEdit={canEditLayout} />
+      <PageLayout pageType="project-detail" cards={cardMap} canEdit={canEditLayout} mode="flow" />
     </div>
   );
 }

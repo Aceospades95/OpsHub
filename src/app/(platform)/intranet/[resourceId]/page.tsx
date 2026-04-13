@@ -81,7 +81,7 @@ export default async function IntranetDetailPage({ params }: Props) {
         )}
       </div>
 
-      <PageLayout pageType="intranet-detail" cards={cardMap} canEdit={canEditLayout} />
+      <PageLayout pageType="intranet-detail" cards={cardMap} canEdit={canEditLayout} mode="flow" />
     </div>
   );
 }

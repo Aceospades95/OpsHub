@@ -11,9 +11,17 @@ interface PageLayoutProps {
   pageType: string;
   cards: Record<string, React.ReactNode>;
   canEdit: boolean;
+  /**
+   * "grid" = fixed-height widget grid (dashboard). Cards have explicit
+   *   x/y/w/h positions and scroll internally when content overflows.
+   * "flow" = auto-expanding responsive layout (detail pages). Cards size
+   *   to their content with no fixed height. Uses column widths from the
+   *   card definitions but auto-places vertically.
+   */
+  mode?: "grid" | "flow";
 }
 
-export async function PageLayout({ pageType, cards, canEdit }: PageLayoutProps) {
+export async function PageLayout({ pageType, cards, canEdit, mode = "grid" }: PageLayoutProps) {
   const session = await auth();
   const userId = session?.user?.id || "";
 
@@ -72,6 +80,7 @@ export async function PageLayout({ pageType, cards, canEdit }: PageLayoutProps) 
       canEdit={canEdit}
       templates={templates}
       customWidgets={customWidgetDefs}
+      mode={mode}
     >
       {Object.entries(allCards).map(([id, node]) => (
         <div key={id} data-card-id={id}>

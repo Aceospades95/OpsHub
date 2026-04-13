@@ -36,10 +36,9 @@ function NodeCard({
   const content = (
     <div
       className={`
-        rounded-lg text-left transition-all hover:shadow-lg
-        border-2 border-border
-        bg-card dark:bg-[hsl(var(--card)/1)] dark:border-border/80
-        shadow-sm
+        rounded-lg text-left transition-all hover:shadow-lg shadow-md
+        border border-border/60
+        bg-muted/50 dark:bg-muted
         ${compact ? "px-3 py-2 min-w-[120px]" : "px-4 py-3 min-w-[180px] max-w-[240px]"}
       `}
     >
@@ -144,8 +143,7 @@ export function OrgChartTree({ nodes, compact, showRoleBadge }: OrgChartTreeProp
 
   return (
     <div className="overflow-x-auto py-4">
-      {/* inline-flex centers the tree when it fits; scrolls when it overflows */}
-      <div className="inline-flex w-full justify-center min-w-max">
+      <div className="w-fit mx-auto">
         {nodes.length === 1 ? (
           <OrgBranch node={nodes[0]} compact={compact} showRoleBadge={showRoleBadge} />
         ) : (
