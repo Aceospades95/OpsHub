@@ -3,17 +3,17 @@
 @tailwind utilities;
 
 :root {
-  --background: #ffffff;
+  --background: #f3f4f6;
   --foreground: #0a0a0a;
   --primary: #15583e;
   --primary-foreground: #ffffff;
-  --secondary: #edf5f0;
+  --secondary: #e4ede8;
   --secondary-foreground: #15583e;
   --accent: #22885a;
-  --muted: #eef1ee;
+  --muted: #e8eaec;
   --muted-foreground: #6b7c6b;
-  --border: #d4ddd4;
-  --input: #d4ddd4;
+  --border: #d5d8dc;
+  --input: #d5d8dc;
   --destructive: #ef4444;
   --success: #16a34a;
   --warning: #f59e0b;
@@ -42,21 +42,9 @@ a {
   text-decoration: none;
 }
 
-/* Page background — slightly darker than muted so cards pop */
+/* Page background — uses background color so cards clearly float above */
 .page-bg {
-  background: var(--muted);
-  background-image: linear-gradient(
-    to bottom,
-    color-mix(in srgb, var(--border) 15%, var(--muted) 85%),
-    color-mix(in srgb, var(--border) 15%, var(--muted) 85%)
-  );
-}
-
-/* Fallback for browsers without color-mix */
-@supports not (background: color-mix(in srgb, red, blue)) {
-  .page-bg {
-    background: var(--muted);
-  }
+  background: var(--background);
 }
 
 /* ===== react-grid-layout core styles ===== */
