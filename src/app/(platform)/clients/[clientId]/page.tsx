@@ -275,7 +275,7 @@ export default async function ClientDetailPage({ params }: Props) {
         }
       />
 
-      <PageLayout pageType="client-detail" cards={cardMap} canEdit={canEditLayout} />
+      <PageLayout pageType="client-detail" cards={cardMap} canEdit={canEditLayout} mode="flow" />
     </div>
   );
 }

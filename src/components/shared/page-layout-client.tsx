@@ -64,6 +64,7 @@ interface PageLayoutClientProps {
   templates: LayoutTemplate[];
   customWidgets?: CustomWidgetDef[];
   children: ReactNode;
+  mode?: "grid" | "flow";
 }
 
 export function PageLayoutClient({
@@ -75,6 +76,7 @@ export function PageLayoutClient({
   templates: initialTemplates,
   customWidgets = [],
   children,
+  mode = "grid",
 }: PageLayoutClientProps) {
   const [editing, setEditing] = useState(false);
   const [cards, setCards] = useState<CardConfig[]>(initialCards);
@@ -269,6 +271,50 @@ export function PageLayoutClient({
       .filter((c) => c.visible && cardContentMap[c.id])
       .sort((a, b) => a.grid.y - b.grid.y || a.grid.x - b.grid.x);
 
+    // Flow mode: auto-expanding responsive grid — cards size to their
+    // content with no fixed heights. Uses the card's `w` (out of 12) to
+    // determine column span, and CSS grid auto-placement handles the rest.
+    if (mode === "flow") {
+      return (
+        <>
+          <div className="grid grid-cols-12 gap-4">
+            {sortedCards.map((card) => {
+              // Responsive: cards that are less than full-width on desktop
+              // become full-width on mobile
+              const span = card.grid.w;
+              const colClass =
+                span >= 12
+                  ? "col-span-12"
+                  : span >= 8
+                    ? "col-span-12 lg:col-span-8"
+                    : span >= 6
+                      ? "col-span-12 md:col-span-6"
+                      : span >= 4
+                        ? "col-span-12 sm:col-span-6 lg:col-span-4"
+                        : "col-span-12 sm:col-span-6 lg:col-span-3";
+              return (
+                <div key={card.id} className={colClass}>
+                  {cardContentMap[card.id]}
+                </div>
+              );
+            })}
+          </div>
+
+          {canEdit && (
+            <button
+              onClick={() => setEditing(true)}
+              className="fixed bottom-6 right-6 z-30 flex items-center gap-2 rounded-full bg-primary text-primary-foreground px-4 py-3 shadow-lg hover:bg-primary/90 transition-colors"
+              title="Edit page layout"
+            >
+              <Settings2 className="h-5 w-5" />
+              <span className="text-sm font-medium hidden sm:inline">Edit Layout</span>
+            </button>
+          )}
+        </>
+      );
+    }
+
+    // Grid mode: fixed-height widget grid (dashboard)
     return (
       <>
         <div className="grid grid-cols-12 min-w-[768px]" style={{ gap: `${gap}px`, gridAutoRows: `${ROW_HEIGHT}px` }}>

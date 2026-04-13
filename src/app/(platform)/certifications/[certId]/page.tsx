@@ -213,7 +213,7 @@ export default async function CertificationDetailPage({ params }: Props) {
         {isExpiring && <Badge variant="warning">Expiring Soon</Badge>}
       </div>
 
-      <PageLayout pageType="certification-detail" cards={cardMap} canEdit={canEditLayout} />
+      <PageLayout pageType="certification-detail" cards={cardMap} canEdit={canEditLayout} mode="flow" />
     </div>
   );
 }

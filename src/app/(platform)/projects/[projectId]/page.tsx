@@ -49,6 +49,7 @@ export default async function ProjectDetailPage({ params }: Props) {
     where: { id: projectId },
     include: {
       client: { select: { id: true, name: true } },
+      serviceOffering: { select: { id: true, name: true } },
       parentProject: { select: { id: true, name: true } },
       childProjects: {
         include: {
@@ -67,6 +68,7 @@ export default async function ProjectDetailPage({ params }: Props) {
           employee: { select: { id: true, name: true, jobTitle: true, location: true } },
           roleDefinition: { select: { id: true, name: true } },
           projectRole: { select: { id: true, roleDefinition: { select: { id: true, name: true } }, requiredFte: true, quantity: true } },
+          serviceOffering: { select: { id: true, name: true } },
         },
         orderBy: { createdAt: "desc" },
       },
@@ -423,11 +425,14 @@ export default async function ProjectDetailPage({ params }: Props) {
         </div>
       )}
 
-      <div className="flex items-center gap-3 mb-6">
+      <div className="flex items-center gap-3 mb-6 flex-wrap">
         <StatusBadge status={project.status} />
         <Link href={`/clients/${project.client.id}`} className="text-sm text-primary hover:underline">
           {project.client.name}
         </Link>
+        {project.serviceOffering && (
+          <Badge variant="outline">{project.serviceOffering.name}</Badge>
+        )}
         {project.startDate && (
           <span className="text-sm text-muted-foreground">
             {format(project.startDate, "MMM d, yyyy")}
@@ -436,7 +441,7 @@ export default async function ProjectDetailPage({ params }: Props) {
         )}
       </div>
 
-      <PageLayout pageType="project-detail" cards={cardMap} canEdit={canEditLayout} />
+      <PageLayout pageType="project-detail" cards={cardMap} canEdit={canEditLayout} mode="flow" />
     </div>
   );
 }

@@ -25,6 +25,7 @@ interface Assignment {
   employee: { id: string; name: string; jobTitle: string | null; location: string | null };
   roleDefinition: { id: string; name: string } | null;
   projectRole: { id: string; roleDefinition: { id: string; name: string }; requiredFte: number; quantity: number } | null;
+  serviceOffering: { id: string; name: string } | null;
 }
 
 interface ProjectRole {
@@ -232,6 +233,9 @@ export function ProjectStaffingSection({
                   <span className="text-[10px] text-muted-foreground flex items-center gap-0.5">
                     <MapPin className="h-2.5 w-2.5" />{a.employee.location}
                   </span>
+                )}
+                {a.serviceOffering && (
+                  <Badge variant="secondary" className="text-[9px] px-1.5 py-0">{a.serviceOffering.name}</Badge>
                 )}
                 <div className="ml-auto flex items-center gap-2">
                   {editingRole === a.id && canEdit ? (

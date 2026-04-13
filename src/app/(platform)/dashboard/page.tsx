@@ -50,6 +50,8 @@ export default async function DashboardPage() {
     myTasks,
     myRecentCompleted,
     openTaskCount,
+    activeProjects,
+    teamMembers,
   ] = await Promise.all([
     clientPerms.canView ? db.client.count() : Promise.resolve(0),
     projectPerms.canView ? db.project.count() : Promise.resolve(0),
@@ -97,6 +99,34 @@ export default async function DashboardPage() {
     }),
     db.task.count({
       where: { status: { in: ["TODO", "IN_PROGRESS"] } },
+    }),
+    // Active projects with status for overview card
+    projectPerms.canView
+      ? db.project.findMany({
+          where: { status: { in: ["PLANNING", "ACTIVE", "ON_HOLD"] } },
+          take: 8,
+          orderBy: { updatedAt: "desc" },
+          select: {
+            id: true,
+            name: true,
+            status: true,
+            client: { select: { name: true } },
+            _count: { select: { tasks: { where: { status: { in: ["TODO", "IN_PROGRESS"] } } } } },
+          },
+        })
+      : Promise.resolve([]),
+    // Team summary
+    db.user.findMany({
+      where: { isActive: true, hasLoginAccess: true },
+      take: 8,
+      orderBy: { name: "asc" },
+      select: {
+        id: true,
+        name: true,
+        jobTitle: true,
+        department: true,
+        _count: { select: { assignments: { where: { status: "ACTIVE" } } } },
+      },
     }),
   ]);
 
@@ -313,6 +343,72 @@ export default async function DashboardPage() {
                     {log.action}
                   </Badge>
                 </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    ),
+    "projects-overview": projectPerms.canView ? (
+      <Card className="h-full">
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <CardTitle className="flex items-center gap-2">
+              <FolderKanban className="h-5 w-5" />
+              Active Projects
+            </CardTitle>
+            <Link href="/projects" className="text-sm text-primary hover:underline">View all</Link>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {activeProjects.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No active projects</p>
+          ) : (
+            <div className="space-y-2">
+              {activeProjects.map((p: { id: string; name: string; status: string; client: { name: string } | null; _count: { tasks: number } }) => (
+                <Link key={p.id} href={`/projects/${p.id}`} className="flex items-center gap-3 rounded border border-border p-3 hover:border-primary hover:bg-muted/40 transition-colors">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium truncate">{p.name}</p>
+                    <p className="text-xs text-muted-foreground truncate">{p.client?.name || "No client"}</p>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {p._count.tasks > 0 && (
+                      <span className="text-xs text-muted-foreground">{p._count.tasks} open</span>
+                    )}
+                    <Badge variant="outline" className="text-[10px]">{p.status}</Badge>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    ) : null,
+    "team-summary": (
+      <Card className="h-full">
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <CardTitle className="flex items-center gap-2">
+              <Users className="h-5 w-5" />
+              Team ({teamCount})
+            </CardTitle>
+            <Link href="/team" className="text-sm text-primary hover:underline">View all</Link>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {teamMembers.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No team members</p>
+          ) : (
+            <div className="space-y-2">
+              {teamMembers.map((m: { id: string; name: string; jobTitle: string | null; department: string | null; _count: { assignments: number } }) => (
+                <Link key={m.id} href={`/team/${m.id}`} className="flex items-center gap-3 rounded border border-border p-3 hover:border-primary hover:bg-muted/40 transition-colors">
+                  <Avatar name={m.name} size="xs" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium truncate">{m.name}</p>
+                    <p className="text-xs text-muted-foreground truncate">{m.jobTitle || m.department || "Team member"}</p>
+                  </div>
+                  <span className="text-xs text-muted-foreground shrink-0">{m._count.assignments} active</span>
+                </Link>
               ))}
             </div>
           )}

@@ -247,7 +247,7 @@ export default async function ContractDetailPage({ params }: Props) {
         )}
       </div>
 
-      <PageLayout pageType="contract-detail" cards={cardMap} canEdit={canEditLayout} />
+      <PageLayout pageType="contract-detail" cards={cardMap} canEdit={canEditLayout} mode="flow" />
     </div>
   );
 }
