@@ -45,7 +45,7 @@ export function ContactSection({ contacts, clientId, canEdit }: Props) {
       )}
 
       {contacts.map((contact) => (
-        <div key={contact.id} className="rounded border border-border p-3">
+        <div key={contact.id} className="rounded border border-border bg-muted/50 p-3">
           <div className="flex items-start justify-between">
             <div>
               <div className="flex items-center gap-2">

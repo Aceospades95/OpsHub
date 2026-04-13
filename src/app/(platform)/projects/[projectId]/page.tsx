@@ -197,7 +197,7 @@ export default async function ProjectDetailPage({ params }: Props) {
                 <Link
                   key={doc.id}
                   href={`/projects/${project.id}/documents/${doc.id}`}
-                  className="flex items-center justify-between rounded border border-border p-3 hover:bg-muted transition-colors"
+                  className="flex items-center justify-between rounded border border-border bg-muted/50 p-3 hover:bg-muted transition-colors"
                 >
                   <div>
                     <p className="text-sm font-medium">{doc.title}</p>
@@ -234,7 +234,7 @@ export default async function ProjectDetailPage({ params }: Props) {
               <Link
                 key={contract.id}
                 href={`/contracts/${contract.id}`}
-                className="flex items-center justify-between rounded border border-border p-3 hover:bg-muted transition-colors"
+                className="flex items-center justify-between rounded border border-border bg-muted/50 p-3 hover:bg-muted transition-colors"
               >
                 <p className="text-sm font-medium">{contract.title}</p>
                 <StatusBadge status={contract.status} />
@@ -315,7 +315,7 @@ export default async function ProjectDetailPage({ params }: Props) {
           ) : (
             <div className="space-y-2">
               {projectTasks.map((task) => (
-                <div key={task.id} className="flex items-center justify-between rounded border border-border p-3 hover:bg-muted transition-colors">
+                <div key={task.id} className="flex items-center justify-between rounded border border-border bg-muted/50 p-3 hover:bg-muted transition-colors">
                   <div className="flex items-center gap-3 min-w-0">
                     <TaskCheckbox taskId={task.id} status={task.status} />
                     <div className="min-w-0">
@@ -361,7 +361,7 @@ export default async function ProjectDetailPage({ params }: Props) {
                 <Link
                   key={pt.id}
                   href={`/tools/${pt.tool.id}`}
-                  className="block rounded border border-border p-2 hover:bg-muted text-sm"
+                  className="block rounded border border-border bg-muted/50 p-2 hover:bg-muted text-sm"
                 >
                   {pt.tool.name}
                 </Link>

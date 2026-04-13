@@ -363,7 +363,7 @@ function OverviewTab({ employee, totalFte, activeAssignments, canManage, onAddAs
             ) : (
               <div className="space-y-2">
                 {activeAssignments.map((a) => (
-                  <div key={a.id} className="flex items-center justify-between p-2 rounded border border-border text-sm">
+                  <div key={a.id} className="flex items-center justify-between p-2 rounded border border-border bg-muted/50 text-sm">
                     <div className="min-w-0">
                       <p className="font-medium truncate">
                         {a.project ? <Link href={`/projects/${a.project.id}`} className="text-primary hover:underline">{a.project.name}</Link>
@@ -386,7 +386,7 @@ function OverviewTab({ employee, totalFte, activeAssignments, canManage, onAddAs
               <div className="space-y-2">
                 {employee.directReports.map((report) => (
                   <Link key={report.id} href={`/team/${report.id}`}
-                    className="flex items-center gap-2 rounded border border-border p-2 hover:bg-muted transition-colors">
+                    className="flex items-center gap-2 rounded border border-border bg-muted/50 p-2 hover:bg-muted transition-colors">
                     <Avatar name={report.name} src={report.avatar} size="xs" />
                     <div className="min-w-0">
                       <span className="text-sm font-medium truncate block">{report.name}</span>
@@ -486,7 +486,7 @@ function AssignmentsTab({ employee, totalFte, canManage, onAddAssignment }: {
           <CardContent>
             <div className="space-y-2">
               {completedAssignments.map((a) => (
-                <div key={a.id} className="flex items-center justify-between p-2 rounded border border-border text-sm opacity-60">
+                <div key={a.id} className="flex items-center justify-between p-2 rounded border border-border bg-muted/50 text-sm opacity-60">
                   <span className="font-medium truncate">{a.project?.name || a.client?.name || a.serviceOffering?.name || a.function || "General"}</span>
                   <div className="flex items-center gap-2">
                     <span className="text-xs">{formatFte(a.allocationFte)} FTE</span>
@@ -525,7 +525,7 @@ function ReportingTab({ employee }: { employee: Employee }) {
           {employee.directReports.length === 0 ? <p className="text-sm text-muted-foreground">No direct reports.</p> : (
             <div className="space-y-2">
               {employee.directReports.map((report) => (
-                <Link key={report.id} href={`/team/${report.id}`} className="flex items-center gap-3 p-2.5 rounded border border-border hover:bg-muted transition-colors">
+                <Link key={report.id} href={`/team/${report.id}`} className="flex items-center gap-3 p-2.5 rounded border border-border bg-muted/50 hover:bg-muted transition-colors">
                   <Avatar name={report.name} src={report.avatar} size="sm" />
                   <div className="min-w-0 flex-1"><p className="font-medium truncate">{report.name}</p>{report.jobTitle && <p className="text-xs text-muted-foreground">{report.jobTitle}</p>}</div>
                   <Badge variant="outline" className="text-[9px]">{report.role}</Badge>
@@ -552,7 +552,7 @@ function ProjectsTab({ employee }: { employee: Employee }) {
             {employee.projectMembers.map((pm) => {
               const assignment = employee.assignments.find((a) => a.project?.id === pm.project.id && (a.status === "ACTIVE" || a.status === "PLANNED"));
               return (
-                <Link key={pm.id} href={`/projects/${pm.project.id}`} className="flex items-center gap-3 p-3 rounded border border-border hover:bg-muted transition-colors">
+                <Link key={pm.id} href={`/projects/${pm.project.id}`} className="flex items-center gap-3 p-3 rounded border border-border bg-muted/50 hover:bg-muted transition-colors">
                   <div className="min-w-0 flex-1">
                     <p className="font-medium">{pm.project.name}</p>
                     {pm.project.client && <p className="text-xs text-muted-foreground">Client: {pm.project.client.name}</p>}
@@ -701,7 +701,7 @@ function PermissionsTab({ employee, allClients, allProjects, customPages }: {
         <CardContent className="space-y-3">
           {employee.entityPermissions.length === 0 && <p className="text-sm text-muted-foreground">No entity-level overrides</p>}
           {employee.entityPermissions.map((perm) => (
-            <div key={perm.id} className="flex items-center justify-between rounded border border-border p-3">
+            <div key={perm.id} className="flex items-center justify-between rounded border border-border bg-muted/50 p-3">
               <div>
                 <p className="text-sm font-medium">{perm.entityType}: {nameMap.get(perm.entityId) || perm.entityId}</p>
                 <div className="flex gap-2 mt-1 text-xs text-muted-foreground">

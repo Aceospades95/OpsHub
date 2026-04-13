@@ -45,7 +45,7 @@ export function TermSection({ terms, contractId, canEdit, canDelete }: Props) {
       {terms.length === 0 && <p className="text-sm text-muted-foreground">No terms defined</p>}
 
       {terms.map((term) => (
-        <div key={term.id} className="rounded border border-border p-3">
+        <div key={term.id} className="rounded border border-border bg-muted/50 p-3">
           <div className="flex items-start justify-between">
             <div className="flex items-center gap-2 mb-1">
               <Badge variant="outline">{term.type}</Badge>

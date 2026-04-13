@@ -50,7 +50,7 @@ export function SupplierProjects({ supplierProjects, supplierId, allProjects, ca
       {supplierProjects.length === 0 && <p className="text-sm text-muted-foreground">No linked projects</p>}
 
       {supplierProjects.map((sp) => (
-        <div key={sp.id} className="flex items-center justify-between rounded border border-border p-3">
+        <div key={sp.id} className="flex items-center justify-between rounded border border-border bg-muted/50 p-3">
           <div>
             <p className="text-sm font-medium">{projectMap[sp.projectId] || sp.projectId}</p>
             {sp.notes && <p className="text-xs text-muted-foreground">{sp.notes}</p>}

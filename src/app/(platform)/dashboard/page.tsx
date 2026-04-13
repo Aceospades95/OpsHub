@@ -366,7 +366,7 @@ export default async function DashboardPage() {
           ) : (
             <div className="space-y-2">
               {activeProjects.map((p: { id: string; name: string; status: string; client: { name: string } | null; _count: { tasks: number } }) => (
-                <Link key={p.id} href={`/projects/${p.id}`} className="flex items-center gap-3 rounded border border-border p-3 hover:border-primary hover:bg-muted/40 transition-colors">
+                <Link key={p.id} href={`/projects/${p.id}`} className="flex items-center gap-3 rounded border border-border bg-muted/50 p-3 hover:border-primary hover:bg-muted transition-colors">
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium truncate">{p.name}</p>
                     <p className="text-xs text-muted-foreground truncate">{p.client?.name || "No client"}</p>
@@ -401,7 +401,7 @@ export default async function DashboardPage() {
           ) : (
             <div className="space-y-2">
               {teamMembers.map((m: { id: string; name: string; jobTitle: string | null; department: string | null; _count: { assignments: number } }) => (
-                <Link key={m.id} href={`/team/${m.id}`} className="flex items-center gap-3 rounded border border-border p-3 hover:border-primary hover:bg-muted/40 transition-colors">
+                <Link key={m.id} href={`/team/${m.id}`} className="flex items-center gap-3 rounded border border-border bg-muted/50 p-3 hover:border-primary hover:bg-muted transition-colors">
                   <Avatar name={m.name} size="xs" />
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium truncate">{m.name}</p>
