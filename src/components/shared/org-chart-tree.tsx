@@ -36,10 +36,12 @@ function NodeCard({
   const content = (
     <div
       className={`
-        rounded-lg bg-card shadow-sm text-left transition-all hover:shadow-md
-        ${compact ? "px-3 py-2 min-w-[120px]" : "px-4 py-3 min-w-[160px] max-w-[240px]"}
+        rounded-lg text-left transition-all hover:shadow-lg
+        border-2 border-border
+        bg-card dark:bg-[hsl(var(--card)/1)] dark:border-border/80
+        shadow-sm
+        ${compact ? "px-3 py-2 min-w-[120px]" : "px-4 py-3 min-w-[180px] max-w-[240px]"}
       `}
-      style={{ border: `1.5px solid ${lineColor}` }}
     >
       <div className={`flex items-center ${compact ? "gap-2" : "gap-3"}`}>
         <Avatar name={node.name} size={compact ? "xs" : "sm"} />
@@ -81,7 +83,6 @@ function OrgBranch({
 }) {
   const hasChildren = node.children.length > 0;
   const vLineH = compact ? 20 : 28;
-  // Half the flex gap so horizontal segments bridge the space between columns
   const halfGap = compact ? 6 : 12;
 
   return (
@@ -105,7 +106,6 @@ function OrgBranch({
                   <div key={child.id} className="flex flex-col items-center">
                     {/* Horizontal + vertical connector */}
                     <div className="self-stretch relative" style={{ height: vLineH }}>
-                      {/* Horizontal piece — extend into the flex gap so segments connect */}
                       <div
                         className="absolute top-0"
                         style={{
@@ -115,7 +115,6 @@ function OrgBranch({
                           right: isLast ? "50%" : -halfGap,
                         }}
                       />
-                      {/* Vertical stub */}
                       <div
                         className="absolute top-0 left-1/2"
                         style={{
@@ -145,7 +144,8 @@ export function OrgChartTree({ nodes, compact, showRoleBadge }: OrgChartTreeProp
 
   return (
     <div className="overflow-x-auto py-4">
-      <div className="flex justify-center min-w-fit">
+      {/* inline-flex centers the tree when it fits; scrolls when it overflows */}
+      <div className="inline-flex w-full justify-center min-w-max">
         {nodes.length === 1 ? (
           <OrgBranch node={nodes[0]} compact={compact} showRoleBadge={showRoleBadge} />
         ) : (
