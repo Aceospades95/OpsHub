@@ -55,11 +55,11 @@ export const PAGE_CARDS: Record<string, CardDefinition[]> = {
   ],
   "client-detail": [
     { id: "client-info", label: "Client Info", defaultGrid: { x: 0, y: 0, w: 8, h: 8, minW: 4, minH: 4 } },
-    { id: "contacts", label: "Contacts", defaultGrid: { x: 8, y: 0, w: 4, h: 8, minW: 3, minH: 4 } },
-    { id: "projects", label: "Projects", defaultGrid: { x: 0, y: 8, w: 6, h: 10, minW: 3, minH: 4 } },
-    { id: "tasks", label: "Tasks", defaultGrid: { x: 6, y: 8, w: 6, h: 10, minW: 3, minH: 4 } },
-    { id: "contracts", label: "Contracts", defaultGrid: { x: 0, y: 18, w: 6, h: 10, minW: 3, minH: 4 } },
-    { id: "comments", label: "Comments", defaultGrid: { x: 6, y: 18, w: 6, h: 10, minW: 3, minH: 4 } },
+    { id: "tasks", label: "Tasks", defaultGrid: { x: 8, y: 0, w: 4, h: 8, minW: 3, minH: 4 } },
+    { id: "projects", label: "Projects", defaultGrid: { x: 0, y: 8, w: 8, h: 10, minW: 3, minH: 4 } },
+    { id: "contacts", label: "Contacts", defaultGrid: { x: 8, y: 8, w: 4, h: 10, minW: 3, minH: 4 } },
+    { id: "contracts", label: "Contracts", defaultGrid: { x: 0, y: 18, w: 8, h: 10, minW: 3, minH: 4 } },
+    { id: "comments", label: "Comments", defaultGrid: { x: 8, y: 18, w: 4, h: 10, minW: 3, minH: 4 } },
   ],
   "project-detail": [
     { id: "team", label: "Staffing", defaultGrid: { x: 0, y: 0, w: 8, h: 9, minW: 4, minH: 4 } },
