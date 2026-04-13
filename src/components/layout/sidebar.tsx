@@ -15,11 +15,7 @@ import {
   Wrench,
   Blocks,
   Globe,
-  Shield,
-  Palette,
-  FileCode,
-  PanelLeft,
-  Puzzle,
+  Settings,
   ChevronLeft,
   ChevronRight,
   Menu,
@@ -27,6 +23,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import type { SidebarConfig, SidebarItemConfig } from "@/lib/sidebar-config";
+import { SYSTEM_MODULES } from "@/lib/modules";
 
 interface CustomPage {
   id: string;
@@ -39,6 +36,10 @@ interface SidebarProps {
   userRole?: string;
   customPages?: CustomPage[];
   sidebarConfig?: SidebarConfig;
+  /** Company name override (defaults to "OpsHub") */
+  companyName?: string | null;
+  /** Public URL of the uploaded company logo, or null to use the text fallback */
+  companyLogoUrl?: string | null;
 }
 
 const ICON_MAP: Record<string, LucideIcon> = {
@@ -53,44 +54,29 @@ const ICON_MAP: Record<string, LucideIcon> = {
   Wrench,
   Blocks,
   Globe,
-  Shield,
-  Palette,
-  FileCode,
-  PanelLeft,
-  Puzzle,
+  Settings,
 };
 
-const SYSTEM_DEFAULTS: Record<string, { label: string; href: string; icon: string }> = {
-  dashboard: { label: "Dashboard", href: "/dashboard", icon: "LayoutDashboard" },
-  clients: { label: "Clients", href: "/clients", icon: "Building2" },
-  projects: { label: "Projects", href: "/projects", icon: "FolderKanban" },
-  tasks: { label: "Tasks", href: "/tasks", icon: "CheckSquare" },
-  team: { label: "Team", href: "/team", icon: "Users" },
-  contracts: { label: "Contracts", href: "/contracts", icon: "FileText" },
-  certifications: { label: "Certifications", href: "/certifications", icon: "Award" },
-  suppliers: { label: "Suppliers", href: "/suppliers", icon: "Truck" },
-  tools: { label: "Tools", href: "/tools", icon: "Wrench" },
-  intranet: { label: "Intranet", href: "/intranet", icon: "Globe" },
-  sandbox: { label: "Custom Pages", href: "/sandbox", icon: "Blocks" },
-  admin: { label: "Admin", href: "/admin/users", icon: "Shield" },
-  widgets: { label: "Widget Builder", href: "/admin/widgets", icon: "Puzzle" },
-  theme: { label: "Theme", href: "/admin/theme", icon: "Palette" },
-  sidebar: { label: "Sidebar", href: "/admin/sidebar", icon: "PanelLeft" },
-};
+// Default labels/hrefs/icons come from the canonical module registry so there
+// are no divergent hardcoded lists. Use a local alias for readability.
+const SYSTEM_DEFAULTS = SYSTEM_MODULES;
 
 // Modules that require specific roles
 const ROLE_GATED: Record<string, (role: string) => boolean> = {
-  sandbox: (role) => role === "ADMIN" || role === "DEVELOPER",
-  admin: (role) => role === "ADMIN",
-  widgets: (role) => role === "ADMIN" || role === "DEVELOPER",
-  theme: (role) => role === "ADMIN",
-  sidebar: (role) => role === "ADMIN",
+  settings: (role) => role === "ADMIN",
 };
 
 // Modules always visible regardless of permissions
 const ALWAYS_VISIBLE = new Set(["dashboard", "tasks"]);
 
-export function Sidebar({ visibleModules, userRole = "", customPages = [], sidebarConfig }: SidebarProps) {
+export function Sidebar({
+  visibleModules,
+  userRole = "",
+  customPages = [],
+  sidebarConfig,
+  companyName,
+  companyLogoUrl,
+}: SidebarProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const pathname = usePathname();
@@ -132,7 +118,7 @@ export function Sidebar({ visibleModules, userRole = "", customPages = [], sideb
       return {
         label: item.label || page.title,
         href: `/sandbox/${page.id}`,
-        Icon: ICON_MAP.FileCode,
+        Icon: ICON_MAP.Blocks || Blocks,
       };
     }
 
@@ -142,7 +128,7 @@ export function Sidebar({ visibleModules, userRole = "", customPages = [], sideb
     return {
       label: item.label || sys.label,
       href: sys.href,
-      Icon: ICON_MAP[sys.icon] || FileCode,
+      Icon: ICON_MAP[sys.icon] || Settings,
     };
   }
 
@@ -198,8 +184,21 @@ export function Sidebar({ visibleModules, userRole = "", customPages = [], sideb
     <>
       <div className="flex h-16 items-center justify-between border-b border-border px-4">
         {!collapsed && (
-          <Link href="/dashboard" className="text-xl font-bold text-primary">
-            OpsHub
+          <Link href="/dashboard" className="flex items-center gap-2 min-w-0">
+            {companyLogoUrl ? (
+              // Custom uploaded logo. Plain <img> instead of next/image so
+              // we don't need to whitelist /api/files in next.config.js.
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={companyLogoUrl}
+                alt={companyName || "OpsHub"}
+                className="h-8 w-auto max-w-[160px] object-contain"
+              />
+            ) : (
+              <span className="text-xl font-bold text-primary truncate">
+                {companyName || "OpsHub"}
+              </span>
+            )}
           </Link>
         )}
         <button

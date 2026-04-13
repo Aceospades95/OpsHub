@@ -33,6 +33,12 @@ export default async function DashboardPage() {
   const projectPerms = await resolveModulePerms(userId, role, "projects");
   const contractPerms = await resolveModulePerms(userId, role, "contracts");
 
+  // Recently completed window — show tasks the current user has marked done
+  // in the last 14 days so there's some sense of recent progress alongside
+  // the open work.
+  const recentlyCompletedSince = new Date();
+  recentlyCompletedSince.setDate(recentlyCompletedSince.getDate() - 14);
+
   const [
     clientCount,
     projectCount,
@@ -42,6 +48,7 @@ export default async function DashboardPage() {
     teamCount,
     recentActivity,
     myTasks,
+    myRecentCompleted,
     openTaskCount,
   ] = await Promise.all([
     clientPerms.canView ? db.client.count() : Promise.resolve(0),
@@ -61,7 +68,7 @@ export default async function DashboardPage() {
     db.activityLog.findMany({
       take: 10,
       orderBy: { createdAt: "desc" },
-      include: { user: { select: { name: true } } },
+      include: { user: { select: { id: true, name: true } } },
     }),
     db.task.findMany({
       where: {
@@ -74,6 +81,18 @@ export default async function DashboardPage() {
         project: { select: { id: true, name: true } },
         client: { select: { id: true, name: true } },
         assignee: { select: { name: true } },
+      },
+    }),
+    db.task.findMany({
+      where: {
+        status: "DONE",
+        assigneeId: userId,
+        completedAt: { gte: recentlyCompletedSince },
+      },
+      take: 5,
+      orderBy: { completedAt: "desc" },
+      include: {
+        project: { select: { id: true, name: true } },
       },
     }),
     db.task.count({
@@ -185,33 +204,73 @@ export default async function DashboardPage() {
           </div>
         </CardHeader>
         <CardContent>
-          {myTasks.length === 0 ? (
+          {myTasks.length === 0 && myRecentCompleted.length === 0 ? (
             <p className="text-sm text-muted-foreground">No open tasks</p>
           ) : (
-            <div className="space-y-2">
-              {myTasks.map((task) => (
-                <div key={task.id} className="flex items-center gap-3 py-1">
-                  <DashboardTaskCheckbox taskId={task.id} status={task.status} />
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium truncate">{task.title}</span>
-                      <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${priorityColors[task.priority]}`}>
-                        {task.priority}
-                      </span>
+            <div className="space-y-4">
+              {/* Active tasks */}
+              {myTasks.length > 0 && (
+                <div className="space-y-2">
+                  {myTasks.map((task) => (
+                    <div key={task.id} className="flex items-center gap-3 py-1">
+                      <DashboardTaskCheckbox taskId={task.id} status={task.status} />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium truncate">{task.title}</span>
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${priorityColors[task.priority]}`}>
+                            {task.priority}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                          {task.project && (
+                            <Link href={`/projects/${task.project.id}`} className="hover:text-primary hover:underline">
+                              {task.project.name}
+                            </Link>
+                          )}
+                          {task.client && (
+                            <Link href={`/clients/${task.client.id}`} className="hover:text-primary hover:underline">
+                              {task.client.name}
+                            </Link>
+                          )}
+                          {task.dueDate && (
+                            <span className={`flex items-center gap-1 ${new Date(task.dueDate) < new Date() ? "text-destructive" : ""}`}>
+                              <Clock className="h-3 w-3" />
+                              {format(new Date(task.dueDate), "MMM d")}
+                            </span>
+                          )}
+                        </div>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                      {task.project && <span>{task.project.name}</span>}
-                      {task.client && <span>{task.client.name}</span>}
-                      {task.dueDate && (
-                        <span className={`flex items-center gap-1 ${new Date(task.dueDate) < new Date() ? "text-destructive" : ""}`}>
-                          <Clock className="h-3 w-3" />
-                          {format(new Date(task.dueDate), "MMM d")}
-                        </span>
-                      )}
-                    </div>
-                  </div>
+                  ))}
                 </div>
-              ))}
+              )}
+
+              {/* Recently completed — last 14 days */}
+              {myRecentCompleted.length > 0 && (
+                <div className="space-y-2 pt-3 border-t border-border">
+                  <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">
+                    Recently completed
+                  </p>
+                  {myRecentCompleted.map((task) => (
+                    <div key={task.id} className="flex items-center gap-3 py-0.5 opacity-70">
+                      <DashboardTaskCheckbox taskId={task.id} status={task.status} />
+                      <div className="flex-1 min-w-0">
+                        <span className="text-sm line-through truncate block">{task.title}</span>
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                          {task.project && (
+                            <Link href={`/projects/${task.project.id}`} className="hover:text-primary hover:underline">
+                              {task.project.name}
+                            </Link>
+                          )}
+                          {task.completedAt && (
+                            <span>{formatDistanceToNow(task.completedAt, { addSuffix: true })}</span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </CardContent>
@@ -235,7 +294,9 @@ export default async function DashboardPage() {
                   <Avatar name={log.user.name} size="xs" />
                   <div className="flex-1 min-w-0">
                     <p className="text-sm">
-                      <span className="font-medium">{log.user.name}</span>{" "}
+                      <Link href={`/team/${log.user.id}`} className="font-medium hover:text-primary hover:underline">
+                        {log.user.name}
+                      </Link>{" "}
                       <span className="text-muted-foreground">{log.action}</span>{" "}
                       <span className="text-muted-foreground">
                         {log.entityType}

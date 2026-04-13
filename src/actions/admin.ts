@@ -4,6 +4,10 @@ import { db } from "@/lib/db";
 import { requireAuth } from "@/lib/permissions";
 import { logActivity } from "@/lib/activity";
 import { revalidatePath } from "next/cache";
+import { revalidateUser } from "@/lib/revalidate-entity";
+import { getPermissionedModules, ALL_PERMISSION_FLAGS } from "@/lib/modules";
+import { sendFromTemplate } from "@/lib/email";
+import { absoluteUrl } from "@/lib/url";
 import { hash } from "bcryptjs";
 import { z } from "zod";
 
@@ -67,8 +71,34 @@ export async function createUser(_prev: unknown, formData: FormData) {
   });
 
   await logActivity("created", "user", user.id, admin.id, user.name);
-  revalidatePath("/admin/users");
-  revalidatePath("/team");
+  revalidateUser(user.id, { managerId: user.managerId });
+
+  // Send a welcome email to login-enabled users so they know their account
+  // exists and where to sign in. No-login placeholder users (e.g., tracked
+  // employees who don't actually use the system) skip this since their
+  // email column is a fake placeholder.
+  if (hasLogin && parsed.data.email) {
+    try {
+      await sendFromTemplate(
+        "welcome",
+        {
+          name: user.name,
+          loginUrl: absoluteUrl("/login"),
+        },
+        {
+          to: user.email,
+          entityType: "user",
+          entityId: user.id,
+        }
+      );
+    } catch (err) {
+      // Don't fail user creation if the welcome email errors out — the
+      // failure is logged in EmailLog and visible at /admin/emails
+      // eslint-disable-next-line no-console
+      console.error("[admin] welcome email failed:", err);
+    }
+  }
+
   return { success: true };
 }
 
@@ -125,16 +155,22 @@ export async function updateUser(_prev: unknown, formData: FormData) {
     }
   }
 
+  // Look up the previous manager so we can revalidate their page too if it changed
+  const previous = await db.user.findUnique({
+    where: { id },
+    select: { managerId: true },
+  });
+
   // Use null instead of undefined to actually clear the field
   await db.user.update({
     where: { id },
     data: { ...parsed.data, managerId: managerId },
   });
   await logActivity("updated", "user", id, admin.id, parsed.data.name);
-  revalidatePath(`/admin/users/${id}`);
-  revalidatePath("/admin/users");
-  revalidatePath("/team");
-  revalidatePath(`/team/${id}`);
+  revalidateUser(id, {
+    managerId,
+    previousManagerId: previous?.managerId ?? null,
+  });
   return { success: true };
 }
 
@@ -150,8 +186,7 @@ export async function deleteUser(_prev: unknown, formData: FormData) {
 
   await db.user.delete({ where: { id } });
   await logActivity("deleted", "user", id, admin.id, user.name);
-  revalidatePath("/admin/users");
-  revalidatePath("/team");
+  revalidateUser(id, { managerId: user.managerId });
   return { success: true };
 }
 
@@ -168,8 +203,7 @@ export async function toggleUserActive(_prev: unknown, formData: FormData) {
     data: { isActive: !user.isActive },
   });
 
-  revalidatePath("/admin/users");
-  revalidatePath("/team");
+  revalidateUser(id, { managerId: user.managerId });
   return { success: true };
 }
 
@@ -179,24 +213,40 @@ export async function saveModulePermissions(_prev: unknown, formData: FormData) 
   requireAdminOrManager(admin.role);
 
   const userId = formData.get("userId") as string;
-  const modules = ["clients", "projects", "contracts", "suppliers", "tools", "intranet", "admin"];
-  const flags = ["canView", "canEdit", "canCreate", "canDelete", "canComment", "canUpload", "canManage"];
 
-  for (const mod of modules) {
+  // Iterate the module registry instead of hardcoding the list — adding a new
+  // permissioned module in src/lib/modules.ts makes it automatically appear
+  // in this save path with no changes here.
+  const permissionedModules = getPermissionedModules();
+
+  // Collect all module keys from the form — includes both registry modules
+  // and dynamic custom-page-{id} keys from the permissions grid.
+  const allKeys: string[] = permissionedModules.map((m) => m.key);
+
+  // Detect custom page keys in the form submission (the permissions UI adds
+  // checkboxes named `custom-page-{id}_canView`, etc.)
+  const formEntries = Array.from(formData.keys());
+  for (const key of formEntries) {
+    const match = key.match(/^(custom-page-[^_]+)_/);
+    if (match && !allKeys.includes(match[1])) {
+      allKeys.push(match[1]);
+    }
+  }
+
+  for (const modKey of allKeys) {
     const data: Record<string, boolean> = {};
-    for (const flag of flags) {
-      data[flag] = formData.get(`${mod}_${flag}`) === "true";
+    for (const flag of ALL_PERMISSION_FLAGS) {
+      data[flag] = formData.get(`${modKey}_${flag}`) === "true";
     }
 
     await db.modulePermission.upsert({
-      where: { userId_module: { userId, module: mod } },
-      create: { userId, module: mod, ...data },
+      where: { userId_module: { userId, module: modKey } },
+      create: { userId, module: modKey, ...data },
       update: data,
     });
   }
 
-  revalidatePath(`/admin/users/${userId}`);
-  revalidatePath(`/team/${userId}`);
+  revalidateUser(userId);
   return { success: true };
 }
 
@@ -230,8 +280,7 @@ export async function saveEntityPermission(_prev: unknown, formData: FormData) {
     },
   });
 
-  revalidatePath(`/admin/users/${userId}`);
-  revalidatePath(`/team/${userId}`);
+  revalidateUser(userId);
   return { success: true };
 }
 
@@ -240,8 +289,8 @@ export async function deleteEntityPermission(_prev: unknown, formData: FormData)
   requireAdminOrManager(admin.role);
 
   const id = formData.get("id") as string;
+  const perm = await db.entityPermission.findUnique({ where: { id }, select: { userId: true } });
   await db.entityPermission.delete({ where: { id } });
-  revalidatePath("/admin/users");
-  revalidatePath("/team");
+  if (perm?.userId) revalidateUser(perm.userId);
   return { success: true };
 }

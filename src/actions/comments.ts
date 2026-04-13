@@ -3,6 +3,12 @@
 import { db } from "@/lib/db";
 import { requireAuth, resolveModulePerms } from "@/lib/permissions";
 import { logActivity } from "@/lib/activity";
+import { notify } from "@/lib/notifications";
+import {
+  extractMentionedUserIds,
+  stripMentionFormatting,
+} from "@/lib/mentions";
+import { absoluteUrl } from "@/lib/url";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
@@ -15,11 +21,141 @@ const entityModuleMap: Record<string, string> = {
   certification: "certifications",
 };
 
+/**
+ * Human-readable label for the entity a comment lives on, used in
+ * mention notification copy ("Alice mentioned you on project Foo").
+ */
+const entityLabel: Record<string, string> = {
+  client: "client",
+  project: "project",
+  contract: "contract",
+  document: "document",
+  supplier: "supplier",
+  certification: "certification",
+};
+
+type CommentEntityType =
+  | "client"
+  | "project"
+  | "contract"
+  | "document"
+  | "supplier"
+  | "certification";
+
 const addCommentSchema = z.object({
   entityType: z.enum(["client", "project", "contract", "document", "supplier", "certification"]),
   entityId: z.string().min(1),
   content: z.string().min(1, "Comment cannot be empty"),
 });
+
+/**
+ * Look up an entity's display name and canonical URL for a notification
+ * payload. Each entity type sits in a different table so we have to
+ * switch. Returns null if the row doesn't exist (stale mention).
+ */
+async function resolveCommentEntity(
+  entityType: CommentEntityType,
+  entityId: string
+): Promise<{ name: string; href: string } | null> {
+  switch (entityType) {
+    case "client": {
+      const c = await db.client.findUnique({ where: { id: entityId }, select: { name: true } });
+      return c ? { name: c.name, href: `/clients/${entityId}` } : null;
+    }
+    case "project": {
+      const p = await db.project.findUnique({ where: { id: entityId }, select: { name: true } });
+      return p ? { name: p.name, href: `/projects/${entityId}` } : null;
+    }
+    case "contract": {
+      const c = await db.contract.findUnique({ where: { id: entityId }, select: { title: true } });
+      return c ? { name: c.title, href: `/contracts/${entityId}` } : null;
+    }
+    case "document": {
+      const d = await db.document.findUnique({
+        where: { id: entityId },
+        select: { title: true, projectId: true },
+      });
+      return d
+        ? { name: d.title, href: `/projects/${d.projectId}/documents/${entityId}` }
+        : null;
+    }
+    case "supplier": {
+      const s = await db.supplier.findUnique({ where: { id: entityId }, select: { name: true } });
+      return s ? { name: s.name, href: `/suppliers/${entityId}` } : null;
+    }
+    case "certification": {
+      const c = await db.certification.findUnique({
+        where: { id: entityId },
+        select: { name: true },
+      });
+      return c ? { name: c.name, href: `/certifications/${entityId}` } : null;
+    }
+  }
+}
+
+/**
+ * Send @mention notifications for a comment. Best-effort — failures
+ * are logged but never break the underlying comment create.
+ */
+async function notifyMentions(opts: {
+  content: string;
+  authorId: string;
+  authorName: string;
+  entityType: CommentEntityType;
+  entityId: string;
+}) {
+  const mentionedIds = extractMentionedUserIds(opts.content)
+    // Don't notify the author when they mention themselves
+    .filter((id) => id !== opts.authorId);
+
+  if (mentionedIds.length === 0) return;
+
+  try {
+    // Drop ids that don't belong to active login users. Tracked-only
+    // employees can't sign in to see an in-app notification, so a mention
+    // on them is effectively a dead link.
+    const activeRecipients = await db.user.findMany({
+      where: { id: { in: mentionedIds }, isActive: true, hasLoginAccess: true },
+      select: { id: true, name: true },
+    });
+    if (activeRecipients.length === 0) return;
+
+    const entity = await resolveCommentEntity(opts.entityType, opts.entityId);
+    if (!entity) return;
+
+    const label = entityLabel[opts.entityType] || opts.entityType;
+    const heading = `${opts.authorName} mentioned you on ${label} ${entity.name}`;
+    const plainBody = stripMentionFormatting(opts.content);
+    const excerpt = plainBody.length > 240 ? `${plainBody.slice(0, 240)}…` : plainBody;
+
+    // Broadcast: notify() will create one Notification row per recipient
+    // and send one email each. We pick the first recipient's name for the
+    // email template since it's just used as a salutation — the email
+    // pipeline sends to each user's own address individually.
+    await notify({
+      recipientId: activeRecipients.map((u) => u.id),
+      type: "mention",
+      title: heading,
+      body: excerpt,
+      href: entity.href,
+      actorId: opts.authorId,
+      entityType: opts.entityType,
+      entityId: opts.entityId,
+      email: {
+        templateKey: "notification",
+        data: {
+          recipientName: activeRecipients[0].name,
+          heading,
+          body: excerpt,
+          cta: { label: `Open ${label}`, url: absoluteUrl(entity.href) },
+        },
+      },
+    });
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error("[comments] mention notify failed:", err);
+  }
+}
 
 export async function addComment(_prev: unknown, formData: FormData) {
   const user = await requireAuth();
@@ -48,9 +184,59 @@ export async function addComment(_prev: unknown, formData: FormData) {
   };
 
   await db.comment.create({ data: data as never });
-  await logActivity("commented", entityType, entityId, user.id, content.slice(0, 100));
+  // Activity log stores plain-text for human readability — strip the
+  // raw `@[Name](id)` token syntax down to `@Name`
+  const activityExcerpt = stripMentionFormatting(content).slice(0, 100);
+  await logActivity("commented", entityType, entityId, user.id, activityExcerpt);
+
+  await notifyMentions({
+    content,
+    authorId: user.id,
+    authorName: user.name,
+    entityType,
+    entityId,
+  });
+
   revalidatePath("/");
   return { success: true };
+}
+
+/**
+ * Search for users who can be @mentioned. Used by the compose-time
+ * autocomplete dropdown. Returns just the active, login-capable users
+ * whose name or email starts with or contains the query. Any authenticated
+ * user is allowed to call this — they can see names in the team directory
+ * anyway, and restricting to `canView team` would break mentions for
+ * people collaborating outside that module.
+ */
+export async function searchMentionableUsers(query: string) {
+  await requireAuth();
+  const q = query.trim();
+  if (q.length === 0) {
+    // Empty query: return the first 8 active users alphabetically so the
+    // dropdown still feels useful immediately after typing "@"
+    const users = await db.user.findMany({
+      where: { isActive: true },
+      select: { id: true, name: true, email: true, jobTitle: true },
+      orderBy: { name: "asc" },
+      take: 8,
+    });
+    return { users };
+  }
+
+  const users = await db.user.findMany({
+    where: {
+      isActive: true,
+      OR: [
+        { name: { contains: q, mode: "insensitive" } },
+        { email: { contains: q, mode: "insensitive" } },
+      ],
+    },
+    select: { id: true, name: true, email: true, jobTitle: true },
+    orderBy: { name: "asc" },
+    take: 8,
+  });
+  return { users };
 }
 
 export async function deleteComment(_prev: unknown, formData: FormData) {

@@ -4,9 +4,11 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { saveModulePermissions } from "@/actions/admin";
 import { useState } from "react";
-
-const MODULES = ["clients", "projects", "contracts", "suppliers", "tools", "intranet", "admin"];
-const FLAGS = ["canView", "canEdit", "canCreate", "canDelete", "canComment", "canUpload", "canManage"];
+import {
+  getPermissionedModules,
+  ALL_PERMISSION_FLAGS,
+  PERMISSION_FLAG_LABELS,
+} from "@/lib/modules";
 
 interface Permission {
   module: string;
@@ -28,6 +30,9 @@ export function ModulePermissionsEditor({ userId, permissions }: Props) {
   const router = useRouter();
   const [saving, setSaving] = useState(false);
 
+  // Drive the module list and flag columns from the registry so new modules
+  // show up automatically when added to src/lib/modules.ts.
+  const modules = getPermissionedModules();
   const permMap = new Map(permissions.map((p) => [p.module, p]));
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -47,24 +52,27 @@ export function ModulePermissionsEditor({ userId, permissions }: Props) {
           <thead>
             <tr className="border-b border-border">
               <th className="text-left p-2 font-medium">Module</th>
-              {FLAGS.map((flag) => (
+              {ALL_PERMISSION_FLAGS.map((flag) => (
                 <th key={flag} className="p-2 font-medium text-center text-xs">
-                  {flag.replace("can", "")}
+                  {PERMISSION_FLAG_LABELS[flag]}
                 </th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {MODULES.map((mod) => {
-              const perm = permMap.get(mod);
+            {modules.map((mod) => {
+              const perm = permMap.get(mod.key);
               return (
-                <tr key={mod} className="border-b border-border">
-                  <td className="p-2 font-medium capitalize">{mod}</td>
-                  {FLAGS.map((flag) => (
+                <tr key={mod.key} className="border-b border-border">
+                  <td className="p-2 font-medium">
+                    <div>{mod.label}</div>
+                    <div className="text-[11px] text-muted-foreground font-normal">{mod.description}</div>
+                  </td>
+                  {ALL_PERMISSION_FLAGS.map((flag) => (
                     <td key={flag} className="p-2 text-center">
                       <input
                         type="checkbox"
-                        name={`${mod}_${flag}`}
+                        name={`${mod.key}_${flag}`}
                         value="true"
                         defaultChecked={perm ? (perm as unknown as Record<string, boolean>)[flag] : false}
                         className="rounded"

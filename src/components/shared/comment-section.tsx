@@ -1,14 +1,16 @@
 "use client";
 
 import { useFormState } from "react-dom";
-import { useRef, useEffect } from "react";
+import { useRef, useEffect, useState, Fragment } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
 import { Trash2 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { addComment, deleteComment } from "@/actions/comments";
+import { MentionTextarea } from "./mention-textarea";
+import { segmentMentions } from "@/lib/mentions";
 
 interface CommentData {
   id: string;
@@ -26,6 +28,32 @@ interface CommentSectionProps {
   currentUserId: string;
 }
 
+/**
+ * Render comment content, turning `@[Name](userId)` tokens into links to
+ * the referenced employee. Plain-text segments keep their whitespace and
+ * line breaks so the surrounding `whitespace-pre-wrap` still works.
+ */
+function RenderedCommentContent({ content }: { content: string }) {
+  const segments = segmentMentions(content);
+  return (
+    <p className="text-sm text-foreground whitespace-pre-wrap">
+      {segments.map((seg, i) =>
+        seg.type === "text" ? (
+          <Fragment key={`t-${i}`}>{seg.value}</Fragment>
+        ) : (
+          <Link
+            key={`m-${i}`}
+            href={`/team/${seg.userId}`}
+            className="inline-flex items-center rounded bg-primary/10 px-1 text-primary hover:bg-primary/20 hover:underline"
+          >
+            @{seg.name}
+          </Link>
+        )
+      )}
+    </p>
+  );
+}
+
 function AddCommentForm({
   entityType,
   entityId,
@@ -35,11 +63,13 @@ function AddCommentForm({
 }) {
   const [state, formAction] = useFormState(addComment, null);
   const formRef = useRef<HTMLFormElement>(null);
+  const [value, setValue] = useState("");
   const router = useRouter();
 
   useEffect(() => {
     if (state?.success) {
       formRef.current?.reset();
+      setValue("");
       router.refresh();
     }
   }, [state, router]);
@@ -48,10 +78,16 @@ function AddCommentForm({
     <form ref={formRef} action={formAction} className="space-y-2">
       <input type="hidden" name="entityType" value={entityType} />
       <input type="hidden" name="entityId" value={entityId} />
-      <Textarea name="content" placeholder="Add a comment..." required />
+      <MentionTextarea
+        name="content"
+        value={value}
+        onChange={setValue}
+        placeholder="Add a comment… use @ to mention an employee"
+        required
+      />
       {state?.error && <p className="text-sm text-destructive">{state.error}</p>}
       <div className="flex justify-end">
-        <Button type="submit" size="sm">
+        <Button type="submit" size="sm" disabled={value.trim().length === 0}>
           Post Comment
         </Button>
       </div>
@@ -76,22 +112,35 @@ export function CommentSection({
     router.refresh();
   }
 
+  // Display comments chronologically with oldest at top and newest at bottom,
+  // so the newest comment sits right above the compose box. Callers often pass
+  // data already sorted descending — we normalize here so every place that
+  // uses this component gets the same behavior.
+  const sortedComments = [...comments].sort(
+    (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+  );
+
   return (
     <div className="space-y-4">
       <h3 className="text-sm font-semibold text-foreground">Comments</h3>
 
-      {comments.length === 0 && (
+      {sortedComments.length === 0 && (
         <p className="text-sm text-muted-foreground">No comments yet</p>
       )}
 
       <div className="space-y-3">
-        {comments.map((comment) => (
+        {sortedComments.map((comment) => (
           <div key={comment.id} className="flex gap-3">
             <Avatar name={comment.author.name} size="sm" />
             <div className="flex-1 rounded border border-border bg-card p-3">
               <div className="flex items-center justify-between mb-1">
                 <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium">{comment.author.name}</span>
+                  <Link
+                    href={`/team/${comment.author.id}`}
+                    className="text-sm font-medium hover:text-primary hover:underline"
+                  >
+                    {comment.author.name}
+                  </Link>
                   <span className="text-xs text-muted-foreground">
                     {formatDistanceToNow(comment.createdAt, { addSuffix: true })}
                   </span>
@@ -105,7 +154,7 @@ export function CommentSection({
                   </button>
                 )}
               </div>
-              <p className="text-sm text-foreground whitespace-pre-wrap">{comment.content}</p>
+              <RenderedCommentContent content={comment.content} />
             </div>
           </div>
         ))}

@@ -31,12 +31,14 @@ const statusLabels: Record<string, string> = {
 export default async function TasksPage({
   searchParams,
 }: {
-  searchParams: { assignee?: string; project?: string; client?: string; show?: string };
+  searchParams: { assignee?: string; project?: string; client?: string; show?: string; view?: string };
 }) {
   const session = await auth();
   if (!session?.user) redirect("/login");
 
-  const { assignee, project, client, show } = searchParams;
+  const { assignee, project, client, show, view } = searchParams;
+  // Default view is grouped by status. "by-project" groups by project name.
+  const groupBy = view === "by-project" ? "project" : "status";
 
   // Build filter
   const where: Prisma.TaskWhereInput = {};
@@ -124,7 +126,45 @@ export default async function TasksPage({
         />
       </Suspense>
 
-      <p className="text-xs text-muted-foreground mb-4">{filterLabel} — {tasks.length} task{tasks.length !== 1 ? "s" : ""}</p>
+      <div className="flex items-center justify-between mb-4">
+        <p className="text-xs text-muted-foreground">{filterLabel} — {tasks.length} task{tasks.length !== 1 ? "s" : ""}</p>
+        {/* View mode: status (default) vs grouped by project */}
+        <div className="flex rounded-md border border-border overflow-hidden">
+          <Link
+            href={{
+              pathname: "/tasks",
+              query: {
+                ...(assignee ? { assignee } : {}),
+                ...(project ? { project } : {}),
+                ...(client ? { client } : {}),
+                ...(show ? { show } : {}),
+              },
+            }}
+            className={`px-3 py-1 text-xs font-medium transition-colors ${
+              groupBy === "status" ? "bg-primary text-primary-foreground" : "hover:bg-muted"
+            }`}
+          >
+            By status
+          </Link>
+          <Link
+            href={{
+              pathname: "/tasks",
+              query: {
+                ...(assignee ? { assignee } : {}),
+                ...(project ? { project } : {}),
+                ...(client ? { client } : {}),
+                ...(show ? { show } : {}),
+                view: "by-project",
+              },
+            }}
+            className={`px-3 py-1 text-xs font-medium transition-colors ${
+              groupBy === "project" ? "bg-primary text-primary-foreground" : "hover:bg-muted"
+            }`}
+          >
+            By project
+          </Link>
+        </div>
+      </div>
 
       {tasks.length === 0 ? (
         <EmptyState
@@ -132,6 +172,8 @@ export default async function TasksPage({
           title="No tasks found"
           description={filterParts.length > 0 ? "Try adjusting your filters" : "Create your first task to start tracking work"}
         />
+      ) : groupBy === "project" ? (
+        <ProjectGroupedTasks tasks={tasks} />
       ) : (
         <div className="space-y-8">
           {activeTasks.length > 0 && (
@@ -174,10 +216,13 @@ export default async function TasksPage({
                           </div>
                         </div>
                         {task.assignee && (
-                          <div className="flex items-center gap-1.5 shrink-0">
+                          <Link
+                            href={`/team/${task.assignee.id}`}
+                            className="flex items-center gap-1.5 shrink-0 hover:text-primary"
+                          >
                             <Avatar name={task.assignee.name} size="xs" />
-                            <span className="text-xs text-muted-foreground hidden sm:inline">{task.assignee.name}</span>
-                          </div>
+                            <span className="text-xs text-muted-foreground hover:text-primary hidden sm:inline">{task.assignee.name}</span>
+                          </Link>
                         )}
                       </div>
                     </CardContent>
@@ -201,9 +246,21 @@ export default async function TasksPage({
                         <div className="flex-1 min-w-0">
                           <span className="font-medium text-foreground line-through">{task.title}</span>
                           <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
-                            {task.project && <span>{task.project.name}</span>}
-                            {task.client && <span>{task.client.name}</span>}
-                            {task.assignee && <span>{task.assignee.name}</span>}
+                            {task.project && (
+                              <Link href={`/projects/${task.project.id}`} className="hover:text-primary hover:underline">
+                                {task.project.name}
+                              </Link>
+                            )}
+                            {task.client && (
+                              <Link href={`/clients/${task.client.id}`} className="hover:text-primary hover:underline">
+                                {task.client.name}
+                              </Link>
+                            )}
+                            {task.assignee && (
+                              <Link href={`/team/${task.assignee.id}`} className="hover:text-primary hover:underline">
+                                {task.assignee.name}
+                              </Link>
+                            )}
                             <span>{statusLabels[task.status]}</span>
                           </div>
                         </div>
@@ -216,6 +273,137 @@ export default async function TasksPage({
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── Grouped-by-project view ──────────────────────────────────
+
+type TaskRow = {
+  id: string;
+  title: string;
+  status: string;
+  priority: string;
+  dueDate: Date | null;
+  project: { id: string; name: string } | null;
+  client: { id: string; name: string } | null;
+  assignee: { id: string; name: string } | null;
+};
+
+/**
+ * Renders tasks grouped by their parent project. Each project is a card
+ * containing its tasks. Tasks with no project are bundled into an
+ * "Unassigned to project" group at the end. Active tasks are listed first
+ * within each group, then completed tasks below.
+ */
+function ProjectGroupedTasks({ tasks }: { tasks: TaskRow[] }) {
+  // Group tasks by project id (null for orphans)
+  const groupMap = new Map<string, { name: string; projectId: string | null; tasks: TaskRow[] }>();
+  for (const task of tasks) {
+    const key = task.project?.id || "__none__";
+    if (!groupMap.has(key)) {
+      groupMap.set(key, {
+        projectId: task.project?.id || null,
+        name: task.project?.name || "No project",
+        tasks: [],
+      });
+    }
+    groupMap.get(key)!.tasks.push(task);
+  }
+
+  // Sort groups: real projects alphabetically, "No project" group last
+  const groups = Array.from(groupMap.values()).sort((a, b) => {
+    if (a.projectId === null) return 1;
+    if (b.projectId === null) return -1;
+    return a.name.localeCompare(b.name);
+  });
+
+  return (
+    <div className="space-y-6">
+      {groups.map((group) => {
+        const active = group.tasks.filter(
+          (t) => t.status !== "DONE" && t.status !== "CANCELLED"
+        );
+        const completed = group.tasks.filter(
+          (t) => t.status === "DONE" || t.status === "CANCELLED"
+        );
+
+        return (
+          <Card key={group.projectId || "__none__"}>
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-semibold">
+                  {group.projectId ? (
+                    <Link
+                      href={`/projects/${group.projectId}`}
+                      className="hover:text-primary hover:underline"
+                    >
+                      {group.name}
+                    </Link>
+                  ) : (
+                    <span className="text-muted-foreground">{group.name}</span>
+                  )}
+                </h3>
+                <span className="text-xs text-muted-foreground">
+                  {active.length} active · {completed.length} done
+                </span>
+              </div>
+
+              <div className="space-y-1.5">
+                {[...active, ...completed].map((task) => {
+                  const isDone = task.status === "DONE" || task.status === "CANCELLED";
+                  return (
+                    <div
+                      key={task.id}
+                      className={`flex items-center gap-3 rounded border border-border/50 p-2 ${
+                        isDone ? "opacity-60" : ""
+                      }`}
+                    >
+                      <TaskCheckbox taskId={task.id} status={task.status} />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className={`text-sm ${isDone ? "line-through text-muted-foreground" : "font-medium"}`}>
+                            {task.title}
+                          </span>
+                          {!isDone && (
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${priorityColors[task.priority]}`}>
+                              {task.priority}
+                            </span>
+                          )}
+                          {task.status === "IN_PROGRESS" && (
+                            <Badge variant="default" className="text-[10px]">In Progress</Badge>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2 mt-0.5 text-[11px] text-muted-foreground">
+                          {task.client && (
+                            <Link href={`/clients/${task.client.id}`} className="hover:text-primary hover:underline">
+                              {task.client.name}
+                            </Link>
+                          )}
+                          {task.dueDate && (
+                            <span className={!isDone && new Date(task.dueDate) < new Date() ? "text-destructive font-medium" : ""}>
+                              Due {format(new Date(task.dueDate), "MMM d, yyyy")}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      {task.assignee && (
+                        <Link
+                          href={`/team/${task.assignee.id}`}
+                          className="flex items-center gap-1.5 shrink-0 hover:text-primary"
+                          title={task.assignee.name}
+                        >
+                          <Avatar name={task.assignee.name} size="xs" />
+                        </Link>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </CardContent>
+          </Card>
+        );
+      })}
     </div>
   );
 }

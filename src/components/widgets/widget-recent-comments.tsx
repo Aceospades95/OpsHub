@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar } from "@/components/ui/avatar";
 import { MessageSquare } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
+import { stripMentionFormatting } from "@/lib/mentions";
 
 export async function WidgetRecentComments({ userId: _userId }: { userId: string }) {
   const comments = await db.comment.findMany({
@@ -33,7 +34,9 @@ export async function WidgetRecentComments({ userId: _userId }: { userId: string
                       {formatDistanceToNow(c.createdAt, { addSuffix: true })}
                     </span>
                   </div>
-                  <p className="text-sm text-muted-foreground line-clamp-2">{c.content}</p>
+                  <p className="text-sm text-muted-foreground line-clamp-2">
+                    {stripMentionFormatting(c.content)}
+                  </p>
                 </div>
               </div>
             ))}

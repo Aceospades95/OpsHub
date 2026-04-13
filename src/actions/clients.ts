@@ -3,6 +3,7 @@
 import { db } from "@/lib/db";
 import { requireAuth, resolveModulePerms } from "@/lib/permissions";
 import { logActivity } from "@/lib/activity";
+import { revalidateClient } from "@/lib/revalidate-entity";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
@@ -34,7 +35,7 @@ export async function createClient(_prev: unknown, formData: FormData) {
 
   const client = await db.client.create({ data: parsed.data });
   await logActivity("created", "client", client.id, user.id, client.name);
-  revalidatePath("/clients");
+  revalidateClient(client.id);
   return { success: true };
 }
 
@@ -64,8 +65,7 @@ export async function updateClient(_prev: unknown, formData: FormData) {
     },
   });
   await logActivity("updated", "client", id, user.id, parsed.data.name);
-  revalidatePath(`/clients/${id}`);
-  revalidatePath("/clients");
+  revalidateClient(id);
   return { success: true };
 }
 
@@ -80,7 +80,7 @@ export async function deleteClient(_prev: unknown, formData: FormData) {
 
   await db.client.delete({ where: { id } });
   await logActivity("deleted", "client", id, user.id, client.name);
-  revalidatePath("/clients");
+  revalidateClient(id);
   return { success: true };
 }
 

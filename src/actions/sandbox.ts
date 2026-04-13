@@ -19,6 +19,7 @@ const sandboxPageSchema = z.object({
   description: z.string().optional(),
   content: z.string().optional(),
   layout: z.enum(["default", "wide", "full"]).default("default"),
+  icon: z.string().optional(),
   projectId: z.string().optional(),
   clientId: z.string().optional(),
 });
@@ -33,6 +34,7 @@ export async function createSandboxPage(_prev: unknown, formData: FormData) {
     description: formData.get("description") || undefined,
     content: formData.get("content") || undefined,
     layout: formData.get("layout") || "default",
+    icon: formData.get("icon") || undefined,
     projectId: formData.get("projectId") || undefined,
     clientId: formData.get("clientId") || undefined,
   });
@@ -51,6 +53,7 @@ export async function createSandboxPage(_prev: unknown, formData: FormData) {
       description: parsed.data.description || null,
       content: parsed.data.content || null,
       layout: parsed.data.layout,
+      icon: parsed.data.icon || null,
       projectId: parsed.data.projectId || null,
       clientId: parsed.data.clientId || null,
       createdById: user.id,
@@ -80,6 +83,7 @@ export async function updateSandboxPage(_prev: unknown, formData: FormData) {
     description: formData.get("description") || undefined,
     content: formData.get("content") || undefined,
     layout: formData.get("layout") || "default",
+    icon: formData.get("icon") || undefined,
     projectId: formData.get("projectId") || undefined,
     clientId: formData.get("clientId") || undefined,
   });
@@ -101,6 +105,7 @@ export async function updateSandboxPage(_prev: unknown, formData: FormData) {
       description: parsed.data.description || null,
       content: parsed.data.content || null,
       layout: parsed.data.layout,
+      icon: parsed.data.icon || null,
       projectId: parsed.data.projectId || null,
       clientId: parsed.data.clientId || null,
     },

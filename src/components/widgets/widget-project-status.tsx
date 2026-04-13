@@ -26,7 +26,7 @@ export async function WidgetProjectStatus({ userId: _userId }: { userId: string 
         </CardTitle>
       </CardHeader>
       <CardContent>
-        <div className="grid grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           {statusConfig.map((sc) => {
             const items = projects.filter((p) => p.status === sc.status);
             return (

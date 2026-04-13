@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog } from "@/components/ui/dialog";
 import { addProjectMember, removeProjectMember } from "@/actions/projects";
 import { Plus, X } from "lucide-react";
+import Link from "next/link";
 
 interface Member {
   id: string;
@@ -49,9 +50,9 @@ export function MemberSection({ members, projectId, allUsers, canEdit }: Props) 
       {members.map((member) => (
         <div key={member.id} className="flex items-center gap-2">
           <Avatar name={member.user.name} size="xs" />
-          <div className="flex-1 min-w-0">
+          <Link href={`/team/${member.user.id}`} className="flex-1 min-w-0 hover:text-primary hover:underline">
             <p className="text-sm font-medium truncate">{member.user.name}</p>
-          </div>
+          </Link>
           <Badge variant="outline" className="text-xs">{member.role}</Badge>
           {canEdit && (
             <button onClick={() => handleRemove(member.id)} className="text-muted-foreground hover:text-destructive">

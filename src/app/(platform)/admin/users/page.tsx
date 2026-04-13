@@ -34,7 +34,7 @@ export default async function AdminUsersPage() {
 
   function renderUserTable(users: typeof activeUsers, dimmed = false) {
     return (
-      <table className="w-full">
+      <div className="overflow-x-auto"><table className="w-full">
         <thead>
           <tr className="border-b border-border">
             <th className="text-left p-4 text-sm font-medium text-muted-foreground">User</th>
@@ -85,7 +85,7 @@ export default async function AdminUsersPage() {
             </tr>
           ))}
         </tbody>
-      </table>
+      </table></div>
     );
   }
 

@@ -4,18 +4,95 @@ import { db } from "@/lib/db";
 import { requireAuth } from "@/lib/permissions";
 import { logActivity } from "@/lib/activity";
 import { revalidatePath } from "next/cache";
+import { revalidateAssignment } from "@/lib/revalidate-entity";
+import { notify } from "@/lib/notifications";
+import { absoluteUrl } from "@/lib/url";
 import { z } from "zod";
+
+/**
+ * Notify an employee that they've been assigned to (or removed from) a
+ * project. Best-effort — failures are logged but never bubble up because
+ * notifications must not break the underlying mutation.
+ */
+async function notifyAssignmentChange(opts: {
+  type: "assignment-created" | "assignment-removed";
+  employeeId: string;
+  actorId: string;
+  projectId: string | null;
+  assignmentId: string;
+  role: string | null;
+  fte: number;
+}) {
+  // Don't notify the actor about their own action
+  if (opts.employeeId === opts.actorId) return;
+
+  try {
+    const [project, employee] = await Promise.all([
+      opts.projectId
+        ? db.project.findUnique({
+            where: { id: opts.projectId },
+            select: { name: true },
+          })
+        : Promise.resolve(null),
+      db.user.findUnique({
+        where: { id: opts.employeeId },
+        select: { name: true, hasLoginAccess: true },
+      }),
+    ]);
+
+    if (!employee) return;
+
+    const projectName = project?.name || "an internal assignment";
+    const heading =
+      opts.type === "assignment-created"
+        ? `You were assigned to ${projectName}`
+        : `You were removed from ${projectName}`;
+    const detailParts = [
+      opts.role ? `Role: ${opts.role}` : null,
+      `${opts.fte.toFixed(2)} FTE`,
+    ].filter(Boolean);
+    const body = detailParts.join(" · ");
+
+    const href = opts.projectId ? `/projects/${opts.projectId}` : `/team/${opts.employeeId}`;
+
+    await notify({
+      recipientId: opts.employeeId,
+      type: opts.type,
+      title: heading,
+      body,
+      href,
+      actorId: opts.actorId,
+      entityType: "assignment",
+      entityId: opts.assignmentId,
+      // Only email assignment-created — removal feels awkward via email
+      // and the in-app bell already covers it.
+      email:
+        opts.type === "assignment-created"
+          ? {
+              templateKey: "notification",
+              data: {
+                recipientName: employee.name,
+                heading,
+                body,
+                cta: { label: "View details", url: absoluteUrl(href) },
+              },
+            }
+          : undefined,
+    });
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error("[assignments] notify failed:", err);
+  }
+}
 
 function requireAdminOrManager(role: string) {
   if (role !== "ADMIN" && role !== "MANAGER") throw new Error("Admin or Manager access required");
 }
 
-// Revalidate all paths where an assignment could appear
+// Revalidate all paths where an assignment could appear.
+// Local alias for the central helper to keep existing call sites short.
 function revalidateAssignmentPaths(employeeId?: string | null, projectId?: string | null) {
-  revalidatePath("/team", "layout");
-  revalidatePath("/projects", "layout");
-  if (employeeId) revalidatePath(`/team/${employeeId}`);
-  if (projectId) revalidatePath(`/projects/${projectId}`);
+  revalidateAssignment({ employeeId, projectId });
 }
 
 const assignmentSchema = z.object({
@@ -66,6 +143,15 @@ export async function createAssignment(_prev: unknown, formData: FormData) {
 
   await logActivity("created", "assignment", assignment.id, user.id, `Assignment for employee ${parsed.data.employeeId}`);
   revalidateAssignmentPaths(parsed.data.employeeId, parsed.data.projectId);
+  await notifyAssignmentChange({
+    type: "assignment-created",
+    employeeId: assignment.employeeId,
+    actorId: user.id,
+    projectId: assignment.projectId,
+    assignmentId: assignment.id,
+    role: assignment.role,
+    fte: assignment.allocationFte,
+  });
   return { success: true };
 }
 
@@ -133,15 +219,25 @@ export async function removeAssignment(assignmentId: string) {
   if (!assignmentId) return { error: "Assignment ID is required" };
 
   // Look up the assignment first so we can revalidate specific detail pages
+  // and notify the (former) assignee
   const assignment = await db.assignment.findUnique({
     where: { id: assignmentId },
-    select: { employeeId: true, projectId: true },
+    select: { employeeId: true, projectId: true, role: true, allocationFte: true },
   });
   if (!assignment) return { error: "Assignment not found" };
 
   await db.assignment.delete({ where: { id: assignmentId } });
   await logActivity("deleted", "assignment", assignmentId, user.id);
   revalidateAssignmentPaths(assignment.employeeId, assignment.projectId);
+  await notifyAssignmentChange({
+    type: "assignment-removed",
+    employeeId: assignment.employeeId,
+    actorId: user.id,
+    projectId: assignment.projectId,
+    assignmentId,
+    role: assignment.role,
+    fte: assignment.allocationFte,
+  });
   return { success: true };
 }
 
@@ -177,6 +273,15 @@ export async function quickAssign(data: {
 
   await logActivity("created", "assignment", assignment.id, user.id, `Quick-assigned to project`);
   revalidateAssignmentPaths(data.employeeId, data.projectId);
+  await notifyAssignmentChange({
+    type: "assignment-created",
+    employeeId: assignment.employeeId,
+    actorId: user.id,
+    projectId: assignment.projectId,
+    assignmentId: assignment.id,
+    role: assignment.role,
+    fte: assignment.allocationFte,
+  });
   return { success: true };
 }
 

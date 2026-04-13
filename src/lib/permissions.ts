@@ -2,6 +2,7 @@ import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import type { Role } from "@prisma/client";
 import { redirect } from "next/navigation";
+import { getPermissionedModules } from "@/lib/modules";
 
 export type PermissionFlags = {
   canView: boolean;
@@ -21,7 +22,7 @@ const ROLE_LEVEL: Record<Role, number> = {
   VIEWER: 1,
 };
 
-function getRoleDefaults(role: Role): PermissionFlags {
+export function getRoleDefaults(role: Role): PermissionFlags {
   const level = ROLE_LEVEL[role];
   return {
     canView: level >= 1,
@@ -116,8 +117,80 @@ export async function resolveEntityPerms(
     };
   }
 
+  // For projects: an active assignment grants view + comment access even
+  // without explicit entity or module permissions. This ties the staffing
+  // matrix to the permission system — assign someone to a project and
+  // they automatically get access.
+  if (entityType === "project") {
+    const assignment = await db.assignment.findFirst({
+      where: {
+        employeeId: userId,
+        projectId: entityId,
+        status: { in: ["ACTIVE", "PLANNED"] },
+      },
+      select: { id: true },
+    });
+    if (assignment) {
+      const modulePerms = await resolveModulePerms(userId, role, module);
+      return {
+        ...modulePerms,
+        canView: true,
+        canComment: true,
+      };
+    }
+  }
+
   // Fall back to module perms
   return resolveModulePerms(userId, role, module);
+}
+
+/**
+ * Check whether a user has access to a specific project — either through
+ * explicit permissions or through an active staffing assignment.
+ *
+ * This is the query used by project list views to filter which projects
+ * a non-admin user can see.
+ */
+export async function getAccessibleProjectIds(
+  userId: string,
+  role: Role
+): Promise<string[] | "all"> {
+  if (role === "ADMIN" || role === "MANAGER") return "all";
+
+  // Projects the user is actively assigned to (staffing)
+  const assignments = await db.assignment.findMany({
+    where: {
+      employeeId: userId,
+      status: { in: ["ACTIVE", "PLANNED"] },
+      projectId: { not: null },
+    },
+    select: { projectId: true },
+  });
+
+  // Projects with explicit entity permission
+  const entityPerms = await db.entityPermission.findMany({
+    where: {
+      userId,
+      entityType: "project",
+      canView: true,
+    },
+    select: { entityId: true },
+  });
+
+  // Projects through project membership (legacy relation)
+  const members = await db.projectMember.findMany({
+    where: { userId },
+    select: { projectId: true },
+  });
+
+  const ids = new Set<string>();
+  for (const a of assignments) {
+    if (a.projectId) ids.add(a.projectId);
+  }
+  for (const p of entityPerms) ids.add(p.entityId);
+  for (const m of members) ids.add(m.projectId);
+
+  return Array.from(ids);
 }
 
 export function canAccessSandbox(role: Role): boolean {
@@ -128,25 +201,19 @@ export async function getVisibleModules(
   userId: string,
   role: Role
 ): Promise<string[]> {
-  const allModules = [
-    "clients",
-    "projects",
-    "contracts",
-    "certifications",
-    "team",
-    "suppliers",
-    "tools",
-    "intranet",
-    "admin",
-  ];
+  // Drive visibility from the module registry so adding a new permissioned
+  // module automatically adds it to the visible list without editing this file.
+  const permissioned = getPermissionedModules();
 
-  if (role === "ADMIN") return allModules;
+  if (role === "ADMIN") return permissioned.map((m) => m.key);
 
   const visible: string[] = [];
-  for (const mod of allModules) {
-    if (mod === "admin") continue; // admin module only for ADMIN role
-    const perms = await resolveModulePerms(userId, role, mod);
-    if (perms.canView) visible.push(mod);
+  for (const mod of permissioned) {
+    // Admin-only modules are never visible to non-ADMIN users regardless
+    // of their individual module permission rows.
+    if (mod.adminOnly) continue;
+    const perms = await resolveModulePerms(userId, role, mod.key);
+    if (perms.canView) visible.push(mod.key);
   }
   return visible;
 }

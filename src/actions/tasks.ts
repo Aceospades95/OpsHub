@@ -2,8 +2,73 @@
 
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { revalidatePath } from "next/cache";
+import { revalidateTask } from "@/lib/revalidate-entity";
+import { notify } from "@/lib/notifications";
+import { absoluteUrl } from "@/lib/url";
 import { z } from "zod";
+
+/**
+ * Notify a user that they've been assigned a task. Best-effort — failures
+ * are logged but never break the underlying mutation.
+ */
+async function notifyTaskAssigned(opts: {
+  taskId: string;
+  assigneeId: string;
+  actorId: string;
+  title: string;
+  projectId: string | null;
+}) {
+  // Skip self-assignment
+  if (opts.assigneeId === opts.actorId) return;
+
+  try {
+    const [assignee, project] = await Promise.all([
+      db.user.findUnique({
+        where: { id: opts.assigneeId },
+        select: { name: true, hasLoginAccess: true },
+      }),
+      opts.projectId
+        ? db.project.findUnique({
+            where: { id: opts.projectId },
+            select: { name: true },
+          })
+        : Promise.resolve(null),
+    ]);
+
+    if (!assignee) return;
+
+    const heading = `Task assigned: ${opts.title}`;
+    const body = project ? `On ${project.name}` : "Standalone task";
+    // Tasks don't have their own detail page yet — link to the task list
+    // or the parent project, whichever is more useful
+    const href = opts.projectId ? `/projects/${opts.projectId}` : "/tasks";
+
+    await notify({
+      recipientId: opts.assigneeId,
+      type: "task-assigned",
+      title: heading,
+      body,
+      href,
+      actorId: opts.actorId,
+      entityType: "task",
+      entityId: opts.taskId,
+      email: {
+        templateKey: "notification",
+        data: {
+          recipientName: assignee.name,
+          heading,
+          body: project
+            ? `You were assigned a task on ${project.name}: ${opts.title}`
+            : `You were assigned a task: ${opts.title}`,
+          cta: { label: "View task", url: absoluteUrl(href) },
+        },
+      },
+    });
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error("[tasks] notify failed:", err);
+  }
+}
 
 const taskSchema = z.object({
   title: z.string().min(1, "Title is required"),
@@ -38,7 +103,7 @@ export async function createTask(_prevState: unknown, formData: FormData) {
 
   const data = parsed.data;
 
-  await db.task.create({
+  const task = await db.task.create({
     data: {
       title: data.title,
       description: data.description || null,
@@ -56,14 +121,28 @@ export async function createTask(_prevState: unknown, formData: FormData) {
     data: {
       action: "created",
       entityType: "task",
-      entityId: "new",
+      entityId: task.id,
       details: data.title,
       userId: session.user.id,
     },
   });
 
-  revalidatePath("/dashboard");
-  revalidatePath("/tasks");
+  revalidateTask({
+    projectId: task.projectId,
+    clientId: task.clientId,
+    assigneeId: task.assigneeId,
+  });
+
+  if (task.assigneeId) {
+    await notifyTaskAssigned({
+      taskId: task.id,
+      assigneeId: task.assigneeId,
+      actorId: session.user.id,
+      title: task.title,
+      projectId: task.projectId,
+    });
+  }
+
   return { success: true };
 }
 
@@ -81,11 +160,11 @@ export async function updateTaskStatus(taskId: string, status: string) {
     },
   });
 
-  revalidatePath("/dashboard");
-  revalidatePath("/tasks");
-  if (task.projectId) {
-    revalidatePath(`/projects/${task.projectId}`);
-  }
+  revalidateTask({
+    projectId: task.projectId,
+    clientId: task.clientId,
+    assigneeId: task.assigneeId,
+  });
   return { success: true };
 }
 
@@ -113,7 +192,14 @@ export async function updateTask(_prevState: unknown, formData: FormData) {
   const data = parsed.data;
   const completedAt = data.status === "DONE" ? new Date() : null;
 
-  await db.task.update({
+  // Look up the previous state so we can revalidate pages the task is moving
+  // away from (old project, old client, old assignee).
+  const previous = await db.task.findUnique({
+    where: { id: taskId },
+    select: { projectId: true, clientId: true, assigneeId: true },
+  });
+
+  const updated = await db.task.update({
     where: { id: taskId },
     data: {
       title: data.title,
@@ -128,8 +214,34 @@ export async function updateTask(_prevState: unknown, formData: FormData) {
     },
   });
 
-  revalidatePath("/dashboard");
-  revalidatePath("/tasks");
+  // Revalidate the new location
+  revalidateTask({
+    projectId: updated.projectId,
+    clientId: updated.clientId,
+    assigneeId: updated.assigneeId,
+    previousAssigneeId: previous?.assigneeId,
+  });
+  // If project/client changed, also revalidate the previous project/client pages
+  // so the task disappears from them.
+  if (previous?.projectId && previous.projectId !== updated.projectId) {
+    revalidateTask({ projectId: previous.projectId });
+  }
+  if (previous?.clientId && previous.clientId !== updated.clientId) {
+    revalidateTask({ clientId: previous.clientId });
+  }
+
+  // Notify the new assignee if the assignment changed (or someone was just
+  // added). Don't fire if it's the same person — that's a no-op edit.
+  if (updated.assigneeId && updated.assigneeId !== previous?.assigneeId) {
+    await notifyTaskAssigned({
+      taskId: updated.id,
+      assigneeId: updated.assigneeId,
+      actorId: session.user.id,
+      title: updated.title,
+      projectId: updated.projectId,
+    });
+  }
+
   return { success: true };
 }
 
@@ -137,9 +249,17 @@ export async function deleteTask(taskId: string) {
   const session = await auth();
   if (!session?.user) return { error: "Unauthorized" };
 
+  // Look up before delete so we can revalidate the right pages
+  const task = await db.task.findUnique({
+    where: { id: taskId },
+    select: { projectId: true, clientId: true, assigneeId: true },
+  });
   await db.task.delete({ where: { id: taskId } });
 
-  revalidatePath("/dashboard");
-  revalidatePath("/tasks");
+  revalidateTask({
+    projectId: task?.projectId,
+    clientId: task?.clientId,
+    assigneeId: task?.assigneeId,
+  });
   return { success: true };
 }

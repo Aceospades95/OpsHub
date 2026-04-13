@@ -106,7 +106,9 @@ export default async function CertificationDetailPage({ params }: Props) {
             {cert.assignee && (
               <div>
                 <span className="text-muted-foreground flex items-center gap-1"><User className="h-3 w-3" /> Responsible</span>
-                <p className="font-medium mt-1">{cert.assignee.name}</p>
+                <Link href={`/team/${cert.assignee.id}`} className="font-medium mt-1 block hover:text-primary hover:underline">
+                  {cert.assignee.name}
+                </Link>
               </div>
             )}
             {cert.documentUrl && (

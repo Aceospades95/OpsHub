@@ -22,7 +22,7 @@ export async function WidgetStatsSummary({ userId: _userId }: { userId: string }
   return (
     <Card className="h-full">
       <CardContent className="p-4 h-full flex items-center">
-        <div className="grid grid-cols-5 gap-4 w-full">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 w-full">
           {stats.map((s) => {
             const Icon = s.icon;
             return (

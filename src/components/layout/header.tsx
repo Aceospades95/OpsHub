@@ -2,20 +2,44 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Search, LogOut } from "lucide-react";
+import Link from "next/link";
+import { Search, LogOut, User, Settings } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
 import { signOut } from "next-auth/react";
+import { NotificationBell } from "./notification-bell";
+
+interface NotificationLite {
+  id: string;
+  type: string;
+  title: string;
+  body: string | null;
+  href: string | null;
+  readAt: string | null;
+  createdAt: string;
+}
 
 interface HeaderProps {
+  userId: string;
   userName: string;
   userEmail: string;
   userRole: string;
+  unreadNotifications: number;
+  recentNotifications: NotificationLite[];
 }
 
-export function Header({ userName, userEmail, userRole }: HeaderProps) {
+export function Header({
+  userId,
+  userName,
+  userEmail,
+  userRole,
+  unreadNotifications,
+  recentNotifications,
+}: HeaderProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [showMenu, setShowMenu] = useState(false);
   const router = useRouter();
+
+  const isAdmin = userRole === "ADMIN";
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -40,6 +64,13 @@ export function Header({ userName, userEmail, userRole }: HeaderProps) {
         />
       </form>
 
+      <div className="flex items-center gap-1 shrink-0">
+        <NotificationBell
+          initialUnreadCount={unreadNotifications}
+          initialNotifications={recentNotifications}
+        />
+      </div>
+
       <div className="relative shrink-0">
         <button
           onClick={() => setShowMenu(!showMenu)}
@@ -58,13 +89,33 @@ export function Header({ userName, userEmail, userRole }: HeaderProps) {
               <p className="text-sm font-medium">{userName}</p>
               <p className="text-xs text-muted-foreground">{userEmail}</p>
             </div>
-            <button
-              onClick={() => signOut({ callbackUrl: "/login" })}
-              className="flex w-full items-center gap-2 px-3 py-2 text-sm text-destructive hover:bg-muted transition-colors"
+            <Link
+              href={`/team/${userId}`}
+              onClick={() => setShowMenu(false)}
+              className="flex w-full items-center gap-2 px-3 py-2 text-sm hover:bg-muted transition-colors"
             >
-              <LogOut className="h-4 w-4" />
-              Sign Out
-            </button>
+              <User className="h-4 w-4" />
+              Profile
+            </Link>
+            {isAdmin && (
+              <Link
+                href="/admin"
+                onClick={() => setShowMenu(false)}
+                className="flex w-full items-center gap-2 px-3 py-2 text-sm hover:bg-muted transition-colors"
+              >
+                <Settings className="h-4 w-4" />
+                Settings
+              </Link>
+            )}
+            <div className="border-t border-border">
+              <button
+                onClick={() => signOut({ callbackUrl: "/login" })}
+                className="flex w-full items-center gap-2 px-3 py-2 text-sm text-destructive hover:bg-muted transition-colors"
+              >
+                <LogOut className="h-4 w-4" />
+                Sign Out
+              </button>
+            </div>
           </div>
         )}
       </div>

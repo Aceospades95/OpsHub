@@ -1,3 +1,7 @@
+// Re-export SYSTEM_MODULES from the canonical module registry so there's a
+// single source of truth. Do not edit the list here — edit src/lib/modules.ts.
+export { SYSTEM_MODULES } from "@/lib/modules";
+
 export interface SidebarItemConfig {
   key: string;       // "dashboard", "clients", or "custom-page-{id}"
   label?: string;    // override default label
@@ -13,25 +17,6 @@ export interface SidebarSectionConfig {
 export interface SidebarConfig {
   sections: SidebarSectionConfig[];
 }
-
-// System modules with their defaults
-export const SYSTEM_MODULES: Record<string, { label: string; href: string; icon: string }> = {
-  dashboard: { label: "Dashboard", href: "/dashboard", icon: "LayoutDashboard" },
-  clients: { label: "Clients", href: "/clients", icon: "Building2" },
-  projects: { label: "Projects", href: "/projects", icon: "FolderKanban" },
-  tasks: { label: "Tasks", href: "/tasks", icon: "CheckSquare" },
-  team: { label: "Team", href: "/team", icon: "Users" },
-  contracts: { label: "Contracts", href: "/contracts", icon: "FileText" },
-  certifications: { label: "Certifications", href: "/certifications", icon: "Award" },
-  suppliers: { label: "Suppliers", href: "/suppliers", icon: "Truck" },
-  tools: { label: "Tools", href: "/tools", icon: "Wrench" },
-  intranet: { label: "Intranet", href: "/intranet", icon: "Globe" },
-  sandbox: { label: "Custom Pages", href: "/sandbox", icon: "Blocks" },
-  admin: { label: "Admin", href: "/admin/users", icon: "Shield" },
-  widgets: { label: "Widget Builder", href: "/admin/widgets", icon: "Puzzle" },
-  theme: { label: "Theme", href: "/admin/theme", icon: "Palette" },
-  sidebar: { label: "Sidebar", href: "/admin/sidebar", icon: "PanelLeft" },
-};
 
 export const DEFAULT_SIDEBAR_CONFIG: SidebarConfig = {
   sections: [
@@ -59,13 +44,9 @@ export const DEFAULT_SIDEBAR_CONFIG: SidebarConfig = {
     },
     {
       id: "admin-section",
-      title: "Administration",
+      title: "",
       items: [
-        { key: "sandbox", visible: true },
-        { key: "admin", visible: true },
-        { key: "widgets", visible: true },
-        { key: "theme", visible: true },
-        { key: "sidebar", visible: true },
+        { key: "settings", visible: true },
       ],
     },
   ],

@@ -72,6 +72,9 @@ export async function createContract(_prev: unknown, formData: FormData) {
 
   await logActivity("created", "contract", contract.id, user.id, contract.title);
   revalidatePath("/contracts");
+  // Contracts show on client and project detail pages, so those need to refresh too.
+  if (contract.clientId) revalidatePath(`/clients/${contract.clientId}`);
+  if (contract.projectId) revalidatePath(`/projects/${contract.projectId}`);
   return { success: true };
 }
 
@@ -106,6 +109,13 @@ export async function updateContract(_prev: unknown, formData: FormData) {
   });
   if (!parsed.success) return { error: "Invalid input", fieldErrors: parsed.error.flatten().fieldErrors };
 
+  // Look up previous clientId/projectId so we can revalidate the old pages too
+  // if those links changed.
+  const previous = await db.contract.findUnique({
+    where: { id },
+    select: { clientId: true, projectId: true },
+  });
+
   await db.contract.update({
     where: { id },
     data: {
@@ -122,6 +132,16 @@ export async function updateContract(_prev: unknown, formData: FormData) {
   await logActivity("updated", "contract", id, user.id, parsed.data.title);
   revalidatePath(`/contracts/${id}`);
   revalidatePath("/contracts");
+  // Revalidate both old and new client/project pages so the contract list
+  // on those pages stays in sync.
+  if (parsed.data.clientId) revalidatePath(`/clients/${parsed.data.clientId}`);
+  if (previous?.clientId && previous.clientId !== parsed.data.clientId) {
+    revalidatePath(`/clients/${previous.clientId}`);
+  }
+  if (parsed.data.projectId) revalidatePath(`/projects/${parsed.data.projectId}`);
+  if (previous?.projectId && previous.projectId !== parsed.data.projectId) {
+    revalidatePath(`/projects/${previous.projectId}`);
+  }
   return { success: true };
 }
 
@@ -137,6 +157,9 @@ export async function deleteContract(_prev: unknown, formData: FormData) {
   await db.contract.delete({ where: { id } });
   await logActivity("deleted", "contract", id, user.id, contract.title);
   revalidatePath("/contracts");
+  // Revalidate the client/project pages where this contract used to appear.
+  if (contract.clientId) revalidatePath(`/clients/${contract.clientId}`);
+  if (contract.projectId) revalidatePath(`/projects/${contract.projectId}`);
   return { success: true };
 }
 

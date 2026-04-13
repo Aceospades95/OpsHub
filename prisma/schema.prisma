@@ -154,7 +154,8 @@ model User {
   milestoneAssignments MilestoneAssignee[]
   comments             Comment[]
   activityLogs         ActivityLog[]
-  files                File[]
+  uploadedFiles        File[]             @relation("FileUploader")
+  profileFiles         File[]             @relation("FileOwner")
   modulePermissions    ModulePermission[]
   entityPermissions    EntityPermission[]
   assignedTasks        Task[]             @relation("TaskAssignee")
@@ -164,6 +165,8 @@ model User {
   customWidgets        CustomWidget[]
   assignedCerts        Certification[]    @relation("CertificationAssignee")
   assignments          Assignment[]
+  notificationsReceived Notification[]    @relation("NotificationRecipient")
+  notificationsSent     Notification[]    @relation("NotificationActor")
 }
 
 model ModulePermission {
@@ -539,6 +542,12 @@ model File {
   size               Int?
   mimeType           String?
   source             String   @default("upload")
+  // Storage-layer fields. When set, this file was uploaded through
+  // src/lib/storage/ and can be served via /api/files/{id}. Legacy rows
+  // have these fields null and store an external url directly.
+  storageDriver      String?  // "local", "s3", etc
+  storageKey         String?  @unique
+  visibility         String   @default("private") // "public" | "private"
   uploadedById       String
   projectId          String?
   contractId         String?
@@ -548,14 +557,24 @@ model File {
   createdAt          DateTime @default(now())
 
   certificationId  String?
+  userId           String?
+  // Optional freeform tag used by the employee files UI (resume, id,
+  // certification, training, other). Null for files attached to other
+  // entities.
+  category         String?
 
-  uploadedBy       User              @relation(fields: [uploadedById], references: [id])
+  uploadedBy       User              @relation("FileUploader", fields: [uploadedById], references: [id])
   project          Project?          @relation(fields: [projectId], references: [id])
   contract         Contract?         @relation(fields: [contractId], references: [id])
   document         Document?         @relation(fields: [documentId], references: [id])
   supplier         Supplier?         @relation(fields: [supplierId], references: [id])
   intranetResource IntranetResource? @relation(fields: [intranetResourceId], references: [id])
   certification    Certification?    @relation(fields: [certificationId], references: [id])
+  user             User?             @relation("FileOwner", fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([storageDriver])
+  @@index([uploadedById])
+  @@index([userId])
 }
 
 model ExternalLink {
@@ -659,6 +678,9 @@ model SandboxPage {
   description String?  @db.Text
   content     String?  @db.Text
   layout      String   @default("default") // default, wide, full
+  /** Lucide icon name (e.g., "FileText", "BookOpen"). Resolved at render
+      time via the icon picker's IconMap. Null = use the default. */
+  icon        String?
   published   Boolean  @default(false)
   createdById String
   projectId   String?
@@ -792,6 +814,117 @@ model Assignment {
   @@index([projectRoleId])
   @@index([roleDefinitionId])
   @@index([status])
+}
+
+// ─── DATA IMPORTS ──────────────────────────────────────
+//
+// Audit log for CSV imports through src/lib/importers/. Each row records
+// one import run — what was uploaded, who did it, how many rows were
+// created vs skipped, and any per-row error messages.
+
+model ImportLog {
+  id          String   @id @default(cuid())
+  importerKey String   // matches a key in the importer registry
+  filename    String
+  rowCount    Int      // total parsed rows
+  imported    Int      // successfully created
+  skipped     Int      // skipped (duplicates, dry-run, etc.)
+  /** JSON array of { row, message } error entries */
+  errors      String?  @db.Text
+  triggeredBy String   // user id
+  createdAt   DateTime @default(now())
+
+  @@index([importerKey, createdAt])
+  @@index([createdAt])
+  @@index([triggeredBy])
+}
+
+// ─── SCHEDULED JOBS ────────────────────────────────────
+//
+// Audit log for scheduled job runs. Each row records one execution of a
+// job defined in src/lib/jobs/. Jobs can be triggered by the cron endpoint
+// (/api/jobs/run) or manually from /admin/jobs.
+
+model JobLog {
+  id          String    @id @default(cuid())
+  jobKey      String    // matches a key in the job registry
+  status      String    // "running" | "completed" | "failed"
+  startedAt   DateTime  @default(now())
+  finishedAt  DateTime?
+  durationMs  Int?
+  /** Free-form summary string the job handler returns */
+  output      String?   @db.Text
+  /** Stack/message when status = "failed" */
+  error       String?   @db.Text
+  /** Number of items the job processed (for at-a-glance metrics) */
+  processed   Int?
+  /** "cron" for scheduled runs, or a user id for manual runs */
+  triggeredBy String
+
+  @@index([jobKey, startedAt])
+  @@index([startedAt])
+  @@index([status])
+}
+
+// ─── NOTIFICATIONS ─────────────────────────────────────
+//
+// In-app notification for a user. Written by src/lib/notifications/notify().
+// Optionally paired with an outbound email — that's handled by notify()
+// itself which delegates to the email layer after writing the row.
+
+model Notification {
+  id          String    @id @default(cuid())
+  recipientId String
+  /** Free-form type key for filtering/grouping — see NotificationType in code */
+  type        String
+  title       String
+  body        String?   @db.Text
+  /** Where clicking the notification should navigate */
+  href        String?
+  /** Optional entity this notification is about, for context and routing */
+  entityType  String?
+  entityId    String?
+  /** Who triggered this (null for system notifications) */
+  actorId     String?
+  /** Read timestamp — null means unread */
+  readAt      DateTime?
+  createdAt   DateTime  @default(now())
+
+  recipient User  @relation("NotificationRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
+  actor     User? @relation("NotificationActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([recipientId, readAt])
+  @@index([recipientId, createdAt])
+  @@index([entityType, entityId])
+  @@index([type])
+}
+
+// ─── EMAIL LOG ─────────────────────────────────────────
+//
+// Every outbound email routed through src/lib/email/ lands here for audit
+// and debugging. In dev the "log" driver ONLY writes to this table and
+// doesn't actually send, so it's safe to test templates without spamming.
+
+model EmailLog {
+  id          String   @id @default(cuid())
+  toAddresses String   // comma-separated recipient list
+  fromAddress String
+  subject     String
+  bodyHtml    String   @db.Text
+  bodyText    String?  @db.Text
+  driver      String   // which driver handled send: "log", "resend", etc
+  status      String   // "sent" | "failed" | "queued"
+  messageId   String?  // provider's message ID when available
+  error       String?  @db.Text
+  templateKey String?  // which template was used
+  entityType  String?  // optional audit: entity this email is about
+  entityId    String?
+  sentAt      DateTime @default(now())
+
+  @@index([sentAt])
+  @@index([status])
+  @@index([templateKey])
+  @@index([entityType, entityId])
 }
 
 // ─── CUSTOM WIDGETS ────────────────────────────────────

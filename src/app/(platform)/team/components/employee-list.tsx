@@ -85,7 +85,7 @@ export function EmployeeList({ users, inactiveUsers, search }: EmployeeListProps
         case "department": cmp = (a.department || "").localeCompare(b.department || ""); break;
         case "location": cmp = (a.location || "").localeCompare(b.location || ""); break;
         case "manager": cmp = (a.manager?.name || "").localeCompare(b.manager?.name || ""); break;
-        case "role": cmp = a.role.localeCompare(b.role); break;
+        case "role": cmp = (a.jobTitle || "").localeCompare(b.jobTitle || ""); break;
         case "totalFte": cmp = computeEmployeeFte(a) - computeEmployeeFte(b); break;
         case "projects": cmp = a.assignments.length - b.assignments.length; break;
       }
@@ -159,8 +159,8 @@ export function EmployeeList({ users, inactiveUsers, search }: EmployeeListProps
             ) : "—"}
           </td>
           <td className="py-3 px-4 text-center">
-            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${ROLE_COLORS[user.role] || ""}`}>
-              {user.role}
+            <span className="text-xs text-muted-foreground">
+              {user.jobTitle || "—"}
             </span>
           </td>
           <td className="py-3 px-4 text-center">
@@ -257,7 +257,7 @@ export function EmployeeList({ users, inactiveUsers, search }: EmployeeListProps
 
       {/* Employee Table */}
       <Card>
-        <CardContent className="p-0">
+        <CardContent className="p-0 overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border bg-muted/50">
@@ -265,7 +265,7 @@ export function EmployeeList({ users, inactiveUsers, search }: EmployeeListProps
                 <th className="text-left py-3 px-4 font-semibold hidden md:table-cell"><SortHeader field="department">Department</SortHeader></th>
                 <th className="text-left py-3 px-4 font-semibold hidden md:table-cell"><SortHeader field="location">Location</SortHeader></th>
                 <th className="text-left py-3 px-4 font-semibold hidden lg:table-cell"><SortHeader field="manager">Reports To</SortHeader></th>
-                <th className="text-center py-3 px-4 font-semibold"><SortHeader field="role" className="justify-center">Role</SortHeader></th>
+                <th className="text-center py-3 px-4 font-semibold"><SortHeader field="role" className="justify-center">Position</SortHeader></th>
                 <th className="text-center py-3 px-4 font-semibold"><SortHeader field="totalFte" className="justify-center">FTE</SortHeader></th>
                 <th className="text-center py-3 px-4 font-semibold hidden lg:table-cell"><SortHeader field="projects" className="justify-center">Assignments</SortHeader></th>
               </tr>
@@ -292,7 +292,7 @@ export function EmployeeList({ users, inactiveUsers, search }: EmployeeListProps
           </button>
           {showInactive && (
             <Card className="opacity-75">
-              <CardContent className="p-0">
+              <CardContent className="p-0 overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-border bg-muted/50">
@@ -300,7 +300,7 @@ export function EmployeeList({ users, inactiveUsers, search }: EmployeeListProps
                       <th className="text-left py-3 px-4 font-semibold hidden md:table-cell">Department</th>
                       <th className="text-left py-3 px-4 font-semibold hidden md:table-cell">Location</th>
                       <th className="text-left py-3 px-4 font-semibold hidden lg:table-cell">Reports To</th>
-                      <th className="text-center py-3 px-4 font-semibold">Role</th>
+                      <th className="text-center py-3 px-4 font-semibold">Position</th>
                       <th className="text-center py-3 px-4 font-semibold">FTE</th>
                       <th className="text-center py-3 px-4 font-semibold hidden lg:table-cell">Assignments</th>
                     </tr>

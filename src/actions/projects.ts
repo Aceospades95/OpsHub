@@ -4,6 +4,9 @@ import { db } from "@/lib/db";
 import { requireAuth, resolveModulePerms } from "@/lib/permissions";
 import { logActivity } from "@/lib/activity";
 import { revalidatePath } from "next/cache";
+import { revalidateProject, revalidateUser } from "@/lib/revalidate-entity";
+import { notify } from "@/lib/notifications";
+import { absoluteUrl } from "@/lib/url";
 import { z } from "zod";
 
 const projectSchema = z.object({
@@ -34,6 +37,32 @@ export async function createProject(_prev: unknown, formData: FormData) {
     await logActivity("created", "client", newClient.id, user.id, newClient.name);
   }
 
+  // Handle inline service offering creation — same pattern as inline client.
+  // If the user picked "+ Add new..." and typed a name, create the offering
+  // first so it's in the dropdown's list for future forms.
+  let serviceOfferingId = formData.get("serviceOfferingId") as string;
+  const newServiceOfferingName = (formData.get("newServiceOfferingName") as string)?.trim();
+
+  if ((!serviceOfferingId || serviceOfferingId === "__new__") && newServiceOfferingName) {
+    // Reuse an existing offering by name if one already exists (case-insensitive)
+    // so duplicate typing doesn't create parallel rows
+    const existing = await db.serviceOffering.findFirst({
+      where: { name: { equals: newServiceOfferingName, mode: "insensitive" } },
+    });
+    if (existing) {
+      serviceOfferingId = existing.id;
+    } else {
+      const newOffering = await db.serviceOffering.create({
+        data: { name: newServiceOfferingName, isActive: true },
+      });
+      serviceOfferingId = newOffering.id;
+      await logActivity("created", "serviceOffering", newOffering.id, user.id, newOffering.name);
+    }
+  } else if (serviceOfferingId === "__new__") {
+    // Sentinel left over without a name — treat as no selection
+    serviceOfferingId = "";
+  }
+
   const parsed = projectSchema.safeParse({
     name: formData.get("name"),
     description: formData.get("description") || undefined,
@@ -42,7 +71,7 @@ export async function createProject(_prev: unknown, formData: FormData) {
     endDate: formData.get("endDate") || undefined,
     clientId,
     parentProjectId: formData.get("parentProjectId") || undefined,
-    serviceOfferingId: formData.get("serviceOfferingId") || undefined,
+    serviceOfferingId: serviceOfferingId || undefined,
   });
 
   if (!parsed.success) return { error: "Invalid input", fieldErrors: parsed.error.flatten().fieldErrors };
@@ -74,9 +103,7 @@ export async function createProject(_prev: unknown, formData: FormData) {
   }
 
   await logActivity("created", "project", project.id, user.id, project.name);
-  revalidatePath("/projects");
-  revalidatePath("/clients");
-  revalidatePath("/team", "layout");
+  revalidateProject(project.id, { clientId: project.clientId });
   return { success: true };
 }
 
@@ -86,6 +113,29 @@ export async function updateProject(_prev: unknown, formData: FormData) {
   if (!perms.canEdit) return { error: "Permission denied" };
 
   const id = formData.get("id") as string;
+
+  // Handle inline service offering creation on edit too — same pattern
+  // as createProject.
+  let serviceOfferingId = formData.get("serviceOfferingId") as string;
+  const newServiceOfferingName = (formData.get("newServiceOfferingName") as string)?.trim();
+
+  if ((!serviceOfferingId || serviceOfferingId === "__new__") && newServiceOfferingName) {
+    const existing = await db.serviceOffering.findFirst({
+      where: { name: { equals: newServiceOfferingName, mode: "insensitive" } },
+    });
+    if (existing) {
+      serviceOfferingId = existing.id;
+    } else {
+      const newOffering = await db.serviceOffering.create({
+        data: { name: newServiceOfferingName, isActive: true },
+      });
+      serviceOfferingId = newOffering.id;
+      await logActivity("created", "serviceOffering", newOffering.id, user.id, newOffering.name);
+    }
+  } else if (serviceOfferingId === "__new__") {
+    serviceOfferingId = "";
+  }
+
   const parsed = projectSchema.safeParse({
     name: formData.get("name"),
     description: formData.get("description") || undefined,
@@ -94,10 +144,17 @@ export async function updateProject(_prev: unknown, formData: FormData) {
     endDate: formData.get("endDate") || undefined,
     clientId: formData.get("clientId"),
     parentProjectId: formData.get("parentProjectId") || undefined,
-    serviceOfferingId: formData.get("serviceOfferingId") || undefined,
+    serviceOfferingId: serviceOfferingId || undefined,
   });
 
   if (!parsed.success) return { error: "Invalid input", fieldErrors: parsed.error.flatten().fieldErrors };
+
+  // Look up the previous clientId so we can revalidate the old client's page too
+  // if the client changed (the old client's project list needs to drop this project).
+  const previous = await db.project.findUnique({
+    where: { id },
+    select: { clientId: true },
+  });
 
   await db.project.update({
     where: { id },
@@ -111,11 +168,10 @@ export async function updateProject(_prev: unknown, formData: FormData) {
   });
 
   await logActivity("updated", "project", id, user.id, parsed.data.name);
-  revalidatePath(`/projects/${id}`);
-  revalidatePath("/projects");
-  // Also revalidate the staffing matrix since project offering/client/status
-  // all affect how the project appears there.
-  revalidatePath("/team", "layout");
+  revalidateProject(id, {
+    clientId: parsed.data.clientId,
+    previousClientId: previous?.clientId ?? null,
+  });
   return { success: true };
 }
 
@@ -130,8 +186,7 @@ export async function deleteProject(_prev: unknown, formData: FormData) {
 
   await db.project.delete({ where: { id } });
   await logActivity("deleted", "project", id, user.id, project.name);
-  revalidatePath("/projects");
-  revalidatePath("/team", "layout");
+  revalidateProject(id, { clientId: project.clientId });
   return { success: true };
 }
 
@@ -155,6 +210,35 @@ export async function addProjectMember(_prev: unknown, formData: FormData) {
   });
 
   revalidatePath(`/projects/${projectId}`);
+  // The new member's /team/{userId} page shows project memberships, so it needs
+  // to be revalidated too.
+  revalidateUser(userId);
+
+  // Notify the new member (skip if they added themselves)
+  if (userId !== user.id) {
+    try {
+      const project = await db.project.findUnique({
+        where: { id: projectId },
+        select: { name: true },
+      });
+      if (project) {
+        await notify({
+          recipientId: userId,
+          type: "project-updated",
+          title: `Added to project: ${project.name}`,
+          body: `You were added as a ${role.toLowerCase()} on ${project.name}.`,
+          href: `/projects/${projectId}`,
+          actorId: user.id,
+          entityType: "project",
+          entityId: projectId,
+        });
+      }
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error("[projects] addProjectMember notify failed:", err);
+    }
+  }
+
   return { success: true };
 }
 
@@ -164,8 +248,15 @@ export async function removeProjectMember(_prev: unknown, formData: FormData) {
   if (!perms.canEdit) return { error: "Permission denied" };
 
   const id = formData.get("id") as string;
+  // Look up what we're removing so we can revalidate the specific project detail
+  // page and the specific user's team profile (both show the membership).
+  const member = await db.projectMember.findUnique({
+    where: { id },
+    select: { projectId: true, userId: true },
+  });
   await db.projectMember.delete({ where: { id } });
-  revalidatePath("/projects");
+  if (member?.projectId) revalidatePath(`/projects/${member.projectId}`);
+  if (member?.userId) revalidateUser(member.userId);
   return { success: true };
 }
 
@@ -251,7 +342,38 @@ export async function addMilestoneAssignee(_prev: unknown, formData: FormData) {
   if (existing) return { error: "Already assigned" };
 
   await db.milestoneAssignee.create({ data: { milestoneId, userId } });
-  revalidatePath("/projects");
+  // Look up the milestone (including project + title) so we can revalidate
+  // the right pages and notify the new assignee with useful context.
+  const milestone = await db.milestone.findUnique({
+    where: { id: milestoneId },
+    select: {
+      title: true,
+      projectId: true,
+      project: { select: { name: true } },
+    },
+  });
+  if (milestone?.projectId) revalidatePath(`/projects/${milestone.projectId}`);
+  revalidateUser(userId);
+
+  // Notify the new assignee (skip self-assignment)
+  if (milestone && userId !== user.id) {
+    try {
+      await notify({
+        recipientId: userId,
+        type: "milestone-assigned",
+        title: `Milestone assigned: ${milestone.title}`,
+        body: milestone.project ? `On ${milestone.project.name}` : undefined,
+        href: milestone.projectId ? `/projects/${milestone.projectId}` : undefined,
+        actorId: user.id,
+        entityType: "milestone",
+        entityId: milestoneId,
+      });
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error("[projects] addMilestoneAssignee notify failed:", err);
+    }
+  }
+
   return { success: true };
 }
 
@@ -261,8 +383,15 @@ export async function removeMilestoneAssignee(_prev: unknown, formData: FormData
   if (!perms.canEdit) return { error: "Permission denied" };
 
   const id = formData.get("id") as string;
+  // Look up the assignee (to get userId and milestone's project) before delete
+  // so we can revalidate both the project and the user profile.
+  const assignee = await db.milestoneAssignee.findUnique({
+    where: { id },
+    select: { userId: true, milestone: { select: { projectId: true } } },
+  });
   await db.milestoneAssignee.delete({ where: { id } });
-  revalidatePath("/projects");
+  if (assignee?.milestone?.projectId) revalidatePath(`/projects/${assignee.milestone.projectId}`);
+  if (assignee?.userId) revalidateUser(assignee.userId);
   return { success: true };
 }
 

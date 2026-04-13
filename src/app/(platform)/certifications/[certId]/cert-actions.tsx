@@ -88,7 +88,7 @@ export function CertActions({ cert, clients, users }: CertActionsProps) {
                 </div>
               </div>
 
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
                   <label className="text-sm font-medium">Issued Date</label>
                   <input type="date" name="issuedDate" defaultValue={formatDate(cert.issuedDate)} className="w-full mt-1 px-3 py-2 text-sm border border-input rounded-md bg-background" />
@@ -103,7 +103,7 @@ export function CertActions({ cert, clients, users }: CertActionsProps) {
                 </div>
               </div>
 
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
                   <label className="text-sm font-medium">Lead Days</label>
                   <input type="number" name="renewalLeadDays" defaultValue={cert.renewalLeadDays || 90} className="w-full mt-1 px-3 py-2 text-sm border border-input rounded-md bg-background" />

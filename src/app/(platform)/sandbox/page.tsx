@@ -10,6 +10,7 @@ import { Avatar } from "@/components/ui/avatar";
 import { Blocks } from "lucide-react";
 import Link from "next/link";
 import { SandboxCreateButton } from "./sandbox-create-button";
+import { Icon } from "@/components/ui/icon-picker";
 import type { Role } from "@prisma/client";
 
 export default async function SandboxListPage() {
@@ -62,7 +63,10 @@ export default async function SandboxListPage() {
               <Card className="hover:shadow-md transition-shadow h-full">
                 <CardContent className="p-5">
                   <div className="flex items-start justify-between mb-2">
-                    <h3 className="font-semibold text-foreground">{page.title}</h3>
+                    <div className="flex items-center gap-2 min-w-0">
+                      <Icon name={page.icon} className="h-4 w-4 text-muted-foreground shrink-0" />
+                      <h3 className="font-semibold text-foreground truncate">{page.title}</h3>
+                    </div>
                     {page.published ? (
                       <Badge variant="success">Published</Badge>
                     ) : (

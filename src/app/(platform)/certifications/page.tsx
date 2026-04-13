@@ -123,7 +123,14 @@ export default async function CertificationsPage() {
                       <div className="flex items-center gap-2 text-xs text-muted-foreground">
                         {cert.issuingBody && <span>{cert.issuingBody}</span>}
                         {cert.client && <span>· {cert.client.name}</span>}
-                        {cert.assignee && <span>· {cert.assignee.name}</span>}
+                        {cert.assignee && (
+                          <span>
+                            ·{" "}
+                            <Link href={`/team/${cert.assignee.id}`} className="hover:text-primary hover:underline">
+                              {cert.assignee.name}
+                            </Link>
+                          </span>
+                        )}
                       </div>
                     </div>
                     <span className={`text-xs font-semibold ${daysLeft <= 30 ? "text-destructive" : "text-warning"}`}>
@@ -193,7 +200,9 @@ export default async function CertificationsPage() {
                         <span className="text-muted-foreground">No expiration date</span>
                       )}
                       {cert.assignee && (
-                        <span className="text-muted-foreground ml-auto">{cert.assignee.name}</span>
+                        <Link href={`/team/${cert.assignee.id}`} className="text-muted-foreground ml-auto hover:text-primary hover:underline">
+                          {cert.assignee.name}
+                        </Link>
                       )}
                     </div>
                   </CardContent>

@@ -1,16 +1,8 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { ExternalLink, Trash2, FileIcon, Link2, Code2 } from "lucide-react";
+import { ExternalLink, Trash2, Link2, Code2 } from "lucide-react";
 import { deleteExternalLink, deleteEmbed } from "@/actions/attachments";
-
-interface FileItem {
-  id: string;
-  name: string;
-  url: string;
-  mimeType?: string | null;
-  size?: number | null;
-}
 
 interface LinkItem {
   id: string;
@@ -31,13 +23,12 @@ interface EmbedItem {
 }
 
 interface FileListProps {
-  files?: FileItem[];
   links?: LinkItem[];
   embeds?: EmbedItem[];
   canDelete: boolean;
 }
 
-export function FileList({ files = [], links = [], embeds = [], canDelete }: FileListProps) {
+export function FileList({ links = [], embeds = [], canDelete }: FileListProps) {
   const router = useRouter();
 
   async function handleDeleteLink(id: string) {
@@ -54,7 +45,7 @@ export function FileList({ files = [], links = [], embeds = [], canDelete }: Fil
     router.refresh();
   }
 
-  const hasContent = files.length > 0 || links.length > 0 || embeds.length > 0;
+  const hasContent = links.length > 0 || embeds.length > 0;
 
   if (!hasContent) {
     return <p className="text-sm text-muted-foreground">No attachments</p>;
@@ -62,20 +53,6 @@ export function FileList({ files = [], links = [], embeds = [], canDelete }: Fil
 
   return (
     <div className="space-y-3">
-      {files.map((file) => (
-        <div key={file.id} className="flex items-center gap-3 rounded border border-border p-3">
-          <FileIcon className="h-4 w-4 text-muted-foreground" />
-          <div className="flex-1 min-w-0">
-            <a href={file.url} target="_blank" rel="noopener noreferrer" className="text-sm font-medium hover:text-primary">
-              {file.name}
-            </a>
-            {file.size && (
-              <p className="text-xs text-muted-foreground">{(file.size / 1024).toFixed(1)} KB</p>
-            )}
-          </div>
-        </div>
-      ))}
-
       {links.map((link) => (
         <div key={link.id} className="flex items-center gap-3 rounded border border-border p-3">
           <Link2 className="h-4 w-4 text-muted-foreground" />

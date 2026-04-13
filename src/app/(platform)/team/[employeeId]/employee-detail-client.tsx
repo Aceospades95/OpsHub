@@ -17,10 +17,13 @@ import {
   Mail, Calendar, Users, FileText, ChevronRight, Shield,
   AlertTriangle, Pencil, Trash2, Plus,
 } from "lucide-react";
+
 import { formatDistanceToNow } from "date-fns";
 import { updateUser, deleteUser, saveModulePermissions, saveEntityPermission, deleteEntityPermission } from "@/actions/admin";
 import { deleteAssignment } from "@/actions/assignments";
 import { AddAssignmentDialog } from "../components/add-assignment-dialog";
+import { getPermissionedModules, ALL_PERMISSION_FLAGS, PERMISSION_FLAG_LABELS } from "@/lib/modules";
+import { getRoleDefaults } from "@/lib/permissions";
 
 interface Assignment {
   id: string;
@@ -78,7 +81,7 @@ function formatFte(v: number): string {
 }
 
 export function EmployeeDetailClient({
-  employee, activity, canManage, isAdmin, allUsers, allClients, allProjects, serviceOfferings, roleDefinitions,
+  employee, activity, canManage, isAdmin, allUsers, allClients, allProjects, serviceOfferings, roleDefinitions, customPages,
 }: {
   employee: Employee;
   activity: ActivityLog[];
@@ -89,6 +92,7 @@ export function EmployeeDetailClient({
   allProjects: { id: string; name: string; status: string; clientId: string; serviceOfferingId: string | null; serviceOffering: { id: string; name: string } | null }[];
   serviceOfferings: { id: string; name: string }[];
   roleDefinitions: { id: string; name: string }[];
+  customPages: { id: string; title: string; slug: string }[];
 }) {
   const [activeTab, setActiveTab] = useState<TabKey>("overview");
   const [editOpen, setEditOpen] = useState(false);
@@ -220,7 +224,7 @@ export function EmployeeDetailClient({
       {activeTab === "assignments" && <AssignmentsTab employee={employee} totalFte={totalFte} canManage={canManage} onAddAssignment={() => setAddAssignmentOpen(true)} />}
       {activeTab === "reporting" && <ReportingTab employee={employee} />}
       {activeTab === "projects" && <ProjectsTab employee={employee} />}
-      {activeTab === "permissions" && isAdmin && <PermissionsTab employee={employee} allClients={allClients} allProjects={allProjects} />}
+      {activeTab === "permissions" && isAdmin && <PermissionsTab employee={employee} allClients={allClients} allProjects={allProjects} customPages={customPages} />}
       {activeTab === "activity" && <ActivityTab activity={activity} />}
 
       {/* Edit Dialog */}
@@ -326,7 +330,7 @@ function OverviewTab({ employee, totalFte, activeAssignments, canManage, onAddAs
                 style={{ width: `${Math.min(totalFte * 100, 100)}%` }}
               />
             </div>
-            <div className="grid grid-cols-3 gap-4 text-center">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-center">
               <div className="p-3 rounded-lg bg-muted/50"><p className="text-xs text-muted-foreground">Allocated</p><p className="text-lg font-bold">{formatFte(totalFte)}</p></div>
               <div className="p-3 rounded-lg bg-muted/50"><p className="text-xs text-muted-foreground">Available</p><p className={`text-lg font-bold ${remaining < 0 ? "text-red-600" : remaining > 0 ? "text-green-600" : ""}`}>{formatFte(Math.max(remaining, 0))}</p></div>
               <div className="p-3 rounded-lg bg-muted/50"><p className="text-xs text-muted-foreground">Assignments</p><p className="text-lg font-bold">{activeAssignments.length}</p></div>
@@ -569,20 +573,24 @@ function ProjectsTab({ employee }: { employee: Employee }) {
 
 // ─── Permissions Tab (Admin only) ──────────────
 
-const MODULES = ["clients", "projects", "contracts", "suppliers", "tools", "intranet", "admin"];
-const FLAGS = ["canView", "canEdit", "canCreate", "canDelete", "canComment", "canUpload", "canManage"];
-
-function PermissionsTab({ employee, allClients, allProjects }: {
+function PermissionsTab({ employee, allClients, allProjects, customPages }: {
   employee: Employee;
   allClients: { id: string; name: string }[];
   allProjects: { id: string; name: string }[];
+  customPages: { id: string; title: string; slug: string }[];
 }) {
   const router = useRouter();
   const [saving, setSaving] = useState(false);
   const [addEntityOpen, setAddEntityOpen] = useState(false);
   const [entityType, setEntityType] = useState("client");
 
+  // Driven from the module registry — adding a new permissioned module in
+  // src/lib/modules.ts automatically adds a row here.
+  const modules = getPermissionedModules();
   const permMap = new Map(employee.modulePermissions.map((p) => [p.module, p]));
+  // ADMIN always has full access; for other roles, fall back to role
+  // defaults when no explicit permission row exists.
+  const roleDefaults = getRoleDefaults(employee.role as import("@prisma/client").Role);
   const entities = entityType === "client" ? allClients : allProjects;
   const nameMap = new Map([...allClients.map((c) => [c.id, c.name] as const), ...allProjects.map((p) => [p.id, p.name] as const)]);
 
@@ -622,23 +630,58 @@ function PermissionsTab({ employee, allClients, allProjects }: {
                 <thead>
                   <tr className="border-b border-border">
                     <th className="text-left p-2 font-medium">Module</th>
-                    {FLAGS.map((flag) => (
-                      <th key={flag} className="p-2 font-medium text-center text-xs">{flag.replace("can", "")}</th>
+                    {ALL_PERMISSION_FLAGS.map((flag) => (
+                      <th key={flag} className="p-2 font-medium text-center text-xs">{PERMISSION_FLAG_LABELS[flag]}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {MODULES.map((mod) => {
-                    const perm = permMap.get(mod);
+                  {modules.map((mod) => {
+                    const perm = permMap.get(mod.key);
                     return (
-                      <tr key={mod} className="border-b border-border">
-                        <td className="p-2 font-medium capitalize">{mod}</td>
-                        {FLAGS.map((flag) => (
-                          <td key={flag} className="p-2 text-center">
-                            <input type="checkbox" name={`${mod}_${flag}`} value="true"
-                              defaultChecked={perm ? (perm as unknown as Record<string, boolean>)[flag] : false} className="rounded" />
-                          </td>
-                        ))}
+                      <tr key={mod.key} className="border-b border-border">
+                        <td className="p-2 font-medium">
+                          <div>{mod.label}</div>
+                          <div className="text-[11px] text-muted-foreground font-normal">{mod.description}</div>
+                        </td>
+                        {ALL_PERMISSION_FLAGS.map((flag) => {
+                          const checked = perm
+                            ? (perm as unknown as Record<string, boolean>)[flag]
+                            : (roleDefaults as unknown as Record<string, boolean>)[flag];
+                          return (
+                            <td key={flag} className="p-2 text-center">
+                              <input type="checkbox" name={`${mod.key}_${flag}`} value="true"
+                                defaultChecked={checked} className="rounded" />
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    );
+                  })}
+                  {/* Custom pages — appear dynamically as they're published */}
+                  {customPages.length > 0 && (
+                    <tr><td colSpan={ALL_PERMISSION_FLAGS.length + 1} className="p-2 pt-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Custom Pages</td></tr>
+                  )}
+                  {customPages.map((page) => {
+                    const pageKey = `custom-page-${page.id}`;
+                    const perm = permMap.get(pageKey);
+                    return (
+                      <tr key={pageKey} className="border-b border-border">
+                        <td className="p-2 font-medium">
+                          <div>{page.title}</div>
+                          <div className="text-[11px] text-muted-foreground font-normal">/sandbox/{page.slug}</div>
+                        </td>
+                        {ALL_PERMISSION_FLAGS.map((flag) => {
+                          const checked = perm
+                            ? (perm as unknown as Record<string, boolean>)[flag]
+                            : (roleDefaults as unknown as Record<string, boolean>)[flag];
+                          return (
+                            <td key={flag} className="p-2 text-center">
+                              <input type="checkbox" name={`${pageKey}_${flag}`} value="true"
+                                defaultChecked={checked} className="rounded" />
+                            </td>
+                          );
+                        })}
                       </tr>
                     );
                   })}

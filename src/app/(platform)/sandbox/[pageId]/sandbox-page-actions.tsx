@@ -11,6 +11,7 @@ import { FormDialog } from "@/components/shared/form-dialog";
 import { Dialog } from "@/components/ui/dialog";
 import { updateSandboxPage, deleteSandboxPage, toggleSandboxPublished } from "@/actions/sandbox";
 import { Pencil, Trash2, Eye, EyeOff } from "lucide-react";
+import { IconPicker } from "@/components/ui/icon-picker";
 
 interface Props {
   page: {
@@ -20,6 +21,7 @@ interface Props {
     description: string | null;
     content: string | null;
     layout: string;
+    icon: string | null;
     published: boolean;
     projectId: string | null;
     clientId: string | null;
@@ -70,6 +72,7 @@ export function SandboxPageActions({ page, canEdit, canDelete, isAdmin, projects
                 <input type="hidden" name="id" value={page.id} />
                 <Input name="title" label="Title" defaultValue={page.title} required error={fieldErrors?.title?.[0]} />
                 <Input name="slug" label="URL Slug" defaultValue={page.slug} required error={fieldErrors?.slug?.[0]} />
+                <IconPicker name="icon" value={page.icon} label="Page icon" />
                 <Textarea name="description" label="Description" defaultValue={page.description || ""} />
                 <Textarea name="content" label="Content" defaultValue={page.content || ""} rows={8} />
                 <Select

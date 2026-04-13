@@ -79,6 +79,8 @@ export async function updateDocument(_prev: unknown, formData: FormData) {
 
   await logActivity("updated", "document", id, user.id, parsed.data.title);
   revalidatePath(`/projects/${existing.projectId}/documents/${id}`);
+  // The parent project page lists this document's title — revalidate it too.
+  revalidatePath(`/projects/${existing.projectId}`);
   return { success: true };
 }
 
@@ -133,5 +135,6 @@ export async function restoreDocumentVersion(_prev: unknown, formData: FormData)
 
   await logActivity("updated", "document", documentId, user.id, `Restored to v${version.version}`);
   revalidatePath(`/projects/${doc.projectId}/documents/${documentId}`);
+  revalidatePath(`/projects/${doc.projectId}`);
   return { success: true };
 }

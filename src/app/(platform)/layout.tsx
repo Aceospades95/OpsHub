@@ -3,6 +3,8 @@ import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { getVisibleModules } from "@/lib/permissions";
 import { getSidebarConfig } from "@/actions/sidebar";
+import { getUnreadCount, getUserNotifications } from "@/lib/notifications";
+import { getBranding } from "@/lib/branding";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Header } from "@/components/layout/header";
 
@@ -14,7 +16,7 @@ export default async function PlatformLayout({
   const session = await auth();
   if (!session?.user) redirect("/login");
 
-  const [visibleModules, sidebarConfig, customPages] = await Promise.all([
+  const [visibleModules, sidebarConfig, customPages, unreadCount, recentNotifications, branding] = await Promise.all([
     getVisibleModules(session.user.id, session.user.role),
     getSidebarConfig(),
     db.sandboxPage.findMany({
@@ -22,7 +24,21 @@ export default async function PlatformLayout({
       select: { id: true, title: true, slug: true },
       orderBy: { title: "asc" },
     }),
+    getUnreadCount(session.user.id),
+    getUserNotifications(session.user.id, { limit: 10 }),
+    getBranding(),
   ]);
+
+  // Serialize notification dates for the client component boundary
+  const serializedNotifications = recentNotifications.map((n) => ({
+    id: n.id,
+    type: n.type,
+    title: n.title,
+    body: n.body,
+    href: n.href,
+    readAt: n.readAt?.toISOString() || null,
+    createdAt: n.createdAt.toISOString(),
+  }));
 
   return (
     <div className="flex h-screen overflow-hidden">
@@ -31,15 +47,20 @@ export default async function PlatformLayout({
         userRole={session.user.role}
         customPages={customPages}
         sidebarConfig={sidebarConfig}
+        companyName={branding.companyName}
+        companyLogoUrl={branding.companyLogoUrl}
       />
       <div className="flex flex-1 flex-col overflow-hidden">
         <Header
+          userId={session.user.id}
           userName={session.user.name}
           userEmail={session.user.email}
           userRole={session.user.role}
+          unreadNotifications={unreadCount}
+          recentNotifications={serializedNotifications}
         />
-        <main className="flex-1 overflow-y-auto page-bg p-4 sm:p-6 lg:p-8">
-          <div className="mx-auto max-w-7xl">
+        <main className="flex-1 overflow-auto page-bg p-4 sm:p-6 lg:p-8">
+          <div className="mx-auto max-w-[1600px]">
             {children}
           </div>
         </main>
