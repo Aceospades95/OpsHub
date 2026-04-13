@@ -52,6 +52,7 @@ export default async function PlatformLayout({
       />
       <div className="flex flex-1 flex-col overflow-hidden">
         <Header
+          userId={session.user.id}
           userName={session.user.name}
           userEmail={session.user.email}
           userRole={session.user.role}

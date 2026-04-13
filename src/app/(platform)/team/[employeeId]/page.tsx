@@ -46,20 +46,6 @@ export default async function EmployeeDetailPage({ params }: Props) {
 
   const canManage = session.user.role === "ADMIN" || session.user.role === "MANAGER";
   const isAdmin = session.user.role === "ADMIN";
-  // Files tab is visible to self, manager, admin — same gate used in the
-  // employee-files server action.
-  const isSelf = session.user.id === employeeId;
-  const canViewFiles = isSelf || canManage;
-
-  // Only fetch files when the viewer is allowed to see them. Avoids leaking
-  // file metadata to viewers who can't open the bytes anyway.
-  const profileFiles = canViewFiles
-    ? await db.file.findMany({
-        where: { userId: employeeId },
-        orderBy: { createdAt: "desc" },
-        include: { uploadedBy: { select: { id: true, name: true } } },
-      })
-    : [];
 
   // Fetch admin-related data
   const [recentActivity, allUsers, allClients, allProjects, serviceOfferings, roleDefinitions, customPages] = await Promise.all([
@@ -126,17 +112,6 @@ export default async function EmployeeDetailPage({ params }: Props) {
     createdAt: a.createdAt.toISOString(),
   }));
 
-  const serializedFiles = profileFiles.map((f) => ({
-    id: f.id,
-    name: f.name,
-    url: f.url,
-    size: f.size,
-    mimeType: f.mimeType,
-    category: f.category,
-    createdAt: f.createdAt.toISOString(),
-    uploadedBy: f.uploadedBy ? { id: f.uploadedBy.id, name: f.uploadedBy.name } : null,
-  }));
-
   return (
     <div>
       <PageHeader
@@ -153,8 +128,6 @@ export default async function EmployeeDetailPage({ params }: Props) {
         allProjects={allProjects}
         serviceOfferings={serviceOfferings}
         roleDefinitions={roleDefinitions}
-        files={serializedFiles}
-        canViewFiles={canViewFiles}
         customPages={customPages}
       />
     </div>

@@ -44,7 +44,7 @@ export const DEFAULT_SIDEBAR_CONFIG: SidebarConfig = {
     },
     {
       id: "admin-section",
-      title: "Administration",
+      title: "Settings",
       items: [
         { key: "sandbox", visible: true },
         { key: "admin", visible: true },
