@@ -15,17 +15,7 @@ import {
   Wrench,
   Blocks,
   Globe,
-  Shield,
-  Palette,
-  FileCode,
-  PanelLeft,
-  Puzzle,
-  Mail,
-
-  Bell,
-  Repeat,
-  FileSpreadsheet,
-  BarChart3,
+  Settings,
   ChevronLeft,
   ChevronRight,
   Menu,
@@ -64,17 +54,7 @@ const ICON_MAP: Record<string, LucideIcon> = {
   Wrench,
   Blocks,
   Globe,
-  Shield,
-  Palette,
-  FileCode,
-  PanelLeft,
-  Puzzle,
-  Mail,
-
-  Bell,
-  Repeat,
-  FileSpreadsheet,
-  BarChart3,
+  Settings,
 };
 
 // Default labels/hrefs/icons come from the canonical module registry so there
@@ -83,17 +63,7 @@ const SYSTEM_DEFAULTS = SYSTEM_MODULES;
 
 // Modules that require specific roles
 const ROLE_GATED: Record<string, (role: string) => boolean> = {
-  sandbox: (role) => role === "ADMIN" || role === "DEVELOPER",
-  admin: (role) => role === "ADMIN",
-  widgets: (role) => role === "ADMIN" || role === "DEVELOPER",
-  theme: (role) => role === "ADMIN",
-  sidebar: (role) => role === "ADMIN",
-  emails: (role) => role === "ADMIN",
-
-  notifications: (role) => role === "ADMIN",
-  jobs: (role) => role === "ADMIN",
-  import: (role) => role === "ADMIN",
-  reports: (role) => role === "ADMIN",
+  settings: (role) => role === "ADMIN",
 };
 
 // Modules always visible regardless of permissions
@@ -148,7 +118,7 @@ export function Sidebar({
       return {
         label: item.label || page.title,
         href: `/sandbox/${page.id}`,
-        Icon: ICON_MAP.FileCode,
+        Icon: ICON_MAP.Blocks || Blocks,
       };
     }
 
@@ -158,7 +128,7 @@ export function Sidebar({
     return {
       label: item.label || sys.label,
       href: sys.href,
-      Icon: ICON_MAP[sys.icon] || FileCode,
+      Icon: ICON_MAP[sys.icon] || Settings,
     };
   }
 

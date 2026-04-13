@@ -24,14 +24,8 @@ export default async function AdminThemePage() {
       <PageHeader
         title="Theme Settings"
         description="Customize branding, colors, and the look and feel of OpsHub"
-        actions={
-          <Link
-            href="/team"
-            className="inline-flex items-center justify-center rounded font-medium transition-colors h-10 px-4 py-2 border border-border bg-background hover:bg-muted text-foreground text-sm"
-          >
-            Back to Team
-          </Link>
-        }
+
+
       />
       <BrandingSection branding={branding} />
       <ThemeEditor currentTheme={currentTheme} />

@@ -23,16 +23,7 @@ export type ModuleKey =
   | "suppliers"
   | "tools"
   | "intranet"
-  | "sandbox"
-  | "admin"
-  | "widgets"
-  | "theme"
-  | "sidebar"
-  | "emails"
-  | "notifications"
-  | "jobs"
-  | "import"
-  | "reports";
+  | "settings";
 
 export type PermissionFlag =
   | "canView"
@@ -199,95 +190,14 @@ export const MODULES: ModuleDefinition[] = [
     permissioned: true,
   },
   {
-    key: "sandbox",
-    label: "Custom Pages",
-    href: "/sandbox",
-    icon: "Blocks",
-    description: "User-built custom pages and sandbox experiments",
+    key: "settings",
+    label: "Settings",
+    href: "/admin",
+    icon: "Settings",
+    description: "Admin, theme, imports, reports, and system configuration",
     section: "admin",
     permissioned: false,
-  },
-  {
-    key: "admin",
-    label: "Admin",
-    href: "/admin/users",
-    icon: "Shield",
-    description: "User management, permissions, and system settings",
-    section: "admin",
-    permissioned: true,
     adminOnly: true,
-  },
-  {
-    key: "widgets",
-    label: "Widget Builder",
-    href: "/admin/widgets",
-    icon: "Puzzle",
-    description: "Build and publish custom dashboard widgets",
-    section: "admin",
-    permissioned: false,
-  },
-  {
-    key: "theme",
-    label: "Theme",
-    href: "/admin/theme",
-    icon: "Palette",
-    description: "Branding, color palette, and theme configuration",
-    section: "admin",
-    permissioned: false,
-  },
-  {
-    key: "sidebar",
-    label: "Sidebar",
-    href: "/admin/sidebar",
-    icon: "PanelLeft",
-    description: "Sidebar section and ordering configuration",
-    section: "admin",
-    permissioned: false,
-  },
-  {
-    key: "emails",
-    label: "Email Log",
-    href: "/admin/emails",
-    icon: "Mail",
-    description: "Outbound email audit log and test sender",
-    section: "admin",
-    permissioned: false,
-  },
-  {
-    key: "notifications",
-    label: "Notifications",
-    href: "/admin/notifications",
-    icon: "Bell",
-    description: "In-app notification audit and test sender",
-    section: "admin",
-    permissioned: false,
-  },
-  {
-    key: "jobs",
-    label: "Scheduled Jobs",
-    href: "/admin/jobs",
-    icon: "Repeat",
-    description: "Recurring background jobs and run history",
-    section: "admin",
-    permissioned: false,
-  },
-  {
-    key: "import",
-    label: "Data Import",
-    href: "/admin/import",
-    icon: "FileSpreadsheet",
-    description: "Bulk-create records from CSV uploads",
-    section: "admin",
-    permissioned: false,
-  },
-  {
-    key: "reports",
-    label: "Reports",
-    href: "/admin/reports",
-    icon: "BarChart3",
-    description: "Saved reports, CSV download, and email digests",
-    section: "admin",
-    permissioned: false,
   },
 ];
 
