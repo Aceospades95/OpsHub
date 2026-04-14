@@ -132,7 +132,7 @@ export function CommentSection({
         {sortedComments.map((comment) => (
           <div key={comment.id} className="flex gap-3">
             <Avatar name={comment.author.name} size="sm" />
-            <div className="flex-1 rounded border border-border bg-muted/50 p-3">
+            <div className="flex-1 rounded border border-border bg-muted p-3">
               <div className="flex items-center justify-between mb-1">
                 <div className="flex items-center gap-2">
                   <Link

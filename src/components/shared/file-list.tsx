@@ -54,7 +54,7 @@ export function FileList({ links = [], embeds = [], canDelete }: FileListProps) 
   return (
     <div className="space-y-3">
       {links.map((link) => (
-        <div key={link.id} className="flex items-center gap-3 rounded border border-border bg-muted/50 p-3">
+        <div key={link.id} className="flex items-center gap-3 rounded border border-border bg-muted p-3">
           <Link2 className="h-4 w-4 text-muted-foreground" />
           <div className="flex-1 min-w-0">
             <a href={link.url} target="_blank" rel="noopener noreferrer" className="text-sm font-medium hover:text-primary flex items-center gap-1">
@@ -75,7 +75,7 @@ export function FileList({ links = [], embeds = [], canDelete }: FileListProps) 
 
       {embeds.map((embed) => (
         <div key={embed.id} className="space-y-2">
-          <div className="flex items-center gap-3 rounded border border-border bg-muted/50 p-3">
+          <div className="flex items-center gap-3 rounded border border-border bg-muted p-3">
             <Code2 className="h-4 w-4 text-muted-foreground" />
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium">{embed.title}</p>

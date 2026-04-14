@@ -260,7 +260,7 @@ export function EmployeeList({ users, inactiveUsers, search }: EmployeeListProps
         <CardContent className="p-0 overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-border bg-muted/50">
+              <tr className="border-b border-border bg-muted">
                 <th className="text-left py-3 px-4 font-semibold"><SortHeader field="name">Employee</SortHeader></th>
                 <th className="text-left py-3 px-4 font-semibold hidden md:table-cell"><SortHeader field="department">Department</SortHeader></th>
                 <th className="text-left py-3 px-4 font-semibold hidden md:table-cell"><SortHeader field="location">Location</SortHeader></th>
@@ -295,7 +295,7 @@ export function EmployeeList({ users, inactiveUsers, search }: EmployeeListProps
               <CardContent className="p-0 overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="border-b border-border bg-muted/50">
+                    <tr className="border-b border-border bg-muted">
                       <th className="text-left py-3 px-4 font-semibold">Employee</th>
                       <th className="text-left py-3 px-4 font-semibold hidden md:table-cell">Department</th>
                       <th className="text-left py-3 px-4 font-semibold hidden md:table-cell">Location</th>

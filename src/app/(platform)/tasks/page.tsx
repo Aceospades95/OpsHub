@@ -355,7 +355,7 @@ function ProjectGroupedTasks({ tasks }: { tasks: TaskRow[] }) {
                   return (
                     <div
                       key={task.id}
-                      className={`flex items-center gap-3 rounded border border-border/50 bg-muted/50 p-2 ${
+                      className={`flex items-center gap-3 rounded border border-border/50 bg-muted p-2 ${
                         isDone ? "opacity-60" : ""
                       }`}
                     >

@@ -76,7 +76,7 @@ export function EditAssignmentDialog({ open, onClose, assignment, projects, clie
         <div className="space-y-1">
           <label className="block text-sm font-medium">Employee</label>
           <input type="hidden" name="employeeId" value={assignment.employeeId} />
-          <div className="w-full h-10 rounded border border-input bg-muted/50 px-3 py-2 text-sm flex items-center">
+          <div className="w-full h-10 rounded border border-input bg-muted px-3 py-2 text-sm flex items-center">
             {assignment.employeeName}
           </div>
         </div>

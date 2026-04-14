@@ -151,7 +151,7 @@ export function AddAssignmentDialog({
 
         {/* Offering info (from project) */}
         {projectOffering && (
-          <div className="text-xs text-muted-foreground bg-muted/50 rounded px-3 py-1.5">
+          <div className="text-xs text-muted-foreground bg-muted rounded px-3 py-1.5">
             Offering: <span className="font-medium text-foreground">{projectOffering}</span> (from project)
           </div>
         )}

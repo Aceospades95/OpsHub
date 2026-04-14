@@ -42,7 +42,7 @@ export const THEME_PRESETS: ThemePreset[] = [
       secondary: "#2d4058",
       "secondary-foreground": "#e2e8f0",
       accent: "#34d399",
-      background: "#0b1120",
+      background: "#111927",
       foreground: "#f1f5f9",
       muted: "#253548",
       "muted-foreground": "#94a3b8",

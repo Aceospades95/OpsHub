@@ -113,7 +113,7 @@ export default async function ClientDetailPage({ params }: Props) {
                 <Link
                   key={project.id}
                   href={`/projects/${project.id}`}
-                  className="flex items-center justify-between rounded border border-border bg-muted/50 p-3 hover:bg-muted transition-colors"
+                  className="flex items-center justify-between rounded border border-border bg-muted p-3 hover:border-primary transition-colors"
                 >
                   <div>
                     <p className="font-medium text-sm">{project.name}</p>
@@ -144,7 +144,7 @@ export default async function ClientDetailPage({ params }: Props) {
                 <Link
                   key={contract.id}
                   href={`/contracts/${contract.id}`}
-                  className="flex items-center justify-between rounded border border-border bg-muted/50 p-3 hover:bg-muted transition-colors"
+                  className="flex items-center justify-between rounded border border-border bg-muted p-3 hover:border-primary transition-colors"
                 >
                   <div>
                     <p className="font-medium text-sm">{contract.title}</p>

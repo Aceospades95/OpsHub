@@ -162,7 +162,7 @@ export default async function CertificationDetailPage({ params }: Props) {
           {cert.renewalRequirements && (
             <div className="pt-3 border-t border-border">
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Renewal Requirements</p>
-              <div className="text-sm whitespace-pre-wrap bg-muted/50 rounded-md p-3">{cert.renewalRequirements}</div>
+              <div className="text-sm whitespace-pre-wrap bg-muted rounded-md p-3">{cert.renewalRequirements}</div>
             </div>
           )}
 

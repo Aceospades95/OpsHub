@@ -41,7 +41,7 @@ export function ToolProjectsSection({ toolProjects, toolId, allProjects, canEdit
     <div className="space-y-2">
       {toolProjects.length === 0 && <p className="text-sm text-muted-foreground">Not assigned to any projects</p>}
       {toolProjects.map((tp) => (
-        <div key={tp.id} className="flex items-center justify-between rounded border border-border bg-muted/50 p-2">
+        <div key={tp.id} className="flex items-center justify-between rounded border border-border bg-muted p-2">
           <Link href={`/projects/${tp.project.id}`} className="text-sm text-primary hover:underline">{tp.project.name}</Link>
           {canEdit && (
             <button onClick={() => handleRemove(tp.id)} className="text-muted-foreground hover:text-destructive">

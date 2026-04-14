@@ -83,7 +83,7 @@ export function MilestoneSection({ milestones, projectId, allUsers, canEdit, can
       )}
 
       {milestones.map((ms) => (
-        <div key={ms.id} className={`rounded border border-border bg-muted/50 p-3 ${ms.completed ? "opacity-60" : ""}`}>
+        <div key={ms.id} className={`rounded border border-border bg-muted p-3 ${ms.completed ? "opacity-60" : ""}`}>
           <div className="flex items-start gap-3">
             {canEdit ? (
               <button onClick={() => handleToggle(ms.id)} className="mt-0.5">
