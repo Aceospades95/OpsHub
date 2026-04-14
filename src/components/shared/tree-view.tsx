@@ -32,7 +32,7 @@ function TreeItem({ node, level = 0 }: { node: TreeNode; level: number }) {
     <div>
       <div
         className={`flex items-center gap-2 rounded-lg px-3 py-2.5 transition-colors ${
-          hasChildren ? "cursor-pointer hover:bg-muted/50" : ""
+          hasChildren ? "cursor-pointer hover:bg-muted" : ""
         }`}
         style={{
           backgroundColor: `color-mix(in srgb, var(--card) ${Math.max(70, 97 - level * 3)}%, var(--foreground) ${3 + level * 3}%)`,

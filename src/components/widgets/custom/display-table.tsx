@@ -35,7 +35,7 @@ export function DisplayTable({ config, data, fields }: DisplayProps) {
         </thead>
         <tbody>
           {data.rows.map((row, i) => (
-            <tr key={i} className="border-b border-border/50 hover:bg-muted/50">
+            <tr key={i} className="border-b border-border/50 hover:bg-muted">
               {columns.map((col) => (
                 <td key={col} className="py-2 px-3">
                   {formatValue(row[col], fieldMap.get(col)?.type || "string")}

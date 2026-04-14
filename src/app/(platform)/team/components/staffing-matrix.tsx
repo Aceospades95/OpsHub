@@ -656,7 +656,7 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, rol
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b-2 border-border bg-muted/50">
+                <tr className="border-b-2 border-border bg-muted">
                   <th className="text-left py-3 px-4 font-semibold min-w-[140px]">
                     <SortHeader field="offering">Offering</SortHeader>
                   </th>

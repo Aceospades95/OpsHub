@@ -37,8 +37,8 @@ function NodeCard({
     <div
       className={`
         rounded-lg text-left transition-all hover:shadow-lg
-        border border-border/60 shadow-md
-        bg-white dark:bg-slate-800
+        border border-border shadow-md
+        bg-muted
         ${compact ? "px-3 py-2 min-w-[120px]" : "px-4 py-3 min-w-[180px] max-w-[240px]"}
       `}
     >
