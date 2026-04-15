@@ -61,14 +61,17 @@ export const certificationExpiryCheck: JobDefinition = {
         .sort((a, b) => b - a);
 
       // Find the tightest threshold that has been crossed but not yet fired.
-      const fired = new Set(cert.firedReminderOffsets ?? []);
+      const firedArr = cert.firedReminderOffsets ?? [];
+      const fired = new Set<number>(firedArr);
       const crossed = offsets.filter((o) => daysUntilExpiry <= o && !fired.has(o));
       if (crossed.length === 0) continue;
 
       // Fire the smallest crossed threshold (most urgent message) and mark
       // all larger-or-equal crossed offsets as fired so we don't double-send.
-      const targetOffset = Math.min(...crossed);
-      const newlyFired = Array.from(new Set([...fired, ...crossed]));
+      const targetOffset = Math.min.apply(null, crossed);
+      const newlyFiredSet = new Set<number>(firedArr);
+      crossed.forEach((o) => newlyFiredSet.add(o));
+      const newlyFired = Array.from(newlyFiredSet);
 
       for (const recipient of recipients) {
         try {
