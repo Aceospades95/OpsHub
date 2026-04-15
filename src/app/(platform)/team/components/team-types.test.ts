@@ -34,6 +34,9 @@ function makeUser(assignments: { allocationFte: number; status?: string }[]): Us
       project: null,
       client: null,
       serviceOffering: null,
+      projectRoleId: null,
+      projectRole: null,
+      roleDefinition: null,
     })),
   };
 }

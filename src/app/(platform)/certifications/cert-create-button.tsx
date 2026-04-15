@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useFormState } from "react-dom";
 import { createCertification } from "@/actions/certifications";
@@ -33,9 +33,11 @@ export function CertCreateButton({
   const [state, action] = useFormState(createCertification, null);
   const router = useRouter();
 
-  if (state?.success && state.id) {
-    router.push(`/certifications/${state.id}`);
-  }
+  useEffect(() => {
+    if (state?.success && state.id) {
+      router.push(`/certifications/${state.id}`);
+    }
+  }, [state, router]);
 
   return (
     <>

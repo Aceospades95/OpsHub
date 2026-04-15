@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { useFormState } from "react-dom";
 import { format } from "date-fns";
@@ -36,10 +36,12 @@ export function ChecklistCard({ certId, items, canModify }: Props) {
   const [addOpen, setAddOpen] = useState(false);
   const [addState, addAction] = useFormState(addChecklistItem, null);
 
-  if (addState?.success && addOpen) {
-    setAddOpen(false);
-    router.refresh();
-  }
+  useEffect(() => {
+    if (addState?.success) {
+      setAddOpen(false);
+      router.refresh();
+    }
+  }, [addState, router]);
 
   const handleToggle = (itemId: string) => {
     const fd = new FormData();

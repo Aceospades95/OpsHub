@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useFormState } from "react-dom";
 import { updateCertification, deleteCertification } from "@/actions/certifications";
@@ -69,13 +69,14 @@ export function CertActions({ cert, clients, users }: CertActionsProps) {
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [editState, editAction] = useFormState(updateCertification, null);
-  const [, deleteAction] = useFormState(deleteCertification, null);
   const router = useRouter();
 
-  if (editState?.success) {
-    router.refresh();
-    setEditOpen(false);
-  }
+  useEffect(() => {
+    if (editState?.success) {
+      setEditOpen(false);
+      router.refresh();
+    }
+  }, [editState, router]);
 
   return (
     <div className="flex items-center gap-2">
@@ -459,7 +460,8 @@ export function CertActions({ cert, clients, users }: CertActionsProps) {
             </p>
             <form
               action={async (fd) => {
-                await deleteAction(fd);
+                const result = await deleteCertification(null, fd);
+                if (result && "error" in result && result.error) return;
                 router.push("/certifications");
               }}
             >

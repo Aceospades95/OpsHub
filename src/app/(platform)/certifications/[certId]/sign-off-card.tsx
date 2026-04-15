@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useFormState } from "react-dom";
 import { format } from "date-fns";
@@ -27,10 +27,18 @@ export function SignOffCard({ cert, canSignOff, canRevoke }: Props) {
   const [revokeState, revokeAction] = useFormState(revokeSignOff, null);
   const router = useRouter();
 
-  if (signState?.success || revokeState?.success) {
-    router.refresh();
-    if (modalOpen) setModalOpen(false);
-  }
+  useEffect(() => {
+    if (signState?.success) {
+      setModalOpen(false);
+      router.refresh();
+    }
+  }, [signState, router]);
+
+  useEffect(() => {
+    if (revokeState?.success) {
+      router.refresh();
+    }
+  }, [revokeState, router]);
 
   const isSignedOff = !!cert.signedOffAt;
 
