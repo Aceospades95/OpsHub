@@ -14,6 +14,7 @@ import {
   Repeat,
   FileSpreadsheet,
   BarChart3,
+  KeyRound,
 } from "lucide-react";
 
 const SETTINGS_SECTIONS = [
@@ -21,6 +22,7 @@ const SETTINGS_SECTIONS = [
     title: "General",
     items: [
       { label: "Users & Permissions", href: "/admin/users", icon: Shield, description: "Manage user accounts, roles, and module permissions" },
+      { label: "Single Sign-On", href: "/admin/sso", icon: KeyRound, description: "Google SSO configuration and allowed email domains" },
       { label: "Custom Pages", href: "/sandbox", icon: Blocks, description: "Build and manage custom pages" },
       { label: "Widget Builder", href: "/admin/widgets", icon: Puzzle, description: "Create and publish custom dashboard widgets" },
     ],

@@ -134,7 +134,8 @@ model User {
   id             String   @id @default(cuid())
   name           String
   email          String   @unique
-  hashedPassword String
+  hashedPassword String?
+  authProvider   String   @default("credentials") // "credentials" | "google"
   role           Role     @default(VIEWER)
   avatar         String?
   isActive       Boolean  @default(true)
@@ -944,4 +945,15 @@ model CustomWidget {
   createdBy User @relation(fields: [createdById], references: [id])
 
   @@index([isPublished])
+}
+
+// ─── SSO ALLOWED DOMAINS ──────────────────────────────
+//
+// Admin-managed allowlist of email domains permitted to sign in
+// via Google SSO. If no rows exist, all Google domains are allowed.
+
+model AllowedDomain {
+  id        String   @id @default(cuid())
+  domain    String   @unique // e.g. "company.com"
+  createdAt DateTime @default(now())
 }

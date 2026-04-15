@@ -12,6 +12,9 @@ import { LoginForm } from "./login-form";
 export default async function LoginPage() {
   const branding = await getBranding();
   const companyName = branding.companyName || "OpsHub";
+  const googleEnabled = !!(
+    process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET
+  );
 
   return (
     <div className="relative flex min-h-screen items-center justify-center bg-muted px-4">
@@ -31,6 +34,7 @@ export default async function LoginPage() {
       <LoginForm
         companyName={companyName}
         companyLogoUrl={branding.companyLogoUrl}
+        googleEnabled={googleEnabled}
       />
     </div>
   );
