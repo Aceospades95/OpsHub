@@ -1,6 +1,7 @@
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
+import { getUserScope } from "@/lib/scope";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -40,6 +41,8 @@ export default async function TasksPage({
   // Default view is grouped by status. "by-project" groups by project name.
   const groupBy = view === "by-project" ? "project" : "status";
 
+  const scope = await getUserScope(session.user.id, session.user.role);
+
   // Build filter
   const where: Prisma.TaskWhereInput = {};
 
@@ -66,6 +69,25 @@ export default async function TasksPage({
   }
   // default: show all
 
+  // Scope: non-org-wide roles only see tasks in projects/clients they can
+  // access or tasks where they are the assignee or creator.
+  if (!scope.all) {
+    const scopeOr: Prisma.TaskWhereInput[] = [
+      { assigneeId: session.user.id },
+      { createdById: session.user.id },
+    ];
+    if (scope.projectIds.size > 0) {
+      scopeOr.push({ projectId: { in: Array.from(scope.projectIds) } });
+    }
+    if (scope.clientIds.size > 0) {
+      scopeOr.push({ clientId: { in: Array.from(scope.clientIds) } });
+    }
+    where.AND = [...((where.AND as Prisma.TaskWhereInput[]) ?? []), { OR: scopeOr }];
+  }
+
+  const scopedProjectIds = scope.all ? null : Array.from(scope.projectIds);
+  const scopedClientIds = scope.all ? null : Array.from(scope.clientIds);
+
   const [tasks, projects, clients, users] = await Promise.all([
     db.task.findMany({
       where,
@@ -77,8 +99,16 @@ export default async function TasksPage({
         createdBy: { select: { name: true } },
       },
     }),
-    db.project.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } }),
-    db.client.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } }),
+    db.project.findMany({
+      where: scopedProjectIds ? { id: { in: scopedProjectIds } } : {},
+      select: { id: true, name: true },
+      orderBy: { name: "asc" },
+    }),
+    db.client.findMany({
+      where: scopedClientIds ? { id: { in: scopedClientIds } } : {},
+      select: { id: true, name: true },
+      orderBy: { name: "asc" },
+    }),
     db.user.findMany({ where: { isActive: true }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
   ]);
 

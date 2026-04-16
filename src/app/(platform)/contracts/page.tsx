@@ -2,6 +2,7 @@ import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { resolveModulePerms } from "@/lib/permissions";
+import { getUserScope } from "@/lib/scope";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -38,24 +39,35 @@ export default async function ContractsPage() {
   const perms = await resolveModulePerms(session.user.id, session.user.role, "contracts");
   if (!perms.canView) redirect("/dashboard");
 
+  const scope = await getUserScope(session.user.id, session.user.role);
+  const scopedContractIds = scope.all ? null : Array.from(scope.contractIds);
+  const scopedClientIds = scope.all ? null : Array.from(scope.clientIds);
+  const scopedProjectIds = scope.all ? null : Array.from(scope.projectIds);
+
   const clients = await db.client.findMany({
+    where: scopedClientIds ? { id: { in: scopedClientIds } } : {},
     select: { id: true, name: true },
     orderBy: { name: "asc" },
   });
 
   const projects = await db.project.findMany({
+    where: scopedProjectIds ? { id: { in: scopedProjectIds } } : {},
     select: { id: true, name: true },
     orderBy: { name: "asc" },
   });
 
   const parentContracts = await db.contract.findMany({
+    where: scopedContractIds ? { id: { in: scopedContractIds } } : {},
     select: { id: true, title: true },
     orderBy: { title: "asc" },
   });
 
   // Hierarchical query: root contracts grouped by client
   const rootContracts = await db.contract.findMany({
-    where: { parentContractId: null },
+    where: {
+      parentContractId: null,
+      ...(scopedContractIds ? { id: { in: scopedContractIds } } : {}),
+    },
     orderBy: { updatedAt: "desc" },
     include: {
       client: { select: { id: true, name: true } },

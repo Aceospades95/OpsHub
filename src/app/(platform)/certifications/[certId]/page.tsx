@@ -1,6 +1,7 @@
 import { auth } from "@/lib/auth";
 import { redirect, notFound } from "next/navigation";
 import { db } from "@/lib/db";
+import { getUserScope, canViewEntity } from "@/lib/scope";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatusBadge } from "@/components/shared/status-badge";
@@ -66,8 +67,15 @@ export default async function CertificationDetailPage({ params }: Props) {
 
   if (!cert) notFound();
 
+  const scope = await getUserScope(session.user.id, session.user.role);
+  if (!canViewEntity(scope, "certification", cert.id)) notFound();
+
   const [clients, users] = await Promise.all([
-    db.client.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } }),
+    db.client.findMany({
+      where: scope.all ? {} : { id: { in: Array.from(scope.clientIds) } },
+      select: { id: true, name: true },
+      orderBy: { name: "asc" },
+    }),
     db.user.findMany({
       where: { isActive: true },
       select: { id: true, name: true },

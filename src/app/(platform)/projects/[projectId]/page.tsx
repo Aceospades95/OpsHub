@@ -1,7 +1,8 @@
 import { auth } from "@/lib/auth";
 import { redirect, notFound } from "next/navigation";
 import { db } from "@/lib/db";
-import { resolveModulePerms } from "@/lib/permissions";
+import { resolveModulePerms, canManageAssignments } from "@/lib/permissions";
+import { getUserScope, canViewEntity } from "@/lib/scope";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatusBadge } from "@/components/shared/status-badge";
@@ -100,6 +101,9 @@ export default async function ProjectDetailPage({ params }: Props) {
 
   if (!project) notFound();
 
+  const scope = await getUserScope(session.user.id, session.user.role);
+  if (!canViewEntity(scope, "project", project.id)) notFound();
+
   const clients = await db.client.findMany({
     where: { status: "ACTIVE" },
     select: { id: true, name: true },
@@ -146,6 +150,7 @@ export default async function ProjectDetailPage({ params }: Props) {
   const availableTools = allTools.filter((t) => !linkedToolIds.has(t.id));
 
   const canEditLayout = session.user.role === "ADMIN" || session.user.role === "DEVELOPER";
+  const canAssign = canManageAssignments(session.user.role);
 
   const cardMap: Record<string, React.ReactNode> = {
     "sub-projects": (
@@ -283,7 +288,7 @@ export default async function ProjectDetailPage({ params }: Props) {
             projectRoles={project.projectRoles as Parameters<typeof ProjectStaffingSection>[0]["projectRoles"]}
             roleDefinitions={roleDefinitions}
             allUsers={allUsers}
-            canEdit={perms.canEdit}
+            canEdit={canAssign}
           />
           <div className="pt-4 border-t border-border space-y-2">
             <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Project Access ({project.members.length})</h4>
@@ -292,7 +297,7 @@ export default async function ProjectDetailPage({ params }: Props) {
               members={project.members}
               projectId={project.id}
               allUsers={allUsers}
-              canEdit={perms.canEdit}
+              canEdit={canAssign}
             />
           </div>
         </CardContent>

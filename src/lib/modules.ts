@@ -34,7 +34,7 @@ export type PermissionFlag =
   | "canUpload"
   | "canManage";
 
-export type ModuleSection = "main" | "resources" | "admin";
+export type ModuleSection = "main" | "delivery" | "resources" | "admin";
 
 export interface ModuleDefinition {
   /** Unique key used for permissions, URLs, and references */
@@ -114,7 +114,7 @@ export const MODULES: ModuleDefinition[] = [
     href: "/clients",
     icon: "Building2",
     description: "Client accounts, contacts, and relationships",
-    section: "main",
+    section: "delivery",
     permissioned: true,
   },
   {
@@ -123,7 +123,7 @@ export const MODULES: ModuleDefinition[] = [
     href: "/projects",
     icon: "FolderKanban",
     description: "Project portfolio, milestones, staffing, and documents",
-    section: "main",
+    section: "delivery",
     permissioned: true,
   },
   {
@@ -150,7 +150,7 @@ export const MODULES: ModuleDefinition[] = [
     href: "/contracts",
     icon: "FileText",
     description: "Contracts, SOWs, amendments, and renewals",
-    section: "main",
+    section: "delivery",
     permissioned: true,
   },
   {
@@ -159,7 +159,7 @@ export const MODULES: ModuleDefinition[] = [
     href: "/certifications",
     icon: "Award",
     description: "Compliance certifications and expirations",
-    section: "main",
+    section: "delivery",
     permissioned: true,
   },
   {
@@ -168,7 +168,7 @@ export const MODULES: ModuleDefinition[] = [
     href: "/suppliers",
     icon: "Truck",
     description: "Vendor and supplier management",
-    section: "main",
+    section: "resources",
     permissioned: true,
   },
   {
@@ -177,7 +177,7 @@ export const MODULES: ModuleDefinition[] = [
     href: "/tools",
     icon: "Wrench",
     description: "Shared tools and linked resources",
-    section: "main",
+    section: "resources",
     permissioned: true,
   },
   {

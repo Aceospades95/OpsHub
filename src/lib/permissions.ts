@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import type { Role } from "@prisma/client";
 import { redirect } from "next/navigation";
 import { getPermissionedModules } from "@/lib/modules";
+import { getUserScope, hasOrgWideScope } from "@/lib/scope";
 
 export type PermissionFlags = {
   canView: boolean;
@@ -20,7 +21,15 @@ const ROLE_LEVEL: Record<Role, number> = {
   DEVELOPER: 3,
   CONTRIBUTOR: 2,
   VIEWER: 1,
+  GUEST: 0,
 };
+
+/**
+ * Modules a GUEST can see out-of-the-box. Everything else requires either a
+ * role upgrade, an explicit module permission row, or an entity grant (e.g.
+ * a project assignment).
+ */
+const GUEST_VISIBLE_MODULES = new Set(["intranet", "team", "dashboard", "tasks"]);
 
 export function getRoleDefaults(role: Role): PermissionFlags {
   const level = ROLE_LEVEL[role];
@@ -32,6 +41,24 @@ export function getRoleDefaults(role: Role): PermissionFlags {
     canComment: level >= 2,
     canUpload: level >= 2,
     canManage: level >= 4,
+  };
+}
+
+/**
+ * Guests have no default module access. They only see modules explicitly
+ * listed in GUEST_VISIBLE_MODULES (intranet + team) unless an admin grants
+ * them a module permission row or assigns them to a project.
+ */
+function getGuestModuleDefaults(module: string): PermissionFlags {
+  const canView = GUEST_VISIBLE_MODULES.has(module);
+  return {
+    canView,
+    canEdit: false,
+    canCreate: false,
+    canDelete: false,
+    canComment: false,
+    canUpload: false,
+    canManage: false,
   };
 }
 
@@ -75,6 +102,8 @@ export async function resolveModulePerms(
       canManage: modulePerm.canManage,
     };
   }
+
+  if (role === "GUEST") return getGuestModuleDefaults(module);
 
   return getRoleDefaults(role);
 }
@@ -197,6 +226,16 @@ export function canAccessSandbox(role: Role): boolean {
   return role === "ADMIN" || role === "DEVELOPER";
 }
 
+/**
+ * Whether a role is allowed to create, update, or remove staffing
+ * assignments / project memberships. Everyone else — including
+ * contributors and developers — can only be assigned by someone with
+ * this capability.
+ */
+export function canManageAssignments(role: Role): boolean {
+  return role === "ADMIN" || role === "MANAGER";
+}
+
 export async function getVisibleModules(
   userId: string,
   role: Role
@@ -207,13 +246,39 @@ export async function getVisibleModules(
 
   if (role === "ADMIN") return permissioned.map((m) => m.key);
 
+  // For MANAGER and everyone else, hide entity-backed modules when the user
+  // has zero scoped entities for that module. This prevents empty sidebar
+  // items for, e.g., a contributor who isn't on any project yet.
+  const scope = await getUserScope(userId, role);
+
+  // Modules whose sidebar visibility should track scope presence in addition
+  // to the canView permission. "team" and "intranet" are always module-wide
+  // (no entity scoping), so they're not in this list.
+  const SCOPED_MODULES: Record<string, keyof typeof scope> = {
+    projects: "projectIds",
+    clients: "clientIds",
+    contracts: "contractIds",
+    tools: "toolIds",
+    certifications: "certIds",
+  };
+
   const visible: string[] = [];
   for (const mod of permissioned) {
     // Admin-only modules are never visible to non-ADMIN users regardless
     // of their individual module permission rows.
     if (mod.adminOnly) continue;
     const perms = await resolveModulePerms(userId, role, mod.key);
-    if (perms.canView) visible.push(mod.key);
+    if (!perms.canView) continue;
+
+    // If the module is entity-scoped and the user is not org-wide, require
+    // at least one entity in scope for the module to appear in the sidebar.
+    const scopeKey = SCOPED_MODULES[mod.key];
+    if (scopeKey && !scope.all) {
+      const set = scope[scopeKey];
+      if (set instanceof Set && set.size === 0) continue;
+    }
+
+    visible.push(mod.key);
   }
   return visible;
 }

@@ -2,6 +2,7 @@ import { auth } from "@/lib/auth";
 import { redirect, notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import { resolveModulePerms } from "@/lib/permissions";
+import { getUserScope, canViewEntity } from "@/lib/scope";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatusBadge } from "@/components/shared/status-badge";
@@ -48,6 +49,9 @@ export default async function ClientDetailPage({ params }: Props) {
   });
 
   if (!client) notFound();
+
+  const scope = await getUserScope(session.user.id, session.user.role);
+  if (!canViewEntity(scope, "client", client.id)) notFound();
 
   // Get tasks associated with this client
   const tasks = await db.task.findMany({

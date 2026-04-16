@@ -22,17 +22,21 @@ export const DEFAULT_SIDEBAR_CONFIG: SidebarConfig = {
   sections: [
     {
       id: "main",
-      title: "",
+      title: "Workspace",
       items: [
         { key: "dashboard", visible: true },
-        { key: "clients", visible: true },
-        { key: "projects", visible: true },
         { key: "tasks", visible: true },
         { key: "team", visible: true },
+      ],
+    },
+    {
+      id: "delivery",
+      title: "Delivery",
+      items: [
+        { key: "clients", visible: true },
+        { key: "projects", visible: true },
         { key: "contracts", visible: true },
         { key: "certifications", visible: true },
-        { key: "suppliers", visible: true },
-        { key: "tools", visible: true },
       ],
     },
     {
@@ -40,6 +44,8 @@ export const DEFAULT_SIDEBAR_CONFIG: SidebarConfig = {
       title: "Resources",
       items: [
         { key: "intranet", visible: true },
+        { key: "tools", visible: true },
+        { key: "suppliers", visible: true },
       ],
     },
     {

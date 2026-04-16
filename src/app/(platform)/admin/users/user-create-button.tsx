@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { createUser } from "@/actions/admin";
 import { Plus } from "lucide-react";
 
-const ROLES = ["VIEWER", "CONTRIBUTOR", "DEVELOPER", "MANAGER", "ADMIN"];
+const ROLES = ["GUEST", "VIEWER", "CONTRIBUTOR", "DEVELOPER", "MANAGER", "ADMIN"];
 
 interface Props {
   allUsers: { id: string; name: string }[];

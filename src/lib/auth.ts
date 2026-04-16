@@ -100,14 +100,16 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           });
         }
       } else {
-        // Auto-provision new user from Google SSO
+        // Auto-provision new user from Google SSO. New users start as GUEST:
+        // they can only see Intranet + Team until a manager/admin grants
+        // additional access (typically by assigning them to a project).
         await db.user.create({
           data: {
             name: user.name || email.split("@")[0],
             email,
             authProvider: "google",
             avatar: user.image || null,
-            role: "VIEWER",
+            role: "GUEST",
           },
         });
       }

@@ -2,6 +2,7 @@ import { auth } from "@/lib/auth";
 import { redirect, notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import { resolveModulePerms } from "@/lib/permissions";
+import { getUserScope, canViewEntity } from "@/lib/scope";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatusBadge } from "@/components/shared/status-badge";
@@ -49,6 +50,9 @@ export default async function ContractDetailPage({ params }: Props) {
   });
 
   if (!contract) notFound();
+
+  const scope = await getUserScope(session.user.id, session.user.role);
+  if (!canViewEntity(scope, "contract", contract.id)) notFound();
 
   const clients = await db.client.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } });
   const projects = await db.project.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } });

@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { Suspense } from "react";
 import { resolveModulePerms } from "@/lib/permissions";
+import { getUserScope } from "@/lib/scope";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent } from "@/components/ui/card";
 import { StatusBadge } from "@/components/shared/status-badge";
@@ -27,10 +28,15 @@ export default async function ClientsPage({
   const statusFilter = searchParams.status;
   const sortParam = searchParams.sort;
 
+  const scope = await getUserScope(session.user.id, session.user.role);
+
   // Build where clause
   const where: Prisma.ClientWhereInput = {};
   if (statusFilter && ["ACTIVE", "INACTIVE", "PROSPECT", "ARCHIVED"].includes(statusFilter)) {
     where.status = statusFilter as "ACTIVE" | "INACTIVE" | "PROSPECT" | "ARCHIVED";
+  }
+  if (!scope.all) {
+    where.id = { in: Array.from(scope.clientIds) };
   }
 
   // Build orderBy

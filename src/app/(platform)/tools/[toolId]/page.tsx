@@ -2,6 +2,7 @@ import { auth } from "@/lib/auth";
 import { redirect, notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import { resolveModulePerms } from "@/lib/permissions";
+import { getUserScope, canViewEntity } from "@/lib/scope";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -36,7 +37,11 @@ export default async function ToolDetailPage({ params }: Props) {
 
   if (!tool) notFound();
 
+  const scope = await getUserScope(session.user.id, session.user.role);
+  if (!canViewEntity(scope, "tool", tool.id)) notFound();
+
   const allProjects = await db.project.findMany({
+    where: scope.all ? {} : { id: { in: Array.from(scope.projectIds) } },
     select: { id: true, name: true },
     orderBy: { name: "asc" },
   });

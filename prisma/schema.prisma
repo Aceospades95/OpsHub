@@ -13,6 +13,7 @@ enum Role {
   DEVELOPER
   CONTRIBUTOR
   VIEWER
+  GUEST
 }
 
 enum ClientStatus {

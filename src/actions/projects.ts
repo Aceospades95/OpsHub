@@ -1,7 +1,7 @@
 "use server";
 
 import { db } from "@/lib/db";
-import { requireAuth, resolveModulePerms } from "@/lib/permissions";
+import { requireAuth, resolveModulePerms, canManageAssignments } from "@/lib/permissions";
 import { logActivity } from "@/lib/activity";
 import { revalidatePath } from "next/cache";
 import { revalidateProject, revalidateUser } from "@/lib/revalidate-entity";
@@ -193,8 +193,10 @@ export async function deleteProject(_prev: unknown, formData: FormData) {
 // Members
 export async function addProjectMember(_prev: unknown, formData: FormData) {
   const user = await requireAuth();
-  const perms = await resolveModulePerms(user.id, user.role, "projects");
-  if (!perms.canEdit) return { error: "Permission denied" };
+  // Only admins and managers can assign people to projects. This keeps
+  // scoped access (getUserScope) under central control — a contributor
+  // can't grant themselves (or a peer) access to additional projects.
+  if (!canManageAssignments(user.role)) return { error: "Permission denied" };
 
   const projectId = formData.get("projectId") as string;
   const userId = formData.get("userId") as string;
@@ -244,8 +246,7 @@ export async function addProjectMember(_prev: unknown, formData: FormData) {
 
 export async function removeProjectMember(_prev: unknown, formData: FormData) {
   const user = await requireAuth();
-  const perms = await resolveModulePerms(user.id, user.role, "projects");
-  if (!perms.canEdit) return { error: "Permission denied" };
+  if (!canManageAssignments(user.role)) return { error: "Permission denied" };
 
   const id = formData.get("id") as string;
   // Look up what we're removing so we can revalidate the specific project detail

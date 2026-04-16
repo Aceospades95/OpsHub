@@ -2,6 +2,7 @@ import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { resolveModulePerms } from "@/lib/permissions";
+import { getUserScope } from "@/lib/scope";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -9,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Wrench } from "lucide-react";
 import Link from "next/link";
 import { ToolCreateButton } from "./tool-create-button";
+import type { Prisma } from "@prisma/client";
 
 export default async function ToolsPage() {
   const session = await auth();
@@ -17,8 +19,14 @@ export default async function ToolsPage() {
   const perms = await resolveModulePerms(session.user.id, session.user.role, "tools");
   if (!perms.canView) redirect("/dashboard");
 
+  const scope = await getUserScope(session.user.id, session.user.role);
+  const toolWhere: Prisma.ToolWhereInput = { isGlobal: true };
+  if (!scope.all) {
+    toolWhere.id = { in: Array.from(scope.toolIds) };
+  }
+
   const tools = await db.tool.findMany({
-    where: { isGlobal: true },
+    where: toolWhere,
     orderBy: { name: "asc" },
     include: {
       _count: { select: { clones: true, projects: true } },
