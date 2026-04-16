@@ -31,6 +31,19 @@ const ROLE_LEVEL: Record<Role, number> = {
  */
 const GUEST_VISIBLE_MODULES = new Set(["intranet", "team", "dashboard", "tasks"]);
 
+/**
+ * Map from module key to the scope set that gates sidebar visibility. Modules
+ * not listed here (team, intranet, dashboard, tasks) aren't entity-scoped —
+ * they're always on if the role allows canView.
+ */
+const SCOPED_MODULES: Record<string, "projectIds" | "clientIds" | "contractIds" | "toolIds" | "certIds"> = {
+  projects: "projectIds",
+  clients: "clientIds",
+  contracts: "contractIds",
+  tools: "toolIds",
+  certifications: "certIds",
+};
+
 export function getRoleDefaults(role: Role): PermissionFlags {
   const level = ROLE_LEVEL[role];
   return {
@@ -103,7 +116,29 @@ export async function resolveModulePerms(
     };
   }
 
-  if (role === "GUEST") return getGuestModuleDefaults(module);
+  if (role === "GUEST") {
+    // If the module is entity-scoped and the user has at least one entity in
+    // scope (e.g. via a project assignment or account-manager row), grant
+    // view + comment so assigned guests can actually see Projects / Clients /
+    // Contracts / Tools / Certifications in their sidebar and load the pages.
+    const scopeKey = SCOPED_MODULES[module];
+    if (scopeKey) {
+      const scope = await getUserScope(userId, role);
+      const set = scope[scopeKey];
+      if (set instanceof Set && set.size > 0) {
+        return {
+          canView: true,
+          canEdit: false,
+          canCreate: false,
+          canDelete: false,
+          canComment: true,
+          canUpload: false,
+          canManage: false,
+        };
+      }
+    }
+    return getGuestModuleDefaults(module);
+  }
 
   return getRoleDefaults(role);
 }
@@ -250,17 +285,6 @@ export async function getVisibleModules(
   // has zero scoped entities for that module. This prevents empty sidebar
   // items for, e.g., a contributor who isn't on any project yet.
   const scope = await getUserScope(userId, role);
-
-  // Modules whose sidebar visibility should track scope presence in addition
-  // to the canView permission. "team" and "intranet" are always module-wide
-  // (no entity scoping), so they're not in this list.
-  const SCOPED_MODULES: Record<string, keyof typeof scope> = {
-    projects: "projectIds",
-    clients: "clientIds",
-    contracts: "contractIds",
-    tools: "toolIds",
-    certifications: "certIds",
-  };
 
   const visible: string[] = [];
   for (const mod of permissioned) {
