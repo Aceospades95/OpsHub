@@ -1,14 +1,26 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useFormState } from "react-dom";
 import { createCertification } from "@/actions/certifications";
 import { Button } from "@/components/ui/button";
 import { Plus } from "lucide-react";
 
-const TYPES = ["INDUSTRY", "COMPLIANCE", "SAFETY", "PROFESSIONAL", "QUALITY", "SECURITY", "ENVIRONMENTAL", "VENDOR", "OTHER"];
+const TYPES = [
+  "INDUSTRY",
+  "COMPLIANCE",
+  "SAFETY",
+  "PROFESSIONAL",
+  "QUALITY",
+  "SECURITY",
+  "ENVIRONMENTAL",
+  "VENDOR",
+  "OTHER",
+];
 const STATUSES = ["PENDING", "ACTIVE", "EXPIRING_SOON", "EXPIRED", "SUSPENDED", "REVOKED"];
+const JURISDICTIONS = ["FEDERAL", "STATE", "COUNTY", "CITY", "AGENCY", "PRIVATE", "OTHER"];
+const ENGAGEMENT_TYPES = ["CERTIFICATION", "SUBSCRIPTION"];
 
 export function CertCreateButton({
   clients,
@@ -21,9 +33,11 @@ export function CertCreateButton({
   const [state, action] = useFormState(createCertification, null);
   const router = useRouter();
 
-  if (state?.success && state.id) {
-    router.push(`/certifications/${state.id}`);
-  }
+  useEffect(() => {
+    if (state?.success && state.id) {
+      router.push(`/certifications/${state.id}`);
+    }
+  }, [state, router]);
 
   return (
     <>
@@ -32,78 +46,221 @@ export function CertCreateButton({
       </Button>
 
       {open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setOpen(false)}>
-          <div className="bg-card rounded-lg shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto p-6" onClick={(e) => e.stopPropagation()}>
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+          onClick={() => setOpen(false)}
+        >
+          <div
+            className="bg-card rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
             <h2 className="text-lg font-semibold mb-4">New Certification</h2>
             <form action={action} className="space-y-4">
               <div>
                 <label className="text-sm font-medium">Name *</label>
-                <input name="name" required className="w-full mt-1 px-3 py-2 text-sm border border-input rounded-md bg-background" />
+                <input
+                  name="name"
+                  required
+                  className="w-full mt-1 px-3 py-2 text-sm border border-input rounded-md bg-background"
+                />
+              </div>
+
+              <div>
+                <label className="text-sm font-medium">Plain-English Summary</label>
+                <textarea
+                  name="plainEnglishSummary"
+                  rows={2}
+                  placeholder="What is this cert, in everyday terms?"
+                  className="w-full mt-1 px-3 py-2 text-sm border border-input rounded-md bg-background"
+                />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-sm font-medium">Type</label>
-                  <select name="type" defaultValue="OTHER" className="w-full mt-1 px-3 py-2 text-sm border border-input rounded-md bg-background">
-                    {TYPES.map((t) => <option key={t} value={t}>{t.replace(/_/g, " ")}</option>)}
+                  <select
+                    name="type"
+                    defaultValue="OTHER"
+                    className="w-full mt-1 px-3 py-2 text-sm border border-input rounded-md bg-background"
+                  >
+                    {TYPES.map((t) => (
+                      <option key={t} value={t}>
+                        {t.replace(/_/g, " ")}
+                      </option>
+                    ))}
                   </select>
                 </div>
                 <div>
                   <label className="text-sm font-medium">Status</label>
-                  <select name="status" defaultValue="PENDING" className="w-full mt-1 px-3 py-2 text-sm border border-input rounded-md bg-background">
-                    {STATUSES.map((s) => <option key={s} value={s}>{s.replace(/_/g, " ")}</option>)}
+                  <select
+                    name="status"
+                    defaultValue="PENDING"
+                    className="w-full mt-1 px-3 py-2 text-sm border border-input rounded-md bg-background"
+                  >
+                    {STATUSES.map((s) => (
+                      <option key={s} value={s}>
+                        {s.replace(/_/g, " ")}
+                      </option>
+                    ))}
                   </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="text-sm font-medium">Engagement</label>
+                  <select
+                    name="engagementType"
+                    defaultValue="CERTIFICATION"
+                    className="w-full mt-1 px-3 py-2 text-sm border border-input rounded-md bg-background"
+                  >
+                    {ENGAGEMENT_TYPES.map((t) => (
+                      <option key={t} value={t}>
+                        {t}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-sm font-medium">Jurisdiction</label>
+                  <select
+                    name="jurisdictionLevel"
+                    defaultValue="OTHER"
+                    className="w-full mt-1 px-3 py-2 text-sm border border-input rounded-md bg-background"
+                  >
+                    {JURISDICTIONS.map((j) => (
+                      <option key={j} value={j}>
+                        {j}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-sm font-medium">Jurisdiction Name</label>
+                  <input
+                    name="jurisdictionName"
+                    placeholder="e.g. Illinois"
+                    className="w-full mt-1 px-3 py-2 text-sm border border-input rounded-md bg-background"
+                  />
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-sm font-medium">Issuing Body</label>
-                  <input name="issuingBody" className="w-full mt-1 px-3 py-2 text-sm border border-input rounded-md bg-background" placeholder="e.g. ISO, OSHA" />
+                  <input
+                    name="issuingBody"
+                    placeholder="e.g. ISO, OSHA, City of Chicago"
+                    className="w-full mt-1 px-3 py-2 text-sm border border-input rounded-md bg-background"
+                  />
                 </div>
                 <div>
                   <label className="text-sm font-medium">Cert Number</label>
-                  <input name="certNumber" className="w-full mt-1 px-3 py-2 text-sm border border-input rounded-md bg-background" />
+                  <input
+                    name="certNumber"
+                    className="w-full mt-1 px-3 py-2 text-sm border border-input rounded-md bg-background"
+                  />
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-sm font-medium">Agency Website</label>
+                <input
+                  type="url"
+                  name="agencyWebsiteUrl"
+                  placeholder="https://..."
+                  className="w-full mt-1 px-3 py-2 text-sm border border-input rounded-md bg-background"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
                   <label className="text-sm font-medium">Issued Date</label>
-                  <input type="date" name="issuedDate" className="w-full mt-1 px-3 py-2 text-sm border border-input rounded-md bg-background" />
+                  <input
+                    type="date"
+                    name="issuedDate"
+                    className="w-full mt-1 px-3 py-2 text-sm border border-input rounded-md bg-background"
+                  />
                 </div>
                 <div>
                   <label className="text-sm font-medium">Expiration Date</label>
-                  <input type="date" name="expirationDate" className="w-full mt-1 px-3 py-2 text-sm border border-input rounded-md bg-background" />
+                  <input
+                    type="date"
+                    name="expirationDate"
+                    className="w-full mt-1 px-3 py-2 text-sm border border-input rounded-md bg-background"
+                  />
+                </div>
+                <div>
+                  <label className="text-sm font-medium">Reminders (days)</label>
+                  <input
+                    name="reminderOffsetsDays"
+                    defaultValue="90, 30, 7"
+                    placeholder="90, 30, 7"
+                    className="w-full mt-1 px-3 py-2 text-sm border border-input rounded-md bg-background"
+                  />
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
                   <label className="text-sm font-medium">Client</label>
-                  <select name="clientId" className="w-full mt-1 px-3 py-2 text-sm border border-input rounded-md bg-background">
+                  <select
+                    name="clientId"
+                    className="w-full mt-1 px-3 py-2 text-sm border border-input rounded-md bg-background"
+                  >
                     <option value="">None</option>
-                    {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                    {clients.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
                   </select>
                 </div>
                 <div>
-                  <label className="text-sm font-medium">Responsible Person</label>
-                  <select name="assigneeId" className="w-full mt-1 px-3 py-2 text-sm border border-input rounded-md bg-background">
+                  <label className="text-sm font-medium">Assignee</label>
+                  <select
+                    name="assigneeId"
+                    className="w-full mt-1 px-3 py-2 text-sm border border-input rounded-md bg-background"
+                  >
                     <option value="">None</option>
-                    {users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+                    {users.map((u) => (
+                      <option key={u.id} value={u.id}>
+                        {u.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-sm font-medium">Point of Contact</label>
+                  <select
+                    name="pointOfContactId"
+                    className="w-full mt-1 px-3 py-2 text-sm border border-input rounded-md bg-background"
+                  >
+                    <option value="">None</option>
+                    {users.map((u) => (
+                      <option key={u.id} value={u.id}>
+                        {u.name}
+                      </option>
+                    ))}
                   </select>
                 </div>
               </div>
 
               <div>
                 <label className="text-sm font-medium">Description</label>
-                <textarea name="description" rows={2} className="w-full mt-1 px-3 py-2 text-sm border border-input rounded-md bg-background" />
+                <textarea
+                  name="description"
+                  rows={2}
+                  className="w-full mt-1 px-3 py-2 text-sm border border-input rounded-md bg-background"
+                />
               </div>
 
               {state?.error && <p className="text-sm text-destructive">{state.error}</p>}
 
               <div className="flex justify-end gap-2">
-                <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+                <Button type="button" variant="outline" onClick={() => setOpen(false)}>
+                  Cancel
+                </Button>
                 <Button type="submit">Create</Button>
               </div>
             </form>

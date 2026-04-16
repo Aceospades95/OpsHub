@@ -17,7 +17,7 @@ export const certificationsExpiring: ReportDefinition = {
   key: "certifications-expiring",
   name: "Certifications expiring soon",
   description:
-    "Active and expiring-soon certifications that lapse within 90 days, with renewal cost and responsible owner.",
+    "Active and expiring-soon certifications that lapse within 90 days, with renewal cost, owner, point of contact, and sign-off state.",
   module: "certifications",
   schedulable: true,
 
@@ -34,6 +34,7 @@ export const certificationsExpiring: ReportDefinition = {
       include: {
         client: { select: { name: true } },
         assignee: { select: { name: true } },
+        pointOfContact: { select: { name: true } },
       },
       orderBy: { expirationDate: "asc" },
     });
@@ -41,6 +42,8 @@ export const certificationsExpiring: ReportDefinition = {
     const rows = certs.map((c) => ({
       name: c.name,
       issuingBody: c.issuingBody || "—",
+      jurisdictionLevel: c.jurisdictionLevel,
+      jurisdictionName: c.jurisdictionName || "—",
       type: c.type,
       status: c.status,
       expirationDate: c.expirationDate,
@@ -49,6 +52,8 @@ export const certificationsExpiring: ReportDefinition = {
         ? `${c.currency || "USD"} ${c.renewalCost.toLocaleString()}`
         : "—",
       assignee: c.assignee?.name || "Unassigned",
+      pointOfContact: c.pointOfContact?.name || "—",
+      signedOffAt: c.signedOffAt ? c.signedOffAt.toISOString().split("T")[0] : "—",
       client: c.client?.name || "Internal",
     }));
 
@@ -57,12 +62,16 @@ export const certificationsExpiring: ReportDefinition = {
       columns: [
         { key: "name", label: "Certification" },
         { key: "issuingBody", label: "Issuer" },
+        { key: "jurisdictionLevel", label: "Jurisdiction" },
+        { key: "jurisdictionName", label: "Jurisdiction detail" },
         { key: "type", label: "Type" },
         { key: "status", label: "Status" },
         { key: "expirationDate", label: "Expires" },
         { key: "daysUntil", label: "Days", align: "right" },
         { key: "renewalCost", label: "Renewal cost", align: "right" },
-        { key: "assignee", label: "Owner" },
+        { key: "assignee", label: "Assignee" },
+        { key: "pointOfContact", label: "Point of contact" },
+        { key: "signedOffAt", label: "Signed off" },
         { key: "client", label: "Client" },
       ],
       rows,
