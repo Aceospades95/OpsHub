@@ -66,8 +66,9 @@ const ROLE_GATED: Record<string, (role: string) => boolean> = {
   settings: (role) => role === "ADMIN",
 };
 
-// Modules always visible regardless of permissions
-const ALWAYS_VISIBLE = new Set(["dashboard", "tasks"]);
+// Modules always visible regardless of permissions — everyone gets
+// their dashboard, task list, team directory, and company intranet.
+const ALWAYS_VISIBLE = new Set(["dashboard", "tasks", "team", "intranet"]);
 
 export function Sidebar({
   visibleModules,
