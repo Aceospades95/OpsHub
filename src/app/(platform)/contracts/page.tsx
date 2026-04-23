@@ -1,7 +1,7 @@
-import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { requireAuth, resolveModulePerms } from "@/lib/permissions";
 import { getUserScope } from "@/lib/scope";
+import { AccessDenied } from "@/components/shared/access-denied";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -35,7 +35,7 @@ export default async function ContractsPage() {
   const user = await requireAuth();
 
   const perms = await resolveModulePerms(user.id, user.role, "contracts");
-  if (!perms.canView) redirect("/dashboard");
+  if (!perms.canView) return <AccessDenied module="contracts" moduleLabel="Contracts" moduleDescription="Contracts, SOWs, amendments, and renewals" />;
 
   const scope = await getUserScope(user.id, user.role);
   const scopedContractIds = scope.all ? null : Array.from(scope.contractIds);

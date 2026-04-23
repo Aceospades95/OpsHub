@@ -1,9 +1,9 @@
-import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { requireAuth, resolveModulePerms } from "@/lib/permissions";
 import { getUserScope } from "@/lib/scope";
 import { PageHeader } from "@/components/layout/page-header";
 import { EmptyState } from "@/components/ui/empty-state";
+import { AccessDenied } from "@/components/shared/access-denied";
 import { FolderKanban } from "lucide-react";
 import { ProjectCreateButton } from "./project-create-button";
 import { ProjectsPageClient, type ProjectData, type ClientGroup } from "./projects-page-client";
@@ -13,7 +13,7 @@ export default async function ProjectsPage() {
   const user = await requireAuth();
 
   const perms = await resolveModulePerms(user.id, user.role, "projects");
-  if (!perms.canView) redirect("/dashboard");
+  if (!perms.canView) return <AccessDenied module="projects" moduleLabel="Projects" moduleDescription="Project portfolio, milestones, staffing, and documents" />;
 
   const scope = await getUserScope(user.id, user.role);
   // When the user isn't org-wide, show only projects in scope. Still include

@@ -32,7 +32,6 @@ interface CustomPage {
 }
 
 interface SidebarProps {
-  visibleModules: string[];
   userRole?: string;
   customPages?: CustomPage[];
   sidebarConfig?: SidebarConfig;
@@ -61,17 +60,12 @@ const ICON_MAP: Record<string, LucideIcon> = {
 // are no divergent hardcoded lists. Use a local alias for readability.
 const SYSTEM_DEFAULTS = SYSTEM_MODULES;
 
-// Modules that require specific roles
+// Modules that require specific roles to appear in the sidebar at all
 const ROLE_GATED: Record<string, (role: string) => boolean> = {
   settings: (role) => role === "ADMIN",
 };
 
-// Modules always visible regardless of permissions — everyone gets
-// their dashboard, task list, team directory, and company intranet.
-const ALWAYS_VISIBLE = new Set(["dashboard", "tasks", "team", "intranet"]);
-
 export function Sidebar({
-  visibleModules,
   userRole = "",
   customPages = [],
   sidebarConfig,
@@ -99,16 +93,12 @@ export function Sidebar({
       return customPageMap.has(key);
     }
 
-    // Role-gated modules
+    // Role-gated modules (e.g. admin settings)
     if (ROLE_GATED[key]) {
       return ROLE_GATED[key](userRole);
     }
 
-    // Always-visible modules
-    if (ALWAYS_VISIBLE.has(key)) return true;
-
-    // Permission-based modules
-    return visibleModules.includes(key);
+    return true;
   }
 
   function getItemProps(item: SidebarItemConfig) {

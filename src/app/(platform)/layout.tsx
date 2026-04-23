@@ -1,7 +1,6 @@
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
-import { getVisibleModules } from "@/lib/permissions";
 import type { Role } from "@prisma/client";
 import { getSidebarConfig } from "@/actions/sidebar";
 import { getUnreadCount, getUserNotifications } from "@/lib/notifications";
@@ -25,8 +24,7 @@ export default async function PlatformLayout({
   });
   if (freshUser) session.user.role = freshUser.role as Role;
 
-  const [visibleModules, sidebarConfig, customPages, unreadCount, recentNotifications, branding] = await Promise.all([
-    getVisibleModules(session.user.id, session.user.role),
+  const [sidebarConfig, customPages, unreadCount, recentNotifications, branding] = await Promise.all([
     getSidebarConfig(),
     db.sandboxPage.findMany({
       where: { published: true },
@@ -52,7 +50,6 @@ export default async function PlatformLayout({
   return (
     <div className="flex h-screen overflow-hidden">
       <Sidebar
-        visibleModules={visibleModules}
         userRole={session.user.role}
         customPages={customPages}
         sidebarConfig={sidebarConfig}

@@ -1,7 +1,8 @@
-import { redirect, notFound } from "next/navigation";
+import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import { requireAuth, resolveModulePerms, canManageProjectAssignments } from "@/lib/permissions";
 import { getUserScope, canViewEntity } from "@/lib/scope";
+import { AccessDenied } from "@/components/shared/access-denied";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatusBadge } from "@/components/shared/status-badge";
@@ -42,7 +43,7 @@ export default async function ProjectDetailPage({ params }: Props) {
   const user = await requireAuth();
 
   const perms = await resolveModulePerms(user.id, user.role, "projects");
-  if (!perms.canView) redirect("/dashboard");
+  if (!perms.canView) return <AccessDenied module="projects" moduleLabel="Projects" moduleDescription="Project portfolio, milestones, staffing, and documents" />;
 
   const project = await db.project.findUnique({
     where: { id: projectId },

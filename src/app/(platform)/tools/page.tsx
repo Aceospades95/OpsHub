@@ -1,7 +1,7 @@
-import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { requireAuth, resolveModulePerms } from "@/lib/permissions";
 import { getUserScope } from "@/lib/scope";
+import { AccessDenied } from "@/components/shared/access-denied";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -15,7 +15,7 @@ export default async function ToolsPage() {
   const user = await requireAuth();
 
   const perms = await resolveModulePerms(user.id, user.role, "tools");
-  if (!perms.canView) redirect("/dashboard");
+  if (!perms.canView) return <AccessDenied module="tools" moduleLabel="Tools" moduleDescription="Shared tools and linked resources" />;
 
   const scope = await getUserScope(user.id, user.role);
   const toolWhere: Prisma.ToolWhereInput = { isGlobal: true };
