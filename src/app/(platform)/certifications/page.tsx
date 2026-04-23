@@ -21,6 +21,7 @@ import { format, differenceInDays } from "date-fns";
 import Link from "next/link";
 import type { JurisdictionLevel, CertEngagementType } from "@prisma/client";
 import { CertCreateButton } from "./cert-create-button";
+import { CertFilters } from "./cert-filters";
 
 const JURISDICTION_LEVELS: JurisdictionLevel[] = [
   "FEDERAL",
@@ -222,77 +223,13 @@ export default async function CertificationsPage({ searchParams }: PageProps) {
         })}
       </div>
 
-      {/* Filters bar — jurisdiction + type chips grouped into one block with
-          a single Clear filters action on the far right. */}
-      <Card className="mb-6">
-        <CardContent className="p-3 flex flex-wrap items-center gap-x-4 gap-y-3">
-          <div className="flex flex-wrap items-center gap-1.5">
-            <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mr-1">
-              Jurisdiction
-            </span>
-            <Link
-              href={buildHref({ jurisdiction: null })}
-              className={`text-xs rounded-full px-2.5 py-1 border transition-colors ${
-                jurisdictionFilter === null
-                  ? "bg-primary text-primary-foreground border-primary"
-                  : "border-border hover:bg-muted"
-              }`}
-            >
-              All
-            </Link>
-            {JURISDICTION_LEVELS.map((level) => (
-              <Link
-                key={level}
-                href={buildHref({ jurisdiction: level })}
-                className={`text-xs rounded-full px-2.5 py-1 border transition-colors ${
-                  jurisdictionFilter === level
-                    ? "bg-primary text-primary-foreground border-primary"
-                    : "border-border hover:bg-muted"
-                }`}
-              >
-                {level}
-              </Link>
-            ))}
-          </div>
-          <div className="hidden sm:block h-4 w-px bg-border" aria-hidden />
-          <div className="flex flex-wrap items-center gap-1.5">
-            <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mr-1">
-              Type
-            </span>
-            <Link
-              href={buildHref({ engagement: null })}
-              className={`text-xs rounded-full px-2.5 py-1 border transition-colors ${
-                engagementFilter === null
-                  ? "bg-primary text-primary-foreground border-primary"
-                  : "border-border hover:bg-muted"
-              }`}
-            >
-              All
-            </Link>
-            {ENGAGEMENT_TYPES.map((t) => (
-              <Link
-                key={t}
-                href={buildHref({ engagement: t })}
-                className={`text-xs rounded-full px-2.5 py-1 border transition-colors ${
-                  engagementFilter === t
-                    ? "bg-primary text-primary-foreground border-primary"
-                    : "border-border hover:bg-muted"
-                }`}
-              >
-                {t}
-              </Link>
-            ))}
-          </div>
-          {hasAnyFilter && (
-            <Link
-              href="/certifications"
-              className="ml-auto text-xs text-muted-foreground hover:text-foreground underline-offset-2 hover:underline"
-            >
-              Clear filters
-            </Link>
-          )}
-        </CardContent>
-      </Card>
+      <CertFilters
+        jurisdictionLevels={JURISDICTION_LEVELS}
+        engagementTypes={ENGAGEMENT_TYPES}
+        jurisdictionFilter={jurisdictionFilter}
+        engagementFilter={engagementFilter}
+        hasAnyFilter={hasAnyFilter}
+      />
 
       {/* Renewal alerts */}
       {expiringSoon.length > 0 && (

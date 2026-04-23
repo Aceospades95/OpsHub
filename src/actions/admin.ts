@@ -190,6 +190,33 @@ export async function deleteUser(_prev: unknown, formData: FormData) {
   return { success: true };
 }
 
+export async function resetUserPassword(_prev: unknown, formData: FormData) {
+  const admin = await requireAuth();
+  // Restricted to ADMIN — managers can edit profile fields but not reset
+  // login credentials for other users.
+  if (admin.role !== "ADMIN") throw new Error("Admin access required");
+
+  const id = formData.get("id") as string;
+  const newPassword = (formData.get("newPassword") as string)?.trim() ?? "";
+  if (!id) return { error: "Missing user" };
+  if (newPassword.length < 8) return { error: "Password must be at least 8 characters" };
+
+  const user = await db.user.findUnique({
+    where: { id },
+    select: { id: true, name: true, authProvider: true, hasLoginAccess: true },
+  });
+  if (!user) return { error: "User not found" };
+  if (user.authProvider !== "credentials")
+    return { error: "Cannot reset password for SSO accounts" };
+  if (!user.hasLoginAccess)
+    return { error: "User has no login access" };
+
+  const hashedPassword = await hash(newPassword, 12);
+  await db.user.update({ where: { id }, data: { hashedPassword } });
+  await logActivity("reset password for", "user", id, admin.id, user.name);
+  return { success: true };
+}
+
 export async function toggleUserActive(_prev: unknown, formData: FormData) {
   const admin = await requireAuth();
   requireAdminOrManager(admin.role);

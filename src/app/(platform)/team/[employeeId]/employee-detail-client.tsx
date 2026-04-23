@@ -15,11 +15,11 @@ import Link from "next/link";
 import {
   User, Briefcase, BarChart3, FolderOpen, MapPin, Phone,
   Mail, Calendar, Users, FileText, ChevronRight, Shield,
-  AlertTriangle, Pencil, Trash2, Plus,
+  AlertTriangle, Pencil, Trash2, Plus, KeyRound,
 } from "lucide-react";
 
 import { formatDistanceToNow } from "date-fns";
-import { updateUser, deleteUser, saveModulePermissions, saveEntityPermission, deleteEntityPermission } from "@/actions/admin";
+import { updateUser, deleteUser, saveModulePermissions, saveEntityPermission, deleteEntityPermission, resetUserPassword } from "@/actions/admin";
 import { deleteAssignment } from "@/actions/assignments";
 import { AddAssignmentDialog } from "../components/add-assignment-dialog";
 import { getPermissionedModules, ALL_PERMISSION_FLAGS, PERMISSION_FLAG_LABELS } from "@/lib/modules";
@@ -51,6 +51,7 @@ interface Employee {
   avatar: string | null;
   isActive: boolean;
   hasLoginAccess: boolean;
+  authProvider: string;
   managerId: string | null;
   createdAt: string;
   manager: { id: string; name: string; jobTitle: string | null; avatar: string | null } | null;
@@ -97,8 +98,39 @@ export function EmployeeDetailClient({
   const [activeTab, setActiveTab] = useState<TabKey>("overview");
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [resetPwOpen, setResetPwOpen] = useState(false);
+  const [resetPwValue, setResetPwValue] = useState("");
+  const [resetPwError, setResetPwError] = useState<string | null>(null);
+  const [resetPwSuccess, setResetPwSuccess] = useState(false);
+  const [resetPwPending, setResetPwPending] = useState(false);
   const [addAssignmentOpen, setAddAssignmentOpen] = useState(false);
   const router = useRouter();
+
+  const canResetPassword =
+    isAdmin && employee.hasLoginAccess && employee.authProvider === "credentials";
+
+  async function handleResetPassword() {
+    setResetPwError(null);
+    setResetPwPending(true);
+    const fd = new FormData();
+    fd.set("id", employee.id);
+    fd.set("newPassword", resetPwValue);
+    const result = await resetUserPassword(null, fd);
+    setResetPwPending(false);
+    if (result.success) {
+      setResetPwSuccess(true);
+      setResetPwValue("");
+    } else {
+      setResetPwError(result.error ?? "Failed to reset password");
+    }
+  }
+
+  function closeResetPw() {
+    setResetPwOpen(false);
+    setResetPwValue("");
+    setResetPwError(null);
+    setResetPwSuccess(false);
+  }
 
   const activeAssignments = employee.assignments.filter((a) => a.status === "ACTIVE" || a.status === "PLANNED");
   const totalFte = activeAssignments.reduce((sum, a) => sum + a.allocationFte, 0);
@@ -165,13 +197,18 @@ export function EmployeeDetailClient({
               </div>
               {/* Action buttons */}
               {canManage && (
-                <div className="flex gap-2 mt-3">
+                <div className="flex gap-2 mt-3 flex-wrap">
                   <Button variant="outline" size="sm" onClick={() => setEditOpen(true)}>
                     <Pencil className="h-3.5 w-3.5 mr-1" /> Edit
                   </Button>
                   <Button variant="outline" size="sm" onClick={() => setAddAssignmentOpen(true)}>
                     <Plus className="h-3.5 w-3.5 mr-1" /> Add Assignment
                   </Button>
+                  {canResetPassword && (
+                    <Button variant="outline" size="sm" onClick={() => setResetPwOpen(true)}>
+                      <KeyRound className="h-3.5 w-3.5 mr-1" /> Reset Password
+                    </Button>
+                  )}
                   {isAdmin && (
                     <Button variant="destructive" size="sm" onClick={() => setDeleteOpen(true)}>
                       <Trash2 className="h-3.5 w-3.5 mr-1" /> Delete
@@ -235,7 +272,7 @@ export function EmployeeDetailClient({
               <input type="hidden" name="id" value={employee.id} />
               <Input name="name" label="Name" defaultValue={employee.name} required error={fieldErrors?.name?.[0]} />
               <Input name="email" label="Email" type="email" defaultValue={employee.email} required error={fieldErrors?.email?.[0]} />
-              <Select name="role" label="Role" defaultValue={employee.role} options={[{label:"Viewer",value:"VIEWER"},{label:"Contributor",value:"CONTRIBUTOR"},{label:"Developer",value:"DEVELOPER"},{label:"Manager",value:"MANAGER"},{label:"Admin",value:"ADMIN"}]} />
+              <Select name="role" label="Role" defaultValue={employee.role} options={[{label:"Guest",value:"GUEST"},{label:"Viewer",value:"VIEWER"},{label:"Contributor",value:"CONTRIBUTOR"},{label:"Developer",value:"DEVELOPER"},{label:"Manager",value:"MANAGER"},{label:"Admin",value:"ADMIN"}]} />
               <div className="grid grid-cols-2 gap-3">
                 <Input name="department" label="Department" defaultValue={employee.department || ""} />
                 <Input name="jobTitle" label="Job Title" defaultValue={employee.jobTitle || ""} />
@@ -262,6 +299,50 @@ export function EmployeeDetailClient({
             <Button variant="outline" onClick={() => setDeleteOpen(false)}>Cancel</Button>
             <Button variant="destructive" onClick={handleDelete}>Delete</Button>
           </div>
+        </Dialog>
+      )}
+
+      {/* Reset Password Dialog (admin, credentials accounts only) */}
+      {canResetPassword && (
+        <Dialog open={resetPwOpen} onClose={closeResetPw} title="Reset Password">
+          {resetPwSuccess ? (
+            <>
+              <p className="text-sm mb-4">
+                Password updated for <strong>{employee.name}</strong>. Share the new
+                password with them through a secure channel — it is not sent automatically.
+              </p>
+              <div className="flex justify-end">
+                <Button onClick={closeResetPw}>Done</Button>
+              </div>
+            </>
+          ) : (
+            <>
+              <p className="text-sm text-muted-foreground mb-4">
+                Set a new password for <strong>{employee.name}</strong>. They will need to
+                sign in again with the new password. Minimum 8 characters.
+              </p>
+              <Input
+                type="password"
+                label="New Password"
+                value={resetPwValue}
+                onChange={(e) => setResetPwValue(e.target.value)}
+                minLength={8}
+                autoComplete="new-password"
+                error={resetPwError ?? undefined}
+              />
+              <div className="flex justify-end gap-2 mt-4">
+                <Button variant="outline" onClick={closeResetPw} disabled={resetPwPending}>
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleResetPassword}
+                  disabled={resetPwPending || resetPwValue.length < 8}
+                >
+                  {resetPwPending ? "Saving…" : "Reset Password"}
+                </Button>
+              </div>
+            </>
+          )}
         </Dialog>
       )}
 
