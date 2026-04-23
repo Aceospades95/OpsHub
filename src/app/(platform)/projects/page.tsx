@@ -1,7 +1,6 @@
-import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
-import { resolveModulePerms } from "@/lib/permissions";
+import { requireAuth, resolveModulePerms } from "@/lib/permissions";
 import { getUserScope } from "@/lib/scope";
 import { PageHeader } from "@/components/layout/page-header";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -11,13 +10,12 @@ import { ProjectsPageClient, type ProjectData, type ClientGroup } from "./projec
 import type { Prisma } from "@prisma/client";
 
 export default async function ProjectsPage() {
-  const session = await auth();
-  if (!session?.user) redirect("/login");
+  const user = await requireAuth();
 
-  const perms = await resolveModulePerms(session.user.id, session.user.role, "projects");
+  const perms = await resolveModulePerms(user.id, user.role, "projects");
   if (!perms.canView) redirect("/dashboard");
 
-  const scope = await getUserScope(session.user.id, session.user.role);
+  const scope = await getUserScope(user.id, user.role);
   // When the user isn't org-wide, show only projects in scope. Still include
   // parent=null filter at the top level but recursive childProjects may also
   // need filtering; we hide them via the same set below.

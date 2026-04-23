@@ -1,7 +1,6 @@
-import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
-import { resolveModulePerms } from "@/lib/permissions";
+import { requireAuth, resolveModulePerms } from "@/lib/permissions";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent } from "@/components/ui/card";
 import { StatusBadge } from "@/components/shared/status-badge";
@@ -12,10 +11,9 @@ import Link from "next/link";
 import { SupplierCreateButton } from "./supplier-create-button";
 
 export default async function SuppliersPage() {
-  const session = await auth();
-  if (!session?.user) redirect("/login");
+  const user = await requireAuth();
 
-  const perms = await resolveModulePerms(session.user.id, session.user.role, "suppliers");
+  const perms = await resolveModulePerms(user.id, user.role, "suppliers");
   if (!perms.canView) redirect("/dashboard");
 
   const suppliers = await db.supplier.findMany({ orderBy: [{ isPreferred: "desc" }, { name: "asc" }] });

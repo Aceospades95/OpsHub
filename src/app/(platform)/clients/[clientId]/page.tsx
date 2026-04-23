@@ -1,7 +1,6 @@
-import { auth } from "@/lib/auth";
 import { redirect, notFound } from "next/navigation";
 import { db } from "@/lib/db";
-import { resolveModulePerms } from "@/lib/permissions";
+import { requireAuth, resolveModulePerms } from "@/lib/permissions";
 import { getUserScope, canViewEntity } from "@/lib/scope";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -23,10 +22,9 @@ interface Props {
 
 export default async function ClientDetailPage({ params }: Props) {
   const { clientId } = await params;
-  const session = await auth();
-  if (!session?.user) redirect("/login");
+  const user = await requireAuth();
 
-  const perms = await resolveModulePerms(session.user.id, session.user.role, "clients");
+  const perms = await resolveModulePerms(user.id, user.role, "clients");
   if (!perms.canView) redirect("/dashboard");
 
   const client = await db.client.findUnique({
@@ -50,7 +48,7 @@ export default async function ClientDetailPage({ params }: Props) {
 
   if (!client) notFound();
 
-  const scope = await getUserScope(session.user.id, session.user.role);
+  const scope = await getUserScope(user.id, user.role);
   if (!canViewEntity(scope, "client", client.id)) notFound();
 
   // Get tasks associated with this client
@@ -67,7 +65,7 @@ export default async function ClientDetailPage({ params }: Props) {
     orderBy: { name: "asc" },
   });
 
-  const canEditLayout = session.user.role === "ADMIN" || session.user.role === "DEVELOPER";
+  const canEditLayout = user.role === "ADMIN" || user.role === "DEVELOPER";
 
   const cardMap: Record<string, React.ReactNode> = {
     "client-info": (
@@ -179,7 +177,7 @@ export default async function ClientDetailPage({ params }: Props) {
             entityId={client.id}
             canComment={perms.canComment}
             canDelete={perms.canDelete}
-            currentUserId={session.user.id}
+            currentUserId={user.id}
           />
         </CardContent>
       </Card>

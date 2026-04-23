@@ -1,5 +1,4 @@
-import { auth } from "@/lib/auth";
-import { redirect } from "next/navigation";
+import { requireAuth } from "@/lib/permissions";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent } from "@/components/ui/card";
 import { getUserNotifications } from "@/lib/notifications";
@@ -7,10 +6,9 @@ import { NotificationsList } from "./notifications-list";
 import { Bell } from "lucide-react";
 
 export default async function NotificationsPage() {
-  const session = await auth();
-  if (!session?.user) redirect("/login");
+  const user = await requireAuth();
 
-  const notifications = await getUserNotifications(session.user.id, { limit: 100 });
+  const notifications = await getUserNotifications(user.id, { limit: 100 });
 
   return (
     <div>

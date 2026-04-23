@@ -1,7 +1,6 @@
-import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
-import { resolveModulePerms } from "@/lib/permissions";
+import { requireAuth, resolveModulePerms } from "@/lib/permissions";
 import { getUserScope } from "@/lib/scope";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -47,8 +46,7 @@ interface PageProps {
 }
 
 export default async function CertificationsPage({ searchParams }: PageProps) {
-  const session = await auth();
-  if (!session?.user) redirect("/login");
+  const user = await requireAuth();
 
   const sp = await searchParams;
   const jurisdictionFilter = JURISDICTION_LEVELS.includes(sp.jurisdiction as JurisdictionLevel)
@@ -61,9 +59,9 @@ export default async function CertificationsPage({ searchParams }: PageProps) {
     ? (sp.status as StatusBucket)
     : null;
 
-  const _perms = await resolveModulePerms(session.user.id, session.user.role, "certifications");
+  const _perms = await resolveModulePerms(user.id, user.role, "certifications");
 
-  const scope = await getUserScope(session.user.id, session.user.role);
+  const scope = await getUserScope(user.id, user.role);
   const scopedCertIds = scope.all ? null : Array.from(scope.certIds);
   const scopedClientIds = scope.all ? null : Array.from(scope.clientIds);
 
@@ -123,9 +121,9 @@ export default async function CertificationsPage({ searchParams }: PageProps) {
   const visibleCerts = statusFilter ? buckets[statusFilter] : certifications;
 
   const canCreate =
-    session.user.role === "ADMIN" ||
-    session.user.role === "MANAGER" ||
-    session.user.role === "DEVELOPER";
+    user.role === "ADMIN" ||
+    user.role === "MANAGER" ||
+    user.role === "DEVELOPER";
 
   const buildHref = (overrides: {
     jurisdiction?: string | null;

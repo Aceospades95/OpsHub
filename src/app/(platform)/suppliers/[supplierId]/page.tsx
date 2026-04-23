@@ -1,7 +1,6 @@
-import { auth } from "@/lib/auth";
 import { redirect, notFound } from "next/navigation";
 import { db } from "@/lib/db";
-import { resolveModulePerms } from "@/lib/permissions";
+import { requireAuth, resolveModulePerms } from "@/lib/permissions";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatusBadge } from "@/components/shared/status-badge";
@@ -18,10 +17,9 @@ interface Props {
 
 export default async function SupplierDetailPage({ params }: Props) {
   const { supplierId } = await params;
-  const session = await auth();
-  if (!session?.user) redirect("/login");
+  const user = await requireAuth();
 
-  const perms = await resolveModulePerms(session.user.id, session.user.role, "suppliers");
+  const perms = await resolveModulePerms(user.id, user.role, "suppliers");
   if (!perms.canView) redirect("/dashboard");
 
   const supplier = await db.supplier.findUnique({
@@ -94,7 +92,7 @@ export default async function SupplierDetailPage({ params }: Props) {
                 entityId={supplier.id}
                 canComment={perms.canComment}
                 canDelete={perms.canDelete}
-                currentUserId={session.user.id}
+                currentUserId={user.id}
               />
             </CardContent>
           </Card>

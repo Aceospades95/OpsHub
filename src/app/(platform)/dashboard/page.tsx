@@ -1,7 +1,5 @@
-import { auth } from "@/lib/auth";
-import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
-import { resolveModulePerms } from "@/lib/permissions";
+import { requireAuth, resolveModulePerms } from "@/lib/permissions";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -22,12 +20,11 @@ import { DashboardTaskCheckbox } from "./dashboard-task-checkbox";
 import { PageLayout } from "@/components/shared/page-layout";
 
 export default async function DashboardPage() {
-  const session = await auth();
-  if (!session?.user) redirect("/login");
+  const user = await requireAuth();
 
-  const { id: userId, role } = session.user;
+  const { id: userId, role } = user;
 
-  const canEditLayout = session.user.role === "ADMIN" || session.user.role === "DEVELOPER";
+  const canEditLayout = user.role === "ADMIN" || user.role === "DEVELOPER";
 
   const clientPerms = await resolveModulePerms(userId, role, "clients");
   const projectPerms = await resolveModulePerms(userId, role, "projects");
@@ -421,7 +418,7 @@ export default async function DashboardPage() {
     <div>
       <PageHeader
         title="Dashboard"
-        description={`Welcome back, ${session.user.name}`}
+        description={`Welcome back, ${user.name}`}
       />
 
       <PageLayout pageType="dashboard" cards={cardMap} canEdit={canEditLayout} />

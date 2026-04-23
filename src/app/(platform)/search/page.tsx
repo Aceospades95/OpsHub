@@ -1,7 +1,5 @@
-import { auth } from "@/lib/auth";
-import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
-import { resolveModulePerms } from "@/lib/permissions";
+import { requireAuth, resolveModulePerms } from "@/lib/permissions";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent } from "@/components/ui/card";
 import { StatusBadge } from "@/components/shared/status-badge";
@@ -15,10 +13,9 @@ interface Props {
 
 export default async function SearchPage({ searchParams }: Props) {
   const q = searchParams.q;
-  const session = await auth();
-  if (!session?.user) redirect("/login");
+  const user = await requireAuth();
 
-  const { id: userId, role } = session.user;
+  const { id: userId, role } = user;
   const query = q?.trim() || "";
 
   if (!query) {

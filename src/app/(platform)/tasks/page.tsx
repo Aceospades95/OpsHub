@@ -1,6 +1,6 @@
-import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
+import { requireAuth } from "@/lib/permissions";
 import { getUserScope } from "@/lib/scope";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent } from "@/components/ui/card";
@@ -34,20 +34,19 @@ export default async function TasksPage({
 }: {
   searchParams: { assignee?: string; project?: string; client?: string; show?: string; view?: string };
 }) {
-  const session = await auth();
-  if (!session?.user) redirect("/login");
+  const user = await requireAuth();
 
   const { assignee, project, client, show, view } = searchParams;
   // Default view is grouped by status. "by-project" groups by project name.
   const groupBy = view === "by-project" ? "project" : "status";
 
-  const scope = await getUserScope(session.user.id, session.user.role);
+  const scope = await getUserScope(user.id, user.role);
 
   // Build filter
   const where: Prisma.TaskWhereInput = {};
 
   if (assignee === "me") {
-    where.assigneeId = session.user.id;
+    where.assigneeId = user.id;
   } else if (assignee === "unassigned") {
     where.assigneeId = null;
   } else if (assignee && assignee !== "all") {
@@ -73,8 +72,8 @@ export default async function TasksPage({
   // access or tasks where they are the assignee or creator.
   if (!scope.all) {
     const scopeOr: Prisma.TaskWhereInput[] = [
-      { assigneeId: session.user.id },
-      { createdById: session.user.id },
+      { assigneeId: user.id },
+      { createdById: user.id },
     ];
     if (scope.projectIds.size > 0) {
       scopeOr.push({ projectId: { in: Array.from(scope.projectIds) } });
@@ -152,7 +151,7 @@ export default async function TasksPage({
           currentProject={project}
           currentClient={client}
           currentShow={show}
-          currentUserId={session.user.id}
+          currentUserId={user.id}
         />
       </Suspense>
 

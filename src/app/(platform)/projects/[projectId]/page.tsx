@@ -1,7 +1,6 @@
-import { auth } from "@/lib/auth";
 import { redirect, notFound } from "next/navigation";
 import { db } from "@/lib/db";
-import { resolveModulePerms, canManageProjectAssignments } from "@/lib/permissions";
+import { requireAuth, resolveModulePerms, canManageProjectAssignments } from "@/lib/permissions";
 import { getUserScope, canViewEntity } from "@/lib/scope";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -40,10 +39,9 @@ function buildTree(projects: { id: string; name: string; status: string; _count:
 
 export default async function ProjectDetailPage({ params }: Props) {
   const { projectId } = await params;
-  const session = await auth();
-  if (!session?.user) redirect("/login");
+  const user = await requireAuth();
 
-  const perms = await resolveModulePerms(session.user.id, session.user.role, "projects");
+  const perms = await resolveModulePerms(user.id, user.role, "projects");
   if (!perms.canView) redirect("/dashboard");
 
   const project = await db.project.findUnique({
@@ -101,7 +99,7 @@ export default async function ProjectDetailPage({ params }: Props) {
 
   if (!project) notFound();
 
-  const scope = await getUserScope(session.user.id, session.user.role);
+  const scope = await getUserScope(user.id, user.role);
   if (!canViewEntity(scope, "project", project.id)) notFound();
 
   const clients = await db.client.findMany({
@@ -149,11 +147,11 @@ export default async function ProjectDetailPage({ params }: Props) {
   const linkedToolIds = new Set(project.tools.map((pt) => pt.toolId));
   const availableTools = allTools.filter((t) => !linkedToolIds.has(t.id));
 
-  const canEditLayout = session.user.role === "ADMIN" || session.user.role === "DEVELOPER";
+  const canEditLayout = user.role === "ADMIN" || user.role === "DEVELOPER";
   // Managers can only manage staffing on projects they're assigned to.
   const canAssign = await canManageProjectAssignments(
-    session.user.id,
-    session.user.role,
+    user.id,
+    user.role,
     project.id
   );
 
@@ -273,7 +271,7 @@ export default async function ProjectDetailPage({ params }: Props) {
             entityId={project.id}
             canComment={perms.canComment}
             canDelete={perms.canDelete}
-            currentUserId={session.user.id}
+            currentUserId={user.id}
           />
         </CardContent>
       </Card>

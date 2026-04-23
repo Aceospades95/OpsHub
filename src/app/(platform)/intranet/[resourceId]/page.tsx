@@ -1,7 +1,6 @@
-import { auth } from "@/lib/auth";
 import { redirect, notFound } from "next/navigation";
 import { db } from "@/lib/db";
-import { resolveModulePerms } from "@/lib/permissions";
+import { requireAuth, resolveModulePerms } from "@/lib/permissions";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -16,10 +15,9 @@ interface Props {
 
 export default async function IntranetDetailPage({ params }: Props) {
   const { resourceId } = await params;
-  const session = await auth();
-  if (!session?.user) redirect("/login");
+  const user = await requireAuth();
 
-  const perms = await resolveModulePerms(session.user.id, session.user.role, "intranet");
+  const perms = await resolveModulePerms(user.id, user.role, "intranet");
   if (!perms.canView) redirect("/dashboard");
 
   const resource = await db.intranetResource.findUnique({
@@ -29,7 +27,7 @@ export default async function IntranetDetailPage({ params }: Props) {
 
   if (!resource) notFound();
 
-  const canEditLayout = session.user.role === "ADMIN" || session.user.role === "DEVELOPER";
+  const canEditLayout = user.role === "ADMIN" || user.role === "DEVELOPER";
 
   const cardMap: Record<string, React.ReactNode> = {
     content: resource.content ? (

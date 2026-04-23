@@ -1,8 +1,7 @@
-import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { Suspense } from "react";
-import { resolveModulePerms } from "@/lib/permissions";
+import { requireAuth, resolveModulePerms } from "@/lib/permissions";
 import { getUserScope } from "@/lib/scope";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent } from "@/components/ui/card";
@@ -19,16 +18,15 @@ export default async function ClientsPage({
 }: {
   searchParams: { status?: string; sort?: string };
 }) {
-  const session = await auth();
-  if (!session?.user) redirect("/login");
+  const user = await requireAuth();
 
-  const perms = await resolveModulePerms(session.user.id, session.user.role, "clients");
+  const perms = await resolveModulePerms(user.id, user.role, "clients");
   if (!perms.canView) redirect("/dashboard");
 
   const statusFilter = searchParams.status;
   const sortParam = searchParams.sort;
 
-  const scope = await getUserScope(session.user.id, session.user.role);
+  const scope = await getUserScope(user.id, user.role);
 
   // Build where clause
   const where: Prisma.ClientWhereInput = {};

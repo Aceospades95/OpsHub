@@ -1,6 +1,6 @@
-import { auth } from "@/lib/auth";
 import { redirect, notFound } from "next/navigation";
 import { db } from "@/lib/db";
+import { requireAuth } from "@/lib/permissions";
 import { getUserScope, canViewEntity } from "@/lib/scope";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -38,8 +38,7 @@ interface Props {
 
 export default async function CertificationDetailPage({ params }: Props) {
   const { certId } = await params;
-  const session = await auth();
-  if (!session?.user) redirect("/login");
+  const user = await requireAuth();
 
   const cert = await db.certification.findUnique({
     where: { id: certId },
@@ -67,7 +66,7 @@ export default async function CertificationDetailPage({ params }: Props) {
 
   if (!cert) notFound();
 
-  const scope = await getUserScope(session.user.id, session.user.role);
+  const scope = await getUserScope(user.id, user.role);
   if (!canViewEntity(scope, "certification", cert.id)) notFound();
 
   const [clients, users] = await Promise.all([
@@ -91,7 +90,7 @@ export default async function CertificationDetailPage({ params }: Props) {
     daysUntilExpiry <= (cert.renewalLeadDays || 90);
   const isExpired = daysUntilExpiry !== null && daysUntilExpiry <= 0;
 
-  const role = session.user.role;
+  const role = user.role;
   const canEdit = role === "ADMIN" || role === "MANAGER" || role === "DEVELOPER";
   const canSignOff = role === "ADMIN" || role === "MANAGER";
   const canRevoke = role === "ADMIN";
@@ -100,8 +99,8 @@ export default async function CertificationDetailPage({ params }: Props) {
   // Contributors can toggle checklist only if they're the assignee or POC
   const canModifyChecklist =
     canEdit ||
-    cert.assigneeId === session.user.id ||
-    cert.pointOfContactId === session.user.id;
+    cert.assigneeId === user.id ||
+    cert.pointOfContactId === user.id;
 
   const jurisdictionLabel = [cert.jurisdictionLevel, cert.jurisdictionName]
     .filter(Boolean)
@@ -652,7 +651,7 @@ export default async function CertificationDetailPage({ params }: Props) {
             entityId={cert.id}
             canComment={true}
             canDelete={canEdit}
-            currentUserId={session.user.id}
+            currentUserId={user.id}
           />
         </CardContent>
       </Card>

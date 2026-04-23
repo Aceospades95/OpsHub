@@ -1,7 +1,6 @@
-import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
-import { resolveModulePerms } from "@/lib/permissions";
+import { requireAuth, resolveModulePerms } from "@/lib/permissions";
 import { getUserScope } from "@/lib/scope";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -33,13 +32,12 @@ function buildContractTreeNodes(contracts: ContractWithRelations[]): TreeNode[] 
 }
 
 export default async function ContractsPage() {
-  const session = await auth();
-  if (!session?.user) redirect("/login");
+  const user = await requireAuth();
 
-  const perms = await resolveModulePerms(session.user.id, session.user.role, "contracts");
+  const perms = await resolveModulePerms(user.id, user.role, "contracts");
   if (!perms.canView) redirect("/dashboard");
 
-  const scope = await getUserScope(session.user.id, session.user.role);
+  const scope = await getUserScope(user.id, user.role);
   const scopedContractIds = scope.all ? null : Array.from(scope.contractIds);
   const scopedClientIds = scope.all ? null : Array.from(scope.clientIds);
   const scopedProjectIds = scope.all ? null : Array.from(scope.projectIds);

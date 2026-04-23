@@ -1,7 +1,6 @@
-import { auth } from "@/lib/auth";
 import { redirect, notFound } from "next/navigation";
 import { db } from "@/lib/db";
-import { resolveModulePerms } from "@/lib/permissions";
+import { requireAuth, resolveModulePerms } from "@/lib/permissions";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -17,10 +16,9 @@ interface Props {
 
 export default async function DocumentDetailPage({ params }: Props) {
   const { projectId, documentId } = await params;
-  const session = await auth();
-  if (!session?.user) redirect("/login");
+  const user = await requireAuth();
 
-  const perms = await resolveModulePerms(session.user.id, session.user.role, "projects");
+  const perms = await resolveModulePerms(user.id, user.role, "projects");
   if (!perms.canView) redirect("/dashboard");
 
   const document = await db.document.findUnique({
@@ -97,7 +95,7 @@ export default async function DocumentDetailPage({ params }: Props) {
                 entityId={document.id}
                 canComment={perms.canComment}
                 canDelete={perms.canDelete}
-                currentUserId={session.user.id}
+                currentUserId={user.id}
               />
             </CardContent>
           </Card>
