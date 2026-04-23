@@ -1,7 +1,8 @@
-import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { requireAuth, resolveModulePerms } from "@/lib/permissions";
 import { getUserScope } from "@/lib/scope";
+import { AccessDenied } from "@/components/shared/access-denied";
+import { hasOrgWideManage } from "@/lib/scope";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatusBadge } from "@/components/shared/status-badge";
@@ -47,6 +48,10 @@ interface PageProps {
 
 export default async function CertificationsPage({ searchParams }: PageProps) {
   const user = await requireAuth();
+
+  if (!hasOrgWideManage(user.role)) {
+    return <AccessDenied module="certifications" moduleLabel="Certifications" moduleDescription="Compliance certifications and expirations (Admin / Developer only)" />;
+  }
 
   const sp = await searchParams;
   const jurisdictionFilter = JURISDICTION_LEVELS.includes(sp.jurisdiction as JurisdictionLevel)

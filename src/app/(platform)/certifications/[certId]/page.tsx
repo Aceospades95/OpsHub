@@ -1,7 +1,8 @@
-import { redirect, notFound } from "next/navigation";
+import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import { requireAuth } from "@/lib/permissions";
-import { getUserScope, canViewEntity } from "@/lib/scope";
+import { getUserScope, canViewEntity, hasOrgWideManage } from "@/lib/scope";
+import { AccessDenied } from "@/components/shared/access-denied";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatusBadge } from "@/components/shared/status-badge";
@@ -39,6 +40,10 @@ interface Props {
 export default async function CertificationDetailPage({ params }: Props) {
   const { certId } = await params;
   const user = await requireAuth();
+
+  if (!hasOrgWideManage(user.role)) {
+    return <AccessDenied module="certifications" moduleLabel="Certifications" moduleDescription="Compliance certifications and expirations (Admin / Developer only)" />;
+  }
 
   const cert = await db.certification.findUnique({
     where: { id: certId },

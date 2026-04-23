@@ -1,7 +1,5 @@
-import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { requireAuth, resolveModulePerms } from "@/lib/permissions";
-import { AccessDenied } from "@/components/shared/access-denied";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -27,7 +25,6 @@ export default async function IntranetPage() {
   const user = await requireAuth();
 
   const perms = await resolveModulePerms(user.id, user.role, "intranet");
-  if (!perms.canView) return <AccessDenied module="intranet" moduleLabel="Intranet" moduleDescription="HR resources, policies, handbooks, and time off" />;
 
   const resources = await db.intranetResource.findMany({
     orderBy: [{ pinned: "desc" }, { sortOrder: "asc" }, { updatedAt: "desc" }],

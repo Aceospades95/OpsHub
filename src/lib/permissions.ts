@@ -110,47 +110,42 @@ export async function resolveModulePerms(
     };
   }
 
+  // Start with role-based defaults.
+  const base: PermissionFlags = role === "GUEST"
+    ? getGuestModuleDefaults(module)
+    : getRoleDefaults(role);
+
+  // An explicit module-permission row overrides the role defaults.
   const modulePerm = await db.modulePermission.findUnique({
     where: { userId_module: { userId, module } },
   });
 
-  if (modulePerm) {
-    return {
-      canView: modulePerm.canView,
-      canEdit: modulePerm.canEdit,
-      canCreate: modulePerm.canCreate,
-      canDelete: modulePerm.canDelete,
-      canComment: modulePerm.canComment,
-      canUpload: modulePerm.canUpload,
-      canManage: modulePerm.canManage,
-    };
-  }
-
-  if (role === "GUEST") {
-    // If the module is entity-scoped and the user has at least one entity in
-    // scope (e.g. via a project assignment or account-manager row), grant
-    // view + comment so assigned guests can actually see Projects / Clients /
-    // Contracts / Tools / Certifications in their sidebar and load the pages.
-    const scopeKey = SCOPED_MODULES[module];
-    if (scopeKey) {
-      const scope = await getUserScope(userId, role);
-      const set = scope[scopeKey];
-      if (set instanceof Set && set.size > 0) {
-        return {
-          canView: true,
-          canEdit: false,
-          canCreate: false,
-          canDelete: false,
-          canComment: true,
-          canUpload: false,
-          canManage: false,
-        };
+  const effective: PermissionFlags = modulePerm
+    ? {
+        canView: modulePerm.canView,
+        canEdit: modulePerm.canEdit,
+        canCreate: modulePerm.canCreate,
+        canDelete: modulePerm.canDelete,
+        canComment: modulePerm.canComment,
+        canUpload: modulePerm.canUpload,
+        canManage: modulePerm.canManage,
       }
+    : base;
+
+  // For entity-scoped modules (projects, clients, contracts, tools, certs):
+  // if the user has at least one entity in scope (via assignment, membership,
+  // or entity permission), grant canView + canComment regardless of role or
+  // module-permission rows. Assignments are the source of truth for access.
+  const scopeKey = SCOPED_MODULES[module];
+  if (scopeKey && !effective.canView) {
+    const scope = await getUserScope(userId, role);
+    const set = scope[scopeKey];
+    if (set instanceof Set && set.size > 0) {
+      return { ...effective, canView: true, canComment: true };
     }
-    return getGuestModuleDefaults(module);
   }
 
-  return getRoleDefaults(role);
+  return effective;
 }
 
 export async function resolveEntityPerms(

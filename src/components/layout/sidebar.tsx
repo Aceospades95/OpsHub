@@ -63,6 +63,7 @@ const SYSTEM_DEFAULTS = SYSTEM_MODULES;
 // Modules that require specific roles to appear in the sidebar at all
 const ROLE_GATED: Record<string, (role: string) => boolean> = {
   settings: (role) => role === "ADMIN",
+  certifications: (role) => role === "ADMIN" || role === "DEVELOPER",
 };
 
 export function Sidebar({

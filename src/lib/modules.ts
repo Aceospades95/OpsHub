@@ -161,6 +161,7 @@ export const MODULES: ModuleDefinition[] = [
     description: "Compliance certifications and expirations",
     section: "delivery",
     permissioned: true,
+    adminOnly: true,
   },
   {
     key: "suppliers",
@@ -187,7 +188,7 @@ export const MODULES: ModuleDefinition[] = [
     icon: "Globe",
     description: "HR resources, policies, handbooks, and time off",
     section: "resources",
-    permissioned: true,
+    permissioned: false,
   },
   {
     key: "settings",
