@@ -80,6 +80,15 @@ export async function requireAuth() {
   if (!session?.user) {
     redirect("/login");
   }
+  // The JWT caches the role from sign-in time; server-side changes (auto-
+  // promotion via assignment, admin edits) aren't reflected there because
+  // the jwt callback runs in Edge Runtime where Prisma is unavailable.
+  // Always re-read the current role so pages see the up-to-date value.
+  const freshUser = await db.user.findUnique({
+    where: { id: session.user.id },
+    select: { role: true },
+  });
+  if (freshUser) session.user.role = freshUser.role;
   return session.user;
 }
 

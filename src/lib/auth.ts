@@ -144,16 +144,11 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           token.id = dbUser.id;
           token.role = dbUser.role;
         }
-      } else if (token.id) {
-        // Subsequent requests — re-read role from DB so server-side changes
-        // (auto-promotion on assignment, admin role edits) take effect
-        // without requiring the user to log out and back in.
-        const dbUser = await db.user.findUnique({
-          where: { id: token.id as string },
-          select: { role: true },
-        });
-        if (dbUser) token.role = dbUser.role;
       }
+      // NOTE: we intentionally do NOT re-read the role from DB here.
+      // The jwt callback runs in Edge Runtime (via middleware) where
+      // Prisma is unavailable. Server-side role changes are picked up
+      // by requireAuth() and freshRole() which run on the Node server.
       return token;
     },
     async session({ session, token }) {

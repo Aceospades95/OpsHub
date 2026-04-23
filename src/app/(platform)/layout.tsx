@@ -2,6 +2,7 @@ import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { getVisibleModules } from "@/lib/permissions";
+import type { Role } from "@prisma/client";
 import { getSidebarConfig } from "@/actions/sidebar";
 import { getUnreadCount, getUserNotifications } from "@/lib/notifications";
 import { getBranding } from "@/lib/branding";
@@ -15,6 +16,14 @@ export default async function PlatformLayout({
 }) {
   const session = await auth();
   if (!session?.user) redirect("/login");
+
+  // JWT caches the role from sign-in; refresh from DB so server-side
+  // changes (auto-promotion, admin edits) are visible immediately.
+  const freshUser = await db.user.findUnique({
+    where: { id: session.user.id },
+    select: { role: true },
+  });
+  if (freshUser) session.user.role = freshUser.role as Role;
 
   const [visibleModules, sidebarConfig, customPages, unreadCount, recentNotifications, branding] = await Promise.all([
     getVisibleModules(session.user.id, session.user.role),
