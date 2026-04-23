@@ -33,7 +33,9 @@ export async function createUser(_prev: unknown, formData: FormData) {
   requireAdminOrManager(admin.role);
 
   const hasLogin = formData.get("hasLoginAccess") !== "false";
-  const emailRaw = (formData.get("email") as string)?.trim();
+  // Normalize email to lowercase so login is case-insensitive and we never
+  // end up with two rows for the same address differing only in case.
+  const emailRaw = (formData.get("email") as string)?.trim().toLowerCase();
   const passwordRaw = (formData.get("password") as string)?.trim();
 
   // For login users, email and password are required
@@ -122,10 +124,11 @@ export async function updateUser(_prev: unknown, formData: FormData) {
   const id = formData.get("id") as string;
   const rawManagerId = formData.get("managerId") as string;
   const managerId = rawManagerId && rawManagerId.trim() ? rawManagerId.trim() : null;
+  const emailRaw = ((formData.get("email") as string) || "").trim().toLowerCase();
 
   const parsed = updateUserSchema.safeParse({
     name: formData.get("name"),
-    email: formData.get("email"),
+    email: emailRaw,
     role: formData.get("role"),
     department: formData.get("department") || undefined,
     jobTitle: formData.get("jobTitle") || undefined,
@@ -155,16 +158,27 @@ export async function updateUser(_prev: unknown, formData: FormData) {
     }
   }
 
-  // Look up the previous manager so we can revalidate their page too if it changed
+  // Look up the previous manager + role so we can revalidate their page too
+  // if it changed, and decide whether this was a manual role change (which
+  // should clear the auto-promotion marker).
   const previous = await db.user.findUnique({
     where: { id },
-    select: { managerId: true },
+    select: { managerId: true, role: true, promotedFromRole: true },
   });
+
+  // If an admin explicitly changed the role, treat the new role as the
+  // user's chosen level — drop the promotedFromRole so they won't be
+  // auto-demoted later by assignment removal.
+  const roleChanged = previous && previous.role !== parsed.data.role;
+  const promotedFromRoleUpdate =
+    roleChanged && previous?.promotedFromRole
+      ? { promotedFromRole: null }
+      : {};
 
   // Use null instead of undefined to actually clear the field
   await db.user.update({
     where: { id },
-    data: { ...parsed.data, managerId: managerId },
+    data: { ...parsed.data, managerId: managerId, ...promotedFromRoleUpdate },
   });
   await logActivity("updated", "user", id, admin.id, parsed.data.name);
   revalidateUser(id, {

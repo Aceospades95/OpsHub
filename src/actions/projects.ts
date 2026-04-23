@@ -1,7 +1,8 @@
 "use server";
 
 import { db } from "@/lib/db";
-import { requireAuth, resolveModulePerms, canManageAssignments } from "@/lib/permissions";
+import { requireAuth, resolveModulePerms, canManageProjectAssignments } from "@/lib/permissions";
+import { maybePromoteUserRole, maybeDemoteUserRole } from "@/lib/auto-role";
 import { logActivity } from "@/lib/activity";
 import { revalidatePath } from "next/cache";
 import { revalidateProject, revalidateUser } from "@/lib/revalidate-entity";
@@ -193,14 +194,16 @@ export async function deleteProject(_prev: unknown, formData: FormData) {
 // Members
 export async function addProjectMember(_prev: unknown, formData: FormData) {
   const user = await requireAuth();
-  // Only admins and managers can assign people to projects. This keeps
-  // scoped access (getUserScope) under central control — a contributor
-  // can't grant themselves (or a peer) access to additional projects.
-  if (!canManageAssignments(user.role)) return { error: "Permission denied" };
 
   const projectId = formData.get("projectId") as string;
   const userId = formData.get("userId") as string;
   const role = (formData.get("role") as string) || "CONTRIBUTOR";
+
+  // Only admins, developers, and managers *assigned to this project* can
+  // add members. A manager can't grow their own scope by adding themselves
+  // to a project they're not already on.
+  if (!(await canManageProjectAssignments(user.id, user.role, projectId)))
+    return { error: "Permission denied" };
 
   const existing = await db.projectMember.findUnique({
     where: { userId_projectId: { userId, projectId } },
@@ -210,6 +213,11 @@ export async function addProjectMember(_prev: unknown, formData: FormData) {
   await db.projectMember.create({
     data: { userId, projectId, role: role as "ADMIN" | "MANAGER" | "CONTRIBUTOR" | "VIEWER" },
   });
+
+  // Bump GUEST / VIEWER up to CONTRIBUTOR now that they have project access.
+  // Their previous role is stored so it can be restored if they lose every
+  // assignment later.
+  await maybePromoteUserRole(userId);
 
   revalidatePath(`/projects/${projectId}`);
   // The new member's /team/{userId} page shows project memberships, so it needs
@@ -246,7 +254,6 @@ export async function addProjectMember(_prev: unknown, formData: FormData) {
 
 export async function removeProjectMember(_prev: unknown, formData: FormData) {
   const user = await requireAuth();
-  if (!canManageAssignments(user.role)) return { error: "Permission denied" };
 
   const id = formData.get("id") as string;
   // Look up what we're removing so we can revalidate the specific project detail
@@ -255,9 +262,16 @@ export async function removeProjectMember(_prev: unknown, formData: FormData) {
     where: { id },
     select: { projectId: true, userId: true },
   });
+  if (!member) return { error: "Member not found" };
+  if (!(await canManageProjectAssignments(user.id, user.role, member.projectId)))
+    return { error: "Permission denied" };
+
   await db.projectMember.delete({ where: { id } });
-  if (member?.projectId) revalidatePath(`/projects/${member.projectId}`);
-  if (member?.userId) revalidateUser(member.userId);
+  // If this was the last thing keeping the user at CONTRIBUTOR (auto-promoted),
+  // revert them to their original role.
+  await maybeDemoteUserRole(member.userId);
+  revalidatePath(`/projects/${member.projectId}`);
+  revalidateUser(member.userId);
   return { success: true };
 }
 

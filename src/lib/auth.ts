@@ -42,8 +42,13 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       async authorize(credentials) {
         if (!credentials?.email || !credentials?.password) return null;
 
-        const user = await db.user.findUnique({
-          where: { email: credentials.email as string },
+        // Email lookup is case-insensitive — users shouldn't fail to log in
+        // because they typed "Foo@Bar.com" when the stored value is
+        // "foo@bar.com". We use findFirst with insensitive mode instead of
+        // findUnique so legacy mixed-case rows still match.
+        const email = (credentials.email as string).trim().toLowerCase();
+        const user = await db.user.findFirst({
+          where: { email: { equals: email, mode: "insensitive" } },
         });
 
         if (!user || !user.isActive || !user.hashedPassword) return null;
@@ -72,10 +77,13 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     async signIn({ user, account }) {
       if (account?.provider !== "google") return true;
 
-      const email = user.email;
-      if (!email) return false;
+      const rawEmail = user.email;
+      if (!rawEmail) return false;
 
-      const domain = email.split("@")[1]?.toLowerCase();
+      // Normalize to lowercase — we never want two User rows for the same
+      // Google identity just because the token returned different casing.
+      const email = rawEmail.trim().toLowerCase();
+      const domain = email.split("@")[1];
       if (!domain) return false;
 
       // Check domain allowlist — if rows exist, only those domains are allowed
@@ -87,8 +95,11 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         if (!isAllowed) return false;
       }
 
-      // Find or create user record for this Google account
-      const existing = await db.user.findUnique({ where: { email } });
+      // Find or create user record for this Google account. findFirst with
+      // insensitive mode so we pick up a legacy mixed-case row if it exists.
+      const existing = await db.user.findFirst({
+        where: { email: { equals: email, mode: "insensitive" } },
+      });
 
       if (existing) {
         if (!existing.isActive) return false;
@@ -122,10 +133,13 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         token.id = user.id as string;
         token.role = user.role;
       } else if (account?.provider === "google") {
-        // Look up the DB user to get id and role
-        const dbUser = await db.user.findUnique({
-          where: { email: token.email as string },
-        });
+        // Look up the DB user to get id and role (case-insensitive)
+        const tokenEmail = ((token.email as string) || "").trim().toLowerCase();
+        const dbUser = tokenEmail
+          ? await db.user.findFirst({
+              where: { email: { equals: tokenEmail, mode: "insensitive" } },
+            })
+          : null;
         if (dbUser) {
           token.id = dbUser.id;
           token.role = dbUser.role;

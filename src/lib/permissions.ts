@@ -3,7 +3,7 @@ import { db } from "@/lib/db";
 import type { Role } from "@prisma/client";
 import { redirect } from "next/navigation";
 import { getPermissionedModules } from "@/lib/modules";
-import { getUserScope, hasOrgWideScope } from "@/lib/scope";
+import { getUserScope, hasOrgWideManage } from "@/lib/scope";
 
 export type PermissionFlags = {
   canView: boolean;
@@ -88,7 +88,8 @@ export async function resolveModulePerms(
   role: Role,
   module: string
 ): Promise<PermissionFlags> {
-  if (role === "ADMIN") {
+  // ADMIN and DEVELOPER both see + manage everything org-wide.
+  if (hasOrgWideManage(role)) {
     return {
       canView: true,
       canEdit: true,
@@ -150,7 +151,8 @@ export async function resolveEntityPerms(
   entityType: string,
   entityId: string
 ): Promise<PermissionFlags> {
-  if (role === "ADMIN") {
+  // ADMIN and DEVELOPER manage every entity org-wide.
+  if (hasOrgWideManage(role)) {
     return {
       canView: true,
       canEdit: true,
@@ -219,7 +221,8 @@ export async function getAccessibleProjectIds(
   userId: string,
   role: Role
 ): Promise<string[] | "all"> {
-  if (role === "ADMIN" || role === "MANAGER") return "all";
+  // ADMIN, DEVELOPER, MANAGER all see every project on list pages.
+  if (role === "ADMIN" || role === "DEVELOPER" || role === "MANAGER") return "all";
 
   // Projects the user is actively assigned to (staffing)
   const assignments = await db.assignment.findMany({
@@ -262,13 +265,29 @@ export function canAccessSandbox(role: Role): boolean {
 }
 
 /**
- * Whether a role is allowed to create, update, or remove staffing
- * assignments / project memberships. Everyone else — including
- * contributors and developers — can only be assigned by someone with
- * this capability.
+ * Coarse "can this role manage staffing at all?" check. Used for quick
+ * sidebar / button visibility. Fine-grained per-project authorization uses
+ * canManageProjectAssignments below — a manager who isn't assigned to a
+ * particular project can't manage that project's members.
  */
 export function canManageAssignments(role: Role): boolean {
-  return role === "ADMIN" || role === "MANAGER";
+  return role === "ADMIN" || role === "DEVELOPER" || role === "MANAGER";
+}
+
+/**
+ * Can this specific user add / remove members + assignments on this
+ * specific project? ADMIN and DEVELOPER always pass. MANAGER passes only
+ * when they're assigned to the project in question.
+ */
+export async function canManageProjectAssignments(
+  userId: string,
+  role: Role,
+  projectId: string
+): Promise<boolean> {
+  if (hasOrgWideManage(role)) return true;
+  if (role !== "MANAGER") return false;
+  const scope = await getUserScope(userId, role);
+  return scope.projectIds.has(projectId);
 }
 
 export async function getVisibleModules(
@@ -279,11 +298,13 @@ export async function getVisibleModules(
   // module automatically adds it to the visible list without editing this file.
   const permissioned = getPermissionedModules();
 
-  if (role === "ADMIN") return permissioned.map((m) => m.key);
+  // ADMIN + DEVELOPER see every permissioned module in the sidebar.
+  if (hasOrgWideManage(role)) return permissioned.map((m) => m.key);
 
   // For MANAGER and everyone else, hide entity-backed modules when the user
   // has zero scoped entities for that module. This prevents empty sidebar
-  // items for, e.g., a contributor who isn't on any project yet.
+  // items for, e.g., a contributor who isn't on any project yet. MANAGER
+  // has scope.all=true so they skip the empty-scope filter.
   const scope = await getUserScope(userId, role);
 
   const visible: string[] = [];

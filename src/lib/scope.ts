@@ -2,18 +2,33 @@ import { db } from "@/lib/db";
 import type { Role } from "@prisma/client";
 
 /**
- * Computed visibility scope for a user. For ADMIN and MANAGER this resolves
- * to "all" — they see everything. For everyone else the IDs are derived from
- * the user's actual relationships: project assignments, staffing allocations,
- * client account-manager rows, and the explicit EntityPermission table.
+ * Computed visibility + management scope for a user.
  *
- * This is the single source of truth for "what entities can this user see"
- * across list pages and detail-page 404 guards. Do not re-derive visibility
- * ad-hoc in page code — call getUserScope() and filter by the returned sets.
+ * Two separate concepts to keep in mind:
+ *
+ *   canViewAll — true for roles that see every entity org-wide (ADMIN,
+ *     DEVELOPER, MANAGER). Managers see all projects / clients / etc. on
+ *     list pages; their access is only narrowed when *writing*.
+ *
+ *   canManageAll — true only for roles that can write everything regardless
+ *     of assignment (ADMIN, DEVELOPER). Managers must be assigned to the
+ *     specific entity to manage it.
+ *
+ * The per-entity Sets (projectIds, clientIds, …) are populated for *everyone
+ * below canManageAll*, including managers — they drive the per-entity
+ * management check via canManageEntity().
  */
 export interface UserScope {
   role: Role;
-  /** True when the user sees everything org-wide (ADMIN / MANAGER). */
+  /** True when the user sees every entity org-wide. */
+  canViewAll: boolean;
+  /** True when the user can write / manage every entity org-wide. */
+  canManageAll: boolean;
+  /**
+   * True when the user's sidebar + list pages should still be filtered by
+   * the assigned-ID sets below. Equivalent to !canViewAll — kept for
+   * readability in callers that ask "is this user scoped?".
+   */
   all: boolean;
   projectIds: Set<string>;
   clientIds: Set<string>;
@@ -22,10 +37,17 @@ export interface UserScope {
   certIds: Set<string>;
 }
 
-const ALL_SCOPE_ROLES: Role[] = ["ADMIN", "MANAGER"];
+/** Roles that see everything on list pages / sidebar. */
+const VIEW_ALL_ROLES: Role[] = ["ADMIN", "DEVELOPER", "MANAGER"];
+/** Roles that can write everything regardless of assignment. */
+const MANAGE_ALL_ROLES: Role[] = ["ADMIN", "DEVELOPER"];
 
 export function hasOrgWideScope(role: Role): boolean {
-  return ALL_SCOPE_ROLES.includes(role);
+  return VIEW_ALL_ROLES.includes(role);
+}
+
+export function hasOrgWideManage(role: Role): boolean {
+  return MANAGE_ALL_ROLES.includes(role);
 }
 
 /**
@@ -36,9 +58,16 @@ export async function getUserScope(
   userId: string,
   role: Role
 ): Promise<UserScope> {
-  if (hasOrgWideScope(role)) {
+  const canViewAll = VIEW_ALL_ROLES.includes(role);
+  const canManageAll = MANAGE_ALL_ROLES.includes(role);
+
+  // Admins + developers don't need the per-entity sets — they manage
+  // everything regardless. Short-circuit to avoid the extra queries.
+  if (canManageAll) {
     return {
       role,
+      canViewAll: true,
+      canManageAll: true,
       all: true,
       projectIds: new Set(),
       clientIds: new Set(),
@@ -47,6 +76,9 @@ export async function getUserScope(
       certIds: new Set(),
     };
   }
+
+  // Everyone else (including managers, who see-all but manage-assigned-only)
+  // needs the per-entity sets so canManageEntity() can check assignment.
 
   // ── Project visibility ────────────────────────────────────────
   // A user sees a project if any of these hold:
@@ -153,7 +185,12 @@ export async function getUserScope(
 
   return {
     role,
-    all: false,
+    canViewAll,
+    canManageAll: false,
+    // `all` is true only for roles that truly see everything from the
+    // visibility side — managers see all too, so they use `all=true` and
+    // leaf list pages skip scope filtering.
+    all: canViewAll,
     projectIds,
     clientIds,
     contractIds,
@@ -162,26 +199,48 @@ export async function getUserScope(
   };
 }
 
+type ScopeEntityType = "project" | "client" | "contract" | "tool" | "certification";
+
+function scopeSetFor(scope: UserScope, entityType: ScopeEntityType): Set<string> {
+  switch (entityType) {
+    case "project":
+      return scope.projectIds;
+    case "client":
+      return scope.clientIds;
+    case "contract":
+      return scope.contractIds;
+    case "tool":
+      return scope.toolIds;
+    case "certification":
+      return scope.certIds;
+  }
+}
+
 /**
  * Guard helper for detail pages. Returns true when the user can view the
- * given entity under their computed scope. ADMIN / MANAGER always pass.
+ * given entity under their computed scope. ADMIN / DEVELOPER / MANAGER
+ * always pass.
  */
 export function canViewEntity(
   scope: UserScope,
-  entityType: "project" | "client" | "contract" | "tool" | "certification",
+  entityType: ScopeEntityType,
   id: string
 ): boolean {
-  if (scope.all) return true;
-  switch (entityType) {
-    case "project":
-      return scope.projectIds.has(id);
-    case "client":
-      return scope.clientIds.has(id);
-    case "contract":
-      return scope.contractIds.has(id);
-    case "tool":
-      return scope.toolIds.has(id);
-    case "certification":
-      return scope.certIds.has(id);
-  }
+  if (scope.canViewAll) return true;
+  return scopeSetFor(scope, entityType).has(id);
+}
+
+/**
+ * Can the user write / manage this specific entity? ADMIN and DEVELOPER
+ * always pass. MANAGER and CONTRIBUTOR pass only when the entity is in
+ * their assigned set. VIEWER and GUEST never pass.
+ */
+export function canManageEntity(
+  scope: UserScope,
+  entityType: ScopeEntityType,
+  id: string
+): boolean {
+  if (scope.canManageAll) return true;
+  if (scope.role !== "MANAGER" && scope.role !== "CONTRIBUTOR") return false;
+  return scopeSetFor(scope, entityType).has(id);
 }

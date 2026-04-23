@@ -153,6 +153,10 @@ model User {
   hashedPassword String?
   authProvider   String   @default("credentials") // "credentials" | "google"
   role           Role     @default(VIEWER)
+  /// Non-null when the user's role was auto-promoted by being assigned to a
+  /// project. Stores the role they had before promotion so they can be
+  /// reverted if they lose all their assignments.
+  promotedFromRole Role?
   avatar         String?
   isActive       Boolean  @default(true)
   hasLoginAccess Boolean  @default(true)

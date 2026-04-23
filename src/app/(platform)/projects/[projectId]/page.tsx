@@ -1,7 +1,7 @@
 import { auth } from "@/lib/auth";
 import { redirect, notFound } from "next/navigation";
 import { db } from "@/lib/db";
-import { resolveModulePerms, canManageAssignments } from "@/lib/permissions";
+import { resolveModulePerms, canManageProjectAssignments } from "@/lib/permissions";
 import { getUserScope, canViewEntity } from "@/lib/scope";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -150,7 +150,12 @@ export default async function ProjectDetailPage({ params }: Props) {
   const availableTools = allTools.filter((t) => !linkedToolIds.has(t.id));
 
   const canEditLayout = session.user.role === "ADMIN" || session.user.role === "DEVELOPER";
-  const canAssign = canManageAssignments(session.user.role);
+  // Managers can only manage staffing on projects they're assigned to.
+  const canAssign = await canManageProjectAssignments(
+    session.user.id,
+    session.user.role,
+    project.id
+  );
 
   const cardMap: Record<string, React.ReactNode> = {
     "sub-projects": (
