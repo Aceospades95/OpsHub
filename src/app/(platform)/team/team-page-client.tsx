@@ -2,7 +2,6 @@
 
 import React, { useState } from "react";
 import { OrgChartTree, buildOrgTree } from "@/components/shared/org-chart-tree";
-import { Card, CardContent } from "@/components/ui/card";
 import { Network, Grid3x3, Users, Search } from "lucide-react";
 import { useMemo } from "react";
 import { StaffingMatrix } from "./components/staffing-matrix";
@@ -109,13 +108,11 @@ function OrgChartView({ users, search, currentUserId }: { users: UserData[]; sea
   ), [filtered]);
 
   return (
-    <Card className="bg-muted/50">
-      <CardContent className="p-4">
-        <div className="text-xs text-muted-foreground mb-2">
-          {users.length} team members · Click a person to view their profile
-        </div>
-        <OrgChartTree nodes={tree} />
-      </CardContent>
-    </Card>
+    <div>
+      <div className="text-xs text-muted-foreground mb-3">
+        {users.length} team members · Click a person to view their profile
+      </div>
+      <OrgChartTree nodes={tree} />
+    </div>
   );
 }
