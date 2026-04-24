@@ -1,28 +1,42 @@
-import { auth } from "@/lib/auth";
-import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
-import { resolveModulePerms } from "@/lib/permissions";
+import { requireAuth, resolveModulePerms } from "@/lib/permissions";
+import { getUserScope } from "@/lib/scope";
 import { PageHeader } from "@/components/layout/page-header";
 import { EmptyState } from "@/components/ui/empty-state";
+import { AccessDenied } from "@/components/shared/access-denied";
 import { FolderKanban } from "lucide-react";
 import { ProjectCreateButton } from "./project-create-button";
 import { ProjectsPageClient, type ProjectData, type ClientGroup } from "./projects-page-client";
+import type { Prisma } from "@prisma/client";
 
 export default async function ProjectsPage() {
-  const session = await auth();
-  if (!session?.user) redirect("/login");
+  const user = await requireAuth();
 
-  const perms = await resolveModulePerms(session.user.id, session.user.role, "projects");
-  if (!perms.canView) redirect("/dashboard");
+  const perms = await resolveModulePerms(user.id, user.role, "projects");
+  if (!perms.canView) return <AccessDenied module="projects" moduleLabel="Projects" moduleDescription="Project portfolio, milestones, staffing, and documents" />;
+
+  const scope = await getUserScope(user.id, user.role);
+  // When the user isn't org-wide, show only projects in scope. Still include
+  // parent=null filter at the top level but recursive childProjects may also
+  // need filtering; we hide them via the same set below.
+  const scopedProjectIds = scope.all ? null : Array.from(scope.projectIds);
+  const projectWhere: Prisma.ProjectWhereInput = {
+    parentProjectId: null,
+    ...(scopedProjectIds ? { id: { in: scopedProjectIds } } : {}),
+  };
+  const clientWhere: Prisma.ClientWhereInput = {
+    status: "ACTIVE",
+    ...(scope.all ? {} : { id: { in: Array.from(scope.clientIds) } }),
+  };
 
   const [clients, rootProjects, allProjects, serviceOfferings] = await Promise.all([
     db.client.findMany({
-      where: { status: "ACTIVE" },
+      where: clientWhere,
       select: { id: true, name: true },
       orderBy: { name: "asc" },
     }),
     db.project.findMany({
-      where: { parentProjectId: null },
+      where: projectWhere,
       orderBy: { updatedAt: "desc" },
       include: {
         client: { select: { id: true, name: true } },
@@ -42,6 +56,7 @@ export default async function ProjectsPage() {
       },
     }),
     db.project.findMany({
+      where: scopedProjectIds ? { id: { in: scopedProjectIds } } : {},
       select: { id: true, name: true },
       orderBy: { name: "asc" },
     }),

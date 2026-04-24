@@ -1,7 +1,8 @@
-import { auth } from "@/lib/auth";
-import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
-import { resolveModulePerms } from "@/lib/permissions";
+import { requireAuth, resolveModulePerms } from "@/lib/permissions";
+import { getUserScope } from "@/lib/scope";
+import { AccessDenied } from "@/components/shared/access-denied";
+import { hasOrgWideManage } from "@/lib/scope";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatusBadge } from "@/components/shared/status-badge";
@@ -20,6 +21,7 @@ import { format, differenceInDays } from "date-fns";
 import Link from "next/link";
 import type { JurisdictionLevel, CertEngagementType } from "@prisma/client";
 import { CertCreateButton } from "./cert-create-button";
+import { CertFilters } from "./cert-filters";
 
 const JURISDICTION_LEVELS: JurisdictionLevel[] = [
   "FEDERAL",
@@ -33,16 +35,23 @@ const JURISDICTION_LEVELS: JurisdictionLevel[] = [
 
 const ENGAGEMENT_TYPES: CertEngagementType[] = ["CERTIFICATION", "SUBSCRIPTION"];
 
+type StatusBucket = "active" | "expiring" | "expired" | "pending";
+const STATUS_BUCKETS: StatusBucket[] = ["active", "expiring", "expired", "pending"];
+
 interface PageProps {
   searchParams: Promise<{
     jurisdiction?: string;
     engagement?: string;
+    status?: string;
   }>;
 }
 
 export default async function CertificationsPage({ searchParams }: PageProps) {
-  const session = await auth();
-  if (!session?.user) redirect("/login");
+  const user = await requireAuth();
+
+  if (!hasOrgWideManage(user.role)) {
+    return <AccessDenied module="certifications" moduleLabel="Certifications" moduleDescription="Compliance certifications and expirations (Admin / Developer only)" />;
+  }
 
   const sp = await searchParams;
   const jurisdictionFilter = JURISDICTION_LEVELS.includes(sp.jurisdiction as JurisdictionLevel)
@@ -51,14 +60,22 @@ export default async function CertificationsPage({ searchParams }: PageProps) {
   const engagementFilter = ENGAGEMENT_TYPES.includes(sp.engagement as CertEngagementType)
     ? (sp.engagement as CertEngagementType)
     : null;
+  const statusFilter = STATUS_BUCKETS.includes(sp.status as StatusBucket)
+    ? (sp.status as StatusBucket)
+    : null;
 
-  const _perms = await resolveModulePerms(session.user.id, session.user.role, "certifications");
+  const _perms = await resolveModulePerms(user.id, user.role, "certifications");
+
+  const scope = await getUserScope(user.id, user.role);
+  const scopedCertIds = scope.all ? null : Array.from(scope.certIds);
+  const scopedClientIds = scope.all ? null : Array.from(scope.clientIds);
 
   const [certifications, clients, users] = await Promise.all([
     db.certification.findMany({
       where: {
         ...(jurisdictionFilter ? { jurisdictionLevel: jurisdictionFilter } : {}),
         ...(engagementFilter ? { engagementType: engagementFilter } : {}),
+        ...(scopedCertIds ? { id: { in: scopedCertIds } } : {}),
       },
       orderBy: [{ expirationDate: "asc" }],
       include: {
@@ -67,7 +84,11 @@ export default async function CertificationsPage({ searchParams }: PageProps) {
         pointOfContact: { select: { id: true, name: true } },
       },
     }),
-    db.client.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } }),
+    db.client.findMany({
+      where: scopedClientIds ? { id: { in: scopedClientIds } } : {},
+      select: { id: true, name: true },
+      orderBy: { name: "asc" },
+    }),
     db.user.findMany({
       where: { isActive: true },
       select: { id: true, name: true },
@@ -77,33 +98,56 @@ export default async function CertificationsPage({ searchParams }: PageProps) {
 
   const now = new Date();
 
-  // Breakdown stats
-  const active = certifications.filter((c) => c.status === "ACTIVE");
-  const expiringSoon = certifications.filter((c) => {
-    if (!c.expirationDate) return false;
-    const days = differenceInDays(c.expirationDate, now);
-    return days > 0 && days <= (c.renewalLeadDays || 90);
-  });
-  const expired = certifications.filter((c) => {
-    if (!c.expirationDate) return c.status === "EXPIRED";
-    return differenceInDays(c.expirationDate, now) <= 0;
-  });
-  const pending = certifications.filter((c) => c.status === "PENDING");
+  // Compute breakdown buckets from the full (scope+jurisdiction+engagement)
+  // result set so stat counts reflect what the user would see once the
+  // status filter is cleared. Filtering is applied to the visible list below.
+  const bucketOf = (c: (typeof certifications)[number]): StatusBucket => {
+    if (c.status === "PENDING") return "pending";
+    if (c.expirationDate) {
+      const days = differenceInDays(c.expirationDate, now);
+      if (days <= 0) return "expired";
+      if (days <= (c.renewalLeadDays || 90)) return "expiring";
+    } else if (c.status === "EXPIRED") {
+      return "expired";
+    }
+    return "active";
+  };
+  const buckets: Record<StatusBucket, typeof certifications> = {
+    active: [],
+    expiring: [],
+    expired: [],
+    pending: [],
+  };
+  for (const cert of certifications) buckets[bucketOf(cert)].push(cert);
+  const active = buckets.active;
+  const expiringSoon = buckets.expiring;
+  const expired = buckets.expired;
+  const pending = buckets.pending;
+  const visibleCerts = statusFilter ? buckets[statusFilter] : certifications;
 
   const canCreate =
-    session.user.role === "ADMIN" ||
-    session.user.role === "MANAGER" ||
-    session.user.role === "DEVELOPER";
+    user.role === "ADMIN" ||
+    user.role === "MANAGER" ||
+    user.role === "DEVELOPER";
 
-  const buildHref = (overrides: { jurisdiction?: string | null; engagement?: string | null }) => {
+  const buildHref = (overrides: {
+    jurisdiction?: string | null;
+    engagement?: string | null;
+    status?: string | null;
+  }) => {
     const params = new URLSearchParams();
     const nextJuris = overrides.jurisdiction === undefined ? jurisdictionFilter : overrides.jurisdiction;
     const nextEng = overrides.engagement === undefined ? engagementFilter : overrides.engagement;
+    const nextStatus = overrides.status === undefined ? statusFilter : overrides.status;
     if (nextJuris) params.set("jurisdiction", nextJuris);
     if (nextEng) params.set("engagement", nextEng);
+    if (nextStatus) params.set("status", nextStatus);
     const qs = params.toString();
     return qs ? `/certifications?${qs}` : "/certifications";
   };
+
+  const hasAnyFilter =
+    jurisdictionFilter !== null || engagementFilter !== null || statusFilter !== null;
 
   return (
     <div>
@@ -113,109 +157,82 @@ export default async function CertificationsPage({ searchParams }: PageProps) {
         actions={canCreate ? <CertCreateButton clients={clients} users={users} /> : undefined}
       />
 
-      {/* Summary breakdown */}
+      {/* Clickable status buckets — tap a card to filter the list below. */}
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4 mb-6">
-        <Card>
-          <CardContent className="p-4 flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-green-50">
-              <CheckCircle2 className="h-5 w-5 text-green-600" />
-            </div>
-            <div>
-              <p className="text-2xl font-bold">{active.length}</p>
-              <p className="text-xs text-muted-foreground">Active</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className={expiringSoon.length > 0 ? "border-warning/50" : ""}>
-          <CardContent className="p-4 flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-yellow-50">
-              <Clock className="h-5 w-5 text-yellow-600" />
-            </div>
-            <div>
-              <p className="text-2xl font-bold">{expiringSoon.length}</p>
-              <p className="text-xs text-muted-foreground">Expiring Soon</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className={expired.length > 0 ? "border-destructive/50" : ""}>
-          <CardContent className="p-4 flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-red-50">
-              <XCircle className="h-5 w-5 text-red-600" />
-            </div>
-            <div>
-              <p className="text-2xl font-bold">{expired.length}</p>
-              <p className="text-xs text-muted-foreground">Expired</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4 flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-blue-50">
-              <RotateCcw className="h-5 w-5 text-blue-600" />
-            </div>
-            <div>
-              <p className="text-2xl font-bold">{pending.length}</p>
-              <p className="text-xs text-muted-foreground">Pending</p>
-            </div>
-          </CardContent>
-        </Card>
+        {(
+          [
+            {
+              key: "active" as const,
+              label: "Active",
+              count: active.length,
+              Icon: CheckCircle2,
+              iconWrap: "bg-green-50",
+              iconColor: "text-green-600",
+              activeBorder: "",
+            },
+            {
+              key: "expiring" as const,
+              label: "Expiring Soon",
+              count: expiringSoon.length,
+              Icon: Clock,
+              iconWrap: "bg-yellow-50",
+              iconColor: "text-yellow-600",
+              activeBorder: expiringSoon.length > 0 ? "border-warning/50" : "",
+            },
+            {
+              key: "expired" as const,
+              label: "Expired",
+              count: expired.length,
+              Icon: XCircle,
+              iconWrap: "bg-red-50",
+              iconColor: "text-red-600",
+              activeBorder: expired.length > 0 ? "border-destructive/50" : "",
+            },
+            {
+              key: "pending" as const,
+              label: "Pending",
+              count: pending.length,
+              Icon: RotateCcw,
+              iconWrap: "bg-blue-50",
+              iconColor: "text-blue-600",
+              activeBorder: "",
+            },
+          ] as const
+        ).map((stat) => {
+          const isActive = statusFilter === stat.key;
+          return (
+            <Link
+              key={stat.key}
+              href={buildHref({ status: isActive ? null : stat.key })}
+              aria-pressed={isActive}
+            >
+              <Card
+                className={`transition-shadow hover:shadow-md ${
+                  isActive ? "border-primary ring-1 ring-primary/40" : stat.activeBorder
+                }`}
+              >
+                <CardContent className="p-4 flex items-center gap-3">
+                  <div className={`p-2 rounded-lg ${stat.iconWrap}`}>
+                    <stat.Icon className={`h-5 w-5 ${stat.iconColor}`} />
+                  </div>
+                  <div>
+                    <p className="text-2xl font-bold">{stat.count}</p>
+                    <p className="text-xs text-muted-foreground">{stat.label}</p>
+                  </div>
+                </CardContent>
+              </Card>
+            </Link>
+          );
+        })}
       </div>
 
-      {/* Filters */}
-      <div className="flex flex-wrap items-center gap-3 mb-6">
-        <div className="flex flex-wrap items-center gap-1.5">
-          <span className="text-xs font-medium text-muted-foreground mr-1">Jurisdiction:</span>
-          <Link
-            href={buildHref({ jurisdiction: null })}
-            className={`text-xs rounded-full px-2.5 py-1 border transition-colors ${
-              jurisdictionFilter === null
-                ? "bg-primary text-primary-foreground border-primary"
-                : "border-border hover:bg-muted"
-            }`}
-          >
-            All
-          </Link>
-          {JURISDICTION_LEVELS.map((level) => (
-            <Link
-              key={level}
-              href={buildHref({ jurisdiction: level })}
-              className={`text-xs rounded-full px-2.5 py-1 border transition-colors ${
-                jurisdictionFilter === level
-                  ? "bg-primary text-primary-foreground border-primary"
-                  : "border-border hover:bg-muted"
-              }`}
-            >
-              {level}
-            </Link>
-          ))}
-        </div>
-        <div className="flex flex-wrap items-center gap-1.5">
-          <span className="text-xs font-medium text-muted-foreground mr-1">Type:</span>
-          <Link
-            href={buildHref({ engagement: null })}
-            className={`text-xs rounded-full px-2.5 py-1 border transition-colors ${
-              engagementFilter === null
-                ? "bg-primary text-primary-foreground border-primary"
-                : "border-border hover:bg-muted"
-            }`}
-          >
-            All
-          </Link>
-          {ENGAGEMENT_TYPES.map((t) => (
-            <Link
-              key={t}
-              href={buildHref({ engagement: t })}
-              className={`text-xs rounded-full px-2.5 py-1 border transition-colors ${
-                engagementFilter === t
-                  ? "bg-primary text-primary-foreground border-primary"
-                  : "border-border hover:bg-muted"
-              }`}
-            >
-              {t}
-            </Link>
-          ))}
-        </div>
-      </div>
+      <CertFilters
+        jurisdictionLevels={JURISDICTION_LEVELS}
+        engagementTypes={ENGAGEMENT_TYPES}
+        jurisdictionFilter={jurisdictionFilter}
+        engagementFilter={engagementFilter}
+        hasAnyFilter={hasAnyFilter}
+      />
 
       {/* Renewal alerts */}
       {expiringSoon.length > 0 && (
@@ -265,19 +282,19 @@ export default async function CertificationsPage({ searchParams }: PageProps) {
       )}
 
       {/* All certifications */}
-      {certifications.length === 0 ? (
+      {visibleCerts.length === 0 ? (
         <EmptyState
           icon={Award}
           title="No certifications yet"
           description={
-            jurisdictionFilter || engagementFilter
+            hasAnyFilter
               ? "No certifications match the current filters."
               : "Add your first certification to start tracking renewals"
           }
         />
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {certifications.map((cert) => {
+          {visibleCerts.map((cert) => {
             const daysUntilExpiry = cert.expirationDate
               ? differenceInDays(cert.expirationDate, now)
               : null;

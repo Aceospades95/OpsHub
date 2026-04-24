@@ -1,6 +1,8 @@
-import { auth } from "@/lib/auth";
-import { redirect, notFound } from "next/navigation";
+import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
+import { requireAuth } from "@/lib/permissions";
+import { getUserScope, canViewEntity, hasOrgWideManage } from "@/lib/scope";
+import { AccessDenied } from "@/components/shared/access-denied";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatusBadge } from "@/components/shared/status-badge";
@@ -37,8 +39,11 @@ interface Props {
 
 export default async function CertificationDetailPage({ params }: Props) {
   const { certId } = await params;
-  const session = await auth();
-  if (!session?.user) redirect("/login");
+  const user = await requireAuth();
+
+  if (!hasOrgWideManage(user.role)) {
+    return <AccessDenied module="certifications" moduleLabel="Certifications" moduleDescription="Compliance certifications and expirations (Admin / Developer only)" />;
+  }
 
   const cert = await db.certification.findUnique({
     where: { id: certId },
@@ -66,8 +71,17 @@ export default async function CertificationDetailPage({ params }: Props) {
 
   if (!cert) notFound();
 
+  const scope = await getUserScope(user.id, user.role);
+  if (!canViewEntity(scope, "certification", cert.id)) {
+    return <AccessDenied module="certifications" moduleLabel="Certifications" entityType="certification" entityId={cert.id} entityLabel={cert.name} />;
+  }
+
   const [clients, users] = await Promise.all([
-    db.client.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } }),
+    db.client.findMany({
+      where: scope.all ? {} : { id: { in: Array.from(scope.clientIds) } },
+      select: { id: true, name: true },
+      orderBy: { name: "asc" },
+    }),
     db.user.findMany({
       where: { isActive: true },
       select: { id: true, name: true },
@@ -83,7 +97,7 @@ export default async function CertificationDetailPage({ params }: Props) {
     daysUntilExpiry <= (cert.renewalLeadDays || 90);
   const isExpired = daysUntilExpiry !== null && daysUntilExpiry <= 0;
 
-  const role = session.user.role;
+  const role = user.role;
   const canEdit = role === "ADMIN" || role === "MANAGER" || role === "DEVELOPER";
   const canSignOff = role === "ADMIN" || role === "MANAGER";
   const canRevoke = role === "ADMIN";
@@ -92,8 +106,8 @@ export default async function CertificationDetailPage({ params }: Props) {
   // Contributors can toggle checklist only if they're the assignee or POC
   const canModifyChecklist =
     canEdit ||
-    cert.assigneeId === session.user.id ||
-    cert.pointOfContactId === session.user.id;
+    cert.assigneeId === user.id ||
+    cert.pointOfContactId === user.id;
 
   const jurisdictionLabel = [cert.jurisdictionLevel, cert.jurisdictionName]
     .filter(Boolean)
@@ -644,7 +658,7 @@ export default async function CertificationDetailPage({ params }: Props) {
             entityId={cert.id}
             canComment={true}
             canDelete={canEdit}
-            currentUserId={session.user.id}
+            currentUserId={user.id}
           />
         </CardContent>
       </Card>

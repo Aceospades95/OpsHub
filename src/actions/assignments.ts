@@ -1,7 +1,9 @@
 "use server";
 
 import { db } from "@/lib/db";
-import { requireAuth } from "@/lib/permissions";
+import { requireAuth, canManageProjectAssignments } from "@/lib/permissions";
+import { hasOrgWideManage } from "@/lib/scope";
+import { maybePromoteUserRole, maybeDemoteUserRole } from "@/lib/auto-role";
 import { logActivity } from "@/lib/activity";
 import { revalidatePath } from "next/cache";
 import { revalidateAssignment } from "@/lib/revalidate-entity";
@@ -85,8 +87,37 @@ async function notifyAssignmentChange(opts: {
   }
 }
 
-function requireAdminOrManager(role: string) {
-  if (role !== "ADMIN" && role !== "MANAGER") throw new Error("Admin or Manager access required");
+/**
+ * Coarse role gate used by actions that aren't tied to one specific project
+ * (e.g. service offerings, role definitions, generic "can this user reach
+ * any staffing action at all"). Per-project gating uses
+ * canManageProjectAssignments so a manager can only touch their projects.
+ */
+function requireAssignmentManager(role: string) {
+  if (role !== "ADMIN" && role !== "DEVELOPER" && role !== "MANAGER")
+    throw new Error("Assignment manager access required");
+}
+
+/**
+ * Throws if the current user (by role + id) can't manage assignments on the
+ * given project. ADMIN and DEVELOPER always pass; MANAGER must be assigned
+ * to the project. Internal-only (no project) assignments still require the
+ * coarse gate — a contributor isn't allowed to create them.
+ */
+async function requireManageForAssignment(
+  userId: string,
+  role: string,
+  projectId: string | null | undefined
+) {
+  if (hasOrgWideManage(role as Parameters<typeof hasOrgWideManage>[0])) return;
+  if (role !== "MANAGER") throw new Error("Permission denied");
+  if (!projectId) throw new Error("Permission denied");
+  const ok = await canManageProjectAssignments(
+    userId,
+    role as Parameters<typeof canManageProjectAssignments>[1],
+    projectId
+  );
+  if (!ok) throw new Error("Permission denied");
 }
 
 // Revalidate all paths where an assignment could appear.
@@ -113,7 +144,7 @@ const assignmentSchema = z.object({
 
 export async function createAssignment(_prev: unknown, formData: FormData) {
   const user = await requireAuth();
-  requireAdminOrManager(user.role);
+  requireAssignmentManager(user.role);
 
   const parsed = assignmentSchema.safeParse({
     employeeId: formData.get("employeeId"),
@@ -133,6 +164,9 @@ export async function createAssignment(_prev: unknown, formData: FormData) {
 
   if (!parsed.success) return { error: "Invalid input", fieldErrors: parsed.error.flatten().fieldErrors };
 
+  // Managers may only assign to projects they themselves are on.
+  await requireManageForAssignment(user.id, user.role, parsed.data.projectId);
+
   const assignment = await db.assignment.create({
     data: {
       ...parsed.data,
@@ -140,6 +174,10 @@ export async function createAssignment(_prev: unknown, formData: FormData) {
       endDate: parsed.data.endDate ? new Date(parsed.data.endDate) : undefined,
     },
   });
+
+  // Promote GUEST/VIEWER → CONTRIBUTOR so they can actually see the project
+  // they were just assigned to.
+  await maybePromoteUserRole(assignment.employeeId);
 
   await logActivity("created", "assignment", assignment.id, user.id, `Assignment for employee ${parsed.data.employeeId}`);
   revalidateAssignmentPaths(parsed.data.employeeId, parsed.data.projectId);
@@ -157,7 +195,7 @@ export async function createAssignment(_prev: unknown, formData: FormData) {
 
 export async function updateAssignment(_prev: unknown, formData: FormData) {
   const user = await requireAuth();
-  requireAdminOrManager(user.role);
+  requireAssignmentManager(user.role);
 
   const id = formData.get("id") as string;
 
@@ -179,6 +217,13 @@ export async function updateAssignment(_prev: unknown, formData: FormData) {
 
   if (!parsed.success) return { error: "Invalid input", fieldErrors: parsed.error.flatten().fieldErrors };
 
+  await requireManageForAssignment(user.id, user.role, parsed.data.projectId);
+
+  const previous = await db.assignment.findUnique({
+    where: { id },
+    select: { status: true },
+  });
+
   await db.assignment.update({
     where: { id },
     data: {
@@ -188,6 +233,14 @@ export async function updateAssignment(_prev: unknown, formData: FormData) {
     },
   });
 
+  // Status transitions out of ACTIVE/PLANNED (e.g. -> COMPLETED / ON_HOLD)
+  // can remove the assignment from the user's scope; trigger the demotion
+  // check in that case.
+  const wasActive = previous?.status === "ACTIVE" || previous?.status === "PLANNED";
+  const isActive = parsed.data.status === "ACTIVE" || parsed.data.status === "PLANNED";
+  if (wasActive && !isActive) await maybeDemoteUserRole(parsed.data.employeeId);
+  else if (!wasActive && isActive) await maybePromoteUserRole(parsed.data.employeeId);
+
   await logActivity("updated", "assignment", id, user.id);
   revalidateAssignmentPaths(parsed.data.employeeId, parsed.data.projectId);
   return { success: true };
@@ -195,7 +248,7 @@ export async function updateAssignment(_prev: unknown, formData: FormData) {
 
 export async function deleteAssignment(_prev: unknown, formData: FormData) {
   const user = await requireAuth();
-  requireAdminOrManager(user.role);
+  requireAssignmentManager(user.role);
 
   const id = formData.get("id") as string;
   if (!id) return { error: "Assignment ID is required" };
@@ -204,17 +257,20 @@ export async function deleteAssignment(_prev: unknown, formData: FormData) {
     where: { id },
     select: { employeeId: true, projectId: true },
   });
+  if (!assignment) return { error: "Assignment not found" };
+  await requireManageForAssignment(user.id, user.role, assignment.projectId);
 
   await db.assignment.delete({ where: { id } });
+  await maybeDemoteUserRole(assignment.employeeId);
   await logActivity("deleted", "assignment", id, user.id);
-  revalidateAssignmentPaths(assignment?.employeeId, assignment?.projectId);
+  revalidateAssignmentPaths(assignment.employeeId, assignment.projectId);
   return { success: true, error: null };
 }
 
 // Direct delete (for inline remove from staffing matrix)
 export async function removeAssignment(assignmentId: string) {
   const user = await requireAuth();
-  requireAdminOrManager(user.role);
+  requireAssignmentManager(user.role);
 
   if (!assignmentId) return { error: "Assignment ID is required" };
 
@@ -225,8 +281,10 @@ export async function removeAssignment(assignmentId: string) {
     select: { employeeId: true, projectId: true, role: true, allocationFte: true },
   });
   if (!assignment) return { error: "Assignment not found" };
+  await requireManageForAssignment(user.id, user.role, assignment.projectId);
 
   await db.assignment.delete({ where: { id: assignmentId } });
+  await maybeDemoteUserRole(assignment.employeeId);
   await logActivity("deleted", "assignment", assignmentId, user.id);
   revalidateAssignmentPaths(assignment.employeeId, assignment.projectId);
   await notifyAssignmentChange({
@@ -253,9 +311,10 @@ export async function quickAssign(data: {
   serviceOfferingId?: string;
 }) {
   const user = await requireAuth();
-  requireAdminOrManager(user.role);
+  requireAssignmentManager(user.role);
 
   if (!data.employeeId || !data.projectId) return { error: "Employee and project are required" };
+  await requireManageForAssignment(user.id, user.role, data.projectId);
 
   const assignment = await db.assignment.create({
     data: {
@@ -270,6 +329,8 @@ export async function quickAssign(data: {
       status: "ACTIVE",
     },
   });
+
+  await maybePromoteUserRole(assignment.employeeId);
 
   await logActivity("created", "assignment", assignment.id, user.id, `Quick-assigned to project`);
   revalidateAssignmentPaths(data.employeeId, data.projectId);
@@ -288,7 +349,7 @@ export async function quickAssign(data: {
 // Inline field updates (for staffing matrix direct editing)
 export async function updateAssignmentNotes(assignmentId: string, notes: string) {
   const user = await requireAuth();
-  requireAdminOrManager(user.role);
+  requireAssignmentManager(user.role);
 
   const updated = await db.assignment.update({
     where: { id: assignmentId },
@@ -303,7 +364,7 @@ export async function updateAssignmentNotes(assignmentId: string, notes: string)
 
 export async function updateAssignmentRole(assignmentId: string, role: string, roleDefinitionId: string | null) {
   const user = await requireAuth();
-  requireAdminOrManager(user.role);
+  requireAssignmentManager(user.role);
 
   // Look up the assignment's project so we can re-link projectRoleId
   // to a matching ProjectRole on the same project (if one exists).
@@ -339,7 +400,7 @@ export async function updateAssignmentRole(assignmentId: string, role: string, r
 
 export async function updateAssignmentFte(assignmentId: string, allocationFte: number) {
   const user = await requireAuth();
-  requireAdminOrManager(user.role);
+  requireAssignmentManager(user.role);
 
   if (allocationFte < 0 || allocationFte > 2) return { error: "FTE must be between 0 and 2" };
 
@@ -356,7 +417,7 @@ export async function updateAssignmentFte(assignmentId: string, allocationFte: n
 
 export async function updateProjectOffering(projectId: string, serviceOfferingId: string | null) {
   const user = await requireAuth();
-  requireAdminOrManager(user.role);
+  requireAssignmentManager(user.role);
 
   await db.project.update({
     where: { id: projectId },
@@ -371,7 +432,7 @@ export async function updateProjectOffering(projectId: string, serviceOfferingId
 // Role Definition CRUD
 export async function createRoleDefinition(name: string) {
   const user = await requireAuth();
-  requireAdminOrManager(user.role);
+  requireAssignmentManager(user.role);
 
   if (!name.trim()) return { error: "Name is required" };
 
@@ -387,7 +448,7 @@ export async function createRoleDefinition(name: string) {
 // Project Role CRUD
 export async function createProjectRole(projectId: string, roleDefinitionId: string, requiredFte: number, quantity: number) {
   const user = await requireAuth();
-  requireAdminOrManager(user.role);
+  requireAssignmentManager(user.role);
 
   if (!projectId || !roleDefinitionId) return { error: "Project and role are required" };
   if (requiredFte < 0 || requiredFte > 2) return { error: "FTE must be between 0 and 2" };
@@ -403,7 +464,7 @@ export async function createProjectRole(projectId: string, roleDefinitionId: str
 
 export async function updateProjectRole(id: string, requiredFte: number, quantity: number) {
   const user = await requireAuth();
-  requireAdminOrManager(user.role);
+  requireAssignmentManager(user.role);
 
   const updated = await db.projectRole.update({
     where: { id },
@@ -417,7 +478,7 @@ export async function updateProjectRole(id: string, requiredFte: number, quantit
 
 export async function deleteProjectRole(id: string) {
   const user = await requireAuth();
-  requireAdminOrManager(user.role);
+  requireAssignmentManager(user.role);
 
   const pr = await db.projectRole.findUnique({ where: { id }, select: { projectId: true } });
   // Unlink assignments from this project role before deleting
@@ -436,7 +497,7 @@ const serviceOfferingSchema = z.object({
 
 export async function createServiceOffering(_prev: unknown, formData: FormData) {
   const user = await requireAuth();
-  requireAdminOrManager(user.role);
+  requireAssignmentManager(user.role);
 
   const parsed = serviceOfferingSchema.safeParse({
     name: formData.get("name"),

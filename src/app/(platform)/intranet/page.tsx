@@ -1,7 +1,5 @@
-import { auth } from "@/lib/auth";
-import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
-import { resolveModulePerms } from "@/lib/permissions";
+import { requireAuth, resolveModulePerms } from "@/lib/permissions";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -24,11 +22,9 @@ const categoryLabels: Record<string, string> = {
 };
 
 export default async function IntranetPage() {
-  const session = await auth();
-  if (!session?.user) redirect("/login");
+  const user = await requireAuth();
 
-  const perms = await resolveModulePerms(session.user.id, session.user.role, "intranet");
-  if (!perms.canView) redirect("/dashboard");
+  const perms = await resolveModulePerms(user.id, user.role, "intranet");
 
   const resources = await db.intranetResource.findMany({
     orderBy: [{ pinned: "desc" }, { sortOrder: "asc" }, { updatedAt: "desc" }],

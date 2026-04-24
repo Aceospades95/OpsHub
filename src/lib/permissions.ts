@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import type { Role } from "@prisma/client";
 import { redirect } from "next/navigation";
 import { getPermissionedModules } from "@/lib/modules";
+import { getUserScope, hasOrgWideManage } from "@/lib/scope";
 
 export type PermissionFlags = {
   canView: boolean;
@@ -20,6 +21,27 @@ const ROLE_LEVEL: Record<Role, number> = {
   DEVELOPER: 3,
   CONTRIBUTOR: 2,
   VIEWER: 1,
+  GUEST: 0,
+};
+
+/**
+ * Modules a GUEST can see out-of-the-box. Everything else requires either a
+ * role upgrade, an explicit module permission row, or an entity grant (e.g.
+ * a project assignment).
+ */
+const GUEST_VISIBLE_MODULES = new Set(["intranet", "team", "dashboard", "tasks"]);
+
+/**
+ * Map from module key to the scope set that gates sidebar visibility. Modules
+ * not listed here (team, intranet, dashboard, tasks) aren't entity-scoped —
+ * they're always on if the role allows canView.
+ */
+const SCOPED_MODULES: Record<string, "projectIds" | "clientIds" | "contractIds" | "toolIds" | "certIds"> = {
+  projects: "projectIds",
+  clients: "clientIds",
+  contracts: "contractIds",
+  tools: "toolIds",
+  certifications: "certIds",
 };
 
 export function getRoleDefaults(role: Role): PermissionFlags {
@@ -35,11 +57,38 @@ export function getRoleDefaults(role: Role): PermissionFlags {
   };
 }
 
+/**
+ * Guests have no default module access. They only see modules explicitly
+ * listed in GUEST_VISIBLE_MODULES (intranet + team) unless an admin grants
+ * them a module permission row or assigns them to a project.
+ */
+function getGuestModuleDefaults(module: string): PermissionFlags {
+  const canView = GUEST_VISIBLE_MODULES.has(module);
+  return {
+    canView,
+    canEdit: false,
+    canCreate: false,
+    canDelete: false,
+    canComment: false,
+    canUpload: false,
+    canManage: false,
+  };
+}
+
 export async function requireAuth() {
   const session = await auth();
   if (!session?.user) {
     redirect("/login");
   }
+  // The JWT caches the role from sign-in time; server-side changes (auto-
+  // promotion via assignment, admin edits) aren't reflected there because
+  // the jwt callback runs in Edge Runtime where Prisma is unavailable.
+  // Always re-read the current role so pages see the up-to-date value.
+  const freshUser = await db.user.findUnique({
+    where: { id: session.user.id },
+    select: { role: true },
+  });
+  if (freshUser) session.user.role = freshUser.role;
   return session.user;
 }
 
@@ -48,7 +97,8 @@ export async function resolveModulePerms(
   role: Role,
   module: string
 ): Promise<PermissionFlags> {
-  if (role === "ADMIN") {
+  // ADMIN and DEVELOPER both see + manage everything org-wide.
+  if (hasOrgWideManage(role)) {
     return {
       canView: true,
       canEdit: true,
@@ -60,23 +110,42 @@ export async function resolveModulePerms(
     };
   }
 
+  // Start with role-based defaults.
+  const base: PermissionFlags = role === "GUEST"
+    ? getGuestModuleDefaults(module)
+    : getRoleDefaults(role);
+
+  // An explicit module-permission row overrides the role defaults.
   const modulePerm = await db.modulePermission.findUnique({
     where: { userId_module: { userId, module } },
   });
 
-  if (modulePerm) {
-    return {
-      canView: modulePerm.canView,
-      canEdit: modulePerm.canEdit,
-      canCreate: modulePerm.canCreate,
-      canDelete: modulePerm.canDelete,
-      canComment: modulePerm.canComment,
-      canUpload: modulePerm.canUpload,
-      canManage: modulePerm.canManage,
-    };
+  const effective: PermissionFlags = modulePerm
+    ? {
+        canView: modulePerm.canView,
+        canEdit: modulePerm.canEdit,
+        canCreate: modulePerm.canCreate,
+        canDelete: modulePerm.canDelete,
+        canComment: modulePerm.canComment,
+        canUpload: modulePerm.canUpload,
+        canManage: modulePerm.canManage,
+      }
+    : base;
+
+  // For entity-scoped modules (projects, clients, contracts, tools, certs):
+  // if the user has at least one entity in scope (via assignment, membership,
+  // or entity permission), grant canView + canComment regardless of role or
+  // module-permission rows. Assignments are the source of truth for access.
+  const scopeKey = SCOPED_MODULES[module];
+  if (scopeKey && !effective.canView) {
+    const scope = await getUserScope(userId, role);
+    const set = scope[scopeKey];
+    if (set instanceof Set && set.size > 0) {
+      return { ...effective, canView: true, canComment: true };
+    }
   }
 
-  return getRoleDefaults(role);
+  return effective;
 }
 
 export async function resolveEntityPerms(
@@ -86,7 +155,8 @@ export async function resolveEntityPerms(
   entityType: string,
   entityId: string
 ): Promise<PermissionFlags> {
-  if (role === "ADMIN") {
+  // ADMIN and DEVELOPER manage every entity org-wide.
+  if (hasOrgWideManage(role)) {
     return {
       canView: true,
       canEdit: true,
@@ -155,7 +225,8 @@ export async function getAccessibleProjectIds(
   userId: string,
   role: Role
 ): Promise<string[] | "all"> {
-  if (role === "ADMIN" || role === "MANAGER") return "all";
+  // ADMIN, DEVELOPER, MANAGER all see every project on list pages.
+  if (role === "ADMIN" || role === "DEVELOPER" || role === "MANAGER") return "all";
 
   // Projects the user is actively assigned to (staffing)
   const assignments = await db.assignment.findMany({
@@ -197,6 +268,32 @@ export function canAccessSandbox(role: Role): boolean {
   return role === "ADMIN" || role === "DEVELOPER";
 }
 
+/**
+ * Coarse "can this role manage staffing at all?" check. Used for quick
+ * sidebar / button visibility. Fine-grained per-project authorization uses
+ * canManageProjectAssignments below — a manager who isn't assigned to a
+ * particular project can't manage that project's members.
+ */
+export function canManageAssignments(role: Role): boolean {
+  return role === "ADMIN" || role === "DEVELOPER" || role === "MANAGER";
+}
+
+/**
+ * Can this specific user add / remove members + assignments on this
+ * specific project? ADMIN and DEVELOPER always pass. MANAGER passes only
+ * when they're assigned to the project in question.
+ */
+export async function canManageProjectAssignments(
+  userId: string,
+  role: Role,
+  projectId: string
+): Promise<boolean> {
+  if (hasOrgWideManage(role)) return true;
+  if (role !== "MANAGER") return false;
+  const scope = await getUserScope(userId, role);
+  return scope.projectIds.has(projectId);
+}
+
 export async function getVisibleModules(
   userId: string,
   role: Role
@@ -205,7 +302,14 @@ export async function getVisibleModules(
   // module automatically adds it to the visible list without editing this file.
   const permissioned = getPermissionedModules();
 
-  if (role === "ADMIN") return permissioned.map((m) => m.key);
+  // ADMIN + DEVELOPER see every permissioned module in the sidebar.
+  if (hasOrgWideManage(role)) return permissioned.map((m) => m.key);
+
+  // For MANAGER and everyone else, hide entity-backed modules when the user
+  // has zero scoped entities for that module. This prevents empty sidebar
+  // items for, e.g., a contributor who isn't on any project yet. MANAGER
+  // has scope.all=true so they skip the empty-scope filter.
+  const scope = await getUserScope(userId, role);
 
   const visible: string[] = [];
   for (const mod of permissioned) {
@@ -213,7 +317,17 @@ export async function getVisibleModules(
     // of their individual module permission rows.
     if (mod.adminOnly) continue;
     const perms = await resolveModulePerms(userId, role, mod.key);
-    if (perms.canView) visible.push(mod.key);
+    if (!perms.canView) continue;
+
+    // If the module is entity-scoped and the user is not org-wide, require
+    // at least one entity in scope for the module to appear in the sidebar.
+    const scopeKey = SCOPED_MODULES[mod.key];
+    if (scopeKey && !scope.all) {
+      const set = scope[scopeKey];
+      if (set instanceof Set && set.size === 0) continue;
+    }
+
+    visible.push(mod.key);
   }
   return visible;
 }

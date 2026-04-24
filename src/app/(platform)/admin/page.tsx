@@ -15,6 +15,7 @@ import {
   FileSpreadsheet,
   BarChart3,
   KeyRound,
+  ShieldQuestion,
 } from "lucide-react";
 
 const SETTINGS_SECTIONS = [
@@ -22,6 +23,7 @@ const SETTINGS_SECTIONS = [
     title: "General",
     items: [
       { label: "Users & Permissions", href: "/admin/users", icon: Shield, description: "Manage user accounts, roles, and module permissions" },
+      { label: "Access Requests", href: "/admin/access-requests", icon: ShieldQuestion, description: "Review and approve pending access requests" },
       { label: "Single Sign-On", href: "/admin/sso", icon: KeyRound, description: "Google SSO configuration and allowed email domains" },
       { label: "Custom Pages", href: "/sandbox", icon: Blocks, description: "Build and manage custom pages" },
       { label: "Widget Builder", href: "/admin/widgets", icon: Puzzle, description: "Create and publish custom dashboard widgets" },

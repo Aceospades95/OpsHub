@@ -19,7 +19,7 @@ const createUserSchema = z.object({
   name: z.string().min(2, "Name required"),
   email: z.string().email("Invalid email").optional(),
   password: z.string().min(6, "Min 6 chars").optional(),
-  role: z.enum(["ADMIN", "MANAGER", "DEVELOPER", "CONTRIBUTOR", "VIEWER"]),
+  role: z.enum(["ADMIN", "MANAGER", "DEVELOPER", "CONTRIBUTOR", "VIEWER", "GUEST"]),
   department: z.string().optional(),
   jobTitle: z.string().optional(),
   location: z.string().optional(),
@@ -33,7 +33,9 @@ export async function createUser(_prev: unknown, formData: FormData) {
   requireAdminOrManager(admin.role);
 
   const hasLogin = formData.get("hasLoginAccess") !== "false";
-  const emailRaw = (formData.get("email") as string)?.trim();
+  // Normalize email to lowercase so login is case-insensitive and we never
+  // end up with two rows for the same address differing only in case.
+  const emailRaw = (formData.get("email") as string)?.trim().toLowerCase();
   const passwordRaw = (formData.get("password") as string)?.trim();
 
   // For login users, email and password are required
@@ -105,7 +107,7 @@ export async function createUser(_prev: unknown, formData: FormData) {
 const updateUserSchema = z.object({
   name: z.string().min(2),
   email: z.string().email(),
-  role: z.enum(["ADMIN", "MANAGER", "DEVELOPER", "CONTRIBUTOR", "VIEWER"]),
+  role: z.enum(["ADMIN", "MANAGER", "DEVELOPER", "CONTRIBUTOR", "VIEWER", "GUEST"]),
   department: z.string().optional(),
   jobTitle: z.string().optional(),
   location: z.string().optional(),
@@ -122,10 +124,11 @@ export async function updateUser(_prev: unknown, formData: FormData) {
   const id = formData.get("id") as string;
   const rawManagerId = formData.get("managerId") as string;
   const managerId = rawManagerId && rawManagerId.trim() ? rawManagerId.trim() : null;
+  const emailRaw = ((formData.get("email") as string) || "").trim().toLowerCase();
 
   const parsed = updateUserSchema.safeParse({
     name: formData.get("name"),
-    email: formData.get("email"),
+    email: emailRaw,
     role: formData.get("role"),
     department: formData.get("department") || undefined,
     jobTitle: formData.get("jobTitle") || undefined,
@@ -155,16 +158,27 @@ export async function updateUser(_prev: unknown, formData: FormData) {
     }
   }
 
-  // Look up the previous manager so we can revalidate their page too if it changed
+  // Look up the previous manager + role so we can revalidate their page too
+  // if it changed, and decide whether this was a manual role change (which
+  // should clear the auto-promotion marker).
   const previous = await db.user.findUnique({
     where: { id },
-    select: { managerId: true },
+    select: { managerId: true, role: true, promotedFromRole: true },
   });
+
+  // If an admin explicitly changed the role, treat the new role as the
+  // user's chosen level — drop the promotedFromRole so they won't be
+  // auto-demoted later by assignment removal.
+  const roleChanged = previous && previous.role !== parsed.data.role;
+  const promotedFromRoleUpdate =
+    roleChanged && previous?.promotedFromRole
+      ? { promotedFromRole: null }
+      : {};
 
   // Use null instead of undefined to actually clear the field
   await db.user.update({
     where: { id },
-    data: { ...parsed.data, managerId: managerId },
+    data: { ...parsed.data, managerId: managerId, ...promotedFromRoleUpdate },
   });
   await logActivity("updated", "user", id, admin.id, parsed.data.name);
   revalidateUser(id, {
@@ -187,6 +201,33 @@ export async function deleteUser(_prev: unknown, formData: FormData) {
   await db.user.delete({ where: { id } });
   await logActivity("deleted", "user", id, admin.id, user.name);
   revalidateUser(id, { managerId: user.managerId });
+  return { success: true };
+}
+
+export async function resetUserPassword(_prev: unknown, formData: FormData) {
+  const admin = await requireAuth();
+  // Restricted to ADMIN — managers can edit profile fields but not reset
+  // login credentials for other users.
+  if (admin.role !== "ADMIN") throw new Error("Admin access required");
+
+  const id = formData.get("id") as string;
+  const newPassword = (formData.get("newPassword") as string)?.trim() ?? "";
+  if (!id) return { error: "Missing user" };
+  if (newPassword.length < 8) return { error: "Password must be at least 8 characters" };
+
+  const user = await db.user.findUnique({
+    where: { id },
+    select: { id: true, name: true, authProvider: true, hasLoginAccess: true },
+  });
+  if (!user) return { error: "User not found" };
+  if (user.authProvider !== "credentials")
+    return { error: "Cannot reset password for SSO accounts" };
+  if (!user.hasLoginAccess)
+    return { error: "User has no login access" };
+
+  const hashedPassword = await hash(newPassword, 12);
+  await db.user.update({ where: { id }, data: { hashedPassword } });
+  await logActivity("reset password for", "user", id, admin.id, user.name);
   return { success: true };
 }
 

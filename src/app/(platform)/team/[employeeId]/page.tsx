@@ -1,6 +1,6 @@
-import { auth } from "@/lib/auth";
-import { redirect, notFound } from "next/navigation";
+import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
+import { requireAuth } from "@/lib/permissions";
 import { PageHeader } from "@/components/layout/page-header";
 import { EmployeeDetailClient } from "./employee-detail-client";
 
@@ -10,8 +10,7 @@ interface Props {
 
 export default async function EmployeeDetailPage({ params }: Props) {
   const { employeeId } = await params;
-  const session = await auth();
-  if (!session?.user) redirect("/login");
+  const user = await requireAuth();
 
   const employee = await db.user.findUnique({
     where: { id: employeeId },
@@ -44,8 +43,8 @@ export default async function EmployeeDetailPage({ params }: Props) {
 
   if (!employee) notFound();
 
-  const canManage = session.user.role === "ADMIN" || session.user.role === "MANAGER";
-  const isAdmin = session.user.role === "ADMIN";
+  const canManage = user.role === "ADMIN" || user.role === "MANAGER";
+  const isAdmin = user.role === "ADMIN";
 
   // Fetch admin-related data
   const [recentActivity, allUsers, allClients, allProjects, serviceOfferings, roleDefinitions, customPages] = await Promise.all([

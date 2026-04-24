@@ -3,12 +3,18 @@
 import { useFormState } from "react-dom";
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { saveThemeSettings, resetThemeToDefaults } from "@/actions/theme";
+import {
+  saveThemeSettings,
+  resetThemeToDefaults,
+  applyPresetTheme,
+  saveCustomPreset,
+  deleteCustomPreset,
+} from "@/actions/theme";
 import { DEFAULT_THEME } from "@/lib/theme-defaults";
 import { THEME_PRESETS, getLightPresets, getDarkPresets, type ThemePreset } from "@/lib/theme-presets";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Sun, Moon, Check, Palette } from "lucide-react";
+import { Sun, Moon, Check, Palette, Save, Trash2, X } from "lucide-react";
 
 const THEME_GROUPS = [
   {
@@ -18,7 +24,7 @@ const THEME_GROUPS = [
   },
   {
     title: "Surface Colors",
-    description: "Background, card, and border colors",
+    description: "Background, card, and border colors. Card Border controls how prominently cards stand out from the page background.",
     keys: [
       "background",
       "foreground",
@@ -30,6 +36,7 @@ const THEME_GROUPS = [
       "input",
       "card",
       "card-foreground",
+      "card-border",
     ],
   },
   {
@@ -53,6 +60,7 @@ const LABELS: Record<string, string> = {
   input: "Input Border",
   card: "Card",
   "card-foreground": "Card Text",
+  "card-border": "Card Border",
   destructive: "Destructive",
   success: "Success",
   warning: "Warning",
@@ -60,24 +68,29 @@ const LABELS: Record<string, string> = {
 
 interface ThemeEditorProps {
   currentTheme: Record<string, string>;
+  customPresets: ThemePreset[];
 }
 
-export function ThemeEditor({ currentTheme }: ThemeEditorProps) {
+export function ThemeEditor({ currentTheme, customPresets }: ThemeEditorProps) {
   const [colors, setColors] = useState<Record<string, string>>(currentTheme);
   const [activePreset, setActivePreset] = useState<string | null>(null);
   const [showPresets, setShowPresets] = useState(true);
+  const [showSaveDialog, setShowSaveDialog] = useState(false);
+  const [saveTemplateName, setSaveTemplateName] = useState("");
+  const [saveTemplateMode, setSaveTemplateMode] = useState<"light" | "dark">("light");
+  const [saving, setSaving] = useState(false);
   const [saveState, saveAction] = useFormState(saveThemeSettings, null);
   const [resetState, resetAction] = useFormState(resetThemeToDefaults, null);
   const formRef = useRef<HTMLFormElement>(null);
   const router = useRouter();
 
-  // Detect which preset matches current colors
   useEffect(() => {
-    const match = THEME_PRESETS.find((p) =>
+    const allPresets = [...THEME_PRESETS, ...customPresets];
+    const match = allPresets.find((p) =>
       Object.entries(p.colors).every(([k, v]) => colors[k]?.toLowerCase() === v.toLowerCase())
     );
     setActivePreset(match?.id || null);
-  }, [colors]);
+  }, [colors, customPresets]);
 
   useEffect(() => {
     if (saveState?.success) router.refresh();
@@ -94,12 +107,49 @@ export function ThemeEditor({ currentTheme }: ThemeEditorProps) {
     setColors((prev) => ({ ...prev, [key]: value }));
   }
 
-  function applyPreset(preset: ThemePreset) {
+  async function handleApplyPreset(preset: ThemePreset) {
     setColors({ ...preset.colors });
+    await applyPresetTheme(preset.colors);
+    router.refresh();
+  }
+
+  async function handleResetToLight() {
+    const lightDefault = THEME_PRESETS.find((p) => p.id === "light-default");
+    if (lightDefault) {
+      setColors({ ...lightDefault.colors });
+      await applyPresetTheme(lightDefault.colors);
+      router.refresh();
+    }
+  }
+
+  async function handleResetToDark() {
+    const darkDefault = THEME_PRESETS.find((p) => p.id === "dark-default");
+    if (darkDefault) {
+      setColors({ ...darkDefault.colors });
+      await applyPresetTheme(darkDefault.colors);
+      router.refresh();
+    }
+  }
+
+  async function handleSaveTemplate() {
+    if (!saveTemplateName.trim()) return;
+    setSaving(true);
+    await saveCustomPreset(saveTemplateName.trim(), saveTemplateMode, colors);
+    setSaving(false);
+    setShowSaveDialog(false);
+    setSaveTemplateName("");
+    router.refresh();
+  }
+
+  async function handleDeletePreset(presetId: string) {
+    await deleteCustomPreset(presetId);
+    router.refresh();
   }
 
   const lightPresets = getLightPresets();
   const darkPresets = getDarkPresets();
+  const customLightPresets = customPresets.filter((p) => p.mode === "light");
+  const customDarkPresets = customPresets.filter((p) => p.mode === "dark");
 
   return (
     <div className="space-y-6">
@@ -110,25 +160,44 @@ export function ThemeEditor({ currentTheme }: ThemeEditorProps) {
             <CardTitle className="flex items-center gap-2">
               <Palette className="h-5 w-5" /> Theme Presets
             </CardTitle>
-            <Button variant="ghost" size="sm" onClick={() => setShowPresets(!showPresets)}>
-              {showPresets ? "Hide" : "Show"}
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" onClick={() => setShowSaveDialog(true)}>
+                <Save className="h-4 w-4 mr-1" /> Save Current as Template
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => setShowPresets(!showPresets)}>
+                {showPresets ? "Hide" : "Show"}
+              </Button>
+            </div>
           </div>
         </CardHeader>
         {showPresets && (
           <CardContent className="space-y-6">
             {/* Light themes */}
             <div>
-              <h3 className="text-sm font-semibold flex items-center gap-2 mb-3">
-                <Sun className="h-4 w-4 text-yellow-500" /> Light Themes
-              </h3>
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-semibold flex items-center gap-2">
+                  <Sun className="h-4 w-4 text-yellow-500" /> Light Themes
+                </h3>
+                <Button variant="ghost" size="sm" onClick={handleResetToLight} className="text-xs">
+                  Reset to Light Default
+                </Button>
+              </div>
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
                 {lightPresets.map((preset) => (
                   <PresetCard
                     key={preset.id}
                     preset={preset}
                     isActive={activePreset === preset.id}
-                    onClick={() => applyPreset(preset)}
+                    onClick={() => handleApplyPreset(preset)}
+                  />
+                ))}
+                {customLightPresets.map((preset) => (
+                  <PresetCard
+                    key={preset.id}
+                    preset={preset}
+                    isActive={activePreset === preset.id}
+                    onClick={() => handleApplyPreset(preset)}
+                    onDelete={() => handleDeletePreset(preset.id)}
                   />
                 ))}
               </div>
@@ -136,16 +205,30 @@ export function ThemeEditor({ currentTheme }: ThemeEditorProps) {
 
             {/* Dark themes */}
             <div>
-              <h3 className="text-sm font-semibold flex items-center gap-2 mb-3">
-                <Moon className="h-4 w-4 text-blue-400" /> Dark Themes
-              </h3>
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-semibold flex items-center gap-2">
+                  <Moon className="h-4 w-4 text-blue-400" /> Dark Themes
+                </h3>
+                <Button variant="ghost" size="sm" onClick={handleResetToDark} className="text-xs">
+                  Reset to Dark Default
+                </Button>
+              </div>
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
                 {darkPresets.map((preset) => (
                   <PresetCard
                     key={preset.id}
                     preset={preset}
                     isActive={activePreset === preset.id}
-                    onClick={() => applyPreset(preset)}
+                    onClick={() => handleApplyPreset(preset)}
+                  />
+                ))}
+                {customDarkPresets.map((preset) => (
+                  <PresetCard
+                    key={preset.id}
+                    preset={preset}
+                    isActive={activePreset === preset.id}
+                    onClick={() => handleApplyPreset(preset)}
+                    onDelete={() => handleDeletePreset(preset.id)}
                   />
                 ))}
               </div>
@@ -153,6 +236,60 @@ export function ThemeEditor({ currentTheme }: ThemeEditorProps) {
           </CardContent>
         )}
       </Card>
+
+      {/* Save as Template Dialog */}
+      {showSaveDialog && (
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle>Save as Template</CardTitle>
+              <Button variant="ghost" size="sm" onClick={() => setShowSaveDialog(false)}>
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-end gap-3">
+              <div className="flex-1 space-y-1.5">
+                <label className="block text-sm font-medium">Template Name</label>
+                <input
+                  type="text"
+                  value={saveTemplateName}
+                  onChange={(e) => setSaveTemplateName(e.target.value)}
+                  placeholder="My Custom Theme"
+                  className="flex h-10 w-full rounded border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="block text-sm font-medium">Mode</label>
+                <div className="flex rounded-lg border border-border overflow-hidden">
+                  <button
+                    type="button"
+                    onClick={() => setSaveTemplateMode("light")}
+                    className={`flex items-center gap-1.5 px-3 py-2 text-sm ${
+                      saveTemplateMode === "light" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"
+                    }`}
+                  >
+                    <Sun className="h-3.5 w-3.5" /> Light
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSaveTemplateMode("dark")}
+                    className={`flex items-center gap-1.5 px-3 py-2 text-sm ${
+                      saveTemplateMode === "dark" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"
+                    }`}
+                  >
+                    <Moon className="h-3.5 w-3.5" /> Dark
+                  </button>
+                </div>
+              </div>
+              <Button onClick={handleSaveTemplate} disabled={!saveTemplateName.trim() || saving}>
+                {saving ? "Saving..." : "Save Template"}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Color editor + preview */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -196,7 +333,7 @@ export function ThemeEditor({ currentTheme }: ThemeEditorProps) {
 
             <div className="flex items-center gap-3">
               <Button type="submit">Save Theme</Button>
-              <Button type="button" variant="outline" formAction={resetAction}>
+              <Button type="submit" variant="outline" formAction={resetAction}>
                 Reset to Defaults
               </Button>
             </div>
@@ -225,46 +362,59 @@ function PresetCard({
   preset,
   isActive,
   onClick,
+  onDelete,
 }: {
   preset: ThemePreset;
   isActive: boolean;
   onClick: () => void;
+  onDelete?: () => void;
 }) {
   return (
-    <button
-      onClick={onClick}
-      className={`relative rounded-lg border-2 p-3 text-left transition-all hover:shadow-md ${
-        isActive
-          ? "border-primary ring-2 ring-primary/20"
-          : "border-border hover:border-primary/40"
-      }`}
-      style={{ background: preset.colors.background }}
-    >
-      {isActive && (
-        <div className="absolute top-1.5 right-1.5 h-5 w-5 rounded-full flex items-center justify-center"
-          style={{ background: preset.colors.primary }}>
-          <Check className="h-3 w-3" style={{ color: preset.colors["primary-foreground"] }} />
+    <div className="relative group">
+      <button
+        type="button"
+        onClick={onClick}
+        className={`relative w-full rounded-lg border-2 p-3 text-left transition-all hover:shadow-md ${
+          isActive
+            ? "border-primary ring-2 ring-primary/20"
+            : "border-border hover:border-primary/40"
+        }`}
+        style={{ background: preset.colors.background }}
+      >
+        {isActive && (
+          <div className="absolute top-1.5 right-1.5 h-5 w-5 rounded-full flex items-center justify-center"
+            style={{ background: preset.colors.primary }}>
+            <Check className="h-3 w-3" style={{ color: preset.colors["primary-foreground"] }} />
+          </div>
+        )}
+
+        <div className="flex gap-1 mb-2">
+          <div className="h-6 w-6 rounded-full border border-white/20" style={{ background: preset.colors.primary }} />
+          <div className="h-6 w-6 rounded-full border border-white/20" style={{ background: preset.colors.accent }} />
+          <div className="h-6 w-6 rounded-full border border-white/20" style={{ background: preset.colors.secondary }} />
+          <div className="h-6 w-6 rounded-full border border-white/20" style={{ background: preset.colors.muted }} />
         </div>
+
+        <div className="rounded p-2 mb-2" style={{ background: preset.colors.card, border: `1px solid ${preset.colors["card-border"] || preset.colors.border}` }}>
+          <div className="h-1.5 w-3/4 rounded-full mb-1" style={{ background: preset.colors.foreground, opacity: 0.7 }} />
+          <div className="h-1.5 w-1/2 rounded-full" style={{ background: preset.colors["muted-foreground"], opacity: 0.5 }} />
+        </div>
+
+        <p className="text-xs font-semibold truncate" style={{ color: preset.colors.foreground }}>{preset.name}</p>
+        <p className="text-[10px] truncate" style={{ color: preset.colors["muted-foreground"] }}>{preset.description}</p>
+      </button>
+
+      {onDelete && (
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onDelete(); }}
+          className="absolute -top-2 -right-2 h-6 w-6 rounded-full bg-destructive text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-sm"
+          title="Delete template"
+        >
+          <Trash2 className="h-3 w-3" />
+        </button>
       )}
-
-      {/* Color swatches */}
-      <div className="flex gap-1 mb-2">
-        <div className="h-6 w-6 rounded-full border border-white/20" style={{ background: preset.colors.primary }} />
-        <div className="h-6 w-6 rounded-full border border-white/20" style={{ background: preset.colors.accent }} />
-        <div className="h-6 w-6 rounded-full border border-white/20" style={{ background: preset.colors.secondary }} />
-        <div className="h-6 w-6 rounded-full border border-white/20" style={{ background: preset.colors.muted }} />
-      </div>
-
-      {/* Mini preview */}
-      <div className="rounded p-2 mb-2" style={{ background: preset.colors.card, border: `1px solid ${preset.colors.border}` }}>
-        <div className="h-1.5 w-3/4 rounded-full mb-1" style={{ background: preset.colors.foreground, opacity: 0.7 }} />
-        <div className="h-1.5 w-1/2 rounded-full" style={{ background: preset.colors["muted-foreground"], opacity: 0.5 }} />
-      </div>
-
-      {/* Name */}
-      <p className="text-xs font-semibold truncate" style={{ color: preset.colors.foreground }}>{preset.name}</p>
-      <p className="text-[10px] truncate" style={{ color: preset.colors["muted-foreground"] }}>{preset.description}</p>
-    </button>
+    </div>
   );
 }
 
@@ -316,7 +466,6 @@ function PreviewPanel({ colors }: { colors: Record<string, string> }) {
         color: colors.foreground,
       }}
     >
-      {/* Sidebar preview */}
       <div className="flex gap-2">
         <div className="w-12 rounded-md p-1.5 space-y-1" style={{ background: colors.card, border: `1px solid ${colors.border}` }}>
           {[colors.primary, colors.accent, colors["muted-foreground"], colors["muted-foreground"]].map((c, i) => (
@@ -330,10 +479,14 @@ function PreviewPanel({ colors }: { colors: Record<string, string> }) {
         </div>
       </div>
 
-      {/* Mini card */}
       <div
         className="rounded border p-4"
-        style={{ background: colors.card, borderColor: colors.border, color: colors["card-foreground"] }}
+        style={{
+          background: colors.card,
+          borderColor: colors["card-border"] || colors.border,
+          color: colors["card-foreground"],
+          boxShadow: "0 1px 2px 0 rgb(0 0 0 / 0.04), 0 4px 12px -2px rgb(0 0 0 / 0.08)",
+        }}
       >
         <p className="text-sm font-semibold mb-1">Sample Card</p>
         <p className="text-xs" style={{ color: colors["muted-foreground"] }}>
@@ -341,7 +494,6 @@ function PreviewPanel({ colors }: { colors: Record<string, string> }) {
         </p>
       </div>
 
-      {/* Buttons row */}
       <div className="flex flex-wrap gap-2">
         <span
           className="inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium"
@@ -363,7 +515,6 @@ function PreviewPanel({ colors }: { colors: Record<string, string> }) {
         </span>
       </div>
 
-      {/* Status indicators */}
       <div className="flex gap-3">
         <div className="flex items-center gap-1.5">
           <span className="h-2.5 w-2.5 rounded-full" style={{ background: colors.success }} />
@@ -379,14 +530,12 @@ function PreviewPanel({ colors }: { colors: Record<string, string> }) {
         </div>
       </div>
 
-      {/* Muted section */}
       <div className="rounded p-3" style={{ background: colors.muted }}>
         <p className="text-xs" style={{ color: colors["muted-foreground"] }}>
           Muted background area for secondary content.
         </p>
       </div>
 
-      {/* Input preview */}
       <div
         className="flex h-8 items-center rounded border px-3 text-xs"
         style={{

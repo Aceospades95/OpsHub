@@ -1,12 +1,12 @@
-import { auth } from "@/lib/auth";
-import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { Suspense } from "react";
-import { resolveModulePerms } from "@/lib/permissions";
+import { requireAuth, resolveModulePerms } from "@/lib/permissions";
+import { getUserScope } from "@/lib/scope";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent } from "@/components/ui/card";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { EmptyState } from "@/components/ui/empty-state";
+import { AccessDenied } from "@/components/shared/access-denied";
 import { Building2 } from "lucide-react";
 import Link from "next/link";
 import { ClientCreateButton } from "./client-create-button";
@@ -18,19 +18,23 @@ export default async function ClientsPage({
 }: {
   searchParams: { status?: string; sort?: string };
 }) {
-  const session = await auth();
-  if (!session?.user) redirect("/login");
+  const user = await requireAuth();
 
-  const perms = await resolveModulePerms(session.user.id, session.user.role, "clients");
-  if (!perms.canView) redirect("/dashboard");
+  const perms = await resolveModulePerms(user.id, user.role, "clients");
+  if (!perms.canView) return <AccessDenied module="clients" moduleLabel="Clients" moduleDescription="Client accounts, contacts, and relationships" />;
 
   const statusFilter = searchParams.status;
   const sortParam = searchParams.sort;
+
+  const scope = await getUserScope(user.id, user.role);
 
   // Build where clause
   const where: Prisma.ClientWhereInput = {};
   if (statusFilter && ["ACTIVE", "INACTIVE", "PROSPECT", "ARCHIVED"].includes(statusFilter)) {
     where.status = statusFilter as "ACTIVE" | "INACTIVE" | "PROSPECT" | "ARCHIVED";
+  }
+  if (!scope.all) {
+    where.id = { in: Array.from(scope.clientIds) };
   }
 
   // Build orderBy

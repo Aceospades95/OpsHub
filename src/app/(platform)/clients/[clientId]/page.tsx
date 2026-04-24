@@ -1,7 +1,8 @@
-import { auth } from "@/lib/auth";
-import { redirect, notFound } from "next/navigation";
+import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
-import { resolveModulePerms } from "@/lib/permissions";
+import { requireAuth, resolveModulePerms } from "@/lib/permissions";
+import { getUserScope, canViewEntity } from "@/lib/scope";
+import { AccessDenied } from "@/components/shared/access-denied";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatusBadge } from "@/components/shared/status-badge";
@@ -22,11 +23,10 @@ interface Props {
 
 export default async function ClientDetailPage({ params }: Props) {
   const { clientId } = await params;
-  const session = await auth();
-  if (!session?.user) redirect("/login");
+  const user = await requireAuth();
 
-  const perms = await resolveModulePerms(session.user.id, session.user.role, "clients");
-  if (!perms.canView) redirect("/dashboard");
+  const perms = await resolveModulePerms(user.id, user.role, "clients");
+  if (!perms.canView) return <AccessDenied module="clients" moduleLabel="Clients" moduleDescription="Client accounts, contacts, and relationships" />;
 
   const client = await db.client.findUnique({
     where: { id: clientId },
@@ -49,6 +49,11 @@ export default async function ClientDetailPage({ params }: Props) {
 
   if (!client) notFound();
 
+  const scope = await getUserScope(user.id, user.role);
+  if (!canViewEntity(scope, "client", client.id)) {
+    return <AccessDenied module="clients" moduleLabel="Clients" entityType="client" entityId={client.id} entityLabel={client.name} />;
+  }
+
   // Get tasks associated with this client
   const tasks = await db.task.findMany({
     where: { clientId: client.id, status: { in: ["TODO", "IN_PROGRESS"] } },
@@ -63,7 +68,7 @@ export default async function ClientDetailPage({ params }: Props) {
     orderBy: { name: "asc" },
   });
 
-  const canEditLayout = session.user.role === "ADMIN" || session.user.role === "DEVELOPER";
+  const canEditLayout = user.role === "ADMIN" || user.role === "DEVELOPER";
 
   const cardMap: Record<string, React.ReactNode> = {
     "client-info": (
@@ -175,7 +180,7 @@ export default async function ClientDetailPage({ params }: Props) {
             entityId={client.id}
             canComment={perms.canComment}
             canDelete={perms.canDelete}
-            currentUserId={session.user.id}
+            currentUserId={user.id}
           />
         </CardContent>
       </Card>

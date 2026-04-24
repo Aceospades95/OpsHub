@@ -1,7 +1,8 @@
-import { auth } from "@/lib/auth";
-import { redirect, notFound } from "next/navigation";
+import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
-import { resolveModulePerms } from "@/lib/permissions";
+import { requireAuth, resolveModulePerms } from "@/lib/permissions";
+import { getUserScope, canViewEntity } from "@/lib/scope";
+import { AccessDenied } from "@/components/shared/access-denied";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatusBadge } from "@/components/shared/status-badge";
@@ -23,13 +24,12 @@ interface Props {
 
 export default async function ContractDetailPage({ params }: Props) {
   const { contractId } = await params;
-  const session = await auth();
-  if (!session?.user) redirect("/login");
+  const user = await requireAuth();
 
-  const canEditLayout = session.user.role === "ADMIN" || session.user.role === "DEVELOPER";
+  const canEditLayout = user.role === "ADMIN" || user.role === "DEVELOPER";
 
-  const perms = await resolveModulePerms(session.user.id, session.user.role, "contracts");
-  if (!perms.canView) redirect("/dashboard");
+  const perms = await resolveModulePerms(user.id, user.role, "contracts");
+  if (!perms.canView) return <AccessDenied module="contracts" moduleLabel="Contracts" moduleDescription="Contracts, SOWs, amendments, and renewals" />;
 
   const contract = await db.contract.findUnique({
     where: { id: contractId },
@@ -49,6 +49,11 @@ export default async function ContractDetailPage({ params }: Props) {
   });
 
   if (!contract) notFound();
+
+  const scope = await getUserScope(user.id, user.role);
+  if (!canViewEntity(scope, "contract", contract.id)) {
+    return <AccessDenied module="contracts" moduleLabel="Contracts" entityType="contract" entityId={contract.id} entityLabel={contract.title} />;
+  }
 
   const clients = await db.client.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } });
   const projects = await db.project.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } });
@@ -182,7 +187,7 @@ export default async function ContractDetailPage({ params }: Props) {
             entityId={contract.id}
             canComment={perms.canComment}
             canDelete={perms.canDelete}
-            currentUserId={session.user.id}
+            currentUserId={user.id}
           />
         </CardContent>
       </Card>

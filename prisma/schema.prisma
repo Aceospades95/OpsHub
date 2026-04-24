@@ -13,6 +13,7 @@ enum Role {
   DEVELOPER
   CONTRIBUTOR
   VIEWER
+  GUEST
 }
 
 enum ClientStatus {
@@ -152,6 +153,10 @@ model User {
   hashedPassword String?
   authProvider   String   @default("credentials") // "credentials" | "google"
   role           Role     @default(VIEWER)
+  /// Non-null when the user's role was auto-promoted by being assigned to a
+  /// project. Stores the role they had before promotion so they can be
+  /// reverted if they lose all their assignments.
+  promotedFromRole Role?
   avatar         String?
   isActive       Boolean  @default(true)
   hasLoginAccess Boolean  @default(true)
@@ -187,6 +192,8 @@ model User {
   assignments          Assignment[]
   notificationsReceived Notification[]    @relation("NotificationRecipient")
   notificationsSent     Notification[]    @relation("NotificationActor")
+  accessRequestsMade    AccessRequest[]   @relation("AccessRequestRequester")
+  accessRequestsReviewed AccessRequest[]  @relation("AccessRequestReviewer")
 }
 
 model ModulePermission {
@@ -1034,4 +1041,25 @@ model AllowedDomain {
   id        String   @id @default(cuid())
   domain    String   @unique // e.g. "company.com"
   createdAt DateTime @default(now())
+}
+
+// ─── ACCESS REQUESTS ─────────────────────────────────────
+
+model AccessRequest {
+  id           String   @id @default(cuid())
+  requesterId  String
+  module       String?
+  entityType   String?
+  entityId     String?
+  entityLabel  String?
+  status       String   @default("PENDING") // PENDING, APPROVED, DENIED
+  reviewerId   String?
+  reviewedAt   DateTime?
+  createdAt    DateTime @default(now())
+
+  requester User  @relation("AccessRequestRequester", fields: [requesterId], references: [id], onDelete: Cascade)
+  reviewer  User? @relation("AccessRequestReviewer", fields: [reviewerId], references: [id], onDelete: SetNull)
+
+  @@index([status])
+  @@index([requesterId])
 }

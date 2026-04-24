@@ -6,8 +6,11 @@ interface CardProps {
 export function Card({ children, className = "" }: CardProps) {
   return (
     <div
-      className={`rounded-lg bg-card text-card-foreground shadow-md ${className}`}
-      style={{ border: "1px solid color-mix(in srgb, var(--foreground) 12%, transparent)" }}
+      className={`rounded-lg bg-card text-card-foreground ${className}`}
+      style={{
+        border: "1px solid var(--card-border)",
+        boxShadow: "0 1px 2px 0 rgb(0 0 0 / 0.04), 0 4px 12px -2px rgb(0 0 0 / 0.08)",
+      }}
     >
       {children}
     </div>
@@ -24,7 +27,7 @@ export function CardHeader({ children, className = "" }: CardProps) {
   return (
     <div
       className={`flex flex-col space-y-1.5 px-6 pt-5 pb-3 bg-card rounded-t-lg ${className}`}
-      style={{ borderBottom: "1px solid color-mix(in srgb, var(--foreground) 8%, transparent)" }}
+      style={{ borderBottom: "1px solid var(--card-border)" }}
     >
       {children}
     </div>

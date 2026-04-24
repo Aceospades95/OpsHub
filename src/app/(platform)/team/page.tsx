@@ -1,15 +1,13 @@
-import { auth } from "@/lib/auth";
-import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
+import { requireAuth } from "@/lib/permissions";
 import { PageHeader } from "@/components/layout/page-header";
 import { TeamPageClient } from "./team-page-client";
 import { AddEmployeeButton } from "./add-employee-button";
 
 export default async function TeamPage() {
-  const session = await auth();
-  if (!session?.user) redirect("/login");
+  const user = await requireAuth();
 
-  const canManage = session.user.role === "ADMIN" || session.user.role === "MANAGER";
+  const canManage = user.role === "ADMIN" || user.role === "MANAGER";
 
   const [activeUsers, inactiveUsers, projects, clients, serviceOfferings, allUsers, roleDefinitions, projectRoles] = await Promise.all([
     db.user.findMany({
@@ -113,7 +111,7 @@ export default async function TeamPage() {
         serviceOfferings={serviceOfferings}
         roleDefinitions={roleDefinitions}
         projectRoles={projectRoles}
-        currentUserId={session.user.id}
+        currentUserId={user.id}
         canManage={canManage}
       />
     </div>
