@@ -37,10 +37,10 @@ function NodeCard({
     <div
       className={`
         rounded-lg text-left transition-all hover:shadow-lg
-        border border-border shadow-md
-        bg-muted
+        bg-card text-card-foreground shadow-md
         ${compact ? "px-3 py-2 min-w-[120px]" : "px-4 py-3 min-w-[180px] max-w-[240px]"}
       `}
+      style={{ border: "1px solid var(--card-border)" }}
     >
       <div className={`flex items-center ${compact ? "gap-2" : "gap-3"}`}>
         <Avatar name={node.name} size={compact ? "xs" : "sm"} />
@@ -142,8 +142,8 @@ export function OrgChartTree({ nodes, compact, showRoleBadge }: OrgChartTreeProp
   }
 
   return (
-    <div className="overflow-x-auto py-4 text-center">
-      <div className="inline-block text-left">
+    <div className="overflow-x-auto py-4">
+      <div className="flex justify-center min-w-max px-4">
         {nodes.length === 1 ? (
           <OrgBranch node={nodes[0]} compact={compact} showRoleBadge={showRoleBadge} />
         ) : (

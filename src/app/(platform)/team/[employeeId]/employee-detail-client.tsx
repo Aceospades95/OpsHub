@@ -663,6 +663,7 @@ function PermissionsTab({ employee, allClients, allProjects, customPages }: {
   const router = useRouter();
   const [saving, setSaving] = useState(false);
   const [addEntityOpen, setAddEntityOpen] = useState(false);
+  const [editingPerm, setEditingPerm] = useState<Employee["entityPermissions"][number] | null>(null);
   const [entityType, setEntityType] = useState("client");
 
   // Driven from the module registry — adding a new permissioned module in
@@ -696,6 +697,13 @@ function PermissionsTab({ employee, allClients, allProjects, customPages }: {
     const fd = new FormData();
     fd.set("id", id);
     await deleteEntityPermission(null, fd);
+    router.refresh();
+  }
+
+  async function handleEditEntity(formData: FormData) {
+    formData.set("userId", employee.id);
+    await saveEntityPermission(null, formData);
+    setEditingPerm(null);
     router.refresh();
   }
 
@@ -789,7 +797,14 @@ function PermissionsTab({ employee, allClients, allProjects, customPages }: {
                   {perm.canView && <span>View</span>}{perm.canEdit && <span>Edit</span>}{perm.canComment && <span>Comment</span>}{perm.canUpload && <span>Upload</span>}{perm.canManage && <span>Manage</span>}
                 </div>
               </div>
-              <button onClick={() => handleDeleteEntity(perm.id)} className="text-muted-foreground hover:text-destructive"><Trash2 className="h-4 w-4" /></button>
+              <div className="flex items-center gap-2">
+                <button onClick={() => setEditingPerm(perm)} className="text-muted-foreground hover:text-foreground" aria-label="Edit">
+                  <Pencil className="h-4 w-4" />
+                </button>
+                <button onClick={() => handleDeleteEntity(perm.id)} className="text-muted-foreground hover:text-destructive" aria-label="Delete">
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              </div>
             </div>
           ))}
           <Button variant="outline" size="sm" className="w-full" onClick={() => setAddEntityOpen(true)}>
@@ -816,6 +831,38 @@ function PermissionsTab({ employee, allClients, allProjects, customPages }: {
               </div>
             </form>
           </Dialog>
+
+          {editingPerm && (
+            <Dialog
+              open={true}
+              onClose={() => setEditingPerm(null)}
+              title={`Edit ${editingPerm.entityType}: ${nameMap.get(editingPerm.entityId) || editingPerm.entityId}`}
+            >
+              <form action={handleEditEntity} className="space-y-4">
+                <input type="hidden" name="entityType" value={editingPerm.entityType} />
+                <input type="hidden" name="entityId" value={editingPerm.entityId} />
+                <div className="space-y-2">
+                  <p className="text-sm font-medium">Permissions</p>
+                  {(["canView", "canEdit", "canComment", "canUpload", "canManage"] as const).map((flag) => (
+                    <label key={flag} className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        name={flag}
+                        value="true"
+                        defaultChecked={editingPerm[flag]}
+                        className="rounded"
+                      />
+                      {flag.replace("can", "")}
+                    </label>
+                  ))}
+                </div>
+                <div className="flex justify-end gap-2">
+                  <Button type="button" variant="outline" onClick={() => setEditingPerm(null)}>Cancel</Button>
+                  <Button type="submit">Save</Button>
+                </div>
+              </form>
+            </Dialog>
+          )}
         </CardContent>
       </Card>
     </div>

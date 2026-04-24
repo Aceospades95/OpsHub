@@ -18,7 +18,7 @@ const THEME_GROUPS = [
   },
   {
     title: "Surface Colors",
-    description: "Background, card, and border colors",
+    description: "Background, card, and border colors. Card Border controls how prominently cards stand out from the page background.",
     keys: [
       "background",
       "foreground",
@@ -30,6 +30,7 @@ const THEME_GROUPS = [
       "input",
       "card",
       "card-foreground",
+      "card-border",
     ],
   },
   {
@@ -53,6 +54,7 @@ const LABELS: Record<string, string> = {
   input: "Input Border",
   card: "Card",
   "card-foreground": "Card Text",
+  "card-border": "Card Border",
   destructive: "Destructive",
   success: "Success",
   warning: "Warning",
@@ -333,7 +335,12 @@ function PreviewPanel({ colors }: { colors: Record<string, string> }) {
       {/* Mini card */}
       <div
         className="rounded border p-4"
-        style={{ background: colors.card, borderColor: colors.border, color: colors["card-foreground"] }}
+        style={{
+          background: colors.card,
+          borderColor: colors["card-border"] || colors.border,
+          color: colors["card-foreground"],
+          boxShadow: "0 1px 2px 0 rgb(0 0 0 / 0.04), 0 4px 12px -2px rgb(0 0 0 / 0.08)",
+        }}
       >
         <p className="text-sm font-semibold mb-1">Sample Card</p>
         <p className="text-xs" style={{ color: colors["muted-foreground"] }}>
