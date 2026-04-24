@@ -64,6 +64,7 @@ const SYSTEM_DEFAULTS = SYSTEM_MODULES;
 const ROLE_GATED: Record<string, (role: string) => boolean> = {
   settings: (role) => role === "ADMIN",
   certifications: (role) => role === "ADMIN" || role === "DEVELOPER",
+  contracts: (role) => role === "ADMIN" || role === "DEVELOPER" || role === "MANAGER",
 };
 
 export function Sidebar({

@@ -50,7 +50,9 @@ export default async function ClientDetailPage({ params }: Props) {
   if (!client) notFound();
 
   const scope = await getUserScope(user.id, user.role);
-  if (!canViewEntity(scope, "client", client.id)) notFound();
+  if (!canViewEntity(scope, "client", client.id)) {
+    return <AccessDenied module="clients" moduleLabel="Clients" entityType="client" entityId={client.id} entityLabel={client.name} />;
+  }
 
   // Get tasks associated with this client
   const tasks = await db.task.findMany({

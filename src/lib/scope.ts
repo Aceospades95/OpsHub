@@ -134,38 +134,34 @@ export async function getUserScope(
   for (const p of scopedProjects) clientIds.add(p.clientId);
 
   // ── Certification visibility ──────────────────────────────────
-  // Certs visible when the user is the assignee, POC, or when the cert is
-  // for a client the user already has access to.
+  // Certs are admin/developer-only, but we still compute the set so
+  // that scope-based checks remain consistent. Only direct assignment
+  // (assignee / POC) or explicit entity permission grants visibility.
+  const certOrClauses: object[] = [
+    { assigneeId: userId },
+    { pointOfContactId: userId },
+  ];
+  for (const p of entityPerms) {
+    if (p.entityType === "certification") certOrClauses.push({ id: p.entityId });
+  }
   const certRows = await db.certification.findMany({
-    where: {
-      OR: [
-        { assigneeId: userId },
-        { pointOfContactId: userId },
-        ...(clientIds.size > 0
-          ? [{ clientId: { in: Array.from(clientIds) } }]
-          : []),
-      ],
-    },
+    where: { OR: certOrClauses },
     select: { id: true },
   });
   const certIds = new Set(certRows.map((c) => c.id));
 
   // ── Contract visibility ───────────────────────────────────────
-  // Contracts ride on top of projects + clients. If a user can see the
-  // project or client, they can see the contract.
+  // Contracts are only visible when directly linked to an assigned
+  // project or granted via explicit entity permission. We intentionally
+  // do NOT fan out through clientIds — seeing a client doesn't
+  // automatically grant access to all contracts for that client.
   const contractIds = new Set<string>();
-  if (projectIds.size > 0 || clientIds.size > 0) {
+  for (const p of entityPerms) {
+    if (p.entityType === "contract") contractIds.add(p.entityId);
+  }
+  if (projectIds.size > 0) {
     const contracts = await db.contract.findMany({
-      where: {
-        OR: [
-          ...(projectIds.size > 0
-            ? [{ projectId: { in: Array.from(projectIds) } }]
-            : []),
-          ...(clientIds.size > 0
-            ? [{ clientId: { in: Array.from(clientIds) } }]
-            : []),
-        ],
-      },
+      where: { projectId: { in: Array.from(projectIds) } },
       select: { id: true },
     });
     for (const c of contracts) contractIds.add(c.id);
@@ -173,8 +169,12 @@ export async function getUserScope(
 
   // ── Tool visibility ───────────────────────────────────────────
   // Tools are attached to projects via ProjectTool. A tool is visible if
-  // it's linked to at least one project the user can see.
+  // it's linked to at least one project the user can see, or via explicit
+  // entity permission.
   const toolIds = new Set<string>();
+  for (const p of entityPerms) {
+    if (p.entityType === "tool") toolIds.add(p.entityId);
+  }
   if (projectIds.size > 0) {
     const projectTools = await db.projectTool.findMany({
       where: { projectId: { in: Array.from(projectIds) } },

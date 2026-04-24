@@ -101,7 +101,9 @@ export default async function ProjectDetailPage({ params }: Props) {
   if (!project) notFound();
 
   const scope = await getUserScope(user.id, user.role);
-  if (!canViewEntity(scope, "project", project.id)) notFound();
+  if (!canViewEntity(scope, "project", project.id)) {
+    return <AccessDenied module="projects" moduleLabel="Projects" entityType="project" entityId={project.id} entityLabel={project.name} />;
+  }
 
   const clients = await db.client.findMany({
     where: { status: "ACTIVE" },

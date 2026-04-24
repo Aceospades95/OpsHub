@@ -2,21 +2,24 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { requestModuleAccess } from "@/actions/access-requests";
+import { requestAccess } from "@/actions/access-requests";
 
 interface Props {
   module: string;
   moduleLabel: string;
+  entityType?: string;
+  entityId?: string;
+  entityLabel?: string;
 }
 
-export function RequestAccessButton({ module, moduleLabel }: Props) {
+export function RequestAccessButton({ module, moduleLabel, entityType, entityId, entityLabel }: Props) {
   const [sent, setSent] = useState(false);
   const [loading, setLoading] = useState(false);
 
   async function handleRequest() {
     setLoading(true);
     try {
-      await requestModuleAccess(module, moduleLabel);
+      await requestAccess({ module, moduleLabel, entityType, entityId, entityLabel });
       setSent(true);
     } finally {
       setLoading(false);

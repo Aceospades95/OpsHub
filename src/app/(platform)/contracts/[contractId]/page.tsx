@@ -51,7 +51,9 @@ export default async function ContractDetailPage({ params }: Props) {
   if (!contract) notFound();
 
   const scope = await getUserScope(user.id, user.role);
-  if (!canViewEntity(scope, "contract", contract.id)) notFound();
+  if (!canViewEntity(scope, "contract", contract.id)) {
+    return <AccessDenied module="contracts" moduleLabel="Contracts" entityType="contract" entityId={contract.id} entityLabel={contract.title} />;
+  }
 
   const clients = await db.client.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } });
   const projects = await db.project.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } });

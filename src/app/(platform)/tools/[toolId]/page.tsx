@@ -37,7 +37,9 @@ export default async function ToolDetailPage({ params }: Props) {
   if (!tool) notFound();
 
   const scope = await getUserScope(user.id, user.role);
-  if (!canViewEntity(scope, "tool", tool.id)) notFound();
+  if (!canViewEntity(scope, "tool", tool.id)) {
+    return <AccessDenied module="tools" moduleLabel="Tools" entityType="tool" entityId={tool.id} entityLabel={tool.name} />;
+  }
 
   const allProjects = await db.project.findMany({
     where: scope.all ? {} : { id: { in: Array.from(scope.projectIds) } },

@@ -72,7 +72,9 @@ export default async function CertificationDetailPage({ params }: Props) {
   if (!cert) notFound();
 
   const scope = await getUserScope(user.id, user.role);
-  if (!canViewEntity(scope, "certification", cert.id)) notFound();
+  if (!canViewEntity(scope, "certification", cert.id)) {
+    return <AccessDenied module="certifications" moduleLabel="Certifications" entityType="certification" entityId={cert.id} entityLabel={cert.name} />;
+  }
 
   const [clients, users] = await Promise.all([
     db.client.findMany({
