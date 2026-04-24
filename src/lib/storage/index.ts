@@ -117,15 +117,16 @@ export async function uploadFile(params: {
 }
 
 /**
- * Read file bytes. Used by the route handler to serve files. Looks up the
- * File row, finds the right driver for the stored bytes, and returns the
- * raw buffer + metadata.
+ * Metadata + driver lookup for serving a file, WITHOUT pulling bytes off
+ * the backing store. The route handler should call this first so it can
+ * run the auth gate before paying for an S3 GET (or a disk read), and
+ * decide whether to redirect to a signed URL or stream bytes locally.
  *
- * Returns null if the file doesn't exist in the database or its bytes
- * can't be found on the backing store.
+ * Returns null if the file doesn't exist or its driver is unknown.
  */
-export async function readFile(fileId: string): Promise<{
-  buffer: Buffer;
+export async function getFileForServing(fileId: string): Promise<{
+  driver: StorageDriver;
+  storageKey: string;
   contentType: string;
   filename: string;
   visibility: "public" | "private";
@@ -143,13 +144,38 @@ export async function readFile(fileId: string): Promise<{
     return null;
   }
 
+  return {
+    driver,
+    storageKey: file.storageKey,
+    contentType: file.mimeType || "application/octet-stream",
+    filename: file.name,
+    visibility: (file.visibility as "public" | "private") || "private",
+  };
+}
+
+/**
+ * Read file bytes. Used by the route handler when the active driver does
+ * not support presigned URLs (e.g. local filesystem) and we need to stream
+ * bytes through the Next.js server.
+ *
+ * Returns null if the file doesn't exist in the database or its bytes
+ * can't be found on the backing store.
+ */
+export async function readFile(fileId: string): Promise<{
+  buffer: Buffer;
+  contentType: string;
+  filename: string;
+  visibility: "public" | "private";
+} | null> {
+  const meta = await getFileForServing(fileId);
+  if (!meta) return null;
   try {
-    const buffer = await driver.get(file.storageKey);
+    const buffer = await meta.driver.get(meta.storageKey);
     return {
       buffer,
-      contentType: file.mimeType || "application/octet-stream",
-      filename: file.name,
-      visibility: (file.visibility as "public" | "private") || "private",
+      contentType: meta.contentType,
+      filename: meta.filename,
+      visibility: meta.visibility,
     };
   } catch (err) {
     // eslint-disable-next-line no-console
