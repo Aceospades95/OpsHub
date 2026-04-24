@@ -1,21 +1,22 @@
-import { auth } from "@/lib/auth";
-import { redirect } from "next/navigation";
-import { getThemeSettings } from "@/actions/theme";
+import { requireAuth } from "@/lib/permissions";
+import { getThemeSettings, getCustomPresets } from "@/actions/theme";
 import { getBranding } from "@/lib/branding";
 import { DEFAULT_THEME } from "@/lib/theme-defaults";
 import { PageHeader } from "@/components/layout/page-header";
 import { ThemeEditor } from "./theme-editor";
 import { BrandingSection } from "./branding-section";
-import Link from "next/link";
 
 export default async function AdminThemePage() {
-  const session = await auth();
-  if (!session?.user) redirect("/login");
-  if (session.user.role !== "ADMIN") redirect("/dashboard");
+  const user = await requireAuth();
+  if (user.role !== "ADMIN") {
+    const { AccessDenied } = await import("@/components/shared/access-denied");
+    return <AccessDenied module="settings" moduleLabel="Theme Settings" />;
+  }
 
-  const [savedSettings, branding] = await Promise.all([
+  const [savedSettings, branding, customPresets] = await Promise.all([
     getThemeSettings(),
     getBranding(),
+    getCustomPresets(),
   ]);
   const currentTheme = { ...DEFAULT_THEME, ...savedSettings };
 
@@ -24,11 +25,9 @@ export default async function AdminThemePage() {
       <PageHeader
         title="Theme Settings"
         description="Customize branding, colors, and the look and feel of OpsHub"
-
-
       />
       <BrandingSection branding={branding} />
-      <ThemeEditor currentTheme={currentTheme} />
+      <ThemeEditor currentTheme={currentTheme} customPresets={customPresets} />
     </div>
   );
 }

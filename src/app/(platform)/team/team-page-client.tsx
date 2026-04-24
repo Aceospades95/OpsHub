@@ -109,7 +109,7 @@ function OrgChartView({ users, search, currentUserId }: { users: UserData[]; sea
   ), [filtered]);
 
   return (
-    <Card>
+    <Card className="bg-muted/50">
       <CardContent className="p-4">
         <div className="text-xs text-muted-foreground mb-2">
           {users.length} team members · Click a person to view their profile

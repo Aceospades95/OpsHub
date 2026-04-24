@@ -22,7 +22,7 @@ interface OrgChartTreeProps {
   showRoleBadge?: boolean;
 }
 
-const lineColor = "color-mix(in srgb, var(--primary) 30%, transparent)";
+const lineColor = "var(--card-border)";
 
 function NodeCard({
   node,
@@ -143,7 +143,7 @@ export function OrgChartTree({ nodes, compact, showRoleBadge }: OrgChartTreeProp
 
   return (
     <div className="overflow-x-auto py-4">
-      <div className="flex justify-center min-w-max px-4">
+      <div className="w-fit mx-auto px-4">
         {nodes.length === 1 ? (
           <OrgBranch node={nodes[0]} compact={compact} showRoleBadge={showRoleBadge} />
         ) : (
