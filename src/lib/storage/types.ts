@@ -25,6 +25,18 @@ export interface StoragePutResult {
   size: number;
 }
 
+/** Parameters for generating a time-limited URL the browser can fetch directly. */
+export interface SignedUrlOptions {
+  /** TTL in seconds. Drivers may clamp to a sensible maximum. */
+  expiresIn: number;
+  /** MIME type the response should advertise. */
+  contentType: string;
+  /** Original filename for the Content-Disposition header. */
+  filename: string;
+  /** Whether the browser should render or download the response. */
+  disposition: "inline" | "attachment";
+}
+
 /**
  * A storage driver is responsible for actually persisting bytes somewhere
  * and returning them on demand. Drivers should be stateless and thread-safe.
@@ -50,4 +62,14 @@ export interface StorageDriver {
    * Most drivers implement this as a cheap head/stat call.
    */
   exists(key: string): Promise<boolean>;
+
+  /**
+   * Optional: return a time-limited URL that the browser can fetch directly,
+   * bypassing the Next.js server. Drivers backed by object storage (S3, R2,
+   * GCS) should implement this so file downloads don't proxy through the
+   * application. Drivers without a public-fetchable backend (local
+   * filesystem) should leave this undefined; the route handler will fall
+   * back to streaming bytes through `get()`.
+   */
+  getSignedUrl?(key: string, options: SignedUrlOptions): Promise<string>;
 }

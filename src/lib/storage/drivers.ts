@@ -12,10 +12,11 @@
 
 import type { StorageDriver } from "./types";
 import { localDriver } from "./local-driver";
+import { s3Driver } from "./s3-driver";
 
 const DRIVERS: Record<string, StorageDriver> = {
   local: localDriver,
-  // s3: s3Driver,         // add when ready
+  s3: s3Driver,
   // drive: driveDriver,
 };
 

@@ -82,7 +82,6 @@ function OrgBranch({
 }) {
   const hasChildren = node.children.length > 0;
   const vLineH = compact ? 20 : 28;
-  const halfGap = compact ? 6 : 12;
 
   return (
     <div className="flex flex-col items-center">
@@ -96,13 +95,20 @@ function OrgBranch({
           {node.children.length === 1 ? (
             <OrgBranch node={node.children[0]} compact={compact} showRoleBadge={showRoleBadge} />
           ) : (
-            /* Multiple children: horizontal bar + vertical stubs */
-            <div className={`flex items-start ${compact ? "gap-3" : "gap-6"}`}>
+            /* Multiple children: equal-width grid columns ensure parent aligns with midpoint of child cards */
+            <div
+              className="grid items-start"
+              style={{
+                gridTemplateColumns: `repeat(${node.children.length}, 1fr)`,
+                columnGap: compact ? 12 : 24,
+              }}
+            >
               {node.children.map((child, idx) => {
                 const isFirst = idx === 0;
                 const isLast = idx === node.children.length - 1;
+                const halfColGap = (compact ? 12 : 24) / 2;
                 return (
-                  <div key={child.id} className="flex flex-col items-center">
+                  <div key={child.id} className="flex flex-col items-center min-w-0">
                     {/* Horizontal + vertical connector */}
                     <div className="self-stretch relative" style={{ height: vLineH }}>
                       <div
@@ -110,8 +116,8 @@ function OrgBranch({
                         style={{
                           height: 1,
                           backgroundColor: lineColor,
-                          left: isFirst ? "50%" : -halfGap,
-                          right: isLast ? "50%" : -halfGap,
+                          left: isFirst ? "50%" : -halfColGap,
+                          right: isLast ? "50%" : -halfColGap,
                         }}
                       />
                       <div
