@@ -34,7 +34,7 @@ export async function createClient(_prev: unknown, formData: FormData) {
   if (!parsed.success) return { error: "Invalid input", fieldErrors: parsed.error.flatten().fieldErrors };
 
   const client = await db.client.create({ data: parsed.data });
-  await logActivity("created", "client", client.id, user.id, client.name);
+  await logActivity("created", "client", client.id, user.id, client.name, { clientId: client.id });
   revalidateClient(client.id);
   return { success: true };
 }
@@ -64,7 +64,7 @@ export async function updateClient(_prev: unknown, formData: FormData) {
       accountManagerId: parsed.data.accountManagerId || null,
     },
   });
-  await logActivity("updated", "client", id, user.id, parsed.data.name);
+  await logActivity("updated", "client", id, user.id, parsed.data.name, { clientId: id });
   revalidateClient(id);
   return { success: true };
 }
@@ -79,7 +79,7 @@ export async function deleteClient(_prev: unknown, formData: FormData) {
   if (!client) return { error: "Client not found" };
 
   await db.client.delete({ where: { id } });
-  await logActivity("deleted", "client", id, user.id, client.name);
+  await logActivity("deleted", "client", id, user.id, client.name, { clientId: id });
   revalidateClient(id);
   return { success: true };
 }
