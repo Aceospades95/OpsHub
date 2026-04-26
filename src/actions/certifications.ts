@@ -3,6 +3,7 @@
 import { db } from "@/lib/db";
 import { requireAuth } from "@/lib/permissions";
 import { logActivity } from "@/lib/activity";
+import { deriveActivityScope } from "@/lib/activity-scope";
 import { revalidatePath } from "next/cache";
 import type {
   CertificationStatus,
@@ -265,7 +266,7 @@ export async function addChecklistItem(_prev: unknown, formData: FormData) {
     },
   });
 
-  await logActivity("checklist-added", "certification", certId, user.id, label);
+  await logActivity("checklist-added", "certification", certId, user.id, label, await deriveActivityScope("certification", certId));
   revalidatePath(`/certifications/${certId}`);
   return { success: true };
 }
@@ -300,7 +301,8 @@ export async function toggleChecklistItem(_prev: unknown, formData: FormData) {
     "certification",
     item.certificationId,
     user.id,
-    `${item.label}: ${nextCompleted ? "done" : "reopened"}`
+    `${item.label}: ${nextCompleted ? "done" : "reopened"}`,
+    await deriveActivityScope("certification", item.certificationId)
   );
   revalidatePath(`/certifications/${item.certificationId}`);
   return { success: true };
@@ -321,13 +323,16 @@ export async function removeChecklistItem(_prev: unknown, formData: FormData) {
     return { error: "Permission denied" };
   }
 
+  // Derive scope BEFORE the delete so the cert lookup still works.
+  const scope = await deriveActivityScope("certification", item.certificationId);
   await db.certificationRenewalChecklistItem.delete({ where: { id: itemId } });
   await logActivity(
     "checklist-removed",
     "certification",
     item.certificationId,
     user.id,
-    item.label
+    item.label,
+    scope
   );
   revalidatePath(`/certifications/${item.certificationId}`);
   return { success: true };

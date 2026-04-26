@@ -3,6 +3,7 @@
 import { db } from "@/lib/db";
 import { requireAuth, resolveModulePerms } from "@/lib/permissions";
 import { logActivity } from "@/lib/activity";
+import { deriveActivityScope } from "@/lib/activity-scope";
 import { notify } from "@/lib/notifications";
 import {
   extractMentionedUserIds,
@@ -187,7 +188,7 @@ export async function addComment(_prev: unknown, formData: FormData) {
   // Activity log stores plain-text for human readability — strip the
   // raw `@[Name](id)` token syntax down to `@Name`
   const activityExcerpt = stripMentionFormatting(content).slice(0, 100);
-  await logActivity("commented", entityType, entityId, user.id, activityExcerpt);
+  await logActivity("commented", entityType, entityId, user.id, activityExcerpt, await deriveActivityScope(entityType, entityId));
 
   await notifyMentions({
     content,

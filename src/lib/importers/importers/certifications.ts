@@ -340,7 +340,9 @@ export const certificationsImporter: ImporterDefinition = {
         });
         imported++;
         results.push({ row: rowNumber, status: "imported" });
-        await logActivity("imported", "certification", cert.id, ctx.triggeredBy, name);
+        await logActivity("imported", "certification", cert.id, ctx.triggeredBy, name, {
+          clientId: cert.clientId,
+        });
       } catch (err) {
         failed++;
         results.push({
