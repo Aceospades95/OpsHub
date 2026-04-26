@@ -58,6 +58,41 @@ export default async function AdminActivityPage({
   ]);
 
   const { rows, hasNext, hasPrev } = pageResult;
+
+  // Page-position calculation for the "Page X of Y" indicator. Keyset
+  // pagination doesn't have a native page number, so we derive it from
+  // the position of the first visible row: count how many rows are
+  // newer-than-or-equal-to it under the same filter, then divide by
+  // page size and round up. The composite (createdAt, id) index covers
+  // this so it's cheap.
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const currentPage =
+    rows.length === 0
+      ? 1
+      : Math.max(
+          1,
+          Math.ceil(
+            (await db.activityLog.count({
+              where: {
+                AND: [
+                  where,
+                  {
+                    OR: [
+                      { createdAt: { gt: rows[0].createdAt } },
+                      {
+                        AND: [
+                          { createdAt: rows[0].createdAt },
+                          { id: { gte: rows[0].id } },
+                        ],
+                      },
+                    ],
+                  },
+                ],
+              },
+            })) / PAGE_SIZE
+          )
+        );
+
   const filterParams = stripPaginationParams(searchParams);
   const csvHref = `/api/admin/activity/csv?${toQueryString(filterParams)}`;
   const newestHref = `/admin/activity?${toQueryString(filterParams)}`;
@@ -184,6 +219,7 @@ export default async function AdminActivityPage({
               </Link>
               <span className="ml-auto text-xs text-muted-foreground">
                 {total.toLocaleString()} {total === 1 ? "entry" : "entries"} match
+                {total > 0 && ` · page ${currentPage.toLocaleString()} of ${totalPages.toLocaleString()}`}
               </span>
             </div>
           </form>

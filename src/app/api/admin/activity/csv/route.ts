@@ -12,6 +12,17 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 
+/**
+ * Hard ceiling on a single CSV export. Tight filters return well under
+ * this; loose filters (e.g. "all activity, no date range") would
+ * otherwise pull arbitrary numbers of rows into one HTTP response and
+ * could OOM the Next.js worker. When the cap kicks in, the response
+ * still streams the most recent MAX_EXPORT_ROWS and a warning header
+ * tells the caller the export was truncated so they can re-run with a
+ * narrower filter.
+ */
+const MAX_EXPORT_ROWS = 100_000;
+
 export async function GET(request: Request) {
   const session = await auth();
   if (!session?.user) return new NextResponse("Unauthorized", { status: 401 });
@@ -23,12 +34,14 @@ export async function GET(request: Request) {
   const rows = await db.activityLog.findMany({
     where,
     orderBy: { createdAt: "desc" },
+    take: MAX_EXPORT_ROWS,
     include: {
       user: { select: { name: true, email: true } },
       project: { select: { name: true } },
       client: { select: { name: true } },
     },
   });
+  const truncated = rows.length === MAX_EXPORT_ROWS;
 
   const header = [
     "timestamp",
@@ -63,14 +76,15 @@ export async function GET(request: Request) {
 
   const csv = lines.join("\n");
   const stamp = new Date().toISOString().slice(0, 10);
-  return new NextResponse(csv, {
-    status: 200,
-    headers: {
-      "Content-Type": "text/csv; charset=utf-8",
-      "Content-Disposition": `attachment; filename="activity-log-${stamp}.csv"`,
-      "Cache-Control": "no-store",
-    },
-  });
+  const headers: Record<string, string> = {
+    "Content-Type": "text/csv; charset=utf-8",
+    "Content-Disposition": `attachment; filename="activity-log-${stamp}.csv"`,
+    "Cache-Control": "no-store",
+  };
+  if (truncated) {
+    headers["X-Export-Truncated"] = `true; limit=${MAX_EXPORT_ROWS}`;
+  }
+  return new NextResponse(csv, { status: 200, headers });
 }
 
 function buildWhere(qp: URLSearchParams) {

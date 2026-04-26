@@ -23,10 +23,6 @@ RUN mkdir -p public
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
 
-# Bundle seed.ts into a single JS file using esbuild (already a Next.js dep)
-RUN npx esbuild prisma/seed.ts --bundle --platform=node --outfile=prisma/seed.js \
-    --external:@prisma/client --external:bcryptjs 2>/dev/null || true
-
 # Production image - use full node_modules for prisma CLI support
 FROM base AS runner
 WORKDIR /app

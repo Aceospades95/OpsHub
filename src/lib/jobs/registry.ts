@@ -18,12 +18,14 @@ import type { JobDefinition } from "./types";
 import { contractExpiryCheck } from "./jobs/contract-expiry-check";
 import { certificationExpiryCheck } from "./jobs/certification-expiry-check";
 import { cleanupStaleNotifications } from "./jobs/cleanup-stale-notifications";
+import { cleanupOldActivityLogs } from "./jobs/cleanup-old-activity-logs";
 import { dailyReportsDigest } from "./jobs/daily-reports-digest";
 
 export const JOBS: JobDefinition[] = [
   contractExpiryCheck,
   certificationExpiryCheck,
   cleanupStaleNotifications,
+  cleanupOldActivityLogs,
   dailyReportsDigest,
 ];
 

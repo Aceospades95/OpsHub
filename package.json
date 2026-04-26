@@ -9,7 +9,6 @@
     "lint": "next lint",
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
-    "db:seed": "npx tsx prisma/seed.ts",
     "promote:admin": "npx tsx prisma/promote-admin.ts",
     "db:studio": "prisma studio",
     "test": "vitest run",
