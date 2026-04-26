@@ -13,11 +13,13 @@
 import type { EmailDriver } from "./types";
 import { logDriver } from "./log-driver";
 import { sesDriver } from "./ses-driver";
+import { smtpDriver } from "./smtp-driver";
 
 // Registry of available drivers. Keys are used as EMAIL_DRIVER env values.
 const DRIVERS: Record<string, EmailDriver> = {
   log: logDriver,
   ses: sesDriver,
+  smtp: smtpDriver,
   // postmark: postmarkDriver,
 };
 
