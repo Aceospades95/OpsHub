@@ -73,28 +73,73 @@ export function applyMapping(
 
 /**
  * Generate a sample CSV template for an importer. Contains the header row
- * (using field keys as column names) plus one example row showing the
- * expected format for each field. Used by the "Download template" button
- * in the wizard UI.
+ * (using field keys as column names). When the importer implements
+ * sampleRows(), the template includes up to a handful of real-data rows
+ * from the live database so users can paste valid values; when no records
+ * exist yet (or the importer has no sampleRows hook), it falls back to a
+ * single heuristic row with plausible placeholders.
  */
-export function generateSampleCsv(importer: ImporterDefinition): string {
-  const header = importer.fields.map((f) => f.key).join(",");
-  const example = importer.fields.map((f) => {
-    // Generate a plausible placeholder based on field key / description
-    if (f.description?.includes("Defaults to")) {
-      const match = f.description.match(/Defaults to (\w+)/);
-      if (match) return match[1];
-    }
-    if (f.key.toLowerCase().includes("email")) return "example@company.com";
-    if (f.key.toLowerCase().includes("date")) return "2025-01-15";
-    if (f.key.toLowerCase().includes("phone")) return "+1-555-0100";
-    if (f.key.toLowerCase().includes("url") || f.key.toLowerCase().includes("website")) return "https://example.com";
-    if (f.key.toLowerCase().includes("cost") || f.key.toLowerCase().includes("value")) return "1000";
-    if (f.key.toLowerCase().includes("currency")) return "USD";
-    if (f.key === "name" || f.key === "title") return `Sample ${importer.name.replace(/s$/, "")}`;
-    if (f.required) return `Example ${f.label}`;
-    return "";
-  }).join(",");
+export async function generateSampleCsv(importer: ImporterDefinition): Promise<string> {
+  const headerLine = importer.fields.map((f) => csvEscape(f.key)).join(",");
 
-  return `${header}\r\n${example}\r\n`;
+  let dataRows: Record<string, string>[] = [];
+  if (importer.sampleRows) {
+    try {
+      dataRows = await importer.sampleRows();
+    } catch {
+      // If a sampleRows() implementation throws, fall back to heuristics.
+      dataRows = [];
+    }
+  }
+  if (dataRows.length === 0) {
+    dataRows = [buildHeuristicRow(importer)];
+  }
+
+  const dataLines = dataRows.map((row) =>
+    importer.fields.map((f) => csvEscape(row[f.key] ?? "")).join(",")
+  );
+
+  return [headerLine, ...dataLines].join("\r\n") + "\r\n";
+}
+
+function buildHeuristicRow(importer: ImporterDefinition): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const f of importer.fields) {
+    out[f.key] = guessValue(f, importer);
+  }
+  return out;
+}
+
+function guessValue(
+  field: ImporterDefinition["fields"][number],
+  importer: ImporterDefinition
+): string {
+  if (field.description?.includes("Defaults to")) {
+    const match = field.description.match(/Defaults to (\w+)/);
+    if (match) return match[1];
+  }
+  const k = field.key.toLowerCase();
+  if (k.includes("email")) return "example@company.com";
+  if (k.includes("date")) return "2025-01-15";
+  if (k.includes("phone")) return "+1-555-0100";
+  if (k.includes("url") || k.includes("website")) return "https://example.com";
+  if (k.includes("cost") || k.includes("value")) return "1000";
+  if (k.includes("currency")) return "USD";
+  if (field.key === "name" || field.key === "title") {
+    return `Sample ${importer.name.replace(/s$/, "")}`;
+  }
+  if (field.required) return `Example ${field.label}`;
+  return "";
+}
+
+/**
+ * RFC-4180 CSV field escaping. Quote when a field contains comma, quote,
+ * newline, or carriage return; double embedded quotes inside the quoted
+ * field. Real-data sample rows can contain any of these.
+ */
+function csvEscape(value: string): string {
+  if (/[",\n\r]/.test(value)) {
+    return `"${value.replace(/"/g, '""')}"`;
+  }
+  return value;
 }

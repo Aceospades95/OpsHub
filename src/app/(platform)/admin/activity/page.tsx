@@ -1,6 +1,7 @@
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
+import type { Prisma } from "@prisma/client";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -17,7 +18,8 @@ interface SearchParams {
   clientId?: string;
   from?: string;
   to?: string;
-  page?: string;
+  cursor?: string;
+  dir?: string;
   [key: string]: string | undefined;
 }
 
@@ -31,20 +33,9 @@ export default async function AdminActivityPage({
   if (session.user.role !== "ADMIN") redirect("/dashboard");
 
   const where = buildWhere(searchParams);
-  const page = Math.max(1, Number.parseInt(searchParams.page || "1", 10) || 1);
 
-  const [rows, total, users, projects, clients, entityTypes] = await Promise.all([
-    db.activityLog.findMany({
-      where,
-      orderBy: { createdAt: "desc" },
-      skip: (page - 1) * PAGE_SIZE,
-      take: PAGE_SIZE,
-      include: {
-        user: { select: { id: true, name: true, email: true } },
-        project: { select: { id: true, name: true } },
-        client: { select: { id: true, name: true } },
-      },
-    }),
+  const [pageResult, total, users, projects, clients, entityTypes] = await Promise.all([
+    loadPage(where, PAGE_SIZE, searchParams.cursor, searchParams.dir),
     db.activityLog.count({ where }),
     db.user.findMany({
       where: { activityLogs: { some: {} } },
@@ -66,8 +57,26 @@ export default async function AdminActivityPage({
     }),
   ]);
 
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-  const csvHref = `/api/admin/activity/csv?${toQueryString(searchParams)}`;
+  const { rows, hasNext, hasPrev } = pageResult;
+  const filterParams = stripPaginationParams(searchParams);
+  const csvHref = `/api/admin/activity/csv?${toQueryString(filterParams)}`;
+  const newestHref = `/admin/activity?${toQueryString(filterParams)}`;
+  const olderHref =
+    hasNext && rows.length > 0
+      ? `/admin/activity?${toQueryString({
+          ...filterParams,
+          cursor: rows[rows.length - 1].id,
+          dir: "next",
+        })}`
+      : null;
+  const newerHref =
+    hasPrev && rows.length > 0
+      ? `/admin/activity?${toQueryString({
+          ...filterParams,
+          cursor: rows[0].id,
+          dir: "prev",
+        })}`
+      : null;
 
   return (
     <div>
@@ -174,7 +183,7 @@ export default async function AdminActivityPage({
                 Clear
               </Link>
               <span className="ml-auto text-xs text-muted-foreground">
-                {total.toLocaleString()} {total === 1 ? "entry" : "entries"}
+                {total.toLocaleString()} {total === 1 ? "entry" : "entries"} match
               </span>
             </div>
           </form>
@@ -246,26 +255,33 @@ export default async function AdminActivityPage({
         </CardContent>
       </Card>
 
-      {totalPages > 1 && (
+      {(newerHref || olderHref) && (
         <div className="mt-4 flex items-center justify-between text-sm">
-          <span className="text-muted-foreground">
-            Page {page} of {totalPages}
-          </span>
           <div className="flex gap-2">
-            {page > 1 && (
+            {searchParams.cursor && (
               <Link
-                href={`/admin/activity?${toQueryString({ ...searchParams, page: String(page - 1) })}`}
+                href={newestHref}
                 className="rounded border border-border px-3 py-1 hover:bg-muted/30"
               >
-                Previous
+                ⇤ Newest
               </Link>
             )}
-            {page < totalPages && (
+            {newerHref && (
               <Link
-                href={`/admin/activity?${toQueryString({ ...searchParams, page: String(page + 1) })}`}
+                href={newerHref}
                 className="rounded border border-border px-3 py-1 hover:bg-muted/30"
               >
-                Next
+                ← Newer
+              </Link>
+            )}
+          </div>
+          <div>
+            {olderHref && (
+              <Link
+                href={olderHref}
+                className="rounded border border-border px-3 py-1 hover:bg-muted/30"
+              >
+                Older →
               </Link>
             )}
           </div>
@@ -287,17 +303,16 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 const selectCls =
   "w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary";
 
-function buildWhere(params: SearchParams) {
-  const where: Record<string, unknown> = {};
+function buildWhere(params: SearchParams): Prisma.ActivityLogWhereInput {
+  const where: Prisma.ActivityLogWhereInput = {};
   if (params.actor) where.userId = params.actor;
   if (params.entityType) where.entityType = params.entityType;
   if (params.projectId) where.projectId = params.projectId;
   if (params.clientId) where.clientId = params.clientId;
   if (params.from || params.to) {
-    const range: Record<string, Date> = {};
+    const range: { gte?: Date; lte?: Date } = {};
     if (params.from) range.gte = new Date(params.from);
     if (params.to) {
-      // Treat the end date as inclusive (end of day in UTC)
       const end = new Date(params.to);
       end.setUTCHours(23, 59, 59, 999);
       range.lte = end;
@@ -305,6 +320,104 @@ function buildWhere(params: SearchParams) {
     where.createdAt = range;
   }
   return where;
+}
+
+const includeForRow = {
+  user: { select: { id: true, name: true, email: true } },
+  project: { select: { id: true, name: true } },
+  client: { select: { id: true, name: true } },
+} as const;
+
+type ActivityRow = Prisma.ActivityLogGetPayload<{ include: typeof includeForRow }>;
+
+/**
+ * Keyset (cursor) pagination on the natural sort key (createdAt DESC, id DESC).
+ *
+ * - First page (no cursor): newest PAGE_SIZE+1 rows. The +1 is dropped before
+ *   render and tells us whether an "Older" page exists.
+ * - dir=next from cursor X: rows strictly older than X's (createdAt, id) tuple.
+ *   We always have a "Newer" link in this case because the cursor row exists.
+ * - dir=prev from cursor X: rows strictly newer than X's (createdAt, id) tuple,
+ *   queried ASC, then reversed for display. The +1 trick here tells us whether
+ *   another "Newer" page exists above this one.
+ *
+ * The cursor stores only the row's PK; the (createdAt, id) tuple is recovered
+ * by an indexed point lookup, which is much smaller than embedding both values
+ * in the URL.
+ */
+async function loadPage(
+  where: Prisma.ActivityLogWhereInput,
+  pageSize: number,
+  cursor: string | undefined,
+  dir: string | undefined
+): Promise<{ rows: ActivityRow[]; hasNext: boolean; hasPrev: boolean }> {
+  if (!cursor) {
+    const rows = await db.activityLog.findMany({
+      where,
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      take: pageSize + 1,
+      include: includeForRow,
+    });
+    return {
+      rows: rows.slice(0, pageSize),
+      hasNext: rows.length > pageSize,
+      hasPrev: false,
+    };
+  }
+
+  const cursorRow = await db.activityLog.findUnique({
+    where: { id: cursor },
+    select: { createdAt: true, id: true },
+  });
+  if (!cursorRow) {
+    // Stale or invalid cursor — fall back to the first page.
+    return loadPage(where, pageSize, undefined, undefined);
+  }
+
+  const olderThanCursor: Prisma.ActivityLogWhereInput = {
+    OR: [
+      { createdAt: { lt: cursorRow.createdAt } },
+      { AND: [{ createdAt: cursorRow.createdAt }, { id: { lt: cursorRow.id } }] },
+    ],
+  };
+  const newerThanCursor: Prisma.ActivityLogWhereInput = {
+    OR: [
+      { createdAt: { gt: cursorRow.createdAt } },
+      { AND: [{ createdAt: cursorRow.createdAt }, { id: { gt: cursorRow.id } }] },
+    ],
+  };
+
+  if (dir === "prev") {
+    const rows = await db.activityLog.findMany({
+      where: { AND: [where, newerThanCursor] },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+      take: pageSize + 1,
+      include: includeForRow,
+    });
+    return {
+      rows: rows.slice(0, pageSize).reverse(),
+      hasNext: true,
+      hasPrev: rows.length > pageSize,
+    };
+  }
+
+  // Default direction: forward (older).
+  const rows = await db.activityLog.findMany({
+    where: { AND: [where, olderThanCursor] },
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    take: pageSize + 1,
+    include: includeForRow,
+  });
+  return {
+    rows: rows.slice(0, pageSize),
+    hasNext: rows.length > pageSize,
+    hasPrev: true,
+  };
+}
+
+function stripPaginationParams(params: SearchParams): SearchParams {
+  const { cursor: _c, dir: _d, ...rest } = params;
+  return rest;
 }
 
 function toQueryString(params: { [key: string]: string | undefined }): string {

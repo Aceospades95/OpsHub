@@ -27,7 +27,7 @@ export async function GET(
     return new NextResponse("Importer not found", { status: 404 });
   }
 
-  const csv = generateSampleCsv(importer);
+  const csv = await generateSampleCsv(importer);
   const filename = `${key}-template.csv`;
 
   return new NextResponse(csv, {

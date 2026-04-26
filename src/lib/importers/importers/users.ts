@@ -110,6 +110,29 @@ export const usersImporter: ImporterDefinition = {
     },
   ],
 
+  async sampleRows() {
+    // Most-recently-created active employees give a representative shape:
+    // role, department, manager link, etc. Password column doesn't exist on
+    // this importer; managerEmail comes from the manager relation.
+    const users = await db.user.findMany({
+      where: { isActive: true },
+      orderBy: { createdAt: "desc" },
+      take: 3,
+      include: { manager: { select: { email: true } } },
+    });
+    return users.map((u) => ({
+      name: u.name,
+      email: u.email,
+      role: u.role,
+      department: u.department || "",
+      jobTitle: u.jobTitle || "",
+      location: u.location || "",
+      phone: u.phone || "",
+      managerEmail: u.manager?.email || "",
+      hasLoginAccess: u.hasLoginAccess ? "true" : "false",
+    }));
+  },
+
   async commit(rows, ctx) {
     const results: ImportRowResult[] = [];
     let imported = 0;

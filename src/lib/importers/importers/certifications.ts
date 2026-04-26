@@ -54,6 +54,10 @@ function parseDate(v: string | undefined): Date | null {
   return isNaN(d.getTime()) ? null : d;
 }
 
+function formatDate(d: Date | null | undefined): string {
+  return d ? d.toISOString().slice(0, 10) : "";
+}
+
 function parseBool(value: string | undefined, defaultValue: boolean): boolean {
   if (value === undefined || value === "") return defaultValue;
   const v = value.trim().toLowerCase();
@@ -192,6 +196,50 @@ export const certificationsImporter: ImporterDefinition = {
       aliases: ["client", "company"],
     },
   ],
+
+  async sampleRows() {
+    const certs = await db.certification.findMany({
+      orderBy: { createdAt: "desc" },
+      take: 3,
+      include: {
+        assignee: { select: { email: true } },
+        pointOfContact: { select: { email: true } },
+        client: { select: { name: true } },
+      },
+    });
+    return certs.map((c) => ({
+      name: c.name,
+      plainEnglishSummary: c.plainEnglishSummary || "",
+      status: c.status,
+      type: c.type,
+      engagementType: c.engagementType,
+      jurisdictionLevel: c.jurisdictionLevel,
+      jurisdictionName: c.jurisdictionName || "",
+      issuingBody: c.issuingBody || "",
+      agencyWebsiteUrl: c.agencyWebsiteUrl || "",
+      agencyContactName: c.agencyContactName || "",
+      agencyContactEmail: c.agencyContactEmail || "",
+      agencyContactPhone: c.agencyContactPhone || "",
+      certNumber: c.certNumber || "",
+      submittedDate: formatDate(c.submittedDate),
+      issuedDate: formatDate(c.issuedDate),
+      expirationDate: formatDate(c.expirationDate),
+      renewalDate: formatDate(c.renewalDate),
+      renewalLeadDays: String(c.renewalLeadDays),
+      reminderOffsetsDays: c.reminderOffsetsDays.join("|"),
+      autoRenew: c.autoRenew ? "true" : "false",
+      renewalCost:
+        c.renewalCost !== null && c.renewalCost !== undefined
+          ? String(c.renewalCost)
+          : "",
+      currency: c.currency || "",
+      documentUrl: c.documentUrl || "",
+      completedCertUrl: c.completedCertUrl || "",
+      assigneeEmail: c.assignee?.email || "",
+      pointOfContactEmail: c.pointOfContact?.email || "",
+      clientName: c.client?.name || "",
+    }));
+  },
 
   async commit(rows, ctx) {
     const results: ImportRowResult[] = [];

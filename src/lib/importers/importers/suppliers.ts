@@ -41,6 +41,25 @@ export const suppliersImporter: ImporterDefinition = {
     { key: "isPreferred", label: "Preferred supplier", required: false, description: "true/false. Defaults to false.", aliases: ["preferred", "is preferred"] },
   ],
 
+  async sampleRows() {
+    const suppliers = await db.supplier.findMany({
+      orderBy: { createdAt: "desc" },
+      take: 3,
+    });
+    return suppliers.map((s) => ({
+      name: s.name,
+      category: s.category,
+      status: s.status,
+      contactName: s.contactName || "",
+      contactEmail: s.contactEmail || "",
+      contactPhone: s.contactPhone || "",
+      address: s.address || "",
+      website: s.website || "",
+      notes: s.notes || "",
+      isPreferred: s.isPreferred ? "true" : "false",
+    }));
+  },
+
   async commit(rows, ctx) {
     const results: ImportRowResult[] = [];
     let imported = 0, skipped = 0, failed = 0;
