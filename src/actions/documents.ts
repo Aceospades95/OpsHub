@@ -3,6 +3,7 @@
 import { db } from "@/lib/db";
 import { requireAuth, resolveModulePerms } from "@/lib/permissions";
 import { logActivity } from "@/lib/activity";
+import { deriveActivityScope } from "@/lib/activity-scope";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
@@ -30,7 +31,7 @@ export async function createDocument(_prev: unknown, formData: FormData) {
   if (!parsed.success) return { error: "Invalid input", fieldErrors: parsed.error.flatten().fieldErrors };
 
   const doc = await db.document.create({ data: parsed.data });
-  await logActivity("created", "document", doc.id, user.id, doc.title);
+  await logActivity("created", "document", doc.id, user.id, doc.title, await deriveActivityScope("document", doc.id));
   revalidatePath(`/projects/${parsed.data.projectId}`);
   return { success: true, documentId: doc.id };
 }
@@ -77,7 +78,7 @@ export async function updateDocument(_prev: unknown, formData: FormData) {
     },
   });
 
-  await logActivity("updated", "document", id, user.id, parsed.data.title);
+  await logActivity("updated", "document", id, user.id, parsed.data.title, await deriveActivityScope("document", id));
   revalidatePath(`/projects/${existing.projectId}/documents/${id}`);
   // The parent project page lists this document's title — revalidate it too.
   revalidatePath(`/projects/${existing.projectId}`);
@@ -93,8 +94,20 @@ export async function deleteDocument(_prev: unknown, formData: FormData) {
   const doc = await db.document.findUnique({ where: { id } });
   if (!doc) return { error: "Not found" };
 
+  // Snapshot the project scope BEFORE deleting; the helper's lookup
+  // would return empty after the row is gone.
+  const scope = doc.projectId
+    ? {
+        projectId: doc.projectId,
+        clientId:
+          (await db.project.findUnique({
+            where: { id: doc.projectId },
+            select: { clientId: true },
+          }))?.clientId ?? null,
+      }
+    : {};
   await db.document.delete({ where: { id } });
-  await logActivity("deleted", "document", id, user.id, doc.title);
+  await logActivity("deleted", "document", id, user.id, doc.title, scope);
   revalidatePath(`/projects/${doc.projectId}`);
   return { success: true };
 }
@@ -133,7 +146,7 @@ export async function restoreDocumentVersion(_prev: unknown, formData: FormData)
     },
   });
 
-  await logActivity("updated", "document", documentId, user.id, `Restored to v${version.version}`);
+  await logActivity("updated", "document", documentId, user.id, `Restored to v${version.version}`, await deriveActivityScope("document", documentId));
   revalidatePath(`/projects/${doc.projectId}/documents/${documentId}`);
   revalidatePath(`/projects/${doc.projectId}`);
   return { success: true };

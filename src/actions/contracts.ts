@@ -70,7 +70,10 @@ export async function createContract(_prev: unknown, formData: FormData) {
     },
   });
 
-  await logActivity("created", "contract", contract.id, user.id, contract.title);
+  await logActivity("created", "contract", contract.id, user.id, contract.title, {
+    clientId: contract.clientId,
+    projectId: contract.projectId,
+  });
   revalidatePath("/contracts");
   // Contracts show on client and project detail pages, so those need to refresh too.
   if (contract.clientId) revalidatePath(`/clients/${contract.clientId}`);
@@ -129,7 +132,10 @@ export async function updateContract(_prev: unknown, formData: FormData) {
     },
   });
 
-  await logActivity("updated", "contract", id, user.id, parsed.data.title);
+  await logActivity("updated", "contract", id, user.id, parsed.data.title, {
+    clientId: parsed.data.clientId ?? previous?.clientId ?? null,
+    projectId: parsed.data.projectId ?? previous?.projectId ?? null,
+  });
   revalidatePath(`/contracts/${id}`);
   revalidatePath("/contracts");
   // Revalidate both old and new client/project pages so the contract list
@@ -155,7 +161,10 @@ export async function deleteContract(_prev: unknown, formData: FormData) {
   if (!contract) return { error: "Not found" };
 
   await db.contract.delete({ where: { id } });
-  await logActivity("deleted", "contract", id, user.id, contract.title);
+  await logActivity("deleted", "contract", id, user.id, contract.title, {
+    clientId: contract.clientId,
+    projectId: contract.projectId,
+  });
   revalidatePath("/contracts");
   // Revalidate the client/project pages where this contract used to appear.
   if (contract.clientId) revalidatePath(`/clients/${contract.clientId}`);

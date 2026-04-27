@@ -5,9 +5,18 @@ export async function logActivity(
   entityType: string,
   entityId: string,
   userId: string,
-  details?: string
+  details?: string,
+  options?: { projectId?: string | null; clientId?: string | null }
 ) {
   await db.activityLog.create({
-    data: { action, entityType, entityId, userId, details },
+    data: {
+      action,
+      entityType,
+      entityId,
+      userId,
+      details,
+      projectId: options?.projectId ?? null,
+      clientId: options?.clientId ?? null,
+    },
   });
 }

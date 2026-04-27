@@ -3,6 +3,7 @@
 import { db } from "@/lib/db";
 import { requireAuth } from "@/lib/permissions";
 import { logActivity } from "@/lib/activity";
+import { deriveActivityScope } from "@/lib/activity-scope";
 import { revalidatePath } from "next/cache";
 import type {
   CertificationStatus,
@@ -84,7 +85,9 @@ export async function createCertification(_prev: unknown, formData: FormData) {
     data: { name, ...extractCertData(formData) },
   });
 
-  await logActivity("created", "certification", cert.id, user.id, cert.name);
+  await logActivity("created", "certification", cert.id, user.id, cert.name, {
+    clientId: cert.clientId,
+  });
   revalidatePath("/certifications");
   return { success: true, id: cert.id };
 }
@@ -97,12 +100,15 @@ export async function updateCertification(_prev: unknown, formData: FormData) {
   const name = (formData.get("name") as string | null)?.trim();
   if (!name) return { error: "Name is required" };
 
-  await db.certification.update({
+  const updated = await db.certification.update({
     where: { id },
     data: { name, ...extractCertData(formData) },
+    select: { clientId: true },
   });
 
-  await logActivity("updated", "certification", id, user.id, name);
+  await logActivity("updated", "certification", id, user.id, name, {
+    clientId: updated.clientId,
+  });
   revalidatePath("/certifications");
   revalidatePath(`/certifications/${id}`);
   return { success: true };
@@ -113,10 +119,12 @@ export async function deleteCertification(_prev: unknown, formData: FormData) {
   const id = formData.get("id") as string;
   if (!id) return { error: "ID required" };
 
-  const cert = await db.certification.findUnique({ where: { id }, select: { name: true } });
+  const cert = await db.certification.findUnique({ where: { id }, select: { name: true, clientId: true } });
   await db.certification.delete({ where: { id } });
 
-  await logActivity("deleted", "certification", id, user.id, cert?.name || "");
+  await logActivity("deleted", "certification", id, user.id, cert?.name || "", {
+    clientId: cert?.clientId ?? null,
+  });
   revalidatePath("/certifications");
   return { success: true };
 }
@@ -144,6 +152,7 @@ export async function signOffCertification(_prev: unknown, formData: FormData) {
       expirationDate: true,
       renewalCost: true,
       currency: true,
+      clientId: true,
     },
   });
   if (!cert) return { error: "Not found" };
@@ -180,7 +189,8 @@ export async function signOffCertification(_prev: unknown, formData: FormData) {
     "certification",
     id,
     user.id,
-    notes ? `${cert.name}: ${notes}` : cert.name
+    notes ? `${cert.name}: ${notes}` : cert.name,
+    { clientId: cert.clientId }
   );
   revalidatePath(`/certifications/${id}`);
   revalidatePath("/certifications");
@@ -198,7 +208,7 @@ export async function revokeSignOff(_prev: unknown, formData: FormData) {
 
   const cert = await db.certification.findUnique({
     where: { id },
-    select: { name: true, signedOffAt: true },
+    select: { name: true, signedOffAt: true, clientId: true },
   });
   if (!cert) return { error: "Not found" };
   if (!cert.signedOffAt) return { error: "Not currently signed off" };
@@ -208,7 +218,9 @@ export async function revokeSignOff(_prev: unknown, formData: FormData) {
     data: { signedOffAt: null, signedOffById: null, signOffNotes: null },
   });
 
-  await logActivity("sign-off-revoked", "certification", id, user.id, cert.name);
+  await logActivity("sign-off-revoked", "certification", id, user.id, cert.name, {
+    clientId: cert.clientId,
+  });
   revalidatePath(`/certifications/${id}`);
   revalidatePath("/certifications");
   return { success: true };
@@ -254,7 +266,7 @@ export async function addChecklistItem(_prev: unknown, formData: FormData) {
     },
   });
 
-  await logActivity("checklist-added", "certification", certId, user.id, label);
+  await logActivity("checklist-added", "certification", certId, user.id, label, await deriveActivityScope("certification", certId));
   revalidatePath(`/certifications/${certId}`);
   return { success: true };
 }
@@ -289,7 +301,8 @@ export async function toggleChecklistItem(_prev: unknown, formData: FormData) {
     "certification",
     item.certificationId,
     user.id,
-    `${item.label}: ${nextCompleted ? "done" : "reopened"}`
+    `${item.label}: ${nextCompleted ? "done" : "reopened"}`,
+    await deriveActivityScope("certification", item.certificationId)
   );
   revalidatePath(`/certifications/${item.certificationId}`);
   return { success: true };
@@ -310,13 +323,16 @@ export async function removeChecklistItem(_prev: unknown, formData: FormData) {
     return { error: "Permission denied" };
   }
 
+  // Derive scope BEFORE the delete so the cert lookup still works.
+  const scope = await deriveActivityScope("certification", item.certificationId);
   await db.certificationRenewalChecklistItem.delete({ where: { id: itemId } });
   await logActivity(
     "checklist-removed",
     "certification",
     item.certificationId,
     user.id,
-    item.label
+    item.label,
+    scope
   );
   revalidatePath(`/certifications/${item.certificationId}`);
   return { success: true };

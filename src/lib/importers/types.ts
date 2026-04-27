@@ -82,4 +82,16 @@ export interface ImporterDefinition {
     rows: Record<string, string>[],
     ctx: ImportContext
   ): Promise<ImportResult>;
+
+  /**
+   * Optional: supply up to a handful of real-data sample rows from the
+   * database for the downloadable template. Lets users see actual valid
+   * values for foreign-key-by-name columns (clientName, projectName,
+   * etc.), enum values, and date formats instead of heuristic
+   * placeholders. Keys must match this importer's field keys; missing
+   * values fall through to empty string. Return an empty array if the
+   * table has no records yet — the template falls back to a heuristic
+   * row in that case.
+   */
+  sampleRows?(): Promise<Record<string, string>[]>;
 }

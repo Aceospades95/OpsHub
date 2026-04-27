@@ -12,11 +12,14 @@
 
 import type { EmailDriver } from "./types";
 import { logDriver } from "./log-driver";
+import { sesDriver } from "./ses-driver";
+import { smtpDriver } from "./smtp-driver";
 
 // Registry of available drivers. Keys are used as EMAIL_DRIVER env values.
 const DRIVERS: Record<string, EmailDriver> = {
   log: logDriver,
-  // resend: resendDriver,  // add when ready
+  ses: sesDriver,
+  smtp: smtpDriver,
   // postmark: postmarkDriver,
 };
 
@@ -38,7 +41,24 @@ export function getActiveDriver(): EmailDriver {
   return driver;
 }
 
-/** Default sender address. Set EMAIL_FROM in env to override. */
+/**
+ * Resolve the default sender address.
+ *
+ * - With EMAIL_DRIVER=log (or unset), we fall back to a placeholder so
+ *   local development never blocks on missing config.
+ * - With any real driver (smtp, ses, ...) EMAIL_FROM MUST be set —
+ *   throwing here surfaces misconfiguration loudly at the first send
+ *   instead of letting Gmail/SES bounce a placeholder address.
+ */
 export function getDefaultFrom(): string {
-  return process.env.EMAIL_FROM || "noreply@opshub.local";
+  const fromEnv = process.env.EMAIL_FROM;
+  if (fromEnv) return fromEnv;
+
+  const driverName = process.env.EMAIL_DRIVER?.toLowerCase() || "log";
+  if (driverName !== "log") {
+    throw new Error(
+      `EMAIL_FROM must be set when EMAIL_DRIVER="${driverName}". The placeholder default is only allowed for the log driver.`
+    );
+  }
+  return "noreply@opshub.local";
 }

@@ -1,11 +1,14 @@
 /**
  * Importer registry — the canonical list of every CSV importer.
  *
- * Adding a new importer:
- *   1. Create a new file in src/lib/importers/importers/ exporting an
- *      ImporterDefinition with key, name, fields, and commit handler
- *   2. Import it here and add it to IMPORTERS
- *   3. The admin /admin/import wizard picks it up automatically
+ * To add a new importer:
+ *   1. Create a file in src/lib/importers/importers/<key>.ts that exports
+ *      an ImporterDefinition (key, name, description, module, fields,
+ *      commit handler, optional sampleRows()).
+ *   2. Import it here and append it to IMPORTERS below.
+ *   3. The /admin/import wizard, the template download endpoint
+ *      (/api/import/[key]/template), and the audit log all pick the
+ *      new importer up automatically — no other wiring needed.
  *
  * Each importer is responsible for its own validation, deduplication,
  * and DB writes — the registry just provides discovery.
@@ -15,15 +18,43 @@ import type { ImporterDefinition } from "./types";
 import { usersImporter } from "./importers/users";
 import { certificationsImporter } from "./importers/certifications";
 import { contractsImporter } from "./importers/contracts";
+import { contractTermsImporter } from "./importers/contract-terms";
 import { projectsImporter } from "./importers/projects";
+import { projectMembersImporter } from "./importers/project-members";
+import { projectRelationsImporter } from "./importers/project-relations";
+import { projectToolsImporter } from "./importers/project-tools";
+import { milestonesImporter } from "./importers/milestones";
 import { suppliersImporter } from "./importers/suppliers";
+import { supplierProjectsImporter } from "./importers/supplier-projects";
+import { tasksImporter } from "./importers/tasks";
+import { intranetImporter } from "./importers/intranet";
+import { toolsImporter } from "./importers/tools";
+import { clientContactsImporter } from "./importers/client-contacts";
+import { assignmentsImporter } from "./importers/assignments";
+import { allowedDomainsImporter } from "./importers/allowed-domains";
 
 export const IMPORTERS: ImporterDefinition[] = [
+  // Recommended import order top-to-bottom: top-level entities first,
+  // then their child rows, then cross-entity links. Keeping this order in
+  // the registry surfaces it in the /admin/import wizard so users
+  // import in the right sequence on day one.
   usersImporter,
-  certificationsImporter,
-  contractsImporter,
   projectsImporter,
+  clientContactsImporter,
+  contractsImporter,
+  contractTermsImporter,
+  certificationsImporter,
   suppliersImporter,
+  toolsImporter,
+  intranetImporter,
+  tasksImporter,
+  milestonesImporter,
+  assignmentsImporter,
+  projectMembersImporter,
+  projectToolsImporter,
+  supplierProjectsImporter,
+  projectRelationsImporter,
+  allowedDomainsImporter,
 ];
 
 const IMPORTER_MAP = new Map<string, ImporterDefinition>(

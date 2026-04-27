@@ -46,14 +46,17 @@ export async function sendEmail(
   audit: EmailAuditContext = {}
 ): Promise<EmailSendResult> {
   const driver = getActiveDriver();
-  const from = message.from || getDefaultFrom();
   const toList = Array.isArray(message.to) ? message.to : [message.to];
 
-  // Normalize the message with resolved sender for both driver and log
-  const normalized: EmailMessage = { ...message, from };
-
+  // Resolve `from` inside the try so a missing EMAIL_FROM under a real
+  // driver (which throws from getDefaultFrom) lands as a clean
+  // success:false / EmailLog row rather than crashing the calling
+  // mutation.
+  let from = "";
   let result: EmailSendResult;
   try {
+    from = message.from || getDefaultFrom();
+    const normalized: EmailMessage = { ...message, from };
     result = await driver.send(normalized);
   } catch (err) {
     // Drivers are supposed to catch their own errors and return success:false,

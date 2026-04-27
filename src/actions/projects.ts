@@ -35,7 +35,7 @@ export async function createProject(_prev: unknown, formData: FormData) {
       data: { name: newClientName, status: "ACTIVE" },
     });
     clientId = newClient.id;
-    await logActivity("created", "client", newClient.id, user.id, newClient.name);
+    await logActivity("created", "client", newClient.id, user.id, newClient.name, { clientId: newClient.id });
   }
 
   // Handle inline service offering creation — same pattern as inline client.
@@ -103,7 +103,10 @@ export async function createProject(_prev: unknown, formData: FormData) {
     });
   }
 
-  await logActivity("created", "project", project.id, user.id, project.name);
+  await logActivity("created", "project", project.id, user.id, project.name, {
+    projectId: project.id,
+    clientId: project.clientId,
+  });
   revalidateProject(project.id, { clientId: project.clientId });
   return { success: true };
 }
@@ -168,7 +171,10 @@ export async function updateProject(_prev: unknown, formData: FormData) {
     },
   });
 
-  await logActivity("updated", "project", id, user.id, parsed.data.name);
+  await logActivity("updated", "project", id, user.id, parsed.data.name, {
+    projectId: id,
+    clientId: parsed.data.clientId,
+  });
   revalidateProject(id, {
     clientId: parsed.data.clientId,
     previousClientId: previous?.clientId ?? null,
@@ -186,7 +192,10 @@ export async function deleteProject(_prev: unknown, formData: FormData) {
   if (!project) return { error: "Project not found" };
 
   await db.project.delete({ where: { id } });
-  await logActivity("deleted", "project", id, user.id, project.name);
+  await logActivity("deleted", "project", id, user.id, project.name, {
+    projectId: id,
+    clientId: project.clientId,
+  });
   revalidateProject(id, { clientId: project.clientId });
   return { success: true };
 }

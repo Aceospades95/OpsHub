@@ -179,7 +179,10 @@ export async function createAssignment(_prev: unknown, formData: FormData) {
   // they were just assigned to.
   await maybePromoteUserRole(assignment.employeeId);
 
-  await logActivity("created", "assignment", assignment.id, user.id, `Assignment for employee ${parsed.data.employeeId}`);
+  await logActivity("created", "assignment", assignment.id, user.id, `Assignment for employee ${parsed.data.employeeId}`, {
+    projectId: assignment.projectId,
+    clientId: assignment.clientId,
+  });
   revalidateAssignmentPaths(parsed.data.employeeId, parsed.data.projectId);
   await notifyAssignmentChange({
     type: "assignment-created",
@@ -241,7 +244,10 @@ export async function updateAssignment(_prev: unknown, formData: FormData) {
   if (wasActive && !isActive) await maybeDemoteUserRole(parsed.data.employeeId);
   else if (!wasActive && isActive) await maybePromoteUserRole(parsed.data.employeeId);
 
-  await logActivity("updated", "assignment", id, user.id);
+  await logActivity("updated", "assignment", id, user.id, undefined, {
+    projectId: parsed.data.projectId,
+    clientId: parsed.data.clientId,
+  });
   revalidateAssignmentPaths(parsed.data.employeeId, parsed.data.projectId);
   return { success: true };
 }
@@ -255,14 +261,17 @@ export async function deleteAssignment(_prev: unknown, formData: FormData) {
 
   const assignment = await db.assignment.findUnique({
     where: { id },
-    select: { employeeId: true, projectId: true },
+    select: { employeeId: true, projectId: true, clientId: true },
   });
   if (!assignment) return { error: "Assignment not found" };
   await requireManageForAssignment(user.id, user.role, assignment.projectId);
 
   await db.assignment.delete({ where: { id } });
   await maybeDemoteUserRole(assignment.employeeId);
-  await logActivity("deleted", "assignment", id, user.id);
+  await logActivity("deleted", "assignment", id, user.id, undefined, {
+    projectId: assignment.projectId,
+    clientId: assignment.clientId,
+  });
   revalidateAssignmentPaths(assignment.employeeId, assignment.projectId);
   return { success: true, error: null };
 }
@@ -278,14 +287,17 @@ export async function removeAssignment(assignmentId: string) {
   // and notify the (former) assignee
   const assignment = await db.assignment.findUnique({
     where: { id: assignmentId },
-    select: { employeeId: true, projectId: true, role: true, allocationFte: true },
+    select: { employeeId: true, projectId: true, clientId: true, role: true, allocationFte: true },
   });
   if (!assignment) return { error: "Assignment not found" };
   await requireManageForAssignment(user.id, user.role, assignment.projectId);
 
   await db.assignment.delete({ where: { id: assignmentId } });
   await maybeDemoteUserRole(assignment.employeeId);
-  await logActivity("deleted", "assignment", assignmentId, user.id);
+  await logActivity("deleted", "assignment", assignmentId, user.id, undefined, {
+    projectId: assignment.projectId,
+    clientId: assignment.clientId,
+  });
   revalidateAssignmentPaths(assignment.employeeId, assignment.projectId);
   await notifyAssignmentChange({
     type: "assignment-removed",
@@ -332,7 +344,10 @@ export async function quickAssign(data: {
 
   await maybePromoteUserRole(assignment.employeeId);
 
-  await logActivity("created", "assignment", assignment.id, user.id, `Quick-assigned to project`);
+  await logActivity("created", "assignment", assignment.id, user.id, `Quick-assigned to project`, {
+    projectId: assignment.projectId,
+    clientId: assignment.clientId,
+  });
   revalidateAssignmentPaths(data.employeeId, data.projectId);
   await notifyAssignmentChange({
     type: "assignment-created",
@@ -354,10 +369,13 @@ export async function updateAssignmentNotes(assignmentId: string, notes: string)
   const updated = await db.assignment.update({
     where: { id: assignmentId },
     data: { notes: notes || null },
-    select: { employeeId: true, projectId: true },
+    select: { employeeId: true, projectId: true, clientId: true },
   });
 
-  await logActivity("updated", "assignment", assignmentId, user.id, "Updated notes");
+  await logActivity("updated", "assignment", assignmentId, user.id, "Updated notes", {
+    projectId: updated.projectId,
+    clientId: updated.clientId,
+  });
   revalidateAssignmentPaths(updated.employeeId, updated.projectId);
   return { success: true };
 }
@@ -390,10 +408,13 @@ export async function updateAssignmentRole(assignmentId: string, role: string, r
       roleDefinitionId,
       projectRoleId: newProjectRoleId,
     },
-    select: { employeeId: true, projectId: true },
+    select: { employeeId: true, projectId: true, clientId: true },
   });
 
-  await logActivity("updated", "assignment", assignmentId, user.id, `Updated role to ${role}`);
+  await logActivity("updated", "assignment", assignmentId, user.id, `Updated role to ${role}`, {
+    projectId: updated.projectId,
+    clientId: updated.clientId,
+  });
   revalidateAssignmentPaths(updated.employeeId, updated.projectId);
   return { success: true };
 }
@@ -407,10 +428,13 @@ export async function updateAssignmentFte(assignmentId: string, allocationFte: n
   const updated = await db.assignment.update({
     where: { id: assignmentId },
     data: { allocationFte },
-    select: { employeeId: true, projectId: true },
+    select: { employeeId: true, projectId: true, clientId: true },
   });
 
-  await logActivity("updated", "assignment", assignmentId, user.id, `Updated FTE to ${allocationFte}`);
+  await logActivity("updated", "assignment", assignmentId, user.id, `Updated FTE to ${allocationFte}`, {
+    projectId: updated.projectId,
+    clientId: updated.clientId,
+  });
   revalidateAssignmentPaths(updated.employeeId, updated.projectId);
   return { success: true };
 }
@@ -424,7 +448,9 @@ export async function updateProjectOffering(projectId: string, serviceOfferingId
     data: { serviceOfferingId },
   });
 
-  await logActivity("updated", "project", projectId, user.id, "Updated service offering");
+  await logActivity("updated", "project", projectId, user.id, "Updated service offering", {
+    projectId,
+  });
   revalidatePath("/team");
   return { success: true };
 }
@@ -457,7 +483,7 @@ export async function createProjectRole(projectId: string, roleDefinitionId: str
   const pr = await db.projectRole.create({
     data: { projectId, roleDefinitionId, requiredFte, quantity },
   });
-  await logActivity("created", "projectRole", pr.id, user.id, `Added role to project`);
+  await logActivity("created", "projectRole", pr.id, user.id, `Added role to project`, { projectId });
   revalidateAssignmentPaths(null, projectId);
   return { success: true, id: pr.id };
 }
@@ -471,7 +497,9 @@ export async function updateProjectRole(id: string, requiredFte: number, quantit
     data: { requiredFte, quantity },
     select: { projectId: true },
   });
-  await logActivity("updated", "projectRole", id, user.id);
+  await logActivity("updated", "projectRole", id, user.id, undefined, {
+    projectId: updated.projectId,
+  });
   revalidateAssignmentPaths(null, updated.projectId);
   return { success: true };
 }
@@ -484,7 +512,9 @@ export async function deleteProjectRole(id: string) {
   // Unlink assignments from this project role before deleting
   await db.assignment.updateMany({ where: { projectRoleId: id }, data: { projectRoleId: null } });
   await db.projectRole.delete({ where: { id } });
-  await logActivity("deleted", "projectRole", id, user.id);
+  await logActivity("deleted", "projectRole", id, user.id, undefined, {
+    projectId: pr?.projectId,
+  });
   revalidateAssignmentPaths(null, pr?.projectId);
   return { success: true };
 }

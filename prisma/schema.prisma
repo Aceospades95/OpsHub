@@ -281,6 +281,7 @@ model Client {
   tasks          Task[]
   sandboxPages   SandboxPage[]
   assignments    Assignment[]
+  activityLogs   ActivityLog[]
 }
 
 model ClientContact {
@@ -334,6 +335,7 @@ model Project {
   relatedRelations ProjectRelation[] @relation("RelatedProjectRelations")
   assignments      Assignment[]
   projectRoles     ProjectRole[]
+  activityLogs     ActivityLog[]
 
   @@index([serviceOfferingId])
 }
@@ -680,11 +682,24 @@ model ActivityLog {
   entityId   String
   details    String?  @db.Text
   userId     String
+  /// Optional scope: project this change relates to, when one applies.
+  /// Lets the audit page filter "all changes in project X" without
+  /// walking each entity. Nullable because most logs (theme, sandbox,
+  /// user account) have no project context.
+  projectId  String?
+  /// Optional scope: client this change relates to, when one applies.
+  clientId   String?
   createdAt  DateTime @default(now())
 
-  user User @relation(fields: [userId], references: [id])
+  user    User     @relation(fields: [userId], references: [id])
+  project Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  client  Client?  @relation(fields: [clientId], references: [id], onDelete: SetNull)
 
   @@index([entityType, entityId])
+  @@index([userId])
+  @@index([projectId])
+  @@index([clientId])
+  @@index([createdAt])
 }
 
 // ─── THEME SETTINGS ─────────────────────────────────────

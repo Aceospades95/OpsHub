@@ -4,7 +4,8 @@
  * Required: title, clientName
  * Optional: status, contractType, contractNumber, value, currency,
  *           startDate, endDate, renewalDate, noticePeriodDays, autoRenew,
- *           description
+ *           description, summary, externalDocumentUrl, documentSourceType,
+ *           documentSourceLabel, parentContractNumber, projectName
  */
 
 import type { ContractStatus, ContractType } from "@prisma/client";
@@ -25,6 +26,10 @@ function parseDate(v: string | undefined): Date | null {
   return isNaN(d.getTime()) ? null : d;
 }
 
+function formatDate(d: Date | null | undefined): string {
+  return d ? d.toISOString().slice(0, 10) : "";
+}
+
 function parseBool(value: string | undefined, defaultValue: boolean): boolean {
   if (value === undefined || value === "") return defaultValue;
   const v = value.trim().toLowerCase();
@@ -37,7 +42,7 @@ export const contractsImporter: ImporterDefinition = {
   key: "contracts",
   name: "Contracts",
   description:
-    "Bulk-create contracts. Required: title, clientName. Optional: status, type, value, dates, renewal info.",
+    "Bulk-create contracts. Required: title, clientName. Optional: status, type, value, dates, renewal info, Google Drive link, parent contract, project link.",
   module: "contracts",
 
   fields: [
@@ -53,15 +58,104 @@ export const contractsImporter: ImporterDefinition = {
     { key: "renewalDate", label: "Renewal date", required: false, aliases: ["renewal", "renew by"] },
     { key: "noticePeriodDays", label: "Notice period (days)", required: false, aliases: ["notice period", "notice days"] },
     { key: "autoRenew", label: "Auto-renew", required: false, description: "true/false. Defaults to false.", aliases: ["auto renew"] },
-    { key: "description", label: "Description", required: false, aliases: ["notes", "summary"] },
+    { key: "description", label: "Description", required: false, aliases: ["notes"] },
+    { key: "summary", label: "Summary", required: false, description: "Long-form summary; appears on the contract detail page.", aliases: ["plain summary", "executive summary"] },
+    {
+      key: "externalDocumentUrl",
+      label: "Document URL",
+      required: false,
+      description: "Link to the live contract document, e.g. a Google Drive URL.",
+      aliases: ["google drive", "drive link", "document link", "doc url", "google drive link", "contract url"],
+    },
+    {
+      key: "documentSourceType",
+      label: "Document source type",
+      required: false,
+      description: "google_drive, external_url, upload, or other. Defaults to external_url when a URL is provided.",
+      aliases: ["doc source", "source type"],
+    },
+    {
+      key: "documentSourceLabel",
+      label: "Document source label",
+      required: false,
+      description: "Human-readable label shown next to the document link, e.g. \"Drive\" or \"Final PDF\".",
+      aliases: ["doc label", "source label"],
+    },
+    {
+      key: "parentContractNumber",
+      label: "Parent contract number",
+      required: false,
+      description: "Links this contract as a child of an existing one (matched by contract number).",
+      aliases: ["parent contract", "parent number", "parent ref"],
+    },
+    {
+      key: "projectName",
+      label: "Project name",
+      required: false,
+      description: "Optionally scope this contract to an existing project by name.",
+      aliases: ["project", "project ref"],
+    },
   ],
+
+  async sampleRows() {
+    const contracts = await db.contract.findMany({
+      orderBy: { createdAt: "desc" },
+      take: 3,
+      include: {
+        client: { select: { name: true } },
+        project: { select: { name: true } },
+        parentContract: { select: { contractNumber: true } },
+      },
+    });
+    return contracts.map((c) => ({
+      title: c.title,
+      clientName: c.client.name,
+      status: c.status,
+      contractType: c.contractType || "",
+      contractNumber: c.contractNumber || "",
+      value: c.value !== null && c.value !== undefined ? String(c.value) : "",
+      currency: c.currency || "",
+      startDate: formatDate(c.startDate),
+      endDate: formatDate(c.endDate),
+      renewalDate: formatDate(c.renewalDate),
+      noticePeriodDays:
+        c.noticePeriodDays !== null && c.noticePeriodDays !== undefined
+          ? String(c.noticePeriodDays)
+          : "",
+      autoRenew: c.autoRenew ? "true" : "false",
+      description: c.description || "",
+      summary: c.summary || "",
+      externalDocumentUrl: c.externalDocumentUrl || "",
+      documentSourceType: c.documentSourceType || "",
+      documentSourceLabel: c.documentSourceLabel || "",
+      parentContractNumber: c.parentContract?.contractNumber || "",
+      projectName: c.project?.name || "",
+    }));
+  },
 
   async commit(rows, ctx) {
     const results: ImportRowResult[] = [];
-    let imported = 0, skipped = 0, failed = 0;
+    let imported = 0;
+    const skipped = 0;
+    let failed = 0;
 
     const clients = await db.client.findMany({ select: { id: true, name: true } });
     const clientByName = new Map(clients.map((c) => [c.name.toLowerCase(), c.id]));
+
+    // Pre-fetch parent-contract candidates and projects so we can resolve the
+    // optional parentContractNumber and projectName columns without a query
+    // per row.
+    const parents = await db.contract.findMany({
+      where: { contractNumber: { not: null } },
+      select: { id: true, contractNumber: true },
+    });
+    const parentByNumber = new Map(
+      parents
+        .filter((p): p is { id: string; contractNumber: string } => Boolean(p.contractNumber))
+        .map((p) => [p.contractNumber.toLowerCase(), p.id])
+    );
+    const projects = await db.project.findMany({ select: { id: true, name: true } });
+    const projectByName = new Map(projects.map((p) => [p.name.toLowerCase(), p.id]));
 
     for (let i = 0; i < rows.length; i++) {
       const rowNumber = i + 1;
@@ -84,6 +178,30 @@ export const contractsImporter: ImporterDefinition = {
         ? VALID_TYPES.find((t) => t.toUpperCase() === typeRaw.toUpperCase()) || null
         : null;
 
+      // Resolve parent contract by contract number (case-insensitive). Soft
+      // failure: unknown parent number → skip the link rather than failing
+      // the row, since callers may import children before parents.
+      const parentNumberRaw = (raw.parentContractNumber || "").trim();
+      const parentContractId = parentNumberRaw
+        ? parentByNumber.get(parentNumberRaw.toLowerCase()) || null
+        : null;
+
+      const projectNameRaw = (raw.projectName || "").trim();
+      const projectId = projectNameRaw
+        ? projectByName.get(projectNameRaw.toLowerCase()) || null
+        : null;
+
+      // If a document URL is given but no source type, default to external_url
+      // (for google_drive/etc., the importer requires the caller to set it
+      // explicitly so downstream UI can render the right icon/label).
+      const externalDocumentUrl = raw.externalDocumentUrl?.trim() || null;
+      const documentSourceTypeRaw = raw.documentSourceType?.trim().toLowerCase() || null;
+      const documentSourceType = documentSourceTypeRaw
+        ? documentSourceTypeRaw
+        : externalDocumentUrl
+        ? "external_url"
+        : null;
+
       try {
         const contract = await db.contract.create({
           data: {
@@ -100,10 +218,25 @@ export const contractsImporter: ImporterDefinition = {
             noticePeriodDays: raw.noticePeriodDays ? parseInt(raw.noticePeriodDays, 10) || null : null,
             autoRenew: parseBool(raw.autoRenew, false),
             description: raw.description?.trim() || null,
+            summary: raw.summary?.trim() || null,
+            externalDocumentUrl,
+            documentSourceType,
+            documentSourceLabel: raw.documentSourceLabel?.trim() || null,
+            parentContractId,
+            projectId,
           },
         });
         imported++; results.push({ row: rowNumber, status: "imported" });
-        await logActivity("imported", "contract", contract.id, ctx.triggeredBy, title);
+        await logActivity("imported", "contract", contract.id, ctx.triggeredBy, title, {
+          clientId: contract.clientId,
+          projectId: contract.projectId,
+        });
+
+        // If this contract just claimed a contractNumber, future rows in the
+        // same batch can resolve it as a parent.
+        if (contract.contractNumber) {
+          parentByNumber.set(contract.contractNumber.toLowerCase(), contract.id);
+        }
       } catch (err) {
         failed++; results.push({ row: rowNumber, status: "failed", message: err instanceof Error ? err.message : "DB error" });
       }

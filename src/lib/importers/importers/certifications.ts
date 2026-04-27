@@ -54,6 +54,10 @@ function parseDate(v: string | undefined): Date | null {
   return isNaN(d.getTime()) ? null : d;
 }
 
+function formatDate(d: Date | null | undefined): string {
+  return d ? d.toISOString().slice(0, 10) : "";
+}
+
 function parseBool(value: string | undefined, defaultValue: boolean): boolean {
   if (value === undefined || value === "") return defaultValue;
   const v = value.trim().toLowerCase();
@@ -85,6 +89,13 @@ export const certificationsImporter: ImporterDefinition = {
       required: false,
       description: "Layman explanation of what this cert is.",
       aliases: ["summary", "layman", "plain english"],
+    },
+    {
+      key: "description",
+      label: "Description",
+      required: false,
+      description: "Long-form description / formal definition. Distinct from the plain-English summary.",
+      aliases: ["formal description", "details"],
     },
     {
       key: "status",
@@ -157,6 +168,20 @@ export const certificationsImporter: ImporterDefinition = {
     { key: "renewalCost", label: "Renewal cost", required: false, aliases: ["cost", "renewal price"] },
     { key: "currency", label: "Currency", required: false, description: "Defaults to USD.", aliases: ["currency code"] },
     {
+      key: "renewalRequirements",
+      label: "Renewal requirements",
+      required: false,
+      description: "What's needed to renew this certification. Free-form text shown on the renewal page.",
+      aliases: ["requirements", "renewal needs"],
+    },
+    {
+      key: "renewalNotes",
+      label: "Renewal notes",
+      required: false,
+      description: "Internal notes about the renewal cycle.",
+      aliases: ["renewal comments"],
+    },
+    {
       key: "documentUrl",
       label: "Compiled documents URL",
       required: false,
@@ -192,6 +217,53 @@ export const certificationsImporter: ImporterDefinition = {
       aliases: ["client", "company"],
     },
   ],
+
+  async sampleRows() {
+    const certs = await db.certification.findMany({
+      orderBy: { createdAt: "desc" },
+      take: 3,
+      include: {
+        assignee: { select: { email: true } },
+        pointOfContact: { select: { email: true } },
+        client: { select: { name: true } },
+      },
+    });
+    return certs.map((c) => ({
+      name: c.name,
+      plainEnglishSummary: c.plainEnglishSummary || "",
+      description: c.description || "",
+      status: c.status,
+      type: c.type,
+      engagementType: c.engagementType,
+      jurisdictionLevel: c.jurisdictionLevel,
+      jurisdictionName: c.jurisdictionName || "",
+      issuingBody: c.issuingBody || "",
+      agencyWebsiteUrl: c.agencyWebsiteUrl || "",
+      agencyContactName: c.agencyContactName || "",
+      agencyContactEmail: c.agencyContactEmail || "",
+      agencyContactPhone: c.agencyContactPhone || "",
+      certNumber: c.certNumber || "",
+      submittedDate: formatDate(c.submittedDate),
+      issuedDate: formatDate(c.issuedDate),
+      expirationDate: formatDate(c.expirationDate),
+      renewalDate: formatDate(c.renewalDate),
+      renewalLeadDays: String(c.renewalLeadDays),
+      reminderOffsetsDays: c.reminderOffsetsDays.join("|"),
+      autoRenew: c.autoRenew ? "true" : "false",
+      renewalCost:
+        c.renewalCost !== null && c.renewalCost !== undefined
+          ? String(c.renewalCost)
+          : "",
+      currency: c.currency || "",
+      renewalRequirements: c.renewalRequirements || "",
+      renewalNotes: c.renewalNotes || "",
+      documentUrl: c.documentUrl || "",
+      completedCertUrl: c.completedCertUrl || "",
+      assigneeEmail: c.assignee?.email || "",
+      pointOfContactEmail: c.pointOfContact?.email || "",
+      clientName: c.client?.name || "",
+    }));
+  },
 
   async commit(rows, ctx) {
     const results: ImportRowResult[] = [];
@@ -261,6 +333,7 @@ export const certificationsImporter: ImporterDefinition = {
           data: {
             name,
             plainEnglishSummary: raw.plainEnglishSummary?.trim() || null,
+            description: raw.description?.trim() || null,
             status,
             type,
             engagementType,
@@ -283,6 +356,8 @@ export const certificationsImporter: ImporterDefinition = {
             autoRenew: parseBool(raw.autoRenew, false),
             renewalCost: raw.renewalCost ? parseFloat(raw.renewalCost) || null : null,
             currency: raw.currency?.trim() || "USD",
+            renewalRequirements: raw.renewalRequirements?.trim() || null,
+            renewalNotes: raw.renewalNotes?.trim() || null,
             documentUrl: raw.documentUrl?.trim() || null,
             completedCertUrl: raw.completedCertUrl?.trim() || null,
             assigneeId,
@@ -292,7 +367,9 @@ export const certificationsImporter: ImporterDefinition = {
         });
         imported++;
         results.push({ row: rowNumber, status: "imported" });
-        await logActivity("imported", "certification", cert.id, ctx.triggeredBy, name);
+        await logActivity("imported", "certification", cert.id, ctx.triggeredBy, name, {
+          clientId: cert.clientId,
+        });
       } catch (err) {
         failed++;
         results.push({
