@@ -298,6 +298,7 @@ model User {
   completedWorkflowInstanceSteps WorkflowInstanceStep[]  @relation("WorkflowInstanceStepCompletedBy")
   createdWorkflowEmailTemplates  WorkflowEmailTemplate[] @relation("WorkflowEmailTemplateCreator")
   createdScheduledTasks          ScheduledTask[]         @relation("ScheduledTaskCreator")
+  createdCustomReports           CustomReport[]          @relation("CustomReportCreator")
 }
 
 model ModulePermission {
@@ -1705,4 +1706,53 @@ model ScheduledTask {
 
   @@index([isActive, frequency])
   @@index([lastRunAt])
+}
+
+// ─── CUSTOM REPORTS ─────────────────────────────────────────
+//
+// Admin-built reports — distinct from src/lib/reports/ which holds
+// code-defined system reports. Custom reports are data-driven so
+// non-developers can compose "show me all active projects with their
+// FTE total and client name" without writing TypeScript.
+//
+// The shape is intentionally constrained: pick a registered entity
+// type, choose columns from the curated list for that entity, add
+// filters from the curated list, and pick a sort. No free SQL, no
+// arbitrary joins — admins should never be able to read tables they
+// can't already see in the UI.
+
+enum CustomReportEntity {
+  USER
+  PROJECT
+  CLIENT
+  QUOTE
+  TASK
+}
+
+model CustomReport {
+  id           String              @id @default(cuid())
+  name         String
+  description  String?             @db.Text
+  entityType   CustomReportEntity
+  /// JSON array of column keys from the entity's registry. Order is
+  /// the order they appear in the rendered table + CSV.
+  columns      String              @db.Text
+  /// JSON array of { field, op, value } filter clauses. AND-combined.
+  filters      String              @db.Text
+  /// Column key to sort by, prefixed with "-" for descending.
+  /// E.g. "name", "-createdAt".
+  sortBy       String?
+  /// Hard cap on rows returned. Null = use the registry default
+  /// (typically 500). Useful for emailed digests where you only want
+  /// the top N.
+  limit        Int?
+  isActive     Boolean             @default(true)
+  createdById  String
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+
+  createdBy User @relation("CustomReportCreator", fields: [createdById], references: [id])
+
+  @@index([entityType])
+  @@index([isActive])
 }

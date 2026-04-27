@@ -1,5 +1,6 @@
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
+import Link from "next/link";
 import { db } from "@/lib/db";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -98,6 +99,39 @@ export default async function AdminJobsPage() {
               </div>
             )}
           </div>
+        </CardContent>
+      </Card>
+
+      {/* System-vs-custom explainer — long enough to deserve its own
+           card so first-time admins know where to look for what. */}
+      <Card className="mb-6 border-dashed">
+        <CardContent className="py-4 text-sm">
+          <p className="font-medium mb-1">
+            What is this page, and what&apos;s the difference vs Scheduled
+            Tasks?
+          </p>
+          <p className="text-muted-foreground text-xs leading-relaxed">
+            <strong>Scheduled Jobs</strong> (this page) are{" "}
+            <em>system jobs</em> — code-defined background work that ships
+            with OpsHub. They handle things like cleanup, expiry checks,
+            workflow ticking, and the runner that fires custom tasks.
+            They&apos;re not editable from the UI; admins can run them
+            manually with <strong>Run now</strong> below.
+          </p>
+          <p className="text-muted-foreground text-xs leading-relaxed mt-2">
+            <strong>
+              <Link
+                href="/admin/scheduled-tasks"
+                className="text-primary hover:underline"
+              >
+                Scheduled Tasks
+              </Link>
+            </strong>{" "}
+            (separate page) are <em>admin-built</em> recurring tasks. Use
+            those to email a report on a schedule, broadcast a message,
+            etc. The <code>custom-scheduled-tasks</code> job below is the
+            cron entry that fires those tasks.
+          </p>
         </CardContent>
       </Card>
 

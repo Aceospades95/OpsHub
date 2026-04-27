@@ -7,11 +7,13 @@
  * + errors.
  */
 
+import { db } from "@/lib/db";
 import { sendFromTemplate } from "@/lib/email";
 import { sendEmail } from "@/lib/email";
 import { absoluteUrl } from "@/lib/url";
 import { getReport } from "@/lib/reports/registry";
 import { renderHtml, renderText } from "@/lib/reports/format";
+import { runCustomReportFromRow } from "@/lib/reports/custom/runtime";
 import type { ScheduledTaskType } from "@prisma/client";
 
 export interface HandlerInput {
@@ -41,15 +43,37 @@ const emailReportHandler: Handler = async ({ taskName, config }) => {
   if (recipients.length === 0) {
     throw new Error("EMAIL_REPORT: recipients list is empty");
   }
-  const report = getReport(reportKey);
-  if (!report) {
-    throw new Error(`EMAIL_REPORT: unknown report '${reportKey}'`);
-  }
 
-  const output = await report.run({
-    triggeredAt: new Date(),
-    triggeredBy: "scheduled-task",
-  });
+  // The reportKey field carries either a system-report key (e.g.
+  // "contracts-expiring") or a custom-report id with a `custom:`
+  // prefix. We dispatch on prefix so the saved task config doesn't
+  // need to track which kind it is.
+  let reportName: string;
+  let reportDescription: string;
+  let output;
+  if (reportKey.startsWith("custom:")) {
+    const customId = reportKey.slice("custom:".length);
+    const row = await db.customReport.findUnique({
+      where: { id: customId },
+    });
+    if (!row) {
+      throw new Error(`EMAIL_REPORT: custom report '${customId}' not found`);
+    }
+    reportName = row.name;
+    reportDescription = row.description ?? "Custom report";
+    output = await runCustomReportFromRow(row);
+  } else {
+    const report = getReport(reportKey);
+    if (!report) {
+      throw new Error(`EMAIL_REPORT: unknown report '${reportKey}'`);
+    }
+    reportName = report.name;
+    reportDescription = report.description;
+    output = await report.run({
+      triggeredAt: new Date(),
+      triggeredBy: "scheduled-task",
+    });
+  }
 
   const htmlBody = renderHtml(output);
   const textBody = renderText(output);
@@ -63,8 +87,8 @@ const emailReportHandler: Handler = async ({ taskName, config }) => {
         "report",
         {
           recipientName: to.split("@")[0],
-          reportName: report.name,
-          description: report.description,
+          reportName,
+          description: reportDescription,
           summary: output.summary,
           htmlBody,
           textBody,
@@ -88,7 +112,7 @@ const emailReportHandler: Handler = async ({ taskName, config }) => {
   }
 
   return {
-    output: `${report.name} — ${output.summary} · sent to ${sent}/${recipients.length}`,
+    output: `${reportName} — ${output.summary} · sent to ${sent}/${recipients.length}`,
     warning: failed > 0 ? errors.join("\n") : undefined,
   };
 };

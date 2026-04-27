@@ -30,14 +30,31 @@ export default async function ScheduledTasksPage() {
     include: { createdBy: { select: { id: true, name: true } } },
   });
 
-  // Reports the EMAIL_REPORT task type can target. Pre-loaded once
-  // here so the create dialog has the dropdown options without a
-  // second round-trip.
-  const reports = listReports().map((r) => ({
+  // Reports the EMAIL_REPORT task type can target. Combines:
+  //   - System reports (code-defined in src/lib/reports/)
+  //   - Active custom reports (admin-built in /admin/reports/custom)
+  // Custom reports get a "custom:" prefix on their key so the
+  // EMAIL_REPORT handler can dispatch correctly.
+  const [customReports] = await Promise.all([
+    db.customReport.findMany({
+      where: { isActive: true },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true, description: true },
+    }),
+  ]);
+  const systemReports = listReports().map((r) => ({
     key: r.key,
     name: r.name,
     description: r.description,
   }));
+  const reports = [
+    ...customReports.map((r) => ({
+      key: `custom:${r.id}`,
+      name: `${r.name} (custom)`,
+      description: r.description ?? "Custom report",
+    })),
+    ...systemReports,
+  ];
 
   return (
     <div>
