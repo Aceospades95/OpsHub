@@ -38,6 +38,9 @@ export type Handler = (input: HandlerInput) => Promise<HandlerResult>;
 const emailReportHandler: Handler = async ({ taskName, config }) => {
   const reportKey = String(config.reportKey ?? "").trim();
   const recipients = parseRecipients(config.recipients);
+  const cc = parseRecipients(config.cc);
+  const bcc = parseRecipients(config.bcc);
+  const replyTo = parseSingleAddress(config.replyTo);
 
   if (!reportKey) throw new Error("EMAIL_REPORT: missing reportKey");
   if (recipients.length === 0) {
@@ -78,42 +81,39 @@ const emailReportHandler: Handler = async ({ taskName, config }) => {
   const htmlBody = renderHtml(output);
   const textBody = renderText(output);
 
-  let sent = 0;
-  let failed = 0;
-  const errors: string[] = [];
-  for (const to of recipients) {
-    try {
-      const result = await sendFromTemplate(
-        "report",
-        {
-          recipientName: to.split("@")[0],
-          reportName,
-          description: reportDescription,
-          summary: output.summary,
-          htmlBody,
-          textBody,
-          cta: { label: "Open admin", url: absoluteUrl("/admin/reports") },
-        },
-        {
-          to,
-          entityType: "scheduled-task",
-          entityId: taskName,
-        }
-      );
-      if (result.success) sent++;
-      else {
-        failed++;
-        errors.push(`${to}: ${result.error ?? "send failed"}`);
-      }
-    } catch (err) {
-      failed++;
-      errors.push(`${to}: ${err instanceof Error ? err.message : String(err)}`);
+  // Single send with the full To list (plus optional CC/BCC). This is
+  // the standard mailing-list behavior and avoids duplicate copies for
+  // CC/BCC recipients that a per-recipient loop would produce.
+  const result = await sendFromTemplate(
+    "report",
+    {
+      recipientName: "team",
+      reportName,
+      description: reportDescription,
+      summary: output.summary,
+      htmlBody,
+      textBody,
+      cta: { label: "Open admin", url: absoluteUrl("/admin/reports") },
+    },
+    {
+      to: recipients,
+      cc: cc.length > 0 ? cc : undefined,
+      bcc: bcc.length > 0 ? bcc : undefined,
+      replyTo,
+      entityType: "scheduled-task",
+      entityId: taskName,
     }
-  }
+  );
 
+  const totalRecipients = recipients.length + cc.length + bcc.length;
+  if (!result.success) {
+    return {
+      output: `${reportName} — ${output.summary} · send failed`,
+      warning: result.error ?? "send failed",
+    };
+  }
   return {
-    output: `${reportName} — ${output.summary} · sent to ${sent}/${recipients.length}`,
-    warning: failed > 0 ? errors.join("\n") : undefined,
+    output: `${reportName} — ${output.summary} · sent to ${totalRecipients} recipient${totalRecipients === 1 ? "" : "s"}`,
   };
 };
 
@@ -123,6 +123,9 @@ const emailMessageHandler: Handler = async ({ config }) => {
   const subject = String(config.subject ?? "").trim();
   const body = String(config.body ?? "").trim();
   const recipients = parseRecipients(config.recipients);
+  const cc = parseRecipients(config.cc);
+  const bcc = parseRecipients(config.bcc);
+  const replyTo = parseSingleAddress(config.replyTo);
 
   if (!subject) throw new Error("EMAIL_MESSAGE: missing subject");
   if (!body) throw new Error("EMAIL_MESSAGE: missing body");
@@ -136,29 +139,30 @@ const emailMessageHandler: Handler = async ({ config }) => {
   const html = `<div style="font-family:-apple-system,Segoe UI,Arial,sans-serif;font-size:14px;line-height:1.5;color:#1a1a1a;white-space:pre-wrap;">${escapeHtml(body)}</div>`;
   const text = body;
 
-  let sent = 0;
-  let failed = 0;
-  const errors: string[] = [];
-  for (const to of recipients) {
-    try {
-      const result = await sendEmail(
-        { to, subject, html, text },
-        { entityType: "scheduled-task" }
-      );
-      if (result.success) sent++;
-      else {
-        failed++;
-        errors.push(`${to}: ${result.error ?? "send failed"}`);
-      }
-    } catch (err) {
-      failed++;
-      errors.push(`${to}: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  }
+  // Single send with the full To list, plus CC/BCC. See note in the
+  // EMAIL_REPORT handler for why we don't loop per recipient.
+  const result = await sendEmail(
+    {
+      to: recipients,
+      cc: cc.length > 0 ? cc : undefined,
+      bcc: bcc.length > 0 ? bcc : undefined,
+      replyTo,
+      subject,
+      html,
+      text,
+    },
+    { entityType: "scheduled-task" }
+  );
 
+  const totalRecipients = recipients.length + cc.length + bcc.length;
+  if (!result.success) {
+    return {
+      output: `Send failed for "${subject}"`,
+      warning: result.error ?? "send failed",
+    };
+  }
   return {
-    output: `Sent "${subject}" to ${sent}/${recipients.length} recipient(s)`,
-    warning: failed > 0 ? errors.join("\n") : undefined,
+    output: `Sent "${subject}" to ${totalRecipients} recipient${totalRecipients === 1 ? "" : "s"}`,
   };
 };
 
@@ -193,6 +197,18 @@ function parseRecipients(value: unknown): string[] {
       .filter((v) => v.length > 0 && v.includes("@"));
   }
   return [];
+}
+
+/**
+ * For Reply-To, we accept the same shapes as parseRecipients but only
+ * the first valid address — RFC 5322 allows multiple Reply-To addresses
+ * but most providers and recipient clients treat one as the norm and
+ * mishandle the rest. Returning undefined when nothing is provided
+ * lets the caller skip the field entirely.
+ */
+function parseSingleAddress(value: unknown): string | undefined {
+  const list = parseRecipients(value);
+  return list.length > 0 ? list[0] : undefined;
 }
 
 function escapeHtml(s: string): string {

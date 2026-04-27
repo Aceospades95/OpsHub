@@ -16,9 +16,18 @@ export const logDriver: EmailDriver = {
   name: "log",
   async send(message: EmailMessage): Promise<EmailSendResult> {
     const recipients = Array.isArray(message.to) ? message.to.join(", ") : message.to;
+    const cc = Array.isArray(message.cc) ? message.cc.join(", ") : message.cc;
+    const bcc = Array.isArray(message.bcc) ? message.bcc.join(", ") : message.bcc;
+    const extras = [
+      cc ? `cc=${cc}` : null,
+      bcc ? `bcc=${bcc}` : null,
+      message.replyTo ? `replyTo=${message.replyTo}` : null,
+    ]
+      .filter(Boolean)
+      .join(" ");
     // eslint-disable-next-line no-console
     console.info(
-      `[email:log] Would send to=${recipients} subject="${message.subject}"`
+      `[email:log] Would send to=${recipients}${extras ? " " + extras : ""} subject="${message.subject}"`
     );
     return {
       success: true,

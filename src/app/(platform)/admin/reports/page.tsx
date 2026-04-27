@@ -80,14 +80,16 @@ export default async function AdminReportsPage() {
           <CardContent>
             <div className="space-y-2">
               {customReports.map((r) => (
-                <Link
+                <div
                   key={r.id}
-                  href={`/admin/reports/custom/${r.id}/edit`}
-                  className="flex items-center gap-3 rounded border border-border p-3 hover:border-primary hover:bg-muted/40 transition-colors"
+                  className="flex items-center gap-3 rounded border border-border p-3 hover:border-primary/50 hover:bg-muted/30 transition-colors"
                 >
-                  <div className="flex-1 min-w-0">
+                  <Link
+                    href={`/admin/reports/custom/${r.id}`}
+                    className="flex-1 min-w-0 group"
+                  >
                     <div className="flex items-center gap-2 flex-wrap">
-                      <p className="text-sm font-semibold">{r.name}</p>
+                      <p className="text-sm font-semibold group-hover:underline">{r.name}</p>
                       <Badge variant="outline" className="text-[10px]">
                         {ENTITY_REGISTRY[r.entityType].label}
                       </Badge>
@@ -106,9 +108,13 @@ export default async function AdminReportsPage() {
                       Created by {r.createdBy.name} ·{" "}
                       {format(r.createdAt, "MMM d, yyyy")}
                     </p>
-                  </div>
-                  <ArrowRight className="h-4 w-4 text-muted-foreground" />
-                </Link>
+                  </Link>
+                  <Link href={`/admin/reports/custom/${r.id}/edit`}>
+                    <Button variant="outline" size="sm">
+                      Edit
+                    </Button>
+                  </Link>
+                </div>
               ))}
             </div>
           </CardContent>

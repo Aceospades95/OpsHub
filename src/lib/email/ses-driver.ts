@@ -44,7 +44,9 @@ export const sesDriver: EmailDriver = {
   async send(message: EmailMessage): Promise<EmailSendResult> {
     try {
       const client = getClient();
-      const toAddresses = Array.isArray(message.to) ? message.to : [message.to];
+      const toAddresses = toList(message.to);
+      const ccAddresses = toList(message.cc);
+      const bccAddresses = toList(message.bcc);
       if (!message.from) {
         // sendEmail() in index.ts always resolves a `from` before calling
         // the driver, so this is just a safety net.
@@ -57,7 +59,11 @@ export const sesDriver: EmailDriver = {
 
       const input: SendEmailCommandInput = {
         FromEmailAddress: message.from,
-        Destination: { ToAddresses: toAddresses },
+        Destination: {
+          ToAddresses: toAddresses,
+          ...(ccAddresses.length > 0 ? { CcAddresses: ccAddresses } : {}),
+          ...(bccAddresses.length > 0 ? { BccAddresses: bccAddresses } : {}),
+        },
         Content: {
           Simple: {
             Subject: { Data: message.subject, Charset: "UTF-8" },
@@ -87,3 +93,9 @@ export const sesDriver: EmailDriver = {
     }
   },
 };
+
+function toList(value: string | string[] | undefined): string[] {
+  if (!value) return [];
+  if (Array.isArray(value)) return value.filter((v) => v && v.trim().length > 0);
+  return value.trim() ? [value] : [];
+}

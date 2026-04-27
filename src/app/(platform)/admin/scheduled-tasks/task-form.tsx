@@ -25,6 +25,9 @@ export interface TaskFormState {
   // Type-specific config
   reportKey: string;
   recipients: string;
+  cc: string;
+  bcc: string;
+  replyTo: string;
   subject: string;
   body: string;
 }
@@ -40,6 +43,9 @@ export const EMPTY_TASK: TaskFormState = {
   isActive: true,
   reportKey: "",
   recipients: "",
+  cc: "",
+  bcc: "",
+  replyTo: "",
   subject: "",
   body: "",
 };
@@ -197,14 +203,43 @@ export function TaskForm({ state, onChange, reports }: Props) {
       )}
 
       <Textarea
-        label="Recipients"
+        label="To"
         value={state.recipients}
         onChange={(e) => patch({ recipients: e.target.value })}
         rows={2}
         placeholder="alice@example.com, bob@example.com"
       />
       <p className="text-[11px] text-muted-foreground -mt-3">
-        Comma, semicolon, or whitespace separated.
+        Comma, semicolon, or whitespace separated. Multiple addresses
+        allowed.
+      </p>
+
+      <Textarea
+        label="CC (optional)"
+        value={state.cc}
+        onChange={(e) => patch({ cc: e.target.value })}
+        rows={2}
+        placeholder="manager@example.com"
+      />
+
+      <Textarea
+        label="BCC (optional)"
+        value={state.bcc}
+        onChange={(e) => patch({ bcc: e.target.value })}
+        rows={2}
+        placeholder="audit-log@example.com"
+      />
+
+      <Input
+        label="Reply-To (optional)"
+        type="email"
+        value={state.replyTo}
+        onChange={(e) => patch({ replyTo: e.target.value })}
+        placeholder="ops@example.com"
+      />
+      <p className="text-[11px] text-muted-foreground -mt-3">
+        Helpful when From is a no-reply mailbox — replies will route
+        here instead of bouncing.
       </p>
 
       <label className="flex items-center gap-2 text-sm">
@@ -235,19 +270,34 @@ export function stateToPayload(state: TaskFormState): {
   config: Record<string, unknown>;
   isActive: boolean;
 } {
-  const recipients = state.recipients
-    .split(/[,;\s]+/)
-    .map((s) => s.trim())
-    .filter((s) => s.length > 0);
+  const splitAddresses = (raw: string) =>
+    raw
+      .split(/[,;\s]+/)
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+
+  const recipients = splitAddresses(state.recipients);
+  const cc = splitAddresses(state.cc);
+  const bcc = splitAddresses(state.bcc);
+  const replyTo = state.replyTo.trim() || undefined;
+
+  // CC, BCC, replyTo are common to both task types, so include them
+  // unconditionally — empty arrays / undefined just mean "not set".
+  const sharedConfig = {
+    recipients,
+    ...(cc.length > 0 ? { cc } : {}),
+    ...(bcc.length > 0 ? { bcc } : {}),
+    ...(replyTo ? { replyTo } : {}),
+  };
 
   let config: Record<string, unknown>;
   if (state.taskType === "EMAIL_REPORT") {
-    config = { reportKey: state.reportKey, recipients };
+    config = { reportKey: state.reportKey, ...sharedConfig };
   } else {
     config = {
       subject: state.subject,
       body: state.body,
-      recipients,
+      ...sharedConfig,
     };
   }
 

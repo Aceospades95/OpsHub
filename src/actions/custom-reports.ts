@@ -16,7 +16,16 @@ function requireAdmin(role: Role): void {
   }
 }
 
-const entitySchema = z.enum(["USER", "PROJECT", "CLIENT", "QUOTE", "TASK"]);
+const entitySchema = z.enum([
+  "USER",
+  "PROJECT",
+  "CLIENT",
+  "QUOTE",
+  "TASK",
+  "CONTRACT",
+  "CERTIFICATION",
+  "ASSIGNMENT",
+]);
 
 const filterSchema = z.object({
   field: z.string().min(1),

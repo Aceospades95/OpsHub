@@ -1126,6 +1126,9 @@ model Notification {
 model EmailLog {
   id          String   @id @default(cuid())
   toAddresses String   // comma-separated recipient list
+  ccAddresses String?  // comma-separated CC recipients
+  bccAddresses String? // comma-separated BCC recipients
+  replyTo     String?
   fromAddress String
   subject     String
   bodyHtml    String   @db.Text
@@ -1727,6 +1730,9 @@ enum CustomReportEntity {
   CLIENT
   QUOTE
   TASK
+  CONTRACT
+  CERTIFICATION
+  ASSIGNMENT
 }
 
 model CustomReport {

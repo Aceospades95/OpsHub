@@ -77,6 +77,8 @@ export const smtpDriver: EmailDriver = {
       const info = await transporter.sendMail({
         from: message.from,
         to: message.to,
+        ...(message.cc ? { cc: message.cc } : {}),
+        ...(message.bcc ? { bcc: message.bcc } : {}),
         subject: message.subject,
         html: message.html,
         ...(message.text ? { text: message.text } : {}),

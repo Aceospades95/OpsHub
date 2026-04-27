@@ -216,9 +216,12 @@ function EditDialog({
 
 function taskRowToState(task: TaskRow): TaskFormState {
   const cfg = task.config;
-  const recipients = Array.isArray(cfg.recipients)
-    ? (cfg.recipients as unknown[]).map(String).join(", ")
-    : "";
+  const joinList = (key: string) =>
+    Array.isArray(cfg[key])
+      ? (cfg[key] as unknown[]).map(String).join(", ")
+      : typeof cfg[key] === "string"
+        ? (cfg[key] as string)
+        : "";
   return {
     name: task.name,
     description: task.description ?? "",
@@ -229,7 +232,10 @@ function taskRowToState(task: TaskRow): TaskFormState {
     dayOfMonth: task.dayOfMonth ?? 1,
     isActive: task.isActive,
     reportKey: typeof cfg.reportKey === "string" ? cfg.reportKey : "",
-    recipients,
+    recipients: joinList("recipients"),
+    cc: joinList("cc"),
+    bcc: joinList("bcc"),
+    replyTo: typeof cfg.replyTo === "string" ? cfg.replyTo : "",
     subject: typeof cfg.subject === "string" ? cfg.subject : "",
     body: typeof cfg.body === "string" ? cfg.body : "",
   };

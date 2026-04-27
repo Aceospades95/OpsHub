@@ -138,31 +138,43 @@ const USER: EntityDef = {
     { key: "department", label: "Department", type: "string" },
     { key: "location", label: "Location", type: "string" },
     { key: "phone", label: "Phone", type: "string" },
+    { key: "authProvider", label: "Auth provider", type: "string" },
     {
       key: "manager.name",
       label: "Manager",
       type: "string",
       requiresRelation: "manager",
     },
+    {
+      key: "manager.email",
+      label: "Manager email",
+      type: "string",
+      requiresRelation: "manager",
+    },
     { key: "isActive", label: "Active", type: "boolean", format: fmtBoolean },
     { key: "hasLoginAccess", label: "Has login", type: "boolean", format: fmtBoolean },
     { key: "createdAt", label: "Created", type: "date", format: fmtDate },
+    { key: "updatedAt", label: "Updated", type: "date", format: fmtDate },
     { key: "terminationDate", label: "Termination date", type: "date", format: fmtDate },
   ],
   filters: [
     { key: "isActive", label: "Active", type: "boolean", operators: ["equals"] },
+    { key: "hasLoginAccess", label: "Has login", type: "boolean", operators: ["equals"] },
     { key: "role", label: "System role", type: "enum", operators: ["equals", "in"], enumValues: ["ADMIN", "MANAGER", "DEVELOPER", "CONTRIBUTOR", "VIEWER", "GUEST"] },
     { key: "department", label: "Department", type: "string", operators: ["equals", "contains", "isNull", "isNotNull"] },
     { key: "location", label: "Location", type: "string", operators: ["equals", "contains", "isNull", "isNotNull"] },
     { key: "jobTitle", label: "Job title", type: "string", operators: ["equals", "contains", "isNull", "isNotNull"] },
+    { key: "name", label: "Name", type: "string", operators: ["equals", "contains"] },
+    { key: "email", label: "Email", type: "string", operators: ["equals", "contains"] },
     { key: "managerId", label: "Manager set", type: "boolean", operators: ["isNull", "isNotNull"] },
+    { key: "manager.name", label: "Manager name", type: "string", operators: ["equals", "contains"], relation: "manager" },
     { key: "createdAt", label: "Created", type: "date", operators: ["gte", "lte"] },
     { key: "terminationDate", label: "Termination date", type: "date", operators: ["gte", "lte", "isNull", "isNotNull"] },
   ],
   async fetch({ where, orderBy, take, includes }) {
     const include: Record<string, unknown> = {};
     if (includes.has("manager")) {
-      include.manager = { select: { id: true, name: true } };
+      include.manager = { select: { id: true, name: true, email: true } };
     }
     const rows = await db.user.findMany({
       where,
@@ -192,6 +204,24 @@ const PROJECT: EntityDef = {
       type: "string",
       requiresRelation: "client",
     },
+    {
+      key: "client.industry",
+      label: "Client industry",
+      type: "string",
+      requiresRelation: "client",
+    },
+    {
+      key: "client.status",
+      label: "Client status",
+      type: "string",
+      requiresRelation: "client",
+    },
+    {
+      key: "serviceOffering.name",
+      label: "Service offering",
+      type: "string",
+      requiresRelation: "serviceOffering",
+    },
     { key: "startDate", label: "Start", type: "date", format: fmtDate },
     { key: "endDate", label: "End", type: "date", format: fmtDate },
     { key: "createdAt", label: "Created", type: "date", format: fmtDate },
@@ -205,6 +235,7 @@ const PROJECT: EntityDef = {
       operators: ["equals", "in"],
       enumValues: ["PLANNING", "ACTIVE", "ON_HOLD", "COMPLETED", "ARCHIVED"],
     },
+    { key: "name", label: "Name", type: "string", operators: ["equals", "contains"] },
     {
       key: "client.name",
       label: "Client name",
@@ -212,13 +243,26 @@ const PROJECT: EntityDef = {
       operators: ["equals", "contains"],
       relation: "client",
     },
+    {
+      key: "client.status",
+      label: "Client status",
+      type: "enum",
+      operators: ["equals", "in"],
+      enumValues: ["ACTIVE", "INACTIVE", "PROSPECT", "ARCHIVED"],
+      relation: "client",
+    },
     { key: "startDate", label: "Start", type: "date", operators: ["gte", "lte", "isNull", "isNotNull"] },
     { key: "endDate", label: "End", type: "date", operators: ["gte", "lte", "isNull", "isNotNull"] },
+    { key: "createdAt", label: "Created", type: "date", operators: ["gte", "lte"] },
+    { key: "updatedAt", label: "Updated", type: "date", operators: ["gte", "lte"] },
   ],
   async fetch({ where, orderBy, take, includes }) {
     const include: Record<string, unknown> = {};
     if (includes.has("client")) {
-      include.client = { select: { id: true, name: true } };
+      include.client = { select: { id: true, name: true, industry: true, status: true } };
+    }
+    if (includes.has("serviceOffering")) {
+      include.serviceOffering = { select: { id: true, name: true } };
     }
     const rows = await db.project.findMany({
       where,
@@ -243,13 +287,22 @@ const CLIENT: EntityDef = {
     { key: "industry", label: "Industry", type: "string" },
     { key: "status", label: "Status", type: "enum" },
     { key: "website", label: "Website", type: "string" },
+    { key: "description", label: "Description", type: "string" },
+    { key: "summary", label: "Summary", type: "string" },
     {
       key: "accountManager.name",
       label: "Account manager",
       type: "string",
       requiresRelation: "accountManager",
     },
+    {
+      key: "accountManager.email",
+      label: "Account manager email",
+      type: "string",
+      requiresRelation: "accountManager",
+    },
     { key: "createdAt", label: "Created", type: "date", format: fmtDate },
+    { key: "updatedAt", label: "Updated", type: "date", format: fmtDate },
   ],
   filters: [
     {
@@ -259,12 +312,22 @@ const CLIENT: EntityDef = {
       operators: ["equals", "in"],
       enumValues: ["ACTIVE", "INACTIVE", "PROSPECT", "ARCHIVED"],
     },
-    { key: "industry", label: "Industry", type: "string", operators: ["equals", "contains", "isNull"] },
+    { key: "name", label: "Name", type: "string", operators: ["equals", "contains"] },
+    { key: "industry", label: "Industry", type: "string", operators: ["equals", "contains", "isNull", "isNotNull"] },
+    { key: "accountManagerId", label: "Account manager set", type: "boolean", operators: ["isNull", "isNotNull"] },
+    {
+      key: "accountManager.name",
+      label: "Account manager name",
+      type: "string",
+      operators: ["equals", "contains"],
+      relation: "accountManager",
+    },
+    { key: "createdAt", label: "Created", type: "date", operators: ["gte", "lte"] },
   ],
   async fetch({ where, orderBy, take, includes }) {
     const include: Record<string, unknown> = {};
     if (includes.has("accountManager")) {
-      include.accountManager = { select: { id: true, name: true } };
+      include.accountManager = { select: { id: true, name: true, email: true } };
     }
     const rows = await db.client.findMany({
       where,
@@ -287,6 +350,7 @@ const QUOTE: EntityDef = {
   columns: [
     { key: "quoteNumber", label: "Number", type: "string" },
     { key: "title", label: "Title", type: "string" },
+    { key: "status", label: "Status", type: "enum" },
     {
       key: "client.name",
       label: "Client",
@@ -299,13 +363,45 @@ const QUOTE: EntityDef = {
       type: "string",
       requiresRelation: "project",
     },
+    {
+      key: "createdBy.name",
+      label: "Created by",
+      type: "string",
+      requiresRelation: "createdBy",
+    },
+    {
+      key: "assignedTo.name",
+      label: "Assigned to",
+      type: "string",
+      requiresRelation: "assignedTo",
+    },
+    { key: "currency", label: "Currency", type: "string" },
     { key: "subtotal", label: "Subtotal", type: "number", format: fmtCurrency },
     { key: "total", label: "Total", type: "number", format: fmtCurrency },
+    { key: "taxRate", label: "Tax rate %", type: "number" },
     { key: "validUntil", label: "Valid until", type: "date", format: fmtDate },
+    { key: "sentAt", label: "Sent", type: "date", format: fmtDate },
+    { key: "acceptedAt", label: "Accepted", type: "date", format: fmtDate },
+    { key: "rejectedAt", label: "Rejected", type: "date", format: fmtDate },
     { key: "createdAt", label: "Created", type: "date", format: fmtDate },
     { key: "updatedAt", label: "Updated", type: "date", format: fmtDate },
   ],
   filters: [
+    {
+      key: "status",
+      label: "Status",
+      type: "enum",
+      operators: ["equals", "in"],
+      enumValues: [
+        "DRAFT",
+        "SENT",
+        "VIEWED",
+        "ACCEPTED",
+        "REJECTED",
+        "EXPIRED",
+        "REVISED",
+      ],
+    },
     {
       key: "client.name",
       label: "Client name",
@@ -313,8 +409,22 @@ const QUOTE: EntityDef = {
       operators: ["equals", "contains"],
       relation: "client",
     },
+    {
+      key: "project.name",
+      label: "Project name",
+      type: "string",
+      operators: ["equals", "contains"],
+      relation: "project",
+    },
+    { key: "title", label: "Title", type: "string", operators: ["equals", "contains"] },
+    { key: "quoteNumber", label: "Quote number", type: "string", operators: ["equals", "contains"] },
     { key: "total", label: "Total", type: "number", operators: ["gte", "lte"] },
+    { key: "subtotal", label: "Subtotal", type: "number", operators: ["gte", "lte"] },
+    { key: "validUntil", label: "Valid until", type: "date", operators: ["gte", "lte", "isNull", "isNotNull"] },
+    { key: "sentAt", label: "Sent", type: "date", operators: ["gte", "lte", "isNull", "isNotNull"] },
+    { key: "acceptedAt", label: "Accepted", type: "date", operators: ["gte", "lte", "isNull", "isNotNull"] },
     { key: "createdAt", label: "Created", type: "date", operators: ["gte", "lte"] },
+    { key: "assignedToId", label: "Assignee set", type: "boolean", operators: ["isNull", "isNotNull"] },
   ],
   async fetch({ where, orderBy, take, includes }) {
     const include: Record<string, unknown> = {};
@@ -323,6 +433,12 @@ const QUOTE: EntityDef = {
     }
     if (includes.has("project")) {
       include.project = { select: { id: true, name: true } };
+    }
+    if (includes.has("createdBy")) {
+      include.createdBy = { select: { id: true, name: true } };
+    }
+    if (includes.has("assignedTo")) {
+      include.assignedTo = { select: { id: true, name: true } };
     }
     const rows = await db.quote.findMany({
       where,
@@ -348,11 +464,18 @@ const TASK: EntityDef = {
     { key: "status", label: "Status", type: "enum" },
     { key: "priority", label: "Priority", type: "enum" },
     { key: "dueDate", label: "Due", type: "date", format: fmtDate },
+    { key: "completedAt", label: "Completed", type: "date", format: fmtDate },
     {
       key: "assignee.name",
       label: "Assignee",
       type: "string",
       requiresRelation: "assignee",
+    },
+    {
+      key: "createdBy.name",
+      label: "Created by",
+      type: "string",
+      requiresRelation: "createdBy",
     },
     {
       key: "project.name",
@@ -366,7 +489,9 @@ const TASK: EntityDef = {
       type: "string",
       requiresRelation: "client",
     },
+    { key: "sourceType", label: "Source type", type: "string" },
     { key: "createdAt", label: "Created", type: "date", format: fmtDate },
+    { key: "updatedAt", label: "Updated", type: "date", format: fmtDate },
   ],
   filters: [
     {
@@ -383,13 +508,42 @@ const TASK: EntityDef = {
       operators: ["equals", "in"],
       enumValues: ["HIGH", "MEDIUM", "LOW"],
     },
+    { key: "title", label: "Title", type: "string", operators: ["equals", "contains"] },
     { key: "dueDate", label: "Due date", type: "date", operators: ["gte", "lte", "isNull", "isNotNull"] },
+    { key: "completedAt", label: "Completed", type: "date", operators: ["gte", "lte", "isNull", "isNotNull"] },
     { key: "assigneeId", label: "Has assignee", type: "boolean", operators: ["isNull", "isNotNull"] },
+    { key: "projectId", label: "Has project", type: "boolean", operators: ["isNull", "isNotNull"] },
+    { key: "clientId", label: "Has client", type: "boolean", operators: ["isNull", "isNotNull"] },
+    {
+      key: "assignee.name",
+      label: "Assignee name",
+      type: "string",
+      operators: ["equals", "contains"],
+      relation: "assignee",
+    },
+    {
+      key: "project.name",
+      label: "Project name",
+      type: "string",
+      operators: ["equals", "contains"],
+      relation: "project",
+    },
+    {
+      key: "client.name",
+      label: "Client name",
+      type: "string",
+      operators: ["equals", "contains"],
+      relation: "client",
+    },
+    { key: "createdAt", label: "Created", type: "date", operators: ["gte", "lte"] },
   ],
   async fetch({ where, orderBy, take, includes }) {
     const include: Record<string, unknown> = {};
     if (includes.has("assignee")) {
       include.assignee = { select: { id: true, name: true } };
+    }
+    if (includes.has("createdBy")) {
+      include.createdBy = { select: { id: true, name: true } };
     }
     if (includes.has("project")) {
       include.project = { select: { id: true, name: true } };
@@ -407,6 +561,298 @@ const TASK: EntityDef = {
   },
 };
 
+// ─── Contract entity ────────────────────────────────────────────────────
+
+const CONTRACT: EntityDef = {
+  label: "Contracts",
+  description: "Master agreements and statements of work",
+  defaultColumns: ["title", "contractNumber", "client.name", "status", "endDate"],
+  defaultSort: "-endDate",
+  defaultLimit: 500,
+  columns: [
+    { key: "title", label: "Title", type: "string" },
+    { key: "contractNumber", label: "Number", type: "string" },
+    { key: "status", label: "Status", type: "enum" },
+    { key: "contractType", label: "Type", type: "enum" },
+    { key: "value", label: "Value", type: "number", format: fmtCurrency },
+    { key: "currency", label: "Currency", type: "string" },
+    { key: "startDate", label: "Start", type: "date", format: fmtDate },
+    { key: "endDate", label: "End", type: "date", format: fmtDate },
+    { key: "renewalDate", label: "Renewal", type: "date", format: fmtDate },
+    { key: "noticePeriodDays", label: "Notice period (days)", type: "number" },
+    { key: "autoRenew", label: "Auto renew", type: "boolean", format: fmtBoolean },
+    {
+      key: "client.name",
+      label: "Client",
+      type: "string",
+      requiresRelation: "client",
+    },
+    {
+      key: "project.name",
+      label: "Project",
+      type: "string",
+      requiresRelation: "project",
+    },
+    { key: "createdAt", label: "Created", type: "date", format: fmtDate },
+    { key: "updatedAt", label: "Updated", type: "date", format: fmtDate },
+  ],
+  filters: [
+    {
+      key: "status",
+      label: "Status",
+      type: "enum",
+      operators: ["equals", "in"],
+      enumValues: ["DRAFT", "UNDER_REVIEW", "ACTIVE", "EXPIRING_SOON", "EXPIRED", "TERMINATED", "RENEWED"],
+    },
+    { key: "title", label: "Title", type: "string", operators: ["equals", "contains"] },
+    { key: "contractNumber", label: "Number", type: "string", operators: ["equals", "contains"] },
+    { key: "value", label: "Value", type: "number", operators: ["gte", "lte"] },
+    { key: "endDate", label: "End", type: "date", operators: ["gte", "lte", "isNull", "isNotNull"] },
+    { key: "renewalDate", label: "Renewal", type: "date", operators: ["gte", "lte", "isNull", "isNotNull"] },
+    { key: "autoRenew", label: "Auto renew", type: "boolean", operators: ["equals"] },
+    {
+      key: "client.name",
+      label: "Client name",
+      type: "string",
+      operators: ["equals", "contains"],
+      relation: "client",
+    },
+  ],
+  async fetch({ where, orderBy, take, includes }) {
+    const include: Record<string, unknown> = {};
+    if (includes.has("client")) {
+      include.client = { select: { id: true, name: true } };
+    }
+    if (includes.has("project")) {
+      include.project = { select: { id: true, name: true } };
+    }
+    const rows = await db.contract.findMany({
+      where,
+      orderBy,
+      take,
+      include: Object.keys(include).length > 0 ? include : undefined,
+    });
+    return rows as Record<string, unknown>[];
+  },
+};
+
+// ─── Certification entity ───────────────────────────────────────────────
+
+const CERTIFICATION: EntityDef = {
+  label: "Certifications",
+  description: "Tracked certifications and renewals",
+  defaultColumns: ["name", "status", "client.name", "assignee.name", "expirationDate"],
+  defaultSort: "expirationDate",
+  defaultLimit: 500,
+  columns: [
+    { key: "name", label: "Name", type: "string" },
+    { key: "status", label: "Status", type: "enum" },
+    { key: "type", label: "Type", type: "enum" },
+    { key: "engagementType", label: "Engagement", type: "enum" },
+    { key: "issuingBody", label: "Issuing body", type: "string" },
+    { key: "jurisdictionLevel", label: "Jurisdiction level", type: "enum" },
+    { key: "jurisdictionName", label: "Jurisdiction", type: "string" },
+    { key: "issuedDate", label: "Issued", type: "date", format: fmtDate },
+    { key: "submittedDate", label: "Submitted", type: "date", format: fmtDate },
+    { key: "expirationDate", label: "Expires", type: "date", format: fmtDate },
+    { key: "renewalDate", label: "Renewal", type: "date", format: fmtDate },
+    { key: "renewalCost", label: "Renewal cost", type: "number", format: fmtCurrency },
+    { key: "autoRenew", label: "Auto renew", type: "boolean", format: fmtBoolean },
+    {
+      key: "client.name",
+      label: "Client",
+      type: "string",
+      requiresRelation: "client",
+    },
+    {
+      key: "assignee.name",
+      label: "Assignee",
+      type: "string",
+      requiresRelation: "assignee",
+    },
+    {
+      key: "pointOfContact.name",
+      label: "Point of contact",
+      type: "string",
+      requiresRelation: "pointOfContact",
+    },
+    { key: "createdAt", label: "Created", type: "date", format: fmtDate },
+  ],
+  filters: [
+    {
+      key: "status",
+      label: "Status",
+      type: "enum",
+      operators: ["equals", "in"],
+      enumValues: ["ACTIVE", "EXPIRING_SOON", "EXPIRED", "PENDING", "SUSPENDED", "REVOKED"],
+    },
+    {
+      key: "engagementType",
+      label: "Engagement",
+      type: "enum",
+      operators: ["equals", "in"],
+      enumValues: ["SUBSCRIPTION", "CERTIFICATION"],
+    },
+    { key: "name", label: "Name", type: "string", operators: ["equals", "contains"] },
+    { key: "issuingBody", label: "Issuing body", type: "string", operators: ["equals", "contains"] },
+    { key: "expirationDate", label: "Expires", type: "date", operators: ["gte", "lte", "isNull", "isNotNull"] },
+    { key: "renewalDate", label: "Renewal", type: "date", operators: ["gte", "lte", "isNull", "isNotNull"] },
+    { key: "autoRenew", label: "Auto renew", type: "boolean", operators: ["equals"] },
+    { key: "assigneeId", label: "Has assignee", type: "boolean", operators: ["isNull", "isNotNull"] },
+    {
+      key: "client.name",
+      label: "Client name",
+      type: "string",
+      operators: ["equals", "contains"],
+      relation: "client",
+    },
+  ],
+  async fetch({ where, orderBy, take, includes }) {
+    const include: Record<string, unknown> = {};
+    if (includes.has("client")) {
+      include.client = { select: { id: true, name: true } };
+    }
+    if (includes.has("assignee")) {
+      include.assignee = { select: { id: true, name: true } };
+    }
+    if (includes.has("pointOfContact")) {
+      include.pointOfContact = { select: { id: true, name: true } };
+    }
+    const rows = await db.certification.findMany({
+      where,
+      orderBy,
+      take,
+      include: Object.keys(include).length > 0 ? include : undefined,
+    });
+    return rows as Record<string, unknown>[];
+  },
+};
+
+// ─── Assignment entity ──────────────────────────────────────────────────
+
+const ASSIGNMENT: EntityDef = {
+  label: "Assignments",
+  description: "FTE allocations of employees to projects, clients, or roles",
+  defaultColumns: [
+    "employee.name",
+    "project.name",
+    "client.name",
+    "allocationFte",
+    "status",
+  ],
+  defaultSort: "-startDate",
+  defaultLimit: 500,
+  columns: [
+    {
+      key: "employee.name",
+      label: "Employee",
+      type: "string",
+      requiresRelation: "employee",
+    },
+    {
+      key: "employee.email",
+      label: "Employee email",
+      type: "string",
+      requiresRelation: "employee",
+    },
+    {
+      key: "employee.jobTitle",
+      label: "Employee job title",
+      type: "string",
+      requiresRelation: "employee",
+    },
+    {
+      key: "project.name",
+      label: "Project",
+      type: "string",
+      requiresRelation: "project",
+    },
+    {
+      key: "client.name",
+      label: "Client",
+      type: "string",
+      requiresRelation: "client",
+    },
+    {
+      key: "serviceOffering.name",
+      label: "Service offering",
+      type: "string",
+      requiresRelation: "serviceOffering",
+    },
+    {
+      key: "roleDefinition.name",
+      label: "Role",
+      type: "string",
+      requiresRelation: "roleDefinition",
+    },
+    { key: "function", label: "Function", type: "string" },
+    { key: "allocationFte", label: "FTE", type: "number" },
+    { key: "status", label: "Status", type: "enum" },
+    { key: "startDate", label: "Start", type: "date", format: fmtDate },
+    { key: "endDate", label: "End", type: "date", format: fmtDate },
+    { key: "createdAt", label: "Created", type: "date", format: fmtDate },
+  ],
+  filters: [
+    {
+      key: "status",
+      label: "Status",
+      type: "enum",
+      operators: ["equals", "in"],
+      enumValues: ["ACTIVE", "PLANNED", "COMPLETED", "ON_HOLD"],
+    },
+    { key: "allocationFte", label: "FTE", type: "number", operators: ["gt", "gte", "lt", "lte", "equals"] },
+    { key: "function", label: "Function", type: "string", operators: ["equals", "contains", "isNull", "isNotNull"] },
+    { key: "startDate", label: "Start", type: "date", operators: ["gte", "lte", "isNull", "isNotNull"] },
+    { key: "endDate", label: "End", type: "date", operators: ["gte", "lte", "isNull", "isNotNull"] },
+    {
+      key: "employee.name",
+      label: "Employee name",
+      type: "string",
+      operators: ["equals", "contains"],
+      relation: "employee",
+    },
+    {
+      key: "project.name",
+      label: "Project name",
+      type: "string",
+      operators: ["equals", "contains"],
+      relation: "project",
+    },
+    {
+      key: "client.name",
+      label: "Client name",
+      type: "string",
+      operators: ["equals", "contains"],
+      relation: "client",
+    },
+  ],
+  async fetch({ where, orderBy, take, includes }) {
+    const include: Record<string, unknown> = {};
+    if (includes.has("employee")) {
+      include.employee = { select: { id: true, name: true, email: true, jobTitle: true } };
+    }
+    if (includes.has("project")) {
+      include.project = { select: { id: true, name: true } };
+    }
+    if (includes.has("client")) {
+      include.client = { select: { id: true, name: true } };
+    }
+    if (includes.has("serviceOffering")) {
+      include.serviceOffering = { select: { id: true, name: true } };
+    }
+    if (includes.has("roleDefinition")) {
+      include.roleDefinition = { select: { id: true, name: true } };
+    }
+    const rows = await db.assignment.findMany({
+      where,
+      orderBy,
+      take,
+      include: Object.keys(include).length > 0 ? include : undefined,
+    });
+    return rows as Record<string, unknown>[];
+  },
+};
+
 // ─── Registry ──────────────────────────────────────────────────────────
 
 export const ENTITY_REGISTRY: Record<CustomReportEntity, EntityDef> = {
@@ -415,6 +861,9 @@ export const ENTITY_REGISTRY: Record<CustomReportEntity, EntityDef> = {
   CLIENT,
   QUOTE,
   TASK,
+  CONTRACT,
+  CERTIFICATION,
+  ASSIGNMENT,
 };
 
 export function getEntityDef(entity: CustomReportEntity): EntityDef {
