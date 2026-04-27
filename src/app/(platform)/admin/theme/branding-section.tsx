@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useFormState } from "react-dom";
 import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -131,14 +131,19 @@ function BrandingImageUploader({
   const [state, action] = useFormState(uploadBrandingImage, null);
   const [localResult, setLocalResult] = useState<typeof state>(null);
 
-  // Pick up form action results and refresh
-  if (state && state !== localResult) {
+  // React to action results — never call router.refresh() or setState
+  // synchronously during render, both of which can crash the page when
+  // React replays renders during hydration. The effect runs once per
+  // new server-action result.
+  useEffect(() => {
+    if (!state) return;
     setLocalResult(state);
     if (state.success) {
       router.refresh();
     }
-    setTimeout(() => setLocalResult(null), 4000);
-  }
+    const timer = setTimeout(() => setLocalResult(null), 4000);
+    return () => clearTimeout(timer);
+  }, [state, router]);
 
   return (
     <div className="space-y-2">

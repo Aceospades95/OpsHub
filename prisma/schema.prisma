@@ -1084,6 +1084,18 @@ model JobLog {
   @@index([status])
 }
 
+// ─── JOB CONFIG ────────────────────────────────────────
+//
+// Per-jobKey settings — currently just isEnabled. System jobs are
+// code-defined (see src/lib/jobs/registry.ts) so we don't store
+// definitions here, only operator-controlled toggles. A row is created
+// lazily the first time an admin disables/enables a job.
+model JobConfig {
+  jobKey    String   @id
+  isEnabled Boolean  @default(true)
+  updatedAt DateTime @updatedAt
+}
+
 // ─── NOTIFICATIONS ─────────────────────────────────────
 //
 // In-app notification for a user. Written by src/lib/notifications/notify().
