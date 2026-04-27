@@ -156,6 +156,15 @@ export const assignmentsImporter: ImporterDefinition = {
     const offeringByName = new Map(offerings.map((o) => [o.name.toLowerCase(), o.id]));
     const roleDefs = await db.roleDefinition.findMany({ select: { id: true, name: true } });
     const roleDefByName = new Map(roleDefs.map((r) => [r.name.toLowerCase(), r.id]));
+    // Auto-link to a ProjectRole row when the assignment's (project,
+    // roleDefinition) pair matches a defined slot. Indexed by
+    // `${projectId}|${roleDefinitionId}` for O(1) lookup per row.
+    const projectRoles = await db.projectRole.findMany({
+      select: { id: true, projectId: true, roleDefinitionId: true },
+    });
+    const projectRoleByProjectAndDef = new Map(
+      projectRoles.map((pr) => [`${pr.projectId}|${pr.roleDefinitionId}`, pr.id])
+    );
 
     for (let i = 0; i < rows.length; i++) {
       const rowNumber = i + 1;
@@ -196,6 +205,14 @@ export const assignmentsImporter: ImporterDefinition = {
       const roleDefName = (raw.roleDefinitionName || "").trim().toLowerCase();
       const roleDefinitionId = roleDefName ? roleDefByName.get(roleDefName) || null : null;
 
+      // If both a project and a role definition resolve, see if a
+      // ProjectRole slot exists for that pair. Linking the assignment
+      // there means it shows up in the staffing matrix's role columns.
+      const projectRoleId =
+        projectId && roleDefinitionId
+          ? projectRoleByProjectAndDef.get(`${projectId}|${roleDefinitionId}`) || null
+          : null;
+
       const allocationRaw = (raw.allocationFte || "").trim();
       const allocationFte = allocationRaw ? parseFloat(allocationRaw) || 0 : 0;
       if (allocationFte < 0 || allocationFte > 2) {
@@ -216,6 +233,7 @@ export const assignmentsImporter: ImporterDefinition = {
             clientId,
             serviceOfferingId,
             roleDefinitionId,
+            projectRoleId,
             role: raw.role?.trim() || null,
             function: raw.function?.trim() || null,
             allocationFte,

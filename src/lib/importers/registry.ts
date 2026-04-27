@@ -20,14 +20,24 @@ import { certificationsImporter } from "./importers/certifications";
 import { contractsImporter } from "./importers/contracts";
 import { contractTermsImporter } from "./importers/contract-terms";
 import { projectsImporter } from "./importers/projects";
+import { projectMembersImporter } from "./importers/project-members";
+import { projectRelationsImporter } from "./importers/project-relations";
+import { projectToolsImporter } from "./importers/project-tools";
+import { milestonesImporter } from "./importers/milestones";
 import { suppliersImporter } from "./importers/suppliers";
+import { supplierProjectsImporter } from "./importers/supplier-projects";
 import { tasksImporter } from "./importers/tasks";
 import { intranetImporter } from "./importers/intranet";
 import { toolsImporter } from "./importers/tools";
 import { clientContactsImporter } from "./importers/client-contacts";
 import { assignmentsImporter } from "./importers/assignments";
+import { allowedDomainsImporter } from "./importers/allowed-domains";
 
 export const IMPORTERS: ImporterDefinition[] = [
+  // Recommended import order top-to-bottom: top-level entities first,
+  // then their child rows, then cross-entity links. Keeping this order in
+  // the registry surfaces it in the /admin/import wizard so users
+  // import in the right sequence on day one.
   usersImporter,
   projectsImporter,
   clientContactsImporter,
@@ -38,7 +48,13 @@ export const IMPORTERS: ImporterDefinition[] = [
   toolsImporter,
   intranetImporter,
   tasksImporter,
+  milestonesImporter,
   assignmentsImporter,
+  projectMembersImporter,
+  projectToolsImporter,
+  supplierProjectsImporter,
+  projectRelationsImporter,
+  allowedDomainsImporter,
 ];
 
 const IMPORTER_MAP = new Map<string, ImporterDefinition>(

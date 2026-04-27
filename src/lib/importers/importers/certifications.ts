@@ -91,6 +91,13 @@ export const certificationsImporter: ImporterDefinition = {
       aliases: ["summary", "layman", "plain english"],
     },
     {
+      key: "description",
+      label: "Description",
+      required: false,
+      description: "Long-form description / formal definition. Distinct from the plain-English summary.",
+      aliases: ["formal description", "details"],
+    },
+    {
       key: "status",
       label: "Status",
       required: false,
@@ -161,6 +168,20 @@ export const certificationsImporter: ImporterDefinition = {
     { key: "renewalCost", label: "Renewal cost", required: false, aliases: ["cost", "renewal price"] },
     { key: "currency", label: "Currency", required: false, description: "Defaults to USD.", aliases: ["currency code"] },
     {
+      key: "renewalRequirements",
+      label: "Renewal requirements",
+      required: false,
+      description: "What's needed to renew this certification. Free-form text shown on the renewal page.",
+      aliases: ["requirements", "renewal needs"],
+    },
+    {
+      key: "renewalNotes",
+      label: "Renewal notes",
+      required: false,
+      description: "Internal notes about the renewal cycle.",
+      aliases: ["renewal comments"],
+    },
+    {
       key: "documentUrl",
       label: "Compiled documents URL",
       required: false,
@@ -210,6 +231,7 @@ export const certificationsImporter: ImporterDefinition = {
     return certs.map((c) => ({
       name: c.name,
       plainEnglishSummary: c.plainEnglishSummary || "",
+      description: c.description || "",
       status: c.status,
       type: c.type,
       engagementType: c.engagementType,
@@ -233,6 +255,8 @@ export const certificationsImporter: ImporterDefinition = {
           ? String(c.renewalCost)
           : "",
       currency: c.currency || "",
+      renewalRequirements: c.renewalRequirements || "",
+      renewalNotes: c.renewalNotes || "",
       documentUrl: c.documentUrl || "",
       completedCertUrl: c.completedCertUrl || "",
       assigneeEmail: c.assignee?.email || "",
@@ -309,6 +333,7 @@ export const certificationsImporter: ImporterDefinition = {
           data: {
             name,
             plainEnglishSummary: raw.plainEnglishSummary?.trim() || null,
+            description: raw.description?.trim() || null,
             status,
             type,
             engagementType,
@@ -331,6 +356,8 @@ export const certificationsImporter: ImporterDefinition = {
             autoRenew: parseBool(raw.autoRenew, false),
             renewalCost: raw.renewalCost ? parseFloat(raw.renewalCost) || null : null,
             currency: raw.currency?.trim() || "USD",
+            renewalRequirements: raw.renewalRequirements?.trim() || null,
+            renewalNotes: raw.renewalNotes?.trim() || null,
             documentUrl: raw.documentUrl?.trim() || null,
             completedCertUrl: raw.completedCertUrl?.trim() || null,
             assigneeId,

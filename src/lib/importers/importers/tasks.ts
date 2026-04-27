@@ -39,6 +39,20 @@ export const tasksImporter: ImporterDefinition = {
     { key: "status", label: "Status", required: false, description: "TODO, IN_PROGRESS, DONE, CANCELLED. Defaults to TODO.", aliases: ["task status"] },
     { key: "priority", label: "Priority", required: false, description: "HIGH, MEDIUM, LOW. Defaults to MEDIUM.", aliases: ["task priority"] },
     { key: "dueDate", label: "Due date", required: false, aliases: ["due", "deadline"] },
+    {
+      key: "completedAt",
+      label: "Completed at",
+      required: false,
+      description: "Date the task was completed. Auto-set if you set status=DONE without supplying this; only fill in when migrating historical completion timestamps.",
+      aliases: ["completed", "completion date", "done at"],
+    },
+    {
+      key: "sortOrder",
+      label: "Sort order",
+      required: false,
+      description: "Integer; controls the order this task appears in kanban / list views within its column. Defaults to 0.",
+      aliases: ["order", "position", "rank"],
+    },
     { key: "assigneeEmail", label: "Assignee email", required: false, description: "Email of an existing active employee.", aliases: ["assignee", "owner", "assigned to"] },
     { key: "projectName", label: "Project name", required: false, description: "Optionally scope the task to a project (matched by name).", aliases: ["project"] },
     { key: "clientName", label: "Client name", required: false, description: "Optionally scope the task to a client (matched by name).", aliases: ["client", "company"] },
@@ -60,6 +74,8 @@ export const tasksImporter: ImporterDefinition = {
       status: t.status,
       priority: t.priority,
       dueDate: formatDate(t.dueDate),
+      completedAt: formatDate(t.completedAt),
+      sortOrder: String(t.sortOrder),
       assigneeEmail: t.assignee?.email || "",
       projectName: t.project?.name || "",
       clientName: t.client?.name || "",
@@ -116,6 +132,16 @@ export const tasksImporter: ImporterDefinition = {
       const clientName = (raw.clientName || "").trim().toLowerCase();
       const clientId = clientName ? clientByName.get(clientName) || null : null;
 
+      // completedAt: auto-set when status=DONE and the column wasn't
+      // explicitly supplied. This mirrors the in-app behavior so
+      // imported "done" tasks have a coherent completion timestamp.
+      const completedAtRaw = parseDate(raw.completedAt);
+      const completedAt =
+        completedAtRaw ?? (status === "DONE" ? new Date() : null);
+
+      const sortOrderRaw = (raw.sortOrder || "").trim();
+      const sortOrder = sortOrderRaw ? parseInt(sortOrderRaw, 10) || 0 : 0;
+
       try {
         const task = await db.task.create({
           data: {
@@ -124,6 +150,8 @@ export const tasksImporter: ImporterDefinition = {
             status,
             priority,
             dueDate: parseDate(raw.dueDate),
+            completedAt,
+            sortOrder,
             assigneeId,
             projectId,
             clientId,

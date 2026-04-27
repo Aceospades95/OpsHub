@@ -108,6 +108,20 @@ export const usersImporter: ImporterDefinition = {
       description: "true / false. Defaults to true. Set to false for tracked-only employees.",
       aliases: ["login", "active", "can login"],
     },
+    {
+      key: "isActive",
+      label: "Is active",
+      required: false,
+      description: "true / false. Defaults to true. Set to false to import a former employee whose account is retained for audit history.",
+      aliases: ["active", "status"],
+    },
+    {
+      key: "avatar",
+      label: "Avatar URL",
+      required: false,
+      description: "Optional URL to a profile photo. Leave blank to use initials.",
+      aliases: ["photo", "picture", "avatar url"],
+    },
   ],
 
   async sampleRows() {
@@ -130,6 +144,8 @@ export const usersImporter: ImporterDefinition = {
       phone: u.phone || "",
       managerEmail: u.manager?.email || "",
       hasLoginAccess: u.hasLoginAccess ? "true" : "false",
+      isActive: u.isActive ? "true" : "false",
+      avatar: u.avatar || "",
     }));
   },
 
@@ -202,6 +218,8 @@ export const usersImporter: ImporterDefinition = {
       }
 
       const hasLoginAccess = parseBool(raw.hasLoginAccess, true);
+      const isActive = parseBool(raw.isActive, true);
+      const avatar = raw.avatar?.trim() || null;
 
       // Login users get a placeholder hash they can't actually sign in with
       // until an admin sets a real password. Matches the no-login pattern in
@@ -217,6 +235,8 @@ export const usersImporter: ImporterDefinition = {
             hashedPassword,
             role,
             hasLoginAccess,
+            isActive,
+            avatar,
             department: raw.department?.trim() || null,
             jobTitle: raw.jobTitle?.trim() || null,
             location: raw.location?.trim() || null,
