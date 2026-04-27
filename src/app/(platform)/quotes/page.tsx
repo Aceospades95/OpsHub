@@ -128,6 +128,12 @@ export default async function QuotesPage({
         actions={
           <div className="flex items-center gap-2">
             <Link
+              href="/quotes/analytics"
+              className="text-sm text-muted-foreground hover:text-foreground hover:underline"
+            >
+              Analytics
+            </Link>
+            <Link
               href="/quotes/templates"
               className="text-sm text-muted-foreground hover:text-foreground hover:underline"
             >

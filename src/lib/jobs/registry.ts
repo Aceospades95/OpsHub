@@ -21,6 +21,8 @@ import { cleanupStaleNotifications } from "./jobs/cleanup-stale-notifications";
 import { cleanupOldActivityLogs } from "./jobs/cleanup-old-activity-logs";
 import { dailyReportsDigest } from "./jobs/daily-reports-digest";
 import { workflowsTick } from "./jobs/workflows-tick";
+import { workflowScheduledTriggers } from "./jobs/workflow-scheduled-triggers";
+import { workflowReminderDigest } from "./jobs/workflow-reminder-digest";
 
 export const JOBS: JobDefinition[] = [
   contractExpiryCheck,
@@ -29,6 +31,8 @@ export const JOBS: JobDefinition[] = [
   cleanupOldActivityLogs,
   dailyReportsDigest,
   workflowsTick,
+  workflowScheduledTriggers,
+  workflowReminderDigest,
 ];
 
 const JOB_MAP = new Map<string, JobDefinition>(JOBS.map((j) => [j.key, j]));

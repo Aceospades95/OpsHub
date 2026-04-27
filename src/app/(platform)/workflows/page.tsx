@@ -5,7 +5,7 @@ import { requireAuth, resolveModulePerms } from "@/lib/permissions";
 import { AccessDenied } from "@/components/shared/access-denied";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent } from "@/components/ui/card";
-import { FileText, Mail, PlayCircle, Workflow } from "lucide-react";
+import { BarChart3, FileText, Mail, PlayCircle, Workflow } from "lucide-react";
 
 // Landing page for the workflows section. Acts as a hub linking out to
 // templates, email templates, and (Phase 4) running instances. We keep
@@ -32,7 +32,7 @@ export default async function WorkflowsLandingPage() {
     }),
   ]);
 
-  const tiles: { href: string; icon: typeof FileText; label: string; description: string; count: number }[] = [
+  const tiles: { href: string; icon: typeof FileText; label: string; description: string; count: number | null }[] = [
     {
       href: "/workflows/templates",
       icon: FileText,
@@ -54,6 +54,13 @@ export default async function WorkflowsLandingPage() {
       description: "In-flight onboarding, offboarding, and hiring instances",
       count: instanceCount,
     },
+    {
+      href: "/workflows/analytics",
+      icon: BarChart3,
+      label: "Analytics",
+      description: "Completion times, stuck steps, per-template stats",
+      count: null,
+    },
   ];
 
   return (
@@ -63,16 +70,18 @@ export default async function WorkflowsLandingPage() {
         description="Automated sequences for onboarding, offboarding, and candidate hiring"
       />
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {tiles.map((t) => (
           <Link key={t.href} href={t.href}>
             <Card className="hover:shadow-md transition-shadow h-full">
               <CardContent className="p-5">
                 <div className="flex items-start justify-between mb-3">
                   <t.icon className="h-5 w-5 text-muted-foreground" />
-                  <span className="text-2xl font-bold tabular-nums text-foreground">
-                    {t.count}
-                  </span>
+                  {t.count != null && (
+                    <span className="text-2xl font-bold tabular-nums text-foreground">
+                      {t.count}
+                    </span>
+                  )}
                 </div>
                 <p className="font-semibold text-foreground">{t.label}</p>
                 <p className="text-xs text-muted-foreground mt-1">{t.description}</p>
@@ -87,13 +96,15 @@ export default async function WorkflowsLandingPage() {
           <Workflow className="h-5 w-5 mt-0.5" />
           <div>
             <p className="font-medium text-foreground">
-              Workflow execution is coming in Phase 4.
+              Background worker is wired up.
             </p>
             <p className="mt-1">
-              Templates you build now will automatically pick up the
-              background worker once it ships — no migration needed. The
-              three default templates (onboarding, offboarding, candidate
-              hiring) are pre-seeded so you can preview the structure today.
+              The <code>workflows-tick</code> job advances scheduled steps
+              every minute when cron is configured. Date-driven triggers
+              (e.g. fire offboarding 7 days before termination) run via{" "}
+              <code>workflow-scheduled-triggers</code> daily. The reminder
+              digest (<code>workflow-reminder-digest</code>) emails admins
+              about stuck workflows + expiring quotes.
             </p>
           </div>
         </div>

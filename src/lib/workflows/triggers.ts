@@ -122,17 +122,136 @@ export async function fireEntityCreateTriggers(
 /**
  * Fire scheduled-date triggers — called by the workflows-tick cron job.
  *
- * Phase 4 supports User.terminationDate as the only date field (we
- * don't have one yet — Phase 6 will add it to the User model). For
- * forward-compatibility this function returns 0 today; the structure
- * is in place so adding date-driven onboarding/offboarding kickoffs
- * is just a matter of wiring the field.
+ * For each active SCHEDULED_DATE trigger:
+ *   1. Read its config: { dateField, offsetDays }
+ *   2. Resolve `dateField` against the matching subject entity. The
+ *      only supported field today is User.terminationDate (added in
+ *      Phase 6); future date fields plug in here.
+ *   3. Find subjects whose dateField falls within today's one-day
+ *      window centered on `now + offsetDays`. The window is a day
+ *      wide so a single missed cron tick doesn't drop a fire.
+ *   4. Skip subjects that already have a non-cancelled instance of
+ *      this template — daily ticks must be idempotent.
  */
-export async function fireScheduledDateTriggers(_now: Date = new Date()): Promise<{
+export async function fireScheduledDateTriggers(now: Date = new Date()): Promise<{
   instanceIds: string[];
   errors: string[];
 }> {
-  // Stub for Phase 4. Real implementation lives alongside the
-  // termination_date field in Phase 6.
-  return { instanceIds: [], errors: [] };
+  const triggers = await db.workflowTrigger.findMany({
+    where: {
+      triggerType: "SCHEDULED_DATE",
+      isActive: true,
+      workflowTemplate: { isActive: true },
+    },
+    include: { workflowTemplate: true },
+  });
+  if (triggers.length === 0) return { instanceIds: [], errors: [] };
+
+  const instanceIds: string[] = [];
+  const errors: string[] = [];
+
+  for (const trigger of triggers) {
+    let cfg: { dateField?: string; offsetDays?: number } = {};
+    try {
+      cfg = JSON.parse(trigger.config);
+    } catch {
+      errors.push(`Trigger ${trigger.id}: invalid config JSON`);
+      continue;
+    }
+    if (!cfg.dateField) {
+      errors.push(`Trigger ${trigger.id}: missing dateField`);
+      continue;
+    }
+    const offsetDays = Number.isFinite(cfg.offsetDays) ? cfg.offsetDays! : 0;
+
+    if (
+      cfg.dateField !== "terminationDate" ||
+      trigger.workflowTemplate.subjectEntityType !== "EMPLOYEE"
+    ) {
+      // Unknown field — silent skip. Future date fields slot in here.
+      continue;
+    }
+
+    const eligibleSubjects = await findEligibleEmployeesByTerminationDate(
+      now,
+      offsetDays,
+      trigger.workflowTemplateId
+    );
+    for (const subject of eligibleSubjects) {
+      try {
+        const r = await createInstance({
+          templateId: trigger.workflowTemplateId,
+          subjectType: "EMPLOYEE",
+          subjectId: subject.id,
+          // Self-attribution: a system trigger fired this. The instance
+          // detail UI shows "Started by {creator}" — using the subject
+          // themselves keeps the link semantically meaningful.
+          createdById: subject.id,
+          targetDate: subject.terminationDate,
+          autoStart: true,
+        });
+        instanceIds.push(r.instanceId);
+      } catch (err) {
+        errors.push(
+          `Trigger ${trigger.id} (${trigger.workflowTemplate.name}): ${err instanceof Error ? err.message : String(err)}`
+        );
+      }
+    }
+  }
+
+  return { instanceIds, errors };
+}
+
+const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+
+async function findEligibleEmployeesByTerminationDate(
+  now: Date,
+  offsetDays: number,
+  workflowTemplateId: string
+): Promise<{ id: string; terminationDate: Date }[]> {
+  // The trigger fires when terminationDate falls in the
+  // [today + offsetDays, today + offsetDays + 1day) window.
+  // Example: offsetDays = -7 means "fire 7 days BEFORE termination",
+  // so we look for terminationDates exactly 7 days ahead of today.
+  const targetMid = startOfUtcDay(
+    new Date(now.getTime() - offsetDays * ONE_DAY_MS)
+  );
+  const windowStart = new Date(targetMid.getTime());
+  const windowEnd = new Date(targetMid.getTime() + ONE_DAY_MS);
+
+  const candidates = await db.user.findMany({
+    where: {
+      isActive: true,
+      terminationDate: { gte: windowStart, lt: windowEnd },
+    },
+    select: { id: true, terminationDate: true },
+  });
+
+  if (candidates.length === 0) return [];
+
+  // Idempotency check: skip subjects that already have a non-cancelled
+  // instance of this template, in any state (PENDING, IN_PROGRESS,
+  // PAUSED, COMPLETED). Allowing CANCELLED rows lets an admin retry
+  // by cancelling the existing instance.
+  const subjectIds = candidates.map((c) => c.id);
+  const existing = await db.workflowInstance.findMany({
+    where: {
+      workflowTemplateId,
+      subjectType: "EMPLOYEE",
+      subjectId: { in: subjectIds },
+      status: { in: ["PENDING", "IN_PROGRESS", "PAUSED", "COMPLETED"] },
+    },
+    select: { subjectId: true },
+  });
+  const existingSet = new Set(existing.map((e) => e.subjectId));
+
+  return candidates
+    .filter((c) => c.terminationDate != null && !existingSet.has(c.id))
+    .map((c) => ({ id: c.id, terminationDate: c.terminationDate! }));
+}
+
+function startOfUtcDay(date: Date): Date {
+  const d = new Date(date);
+  d.setUTCHours(0, 0, 0, 0);
+  return d;
 }

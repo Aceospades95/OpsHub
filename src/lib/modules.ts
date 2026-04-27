@@ -18,6 +18,7 @@ export type ModuleKey =
   | "projects"
   | "tasks"
   | "team"
+  | "candidates"
   | "contracts"
   | "certifications"
   | "suppliers"
@@ -207,6 +208,15 @@ export const MODULES: ModuleDefinition[] = [
     href: "/workflows",
     icon: "Workflow",
     description: "Automated onboarding, offboarding, and hiring sequences",
+    section: "main",
+    permissioned: true,
+  },
+  {
+    key: "candidates",
+    label: "Candidates",
+    href: "/candidates",
+    icon: "UserPlus",
+    description: "Applicants progressing through the hiring workflow",
     section: "main",
     permissioned: true,
   },

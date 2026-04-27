@@ -143,7 +143,49 @@ export async function buildInstanceContext(
     };
   }
 
-  // Phase 5+ — for now CANDIDATE/CUSTOM subjects degrade gracefully.
+  if (input.subjectType === "CANDIDATE") {
+    const cand = await db.candidate.findUnique({
+      where: { id: input.subjectId },
+    });
+    if (!cand) {
+      return {
+        subject: {
+          id: input.subjectId,
+          firstName: null,
+          lastName: null,
+          fullName: "(unknown candidate)",
+          email: null,
+          jobTitle: null,
+          department: null,
+          startDate: null,
+        },
+        manager: emptyManager(),
+        company: { name: companyName },
+        workflow: baseWorkflow,
+        portal: { url: portalUrl },
+      };
+    }
+    return {
+      subject: {
+        id: cand.id,
+        firstName: cand.firstName,
+        lastName: cand.lastName,
+        fullName: `${cand.firstName} ${cand.lastName}`.trim(),
+        email: cand.email,
+        // For candidates, jobTitle ≈ position they applied for so
+        // template authors can use the same {{subject.jobTitle}} path.
+        jobTitle: cand.position,
+        department: null,
+        startDate: null,
+      },
+      manager: emptyManager(),
+      company: { name: companyName },
+      workflow: baseWorkflow,
+      portal: { url: portalUrl },
+    };
+  }
+
+  // CUSTOM subjects degrade gracefully — no schema to read from.
   return {
     subject: {
       id: input.subjectId,

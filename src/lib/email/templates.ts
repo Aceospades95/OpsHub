@@ -223,6 +223,119 @@ Reference: ${quoteNumber}
   return { subject, html, text };
 };
 
+export interface WorkflowDigestTemplateData {
+  recipientName: string;
+  /** Stuck workflow steps the digest is reporting. */
+  stuckItems: Array<{
+    templateName: string;
+    subjectName: string;
+    stepName: string;
+    daysWaiting: number;
+    instanceUrl: string;
+  }>;
+  /** Quotes that are open past their valid_until date, or expiring soon. */
+  expiringQuotes: Array<{
+    quoteNumber: string;
+    title: string;
+    clientName: string;
+    daysUntilExpiry: number; // negative = already expired
+    quoteUrl: string;
+  }>;
+  /** Absolute URL to the analytics page for the "see all" CTA. */
+  workflowAnalyticsUrl: string;
+}
+
+const workflowDigest: EmailTemplate<WorkflowDigestTemplateData> = ({
+  recipientName,
+  stuckItems,
+  expiringQuotes,
+  workflowAnalyticsUrl,
+}) => {
+  const subject = `OpsHub digest · ${stuckItems.length} stuck workflow${stuckItems.length === 1 ? "" : "s"}, ${expiringQuotes.length} expiring quote${expiringQuotes.length === 1 ? "" : "s"}`;
+
+  const stuckHtml = stuckItems.length
+    ? `<h2 style="margin:24px 0 8px;font-size:14px;font-weight:600;">Stuck workflow steps</h2>
+       <ul style="margin:0 0 8px;padding-left:18px;">
+         ${stuckItems
+           .map(
+             (s) =>
+               `<li style="margin-bottom:6px;">
+                  <a href="${escapeHtml(s.instanceUrl)}" style="color:#1a1a1a;text-decoration:underline;">
+                    ${escapeHtml(s.templateName)} — ${escapeHtml(s.subjectName)}
+                  </a>:
+                  ${escapeHtml(s.stepName)}
+                  <span style="color:#888;">(${s.daysWaiting} day${s.daysWaiting === 1 ? "" : "s"} waiting)</span>
+                </li>`
+           )
+           .join("")}
+       </ul>`
+    : `<p style="color:#555;margin:8px 0;">No stuck workflow steps. ✓</p>`;
+
+  const quotesHtml = expiringQuotes.length
+    ? `<h2 style="margin:24px 0 8px;font-size:14px;font-weight:600;">Quotes expiring or expired</h2>
+       <ul style="margin:0;padding-left:18px;">
+         ${expiringQuotes
+           .map((q) => {
+             const tag =
+               q.daysUntilExpiry < 0
+                 ? `expired ${-q.daysUntilExpiry}d ago`
+                 : `${q.daysUntilExpiry}d to expiry`;
+             return `<li style="margin-bottom:6px;">
+                       <a href="${escapeHtml(q.quoteUrl)}" style="color:#1a1a1a;text-decoration:underline;">
+                         ${escapeHtml(q.quoteNumber)} — ${escapeHtml(q.title)}
+                       </a>
+                       <span style="color:#888;"> for ${escapeHtml(q.clientName)} (${escapeHtml(tag)})</span>
+                     </li>`;
+           })
+           .join("")}
+       </ul>`
+    : `<p style="color:#555;margin:8px 0;">No quotes expiring soon. ✓</p>`;
+
+  const html = shell(
+    "Daily ops digest",
+    `<p>Hi ${escapeHtml(recipientName)},</p>
+     <p style="color:#555;">Here's what needs attention today.</p>
+     ${stuckHtml}
+     ${quotesHtml}
+     <p style="margin:24px 0 0;">
+       <a href="${escapeHtml(workflowAnalyticsUrl)}" style="display:inline-block;padding:10px 18px;background:#1a1a1a;color:#fff;text-decoration:none;border-radius:6px;">Open workflow analytics</a>
+     </p>`
+  );
+
+  const text = `Hi ${recipientName},
+
+Here's what needs attention today.
+
+Stuck workflow steps (${stuckItems.length}):
+${
+  stuckItems
+    .map(
+      (s) =>
+        `• ${s.templateName} — ${s.subjectName}: ${s.stepName} (${s.daysWaiting}d waiting)\n  ${s.instanceUrl}`
+    )
+    .join("\n") || "  None ✓"
+}
+
+Quotes expiring or expired (${expiringQuotes.length}):
+${
+  expiringQuotes
+    .map((q) => {
+      const tag =
+        q.daysUntilExpiry < 0
+          ? `expired ${-q.daysUntilExpiry}d ago`
+          : `${q.daysUntilExpiry}d to expiry`;
+      return `• ${q.quoteNumber} — ${q.title} for ${q.clientName} (${tag})\n  ${q.quoteUrl}`;
+    })
+    .join("\n") || "  None ✓"
+}
+
+Open analytics: ${workflowAnalyticsUrl}
+
+— OpsHub`;
+
+  return { subject, html, text };
+};
+
 export interface TestTemplateData {
   to: string;
 }
@@ -258,6 +371,7 @@ export const TEMPLATES: Record<string, EmailTemplate<unknown>> = {
   report: report as EmailTemplate<unknown>,
   test: test as EmailTemplate<unknown>,
   "quote-sent": quoteSent as EmailTemplate<unknown>,
+  "workflow-digest": workflowDigest as EmailTemplate<unknown>,
 };
 
 // Template data map for type-safe calls
@@ -267,6 +381,7 @@ export interface TemplateDataMap {
   report: ReportTemplateData;
   test: TestTemplateData;
   "quote-sent": QuoteSentTemplateData;
+  "workflow-digest": WorkflowDigestTemplateData;
 }
 
 export type TemplateKey = keyof TemplateDataMap;
