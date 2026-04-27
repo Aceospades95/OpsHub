@@ -144,6 +144,28 @@ enum EmbedType {
   other
 }
 
+enum QuoteStatus {
+  DRAFT
+  SENT
+  VIEWED
+  ACCEPTED
+  REJECTED
+  EXPIRED
+  REVISED
+}
+
+enum QuoteDiscountType {
+  NONE
+  PERCENT
+  FIXED
+}
+
+enum QuoteRecurringInterval {
+  MONTHLY
+  QUARTERLY
+  ANNUALLY
+}
+
 // ─── USERS ───────────────────────────────────────────────
 
 model User {
@@ -194,6 +216,9 @@ model User {
   notificationsSent     Notification[]    @relation("NotificationActor")
   accessRequestsMade    AccessRequest[]   @relation("AccessRequestRequester")
   accessRequestsReviewed AccessRequest[]  @relation("AccessRequestReviewer")
+  createdQuotes         Quote[]           @relation("QuoteCreator")
+  assignedQuotes        Quote[]           @relation("QuoteAssignee")
+  createdQuoteTemplates QuoteTemplate[]   @relation("QuoteTemplateCreator")
 }
 
 model ModulePermission {
@@ -282,6 +307,7 @@ model Client {
   sandboxPages   SandboxPage[]
   assignments    Assignment[]
   activityLogs   ActivityLog[]
+  quotes         Quote[]
 }
 
 model ClientContact {
@@ -336,6 +362,7 @@ model Project {
   assignments      Assignment[]
   projectRoles     ProjectRole[]
   activityLogs     ActivityLog[]
+  quotes           Quote[]
 
   @@index([serviceOfferingId])
 }
@@ -600,6 +627,8 @@ model File {
   intranetResource IntranetResource? @relation(fields: [intranetResourceId], references: [id])
   certification    Certification?    @relation(fields: [certificationId], references: [id])
   user             User?             @relation("FileOwner", fields: [userId], references: [id], onDelete: SetNull)
+
+  quotes Quote[] @relation("QuotePdf")
 
   @@index([storageDriver])
   @@index([uploadedById])
@@ -1077,4 +1106,203 @@ model AccessRequest {
 
   @@index([status])
   @@index([requesterId])
+}
+
+// ─── QUOTES ─────────────────────────────────────────────
+//
+// Sales quote / proposal builder. A Quote belongs to a Client and optionally
+// to a Project. Line items can be reusable CatalogItem references or one-off
+// custom rows. Quotes can be revised — a revision links back to the parent
+// via parentQuoteId and the parent transitions to REVISED.
+//
+// Phase 1 covers: draft authoring, line items, totals, templates, catalog.
+// Phases 2+ wire up sending, public token view, accept/reject, e-sig, PDF.
+
+model Quote {
+  id                    String      @id @default(cuid())
+  /// Human-readable identifier auto-generated on create (e.g. "Q-2026-0001").
+  /// Unique across the org. Format is fixed; renumbering would invalidate
+  /// the URL the client received in their email.
+  quoteNumber           String      @unique
+  clientId              String
+  projectId             String?
+  status                QuoteStatus @default(DRAFT)
+  title                 String
+  /// Markdown-friendly intro text rendered above the line items on the
+  /// public view. Optional.
+  introText             String?     @db.Text
+  /// Footer / terms & conditions text rendered below the totals on the
+  /// public view. Optional.
+  termsText             String?     @db.Text
+  currency              String      @default("USD")
+  /// Cached subtotal of all line items (after per-line discounts, before
+  /// quote-level discount and tax). Recomputed on every save.
+  subtotal              Float       @default(0)
+  discountType          QuoteDiscountType @default(NONE)
+  discountValue         Float       @default(0)
+  /// Tax rate as a percentage. Nullable so tax-exempt quotes can render
+  /// cleanly without a 0% line on the public view.
+  taxRate               Float?
+  taxAmount             Float       @default(0)
+  total                 Float       @default(0)
+  validUntil            DateTime?
+  acceptedAt            DateTime?
+  rejectedAt            DateTime?
+  sentAt                DateTime?
+  firstViewedAt         DateTime?
+  acceptedSignatureName String?
+  acceptedSignatureData String?     @db.Text
+  acceptedIp            String?
+  rejectionReason       String?     @db.Text
+  /// Links a revision to the prior version. The parent transitions to
+  /// REVISED when a child is created.
+  parentQuoteId         String?
+  createdById           String
+  assignedToId          String?
+  /// Owner-only notes — never rendered on the client-facing public view.
+  internalNotes         String?     @db.Text
+  /// Cryptographically random token used in the public share URL `/q/:token`.
+  /// Set when the quote is first sent. Nullable on drafts.
+  publicToken           String?     @unique
+  /// File reference to the most recently generated PDF. Regenerated on
+  /// edit so consumers can rely on `pdfFile.url` being current.
+  pdfFileId             String?
+  createdAt             DateTime    @default(now())
+  updatedAt             DateTime    @updatedAt
+
+  client       Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  project      Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  parentQuote  Quote?   @relation("QuoteRevisions", fields: [parentQuoteId], references: [id])
+  revisions    Quote[]  @relation("QuoteRevisions")
+  createdBy    User     @relation("QuoteCreator", fields: [createdById], references: [id])
+  assignedTo   User?    @relation("QuoteAssignee", fields: [assignedToId], references: [id], onDelete: SetNull)
+  pdfFile      File?    @relation("QuotePdf", fields: [pdfFileId], references: [id], onDelete: SetNull)
+
+  lineItems QuoteLineItem[]
+  events    QuoteEvent[]
+
+  @@index([clientId])
+  @@index([projectId])
+  @@index([status])
+  @@index([createdById])
+  @@index([assignedToId])
+  @@index([validUntil])
+}
+
+model QuoteLineItem {
+  id                String                  @id @default(cuid())
+  quoteId           String
+  position          Int                     @default(0)
+  /// Optional grouping label rendered as a section divider on the public
+  /// view (e.g. "Hardware", "Services", "Optional Add-ons").
+  groupLabel        String?
+  /// When true, the client can toggle this row on/off on the public quote
+  /// page. The total recalculates as they toggle.
+  isOptional        Boolean                 @default(false)
+  /// Whether this optional row is currently selected. Always true for
+  /// non-optional rows. The client mutates this on accept.
+  isSelected        Boolean                 @default(true)
+  catalogItemId     String?
+  name              String
+  description       String?                 @db.Text
+  quantity          Float                   @default(1)
+  unit              String?
+  unitPrice         Float                   @default(0)
+  discountType      QuoteDiscountType       @default(NONE)
+  discountValue     Float                   @default(0)
+  isRecurring       Boolean                 @default(false)
+  recurringInterval QuoteRecurringInterval?
+  /// Cached row subtotal (qty * unitPrice, after this row's discount).
+  subtotal          Float                   @default(0)
+
+  quote       Quote        @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  catalogItem CatalogItem? @relation(fields: [catalogItemId], references: [id], onDelete: SetNull)
+
+  @@index([quoteId, position])
+}
+
+// Reusable service / product catalog. Powers line-item autocomplete in the
+// quote editor — typing in a row's name field pulls suggestions from here.
+// Catalog items are global; per-line edits don't write back to the catalog.
+model CatalogItem {
+  id               String   @id @default(cuid())
+  name             String
+  description      String?  @db.Text
+  defaultUnitPrice Float    @default(0)
+  defaultUnit      String?
+  category         String?
+  isRecurring      Boolean  @default(false)
+  isActive         Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  quoteLineItems    QuoteLineItem[]
+  templateLineItems QuoteTemplateLineItem[]
+
+  @@index([isActive])
+  @@index([category])
+}
+
+// Saved quote shapes used as the starting point for new quotes. A template
+// has the same shape as a Quote minus per-quote fields (client, dates,
+// signatures, etc.). Creating a quote from a template clones the line items.
+model QuoteTemplate {
+  id          String   @id @default(cuid())
+  name        String
+  description String?  @db.Text
+  introText   String?  @db.Text
+  termsText   String?  @db.Text
+  createdById String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  createdBy User @relation("QuoteTemplateCreator", fields: [createdById], references: [id])
+
+  lineItems QuoteTemplateLineItem[]
+}
+
+model QuoteTemplateLineItem {
+  id                String                  @id @default(cuid())
+  templateId        String
+  position          Int                     @default(0)
+  groupLabel        String?
+  isOptional        Boolean                 @default(false)
+  catalogItemId     String?
+  name              String
+  description       String?                 @db.Text
+  quantity          Float                   @default(1)
+  unit              String?
+  unitPrice         Float                   @default(0)
+  discountType      QuoteDiscountType       @default(NONE)
+  discountValue     Float                   @default(0)
+  isRecurring       Boolean                 @default(false)
+  recurringInterval QuoteRecurringInterval?
+
+  template    QuoteTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  catalogItem CatalogItem?  @relation(fields: [catalogItemId], references: [id], onDelete: SetNull)
+
+  @@index([templateId, position])
+}
+
+// Audit / activity log for a single quote. Distinct from the global
+// ActivityLog because public actors (clients viewing/accepting) are not
+// User rows and we want richer per-event metadata.
+model QuoteEvent {
+  id        String   @id @default(cuid())
+  quoteId   String
+  /// One of: created, sent, viewed, downloaded, accepted, rejected,
+  /// revised, edited, comment_added. Stored as a string so adding a new
+  /// event type doesn't require a migration.
+  eventType String
+  /// "user" | "client" | "system"
+  actorType String
+  /// User id when actorType="user". Null for client and system actors.
+  actorId   String?
+  /// Free-form JSON payload for event-specific data.
+  metadata  String?  @db.Text
+  createdAt DateTime @default(now())
+
+  quote Quote @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+
+  @@index([quoteId, createdAt])
 }

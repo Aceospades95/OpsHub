@@ -35,6 +35,13 @@ const statusVariantMap: Record<string, BadgeVariant> = {
   HIGH: "destructive",
   MEDIUM: "warning",
   LOW: "secondary",
+
+  // Quote statuses
+  SENT: "default",
+  VIEWED: "default",
+  ACCEPTED: "success",
+  REJECTED: "destructive",
+  REVISED: "secondary",
 };
 
 function formatLabel(status: string): string {

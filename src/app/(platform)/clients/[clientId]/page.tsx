@@ -16,6 +16,7 @@ import { ClientActions } from "./client-actions";
 import { ContactSection } from "./contact-section";
 import { PageLayout } from "@/components/shared/page-layout";
 import { TaskCheckbox } from "@/app/(platform)/tasks/task-checkbox";
+import { QuotesCard } from "@/components/quotes/quotes-card";
 
 interface Props {
   params: Promise<{ clientId: string }>;
@@ -27,6 +28,10 @@ export default async function ClientDetailPage({ params }: Props) {
 
   const perms = await resolveModulePerms(user.id, user.role, "clients");
   if (!perms.canView) return <AccessDenied module="clients" moduleLabel="Clients" moduleDescription="Client accounts, contacts, and relationships" />;
+
+  // Quotes module visibility is independent of clients — gate the embedded
+  // card on the user's quotes permissions, not their clients permissions.
+  const quotePerms = await resolveModulePerms(user.id, user.role, "quotes");
 
   const client = await db.client.findUnique({
     where: { id: clientId },
@@ -219,6 +224,9 @@ export default async function ClientDetailPage({ params }: Props) {
         </Card>
       </div>
     ),
+    quotes: quotePerms.canView ? (
+      <QuotesCard clientId={client.id} canCreate={quotePerms.canCreate} />
+    ) : null,
     tasks: (
       <Card className="h-full">
         <CardHeader>

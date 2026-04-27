@@ -35,6 +35,7 @@ export const DEFAULT_SIDEBAR_CONFIG: SidebarConfig = {
       items: [
         { key: "clients", visible: true },
         { key: "projects", visible: true },
+        { key: "quotes", visible: true },
         { key: "contracts", visible: true },
         { key: "certifications", visible: true },
       ],

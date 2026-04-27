@@ -129,6 +129,36 @@ export function revalidateTask(opts: {
   }
 }
 
+// ─── QUOTE ────────────────────────────────────────────────────
+//
+// A quote appears on: quotes list, quote editor/detail, client detail
+// (client's quotes section), project detail (project's quotes section),
+// dashboard.
+
+export function revalidateQuote(
+  quoteId: string,
+  opts?: {
+    clientId?: string | null;
+    previousClientId?: string | null;
+    projectId?: string | null;
+    previousProjectId?: string | null;
+  }
+) {
+  revalidatePath(`/quotes/${quoteId}`);
+  revalidatePath(`/quotes/${quoteId}/edit`);
+  revalidatePath("/quotes", "layout");
+  revalidatePath("/dashboard");
+
+  if (opts?.clientId) revalidatePath(`/clients/${opts.clientId}`);
+  if (opts?.previousClientId && opts.previousClientId !== opts.clientId) {
+    revalidatePath(`/clients/${opts.previousClientId}`);
+  }
+  if (opts?.projectId) revalidatePath(`/projects/${opts.projectId}`);
+  if (opts?.previousProjectId && opts.previousProjectId !== opts.projectId) {
+    revalidatePath(`/projects/${opts.previousProjectId}`);
+  }
+}
+
 // ─── COMMENT ──────────────────────────────────────────────────
 //
 // Comments are attached to a parent entity (project, client, task, etc.). A
