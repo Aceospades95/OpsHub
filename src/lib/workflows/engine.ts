@@ -39,9 +39,19 @@
 
 import { db } from "@/lib/db";
 import { resolveScheduledFor } from "./timing";
+import { randomBytes } from "crypto";
 import { buildInstanceContext, type WorkflowContext } from "./context";
 import { runStepHandler } from "./handlers";
-import { generateQuoteToken } from "@/lib/quotes/tokens";
+
+/**
+ * 32-byte CSPRNG token used for portal links. URL-safe (base64url) so
+ * it survives copy-paste, link shorteners, and email-quoting. Lives
+ * here rather than in a shared util because it's only used once — at
+ * instance create — and inlining keeps the dependency graph tight.
+ */
+function generatePortalToken(): string {
+  return randomBytes(32).toString("base64url");
+}
 import type {
   WorkflowInstance,
   WorkflowInstanceStep,
@@ -101,7 +111,7 @@ export async function createInstance(
   });
   let portalToken = existingToken?.token ?? null;
   if (!portalToken) {
-    const tokenValue = generateQuoteToken();
+    const tokenValue = generatePortalToken();
     await db.portalToken.create({
       data: {
         subjectType: input.subjectType,

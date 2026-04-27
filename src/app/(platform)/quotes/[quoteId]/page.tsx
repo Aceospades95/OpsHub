@@ -7,11 +7,9 @@ import { requireAuth, resolveModulePerms } from "@/lib/permissions";
 import { AccessDenied } from "@/components/shared/access-denied";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { StatusBadge } from "@/components/shared/status-badge";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { formatCurrency } from "@/lib/quotes/totals";
-import { absoluteUrl } from "@/lib/url";
 import { QuoteActions } from "./quote-actions";
 
 interface Props {
@@ -27,7 +25,7 @@ export default async function QuoteDetailPage({ params }: Props) {
       <AccessDenied
         module="quotes"
         moduleLabel="Quotes"
-        moduleDescription="Sales quotes, line-item builder, templates, and catalog"
+        moduleDescription="Stored sales quotes and proposals"
       />
     );
   }
@@ -35,34 +33,23 @@ export default async function QuoteDetailPage({ params }: Props) {
   const quote = await db.quote.findUnique({
     where: { id: quoteId },
     include: {
-      client: {
-        select: {
-          id: true,
-          name: true,
-          contacts: {
-            where: { isPrimary: true },
-            select: { email: true },
-            take: 1,
-          },
-        },
-      },
+      client: { select: { id: true, name: true } },
       project: { select: { id: true, name: true } },
       createdBy: { select: { id: true, name: true } },
       assignedTo: { select: { id: true, name: true } },
       lineItems: { orderBy: { position: "asc" } },
-      events: {
-        orderBy: { createdAt: "desc" },
-        take: 50,
-      },
     },
   });
   if (!quote) notFound();
 
-  const editable = quote.status === "DRAFT" || quote.status === "REVISED";
-  const primaryEmail = quote.client.contacts[0]?.email ?? null;
-  const shareUrl = quote.publicToken
-    ? absoluteUrl(`/q/${quote.publicToken}`)
-    : null;
+  // Recompute the discount amount from cached totals — saved with the
+  // quote — so the read view doesn't drift if the schema's cached
+  // total + taxAmount + subtotal disagree (shouldn't happen, but
+  // computing defensively here is essentially free).
+  const discountAmount = Math.max(
+    0,
+    quote.subtotal - (quote.total - quote.taxAmount)
+  );
 
   return (
     <div>
@@ -71,17 +58,15 @@ export default async function QuoteDetailPage({ params }: Props) {
         description={quote.quoteNumber}
         actions={
           <div className="flex items-center gap-2">
-            {editable && perms.canEdit && (
+            {perms.canEdit && (
               <Link href={`/quotes/${quote.id}/edit`}>
                 <Button>Edit</Button>
               </Link>
             )}
             <QuoteActions
               quoteId={quote.id}
-              status={quote.status}
               canEdit={perms.canEdit}
               canDelete={perms.canDelete}
-              defaultRecipient={primaryEmail}
               hasProject={quote.project != null}
             />
           </div>
@@ -92,10 +77,7 @@ export default async function QuoteDetailPage({ params }: Props) {
         <div className="lg:col-span-2 space-y-6">
           <Card>
             <CardHeader>
-              <div className="flex items-start justify-between gap-4">
-                <CardTitle>Overview</CardTitle>
-                <StatusBadge status={quote.status} />
-              </div>
+              <CardTitle>Overview</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4 text-sm">
               <dl className="grid grid-cols-2 gap-x-4 gap-y-3">
@@ -182,7 +164,7 @@ export default async function QuoteDetailPage({ params }: Props) {
               {quote.lineItems.length === 0 ? (
                 <p className="text-sm text-muted-foreground">
                   No line items yet.{" "}
-                  {editable && perms.canEdit && (
+                  {perms.canEdit && (
                     <Link href={`/quotes/${quote.id}/edit`} className="text-primary hover:underline">
                       Add some.
                     </Link>
@@ -287,19 +269,13 @@ export default async function QuoteDetailPage({ params }: Props) {
                 {quote.discountType !== "NONE" && quote.discountValue > 0 && (
                   <div className="flex items-center justify-between">
                     <dt className="text-muted-foreground">
-                      Discount{" "}
+                      Discount
                       {quote.discountType === "PERCENT"
-                        ? `(${quote.discountValue}%)`
+                        ? ` (${quote.discountValue}%)`
                         : ""}
                     </dt>
                     <dd className="tabular-nums">
-                      −{formatCurrency(
-                        quote.subtotal -
-                          (quote.taxAmount === 0
-                            ? quote.total
-                            : quote.total - quote.taxAmount),
-                        quote.currency
-                      )}
+                      −{formatCurrency(discountAmount, quote.currency)}
                     </dd>
                   </div>
                 )}
@@ -320,56 +296,6 @@ export default async function QuoteDetailPage({ params }: Props) {
                   </dd>
                 </div>
               </dl>
-            </CardContent>
-          </Card>
-
-          {shareUrl && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Public link</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2 text-sm">
-                <p className="text-xs text-muted-foreground">
-                  Anyone with this link can view, accept, or reject the
-                  quote.
-                </p>
-                <a
-                  href={shareUrl}
-                  target="_blank"
-                  rel="noopener"
-                  className="block font-mono text-xs break-all text-primary hover:underline"
-                >
-                  {shareUrl}
-                </a>
-                {quote.firstViewedAt && (
-                  <p className="text-xs text-muted-foreground">
-                    First viewed{" "}
-                    {format(quote.firstViewedAt, "MMM d, yyyy 'at' h:mm a")}
-                  </p>
-                )}
-              </CardContent>
-            </Card>
-          )}
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Activity</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3 text-sm">
-              {quote.events.length === 0 ? (
-                <p className="text-muted-foreground">No activity yet.</p>
-              ) : (
-                quote.events.map((e) => (
-                  <div key={e.id} className="text-xs">
-                    <p className="font-medium capitalize">
-                      {e.eventType.replace(/_/g, " ")}
-                    </p>
-                    <p className="text-muted-foreground">
-                      {format(e.createdAt, "MMM d, yyyy h:mm a")}
-                    </p>
-                  </div>
-                ))
-              )}
             </CardContent>
           </Card>
 

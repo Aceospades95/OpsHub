@@ -4,14 +4,11 @@ import { db } from "@/lib/db";
 import { requireAuth, resolveModulePerms } from "@/lib/permissions";
 import { logActivity } from "@/lib/activity";
 import { revalidateQuote, revalidateProject } from "@/lib/revalidate-entity";
-import { computeQuoteTotals, formatCurrency } from "@/lib/quotes/totals";
+import { computeQuoteTotals } from "@/lib/quotes/totals";
 import { nextQuoteNumber } from "@/lib/quotes/numbering";
-import { generateQuoteToken } from "@/lib/quotes/tokens";
-import { sendFromTemplate } from "@/lib/email";
-import { absoluteUrl } from "@/lib/url";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import type { Prisma, QuoteStatus } from "@prisma/client";
+import type { Prisma } from "@prisma/client";
 
 // ─── Validation ──────────────────────────────────────────────────────────
 
@@ -266,10 +263,30 @@ export async function createQuote(opts: CreateQuoteOptions = {}) {
 
   if (!seedClientId) return { error: "A client is required to create a quote" } as const;
 
+  // Resolve client + (optional) project names so the quote-number
+  // generator can build a CLIENT-PROJECT-YEAR-NNNN style id. We've
+  // already validated the client id at this point so a missing row
+  // would be a programming error; treat as a hard failure.
+  const seedClient = await db.client.findUnique({
+    where: { id: seedClientId },
+    select: { name: true },
+  });
+  if (!seedClient) {
+    return { error: "Client not found" } as const;
+  }
+  const seedProjectName = seedProjectId
+    ? (
+        await db.project.findUnique({
+          where: { id: seedProjectId },
+          select: { name: true },
+        })
+      )?.name ?? null
+    : null;
+
   // Retry the create if quoteNumber collides — concurrent creates in the
   // same year can race. After two retries, surface the error.
   for (let attempt = 0; attempt < 3; attempt++) {
-    const number = await nextQuoteNumber();
+    const number = await nextQuoteNumber(seedClient.name, seedProjectName);
     try {
       const totals = computeQuoteTotals({
         lineItems: seedItems.map((li) => ({
@@ -373,14 +390,8 @@ export async function updateQuote(input: { id: string } & QuoteUpsertInput) {
   });
   if (!existing) return { error: "Quote not found" } as const;
 
-  // Phase 1 only allows editing of drafts and revisions. Sent/accepted
-  // quotes need an explicit `reviseQuote` (Phase 2) before they can be
-  // changed — this protects the public-facing snapshot the client saw.
-  if (existing.status !== "DRAFT" && existing.status !== "REVISED") {
-    return {
-      error: `Quote in status ${existing.status} cannot be edited. Create a revision instead.`,
-    } as const;
-  }
+  // No lifecycle gating — this app stores quotes as documents, not as
+  // a sales pipeline. Anyone with edit permission can change any quote.
 
   await persistQuoteWithItems(input.id, parsed.data);
   await logQuoteEvent(input.id, "edited", user.id);
@@ -407,14 +418,6 @@ export async function deleteQuote(id: string) {
     select: { id: true, status: true, clientId: true, projectId: true, title: true },
   });
   if (!quote) return { error: "Quote not found" } as const;
-
-  // Only drafts can be hard-deleted. Sent/accepted quotes are part of the
-  // audit trail and should be preserved — Phase 2 will add archival.
-  if (quote.status !== "DRAFT") {
-    return {
-      error: `Only draft quotes can be deleted (current status: ${quote.status})`,
-    } as const;
-  }
 
   await db.quote.delete({ where: { id } });
   await logActivity("deleted", "quote", id, user.id, quote.title, {
@@ -476,374 +479,6 @@ export async function saveQuoteAsTemplate(input: { id: string; name: string; des
   return { success: true, id: tpl.id } as const;
 }
 
-// ─── Send / revise / accept / reject (Phase 2) ──────────────────────────
-
-const sendQuoteSchema = z.object({
-  id: z.string().min(1),
-  /** Optional override for the recipient. Defaults to the client's primary
-   *  contact email. */
-  to: z.string().email().nullish(),
-  /** Optional subject override for one-off sends. */
-  subject: z.string().min(1).nullish(),
-  /** Optional message override prepended above the standard CTA. */
-  message: z.string().nullish(),
-});
-
-export async function sendQuote(input: z.infer<typeof sendQuoteSchema>) {
-  const user = await requireAuth();
-  const perms = await resolveModulePerms(user.id, user.role, "quotes");
-  if (!perms.canEdit) return { error: "Permission denied" } as const;
-
-  const parsed = sendQuoteSchema.safeParse(input);
-  if (!parsed.success) {
-    return {
-      error: "Invalid input",
-      fieldErrors: parsed.error.flatten().fieldErrors,
-    } as const;
-  }
-
-  const quote = await db.quote.findUnique({
-    where: { id: parsed.data.id },
-    include: {
-      client: {
-        select: {
-          id: true,
-          name: true,
-          contacts: {
-            where: { isPrimary: true },
-            select: { name: true, email: true },
-            take: 1,
-          },
-        },
-      },
-    },
-  });
-  if (!quote) return { error: "Quote not found" } as const;
-
-  // Sending is allowed from DRAFT and REVISED only. Already-sent quotes
-  // get re-sent via the same action — but we still log a fresh event.
-  const isInitialSend = quote.status === "DRAFT" || quote.status === "REVISED";
-
-  // Resolve recipient: explicit override > primary contact > error.
-  const recipient =
-    parsed.data.to?.trim() ||
-    quote.client.contacts[0]?.email ||
-    null;
-  if (!recipient) {
-    return {
-      error: "No recipient email — set a primary contact on the client or supply one in the Send dialog",
-    } as const;
-  }
-
-  // Mint or reuse the public token. Reusing on resend keeps any links
-  // already shared (Slack/email forwards) working.
-  const publicToken = quote.publicToken ?? generateQuoteToken();
-  const shareUrl = absoluteUrl(`/q/${publicToken}`);
-
-  await db.quote.update({
-    where: { id: quote.id },
-    data: {
-      publicToken,
-      sentAt: quote.sentAt ?? new Date(),
-      status: isInitialSend ? "SENT" : quote.status,
-    },
-  });
-
-  await logQuoteEvent(quote.id, "sent", user.id, {
-    to: recipient,
-    resend: !isInitialSend,
-  });
-
-  // Email the client. We use the existing notification template shape so
-  // the look matches transactional emails the rest of the app sends. The
-  // dedicated quote template can come later if marketing wants finer
-  // control over branding.
-  await sendFromTemplate(
-    "quote-sent",
-    {
-      recipientName: quote.client.contacts[0]?.name ?? quote.client.name,
-      senderName: user.name,
-      quoteNumber: quote.quoteNumber,
-      quoteTitle: quote.title,
-      total: formatCurrency(quote.total, quote.currency),
-      validUntil: quote.validUntil
-        ? new Date(quote.validUntil).toLocaleDateString()
-        : null,
-      message: parsed.data.message?.trim() || null,
-      shareUrl,
-      subjectOverride: parsed.data.subject?.trim() || null,
-    },
-    {
-      to: recipient,
-      entityType: "quote",
-      entityId: quote.id,
-    }
-  );
-
-  await logActivity(
-    isInitialSend ? "sent" : "re-sent",
-    "quote",
-    quote.id,
-    user.id,
-    quote.title,
-    { clientId: quote.clientId, projectId: quote.projectId }
-  );
-  revalidateQuote(quote.id, {
-    clientId: quote.clientId,
-    projectId: quote.projectId,
-  });
-
-  return { success: true, shareUrl, recipient } as const;
-}
-
-export async function reviseQuote(id: string) {
-  const user = await requireAuth();
-  const perms = await resolveModulePerms(user.id, user.role, "quotes");
-  if (!perms.canEdit) return { error: "Permission denied" } as const;
-
-  const original = await db.quote.findUnique({
-    where: { id },
-    select: { id: true, status: true, clientId: true, projectId: true },
-  });
-  if (!original) return { error: "Quote not found" } as const;
-  if (original.status === "DRAFT") {
-    return { error: "Drafts can be edited directly — no revision needed" } as const;
-  }
-
-  // Spawn a new draft seeded from the original via the existing duplicate
-  // path, then link the parent and flip the original to REVISED.
-  const child = await createQuote({ fromQuoteId: id });
-  if ("error" in child) return child;
-
-  await db.quote.update({
-    where: { id: child.id },
-    data: { parentQuoteId: id, status: "DRAFT" },
-  });
-  await db.quote.update({
-    where: { id },
-    data: { status: "REVISED" },
-  });
-
-  await logQuoteEvent(id, "revised", user.id, { newQuoteId: child.id });
-  await logQuoteEvent(child.id, "created", user.id, {
-    revisionOf: id,
-  });
-  revalidateQuote(id, {
-    clientId: original.clientId,
-    projectId: original.projectId,
-  });
-  revalidateQuote(child.id, {
-    clientId: original.clientId,
-    projectId: original.projectId,
-  });
-
-  return { success: true, id: child.id } as const;
-}
-
-// ─── Public token actions (no full auth) ────────────────────────────────
-//
-// These run in response to the quote recipient clicking the link in their
-// email. They don't require an OpsHub session — the token is the auth.
-// Each action mints a QuoteEvent with actorType="client" so the audit
-// trail clearly distinguishes recipient actions from owner actions.
-
-const acceptPublicSchema = z.object({
-  token: z.string().min(1),
-  signatureName: z.string().min(1, "Type your name to sign"),
-  signatureData: z.string().nullish(),
-  /** IDs of optional rows the client toggled ON. */
-  selectedOptionalItemIds: z.array(z.string()).default([]),
-  /** Forwarded by the public route handler so we can audit which IP signed. */
-  ip: z.string().nullish(),
-});
-
-export async function acceptQuotePublic(input: z.infer<typeof acceptPublicSchema>) {
-  const parsed = acceptPublicSchema.safeParse(input);
-  if (!parsed.success) {
-    return {
-      error: "Invalid input",
-      fieldErrors: parsed.error.flatten().fieldErrors,
-    } as const;
-  }
-
-  const quote = await db.quote.findUnique({
-    where: { publicToken: parsed.data.token },
-    include: { lineItems: true },
-  });
-  if (!quote) return { error: "Quote not found" } as const;
-  if (quote.status === "ACCEPTED" || quote.status === "REJECTED") {
-    return { error: `This quote was already ${quote.status.toLowerCase()}.` } as const;
-  }
-  if (quote.validUntil && quote.validUntil.getTime() < Date.now()) {
-    return { error: "This quote has expired." } as const;
-  }
-
-  const selectedSet = new Set(parsed.data.selectedOptionalItemIds);
-
-  // Recompute totals based on the client's optional-row selections so the
-  // accepted total reflects exactly what they agreed to.
-  const updatedItems = quote.lineItems.map((li) => ({
-    id: li.id,
-    isOptional: li.isOptional,
-    isSelected: li.isOptional ? selectedSet.has(li.id) : true,
-    quantity: li.quantity,
-    unitPrice: li.unitPrice,
-    discountType: li.discountType,
-    discountValue: li.discountValue,
-  }));
-  const totals = computeQuoteTotals({
-    lineItems: updatedItems,
-    discountType: quote.discountType,
-    discountValue: quote.discountValue,
-    taxRate: quote.taxRate,
-  });
-
-  await db.$transaction(async (tx) => {
-    await tx.quote.update({
-      where: { id: quote.id },
-      data: {
-        status: "ACCEPTED",
-        acceptedAt: new Date(),
-        acceptedSignatureName: parsed.data.signatureName,
-        acceptedSignatureData: parsed.data.signatureData ?? null,
-        acceptedIp: parsed.data.ip ?? null,
-        subtotal: totals.subtotal,
-        taxAmount: totals.taxAmount,
-        total: totals.total,
-      },
-    });
-
-    // Persist optional-row selections — what the client picks lives on
-    // the row itself so the read view reflects the accepted shape.
-    for (let i = 0; i < quote.lineItems.length; i++) {
-      const li = quote.lineItems[i];
-      const isSelected = li.isOptional ? selectedSet.has(li.id) : true;
-      await tx.quoteLineItem.update({
-        where: { id: li.id },
-        data: {
-          isSelected,
-          subtotal: totals.lineSubtotals[i]?.subtotal ?? 0,
-        },
-      });
-    }
-  });
-
-  await db.quoteEvent.create({
-    data: {
-      quoteId: quote.id,
-      eventType: "accepted",
-      actorType: "client",
-      actorId: null,
-      metadata: JSON.stringify({
-        signatureName: parsed.data.signatureName,
-        ip: parsed.data.ip ?? null,
-        acceptedTotal: totals.total,
-      }),
-    },
-  });
-
-  revalidateQuote(quote.id, {
-    clientId: quote.clientId,
-    projectId: quote.projectId,
-  });
-  revalidatePath(`/q/${parsed.data.token}`);
-  return { success: true } as const;
-}
-
-const rejectPublicSchema = z.object({
-  token: z.string().min(1),
-  reason: z.string().nullish(),
-  ip: z.string().nullish(),
-});
-
-export async function rejectQuotePublic(input: z.infer<typeof rejectPublicSchema>) {
-  const parsed = rejectPublicSchema.safeParse(input);
-  if (!parsed.success) {
-    return {
-      error: "Invalid input",
-      fieldErrors: parsed.error.flatten().fieldErrors,
-    } as const;
-  }
-
-  const quote = await db.quote.findUnique({
-    where: { publicToken: parsed.data.token },
-    select: {
-      id: true,
-      clientId: true,
-      projectId: true,
-      status: true,
-    },
-  });
-  if (!quote) return { error: "Quote not found" } as const;
-  if (quote.status === "ACCEPTED" || quote.status === "REJECTED") {
-    return { error: `This quote was already ${quote.status.toLowerCase()}.` } as const;
-  }
-
-  await db.quote.update({
-    where: { id: quote.id },
-    data: {
-      status: "REJECTED",
-      rejectedAt: new Date(),
-      rejectionReason: parsed.data.reason?.trim() || null,
-    },
-  });
-  await db.quoteEvent.create({
-    data: {
-      quoteId: quote.id,
-      eventType: "rejected",
-      actorType: "client",
-      metadata: parsed.data.reason
-        ? JSON.stringify({ reason: parsed.data.reason, ip: parsed.data.ip ?? null })
-        : null,
-    },
-  });
-
-  revalidateQuote(quote.id, {
-    clientId: quote.clientId,
-    projectId: quote.projectId,
-  });
-  revalidatePath(`/q/${parsed.data.token}`);
-  return { success: true } as const;
-}
-
-/**
- * Records that the client opened the public quote URL. Called from the
- * public page on first render. Idempotent — the first hit sets
- * firstViewedAt, subsequent hits only mint VIEWED events when the row
- * was not already in the VIEWED+ chain.
- */
-export async function recordQuoteViewPublic(token: string, ip: string | null) {
-  const quote = await db.quote.findUnique({
-    where: { publicToken: token },
-    select: { id: true, status: true, firstViewedAt: true, clientId: true, projectId: true },
-  });
-  if (!quote) return { error: "Quote not found" } as const;
-
-  const isFirstView = quote.firstViewedAt == null;
-  if (isFirstView) {
-    await db.quote.update({
-      where: { id: quote.id },
-      data: {
-        firstViewedAt: new Date(),
-        // Only flip status forward — never back over ACCEPTED/REJECTED.
-        status: quote.status === "SENT" ? "VIEWED" : quote.status,
-      },
-    });
-    await db.quoteEvent.create({
-      data: {
-        quoteId: quote.id,
-        eventType: "viewed",
-        actorType: "client",
-        metadata: ip ? JSON.stringify({ ip }) : null,
-      },
-    });
-    revalidateQuote(quote.id, {
-      clientId: quote.clientId,
-      projectId: quote.projectId,
-    });
-  }
-  return { success: true, isFirstView } as const;
-}
 
 // ─── Conversion to project (Phase 2) ─────────────────────────────────────
 
@@ -867,11 +502,6 @@ export async function convertQuoteToProject(id: string) {
     },
   });
   if (!quote) return { error: "Quote not found" } as const;
-  if (quote.status !== "ACCEPTED") {
-    return {
-      error: "Only accepted quotes can be converted to projects",
-    } as const;
-  }
   if (quote.project) {
     return {
       error: "This quote is already linked to a project",
@@ -959,7 +589,6 @@ export async function convertQuoteToInvoice(id: string) {
 // ─── Quote queries ──────────────────────────────────────────────────────
 
 export interface QuoteListFilters {
-  status?: QuoteStatus;
   clientId?: string;
   projectId?: string;
   assignedToId?: string;
@@ -972,7 +601,6 @@ export async function listQuotes(filters: QuoteListFilters = {}) {
   if (!perms.canView) return { error: "Permission denied" } as const;
 
   const where: Prisma.QuoteWhereInput = {};
-  if (filters.status) where.status = filters.status;
   if (filters.clientId) where.clientId = filters.clientId;
   if (filters.projectId) where.projectId = filters.projectId;
   if (filters.assignedToId) where.assignedToId = filters.assignedToId;

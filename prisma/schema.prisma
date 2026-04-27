@@ -297,6 +297,7 @@ model User {
   createdWorkflowInstances       WorkflowInstance[]      @relation("WorkflowInstanceCreator")
   completedWorkflowInstanceSteps WorkflowInstanceStep[]  @relation("WorkflowInstanceStepCompletedBy")
   createdWorkflowEmailTemplates  WorkflowEmailTemplate[] @relation("WorkflowEmailTemplateCreator")
+  createdScheduledTasks          ScheduledTask[]         @relation("ScheduledTaskCreator")
 }
 
 model ModulePermission {
@@ -1641,3 +1642,67 @@ model WorkflowTrigger {
 // (Candidate model removed — hiring now flows through workflow
 //  triggers on User creation and project assignment. The
 //  WorkflowSubjectType enum no longer offers CANDIDATE.)
+
+// ─── SCHEDULED TASKS ────────────────────────────────────────
+//
+// Admin-built recurring jobs. Distinct from src/lib/jobs/ which holds
+// code-defined system jobs (contract expiry, certification expiry,
+// etc.) — those ship as part of the build. Scheduled tasks are
+// data-driven so non-developers can wire up things like "email the
+// project-status report to the leadership group every Monday at 9 AM"
+// from the admin UI.
+//
+// The runner — `custom-scheduled-tasks` in src/lib/jobs/jobs/ —
+// wakes up hourly via cron, finds rows whose next run window has
+// arrived, and dispatches each to its handler.
+
+enum ScheduledTaskFrequency {
+  HOURLY
+  DAILY
+  WEEKLY
+  MONTHLY
+}
+
+enum ScheduledTaskType {
+  /// Render a registered report and email it to a recipient list.
+  /// config: { reportKey: string, recipients: string[] }
+  EMAIL_REPORT
+  /// Send a static or lightly-templated message to a recipient list.
+  /// config: { subject: string, body: string, recipients: string[] }
+  EMAIL_MESSAGE
+}
+
+model ScheduledTask {
+  id            String                 @id @default(cuid())
+  name          String
+  description   String?                @db.Text
+  taskType      ScheduledTaskType
+  frequency     ScheduledTaskFrequency
+  /// Hour of the day (UTC) the task should fire. 0-23. Honored by
+  /// DAILY / WEEKLY / MONTHLY. HOURLY tasks ignore it.
+  hourUtc       Int                    @default(9)
+  /// 0=Sunday … 6=Saturday. Honored by WEEKLY only.
+  dayOfWeek     Int?
+  /// 1-28. Honored by MONTHLY only. Capped at 28 so every month has
+  /// a valid trigger date — calendars with fewer days don't surprise.
+  dayOfMonth    Int?
+  /// Type-specific JSON config — see ScheduledTaskType comments above.
+  config        String                 @db.Text
+  isActive      Boolean                @default(true)
+  /// When the task last fired. Drives idempotency in the runner —
+  /// a task that already ran in the current window is skipped.
+  lastRunAt     DateTime?
+  /// "success" | "failed" — surfaces in the admin list as a colored
+  /// badge so failing tasks are visible at a glance.
+  lastRunStatus String?
+  lastRunOutput String?                @db.Text
+  lastRunError  String?                @db.Text
+  createdById   String
+  createdAt     DateTime               @default(now())
+  updatedAt     DateTime               @updatedAt
+
+  createdBy User @relation("ScheduledTaskCreator", fields: [createdById], references: [id])
+
+  @@index([isActive, frequency])
+  @@index([lastRunAt])
+}

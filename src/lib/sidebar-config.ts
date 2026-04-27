@@ -27,7 +27,6 @@ export const DEFAULT_SIDEBAR_CONFIG: SidebarConfig = {
         { key: "dashboard", visible: true },
         { key: "tasks", visible: true },
         { key: "team", visible: true },
-        { key: "workflows", visible: true },
       ],
     },
     {
@@ -54,6 +53,7 @@ export const DEFAULT_SIDEBAR_CONFIG: SidebarConfig = {
       id: "admin-section",
       title: "",
       items: [
+        { key: "workflows", visible: true },
         { key: "settings", visible: true },
       ],
     },

@@ -9,31 +9,49 @@ import { AccessDenied } from "@/components/shared/access-denied";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
-import { StatusBadge } from "@/components/shared/status-badge";
 import { formatCurrency } from "@/lib/quotes/totals";
 
 import { QuoteCreateButton } from "./quote-create-button";
 import { QuoteFilters } from "./quote-filters";
-import { Prisma, QuoteStatus } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 
-const STATUS_VALUES: QuoteStatus[] = [
-  "DRAFT",
-  "SENT",
-  "VIEWED",
-  "ACCEPTED",
-  "REJECTED",
-  "EXPIRED",
-  "REVISED",
+type SortKey = "updated" | "created" | "client" | "project" | "number" | "total";
+
+const VALID_SORTS: SortKey[] = [
+  "updated",
+  "created",
+  "client",
+  "project",
+  "number",
+  "total",
 ];
 
-function isStatus(s: string | undefined): s is QuoteStatus {
-  return !!s && (STATUS_VALUES as string[]).includes(s);
+function isSort(s: string | undefined): s is SortKey {
+  return !!s && (VALID_SORTS as string[]).includes(s);
+}
+
+function orderByForSort(sort: SortKey): Prisma.QuoteOrderByWithRelationInput {
+  switch (sort) {
+    case "client":
+      return { client: { name: "asc" } };
+    case "project":
+      return { project: { name: "asc" } };
+    case "number":
+      return { quoteNumber: "asc" };
+    case "total":
+      return { total: "desc" };
+    case "created":
+      return { createdAt: "desc" };
+    case "updated":
+    default:
+      return { updatedAt: "desc" };
+  }
 }
 
 export default async function QuotesPage({
   searchParams,
 }: {
-  searchParams: { status?: string; q?: string };
+  searchParams: { clientId?: string; projectId?: string; sort?: string; q?: string };
 }) {
   const user = await requireAuth();
   const perms = await resolveModulePerms(user.id, user.role, "quotes");
@@ -42,97 +60,52 @@ export default async function QuotesPage({
       <AccessDenied
         module="quotes"
         moduleLabel="Quotes"
-        moduleDescription="Sales quotes, line-item builder, templates, and catalog"
+        moduleDescription="Stored sales quotes and proposals"
       />
     );
   }
 
-  const status = isStatus(searchParams.status) ? searchParams.status : undefined;
+  const sort = isSort(searchParams.sort) ? searchParams.sort : "updated";
   const search = searchParams.q?.trim();
+  const clientId = searchParams.clientId?.trim();
+  const projectId = searchParams.projectId?.trim();
 
   const where: Prisma.QuoteWhereInput = {};
-  if (status) where.status = status;
+  if (clientId) where.clientId = clientId;
+  if (projectId) where.projectId = projectId;
   if (search) {
     where.OR = [
       { title: { contains: search, mode: "insensitive" } },
       { quoteNumber: { contains: search, mode: "insensitive" } },
       { client: { name: { contains: search, mode: "insensitive" } } },
+      { project: { name: { contains: search, mode: "insensitive" } } },
     ];
   }
 
-  const clients = await db.client.findMany({
-    where: { status: { in: ["ACTIVE", "PROSPECT"] } },
-    select: { id: true, name: true },
-    orderBy: { name: "asc" },
-  });
-
-  const [quotes, openValueAgg, acceptedLast30Agg, allTimeAgg] = await Promise.all([
+  const [clients, quotes] = await Promise.all([
+    db.client.findMany({
+      where: { status: { in: ["ACTIVE", "PROSPECT"] } },
+      select: { id: true, name: true },
+      orderBy: { name: "asc" },
+    }),
     db.quote.findMany({
       where,
-      orderBy: { updatedAt: "desc" },
+      orderBy: orderByForSort(sort),
       include: {
         client: { select: { id: true, name: true } },
         project: { select: { id: true, name: true } },
-        assignedTo: { select: { id: true, name: true } },
       },
-      take: 200,
-    }),
-    db.quote.aggregate({
-      where: { status: { in: ["DRAFT", "SENT", "VIEWED"] } },
-      _sum: { total: true },
-      _count: { _all: true },
-    }),
-    db.quote.aggregate({
-      where: {
-        status: "ACCEPTED",
-        acceptedAt: { gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) },
-      },
-      _sum: { total: true },
-      _count: { _all: true },
-    }),
-    db.quote.aggregate({
-      where: { status: { in: ["ACCEPTED", "REJECTED", "EXPIRED"] } },
-      _count: { _all: true },
+      take: 500,
     }),
   ]);
-
-  const acceptedAllTime = await db.quote.count({ where: { status: "ACCEPTED" } });
-  const winRate =
-    allTimeAgg._count._all > 0
-      ? Math.round((acceptedAllTime / allTimeAgg._count._all) * 100)
-      : null;
-
-  const metrics = [
-    {
-      label: "Open quotes",
-      value: openValueAgg._count._all.toString(),
-      sub: formatCurrency(openValueAgg._sum.total ?? 0),
-    },
-    {
-      label: "Accepted (30d)",
-      value: acceptedLast30Agg._count._all.toString(),
-      sub: formatCurrency(acceptedLast30Agg._sum.total ?? 0),
-    },
-    {
-      label: "Win rate",
-      value: winRate == null ? "—" : `${winRate}%`,
-      sub: `${acceptedAllTime}/${allTimeAgg._count._all} closed`,
-    },
-  ];
 
   return (
     <div>
       <PageHeader
         title="Quotes"
-        description="Build, track, and manage sales quotes and proposals"
+        description="Build and store sales quotes — sort, search, and download as PDF or Word."
         actions={
           <div className="flex items-center gap-2">
-            <Link
-              href="/quotes/analytics"
-              className="text-sm text-muted-foreground hover:text-foreground hover:underline"
-            >
-              Analytics
-            </Link>
             <Link
               href="/quotes/templates"
               className="text-sm text-muted-foreground hover:text-foreground hover:underline"
@@ -150,23 +123,11 @@ export default async function QuotesPage({
         }
       />
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
-        {metrics.map((m) => (
-          <Card key={m.label}>
-            <CardContent className="p-5">
-              <p className="text-xs uppercase tracking-wide text-muted-foreground">
-                {m.label}
-              </p>
-              <p className="text-2xl font-bold text-foreground mt-1">{m.value}</p>
-              <p className="text-xs text-muted-foreground mt-1">{m.sub}</p>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-
       <Suspense fallback={null}>
         <QuoteFilters
-          currentStatus={status}
+          clients={clients}
+          currentClientId={clientId}
+          currentSort={sort}
           currentSearch={search}
           resultCount={quotes.length}
         />
@@ -177,7 +138,7 @@ export default async function QuotesPage({
           icon={ReceiptText}
           title="No quotes yet"
           description={
-            status || search
+            clientId || projectId || search
               ? "No quotes match the current filter"
               : "Create your first quote to get started"
           }
@@ -192,9 +153,8 @@ export default async function QuotesPage({
                     <th className="px-4 py-3 text-left font-medium">Number</th>
                     <th className="px-4 py-3 text-left font-medium">Title</th>
                     <th className="px-4 py-3 text-left font-medium">Client</th>
-                    <th className="px-4 py-3 text-left font-medium">Status</th>
+                    <th className="px-4 py-3 text-left font-medium">Project</th>
                     <th className="px-4 py-3 text-right font-medium">Total</th>
-                    <th className="px-4 py-3 text-left font-medium">Valid until</th>
                     <th className="px-4 py-3 text-left font-medium">Updated</th>
                   </tr>
                 </thead>
@@ -225,14 +185,20 @@ export default async function QuotesPage({
                           {q.client.name}
                         </Link>
                       </td>
-                      <td className="px-4 py-3">
-                        <StatusBadge status={q.status} />
+                      <td className="px-4 py-3 text-muted-foreground">
+                        {q.project ? (
+                          <Link
+                            href={`/projects/${q.project.id}`}
+                            className="hover:text-primary hover:underline"
+                          >
+                            {q.project.name}
+                          </Link>
+                        ) : (
+                          "—"
+                        )}
                       </td>
                       <td className="px-4 py-3 text-right tabular-nums">
                         {formatCurrency(q.total, q.currency)}
-                      </td>
-                      <td className="px-4 py-3 text-muted-foreground text-xs">
-                        {q.validUntil ? format(q.validUntil, "MMM d, yyyy") : "—"}
                       </td>
                       <td className="px-4 py-3 text-muted-foreground text-xs">
                         {format(q.updatedAt, "MMM d, yyyy")}

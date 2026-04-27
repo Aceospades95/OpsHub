@@ -23,6 +23,7 @@ import { dailyReportsDigest } from "./jobs/daily-reports-digest";
 import { workflowsTick } from "./jobs/workflows-tick";
 import { workflowScheduledTriggers } from "./jobs/workflow-scheduled-triggers";
 import { workflowReminderDigest } from "./jobs/workflow-reminder-digest";
+import { customScheduledTasks } from "./jobs/custom-scheduled-tasks";
 
 export const JOBS: JobDefinition[] = [
   contractExpiryCheck,
@@ -33,6 +34,7 @@ export const JOBS: JobDefinition[] = [
   workflowsTick,
   workflowScheduledTriggers,
   workflowReminderDigest,
+  customScheduledTasks,
 ];
 
 const JOB_MAP = new Map<string, JobDefinition>(JOBS.map((j) => [j.key, j]));

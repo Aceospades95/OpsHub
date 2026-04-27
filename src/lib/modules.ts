@@ -207,7 +207,7 @@ export const MODULES: ModuleDefinition[] = [
     href: "/workflows",
     icon: "Workflow",
     description: "Automated onboarding, offboarding, and project-welcome sequences",
-    section: "main",
+    section: "admin",
     permissioned: true,
   },
   {

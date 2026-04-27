@@ -3,23 +3,23 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
+interface ClientOption {
+  id: string;
+  name: string;
+}
+
 interface QuoteFiltersProps {
-  currentStatus?: string;
+  clients: ClientOption[];
+  currentClientId?: string;
+  currentSort?: string;
   currentSearch?: string;
   resultCount: number;
 }
 
-const STATUS_TABS: { label: string; value: string }[] = [
-  { label: "All", value: "" },
-  { label: "Drafts", value: "DRAFT" },
-  { label: "Sent", value: "SENT" },
-  { label: "Accepted", value: "ACCEPTED" },
-  { label: "Rejected", value: "REJECTED" },
-  { label: "Expired", value: "EXPIRED" },
-];
-
 export function QuoteFilters({
-  currentStatus,
+  clients,
+  currentClientId,
+  currentSort,
   currentSearch,
   resultCount,
 }: QuoteFiltersProps) {
@@ -39,7 +39,7 @@ export function QuoteFilters({
     [router, searchParams]
   );
 
-  // Debounce search input — push the new query 300ms after the last keystroke.
+  // Debounced search push.
   useEffect(() => {
     const t = setTimeout(() => {
       if ((currentSearch ?? "") !== search) update({ q: search });
@@ -48,38 +48,46 @@ export function QuoteFilters({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search]);
 
-  const hasFilters = currentStatus || currentSearch;
+  const hasFilters = currentClientId || currentSearch || currentSort;
 
   return (
     <div className="flex flex-wrap items-center gap-3 mb-4">
-      <div className="flex items-center gap-1.5 flex-wrap">
-        {STATUS_TABS.map((tab) => {
-          const active =
-            (tab.value === "" && !currentStatus) || tab.value === currentStatus;
-          return (
-            <button
-              key={tab.value || "all"}
-              onClick={() => update({ status: tab.value })}
-              className={`px-3 py-1.5 text-xs font-medium rounded-full transition-colors ${
-                active
-                  ? "bg-primary text-primary-foreground"
-                  : "bg-muted text-muted-foreground hover:bg-border"
-              }`}
-            >
-              {tab.label}
-            </button>
-          );
-        })}
-      </div>
+      <select
+        value={currentClientId ?? ""}
+        onChange={(e) => update({ clientId: e.target.value })}
+        className="h-8 rounded border border-input bg-background px-2 text-xs"
+        aria-label="Filter by client"
+      >
+        <option value="">All clients</option>
+        {clients.map((c) => (
+          <option key={c.id} value={c.id}>
+            {c.name}
+          </option>
+        ))}
+      </select>
+
+      <select
+        value={currentSort ?? "updated"}
+        onChange={(e) => update({ sort: e.target.value })}
+        className="h-8 rounded border border-input bg-background px-2 text-xs"
+        aria-label="Sort"
+      >
+        <option value="updated">Recently updated</option>
+        <option value="created">Recently created</option>
+        <option value="client">Client (A–Z)</option>
+        <option value="project">Project (A–Z)</option>
+        <option value="number">Quote number</option>
+        <option value="total">Highest total</option>
+      </select>
 
       <span className="text-border hidden sm:inline">|</span>
 
       <input
         type="search"
-        placeholder="Search title, number, client…"
+        placeholder="Search title, number, client, project…"
         value={search}
         onChange={(e) => setSearch(e.target.value)}
-        className="h-8 w-64 max-w-full rounded border border-input bg-background px-3 text-xs outline-none focus:ring-2 focus:ring-primary"
+        className="h-8 w-72 max-w-full rounded border border-input bg-background px-3 text-xs outline-none focus:ring-2 focus:ring-primary"
       />
 
       <span className="text-xs text-muted-foreground">

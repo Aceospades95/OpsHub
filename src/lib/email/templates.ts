@@ -163,66 +163,6 @@ ${cta ? `${cta.label}: ${cta.url}\n\n` : ""}— OpsHub`;
   return { subject, html, text };
 };
 
-export interface QuoteSentTemplateData {
-  recipientName: string;
-  senderName: string;
-  quoteNumber: string;
-  quoteTitle: string;
-  /** Pre-formatted total, e.g. "$1,234.50". */
-  total: string;
-  /** ISO or human-readable expiration string, or null. */
-  validUntil: string | null;
-  /** Custom message from the sender, prepended above the CTA. */
-  message: string | null;
-  /** Absolute URL to the public view (`/q/:token`). */
-  shareUrl: string;
-  /** Optional override for the email subject. */
-  subjectOverride: string | null;
-}
-
-const quoteSent: EmailTemplate<QuoteSentTemplateData> = ({
-  recipientName,
-  senderName,
-  quoteNumber,
-  quoteTitle,
-  total,
-  validUntil,
-  message,
-  shareUrl,
-  subjectOverride,
-}) => {
-  const subject =
-    subjectOverride?.trim() ||
-    `Quote ${quoteNumber} — ${quoteTitle}`;
-  const messageHtml = message
-    ? `<p style="margin:0 0 16px;white-space:pre-wrap;">${escapeHtml(message)}</p>`
-    : "";
-  const validHtml = validUntil
-    ? `<p style="margin:0 0 16px;color:#555;">Valid until <strong>${escapeHtml(validUntil)}</strong>.</p>`
-    : "";
-  const html = shell(
-    quoteTitle,
-    `<p style="margin:0 0 8px;">Hi ${escapeHtml(recipientName)},</p>
-     ${messageHtml}
-     <p style="margin:0 0 8px;">${escapeHtml(senderName)} has sent you a quote for <strong>${escapeHtml(quoteTitle)}</strong>.</p>
-     <p style="margin:0 0 16px;font-size:18px;font-weight:600;">${escapeHtml(total)}</p>
-     ${validHtml}
-     <p><a href="${escapeHtml(shareUrl)}" style="display:inline-block;padding:12px 22px;background:#1a1a1a;color:#fff;text-decoration:none;border-radius:6px;font-weight:600;">View &amp; respond</a></p>
-     <p style="margin:24px 0 0;font-size:12px;color:#888;">Reference: ${escapeHtml(quoteNumber)}</p>`
-  );
-  const text = `Hi ${recipientName},
-
-${message ? `${message}\n\n` : ""}${senderName} has sent you a quote for ${quoteTitle}.
-${total}${validUntil ? ` — valid until ${validUntil}` : ""}
-
-View and respond: ${shareUrl}
-
-Reference: ${quoteNumber}
-
-— OpsHub`;
-  return { subject, html, text };
-};
-
 export interface WorkflowDigestTemplateData {
   recipientName: string;
   /** Stuck workflow steps the digest is reporting. */
@@ -370,7 +310,6 @@ export const TEMPLATES: Record<string, EmailTemplate<unknown>> = {
   notification: notification as EmailTemplate<unknown>,
   report: report as EmailTemplate<unknown>,
   test: test as EmailTemplate<unknown>,
-  "quote-sent": quoteSent as EmailTemplate<unknown>,
   "workflow-digest": workflowDigest as EmailTemplate<unknown>,
 };
 
@@ -380,7 +319,6 @@ export interface TemplateDataMap {
   notification: NotificationTemplateData;
   report: ReportTemplateData;
   test: TestTemplateData;
-  "quote-sent": QuoteSentTemplateData;
   "workflow-digest": WorkflowDigestTemplateData;
 }
 
