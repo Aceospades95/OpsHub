@@ -11,6 +11,7 @@ import { StatusBadge } from "@/components/shared/status-badge";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { formatCurrency } from "@/lib/quotes/totals";
+import { absoluteUrl } from "@/lib/url";
 import { QuoteActions } from "./quote-actions";
 
 interface Props {
@@ -34,7 +35,17 @@ export default async function QuoteDetailPage({ params }: Props) {
   const quote = await db.quote.findUnique({
     where: { id: quoteId },
     include: {
-      client: { select: { id: true, name: true } },
+      client: {
+        select: {
+          id: true,
+          name: true,
+          contacts: {
+            where: { isPrimary: true },
+            select: { email: true },
+            take: 1,
+          },
+        },
+      },
       project: { select: { id: true, name: true } },
       createdBy: { select: { id: true, name: true } },
       assignedTo: { select: { id: true, name: true } },
@@ -48,6 +59,10 @@ export default async function QuoteDetailPage({ params }: Props) {
   if (!quote) notFound();
 
   const editable = quote.status === "DRAFT" || quote.status === "REVISED";
+  const primaryEmail = quote.client.contacts[0]?.email ?? null;
+  const shareUrl = quote.publicToken
+    ? absoluteUrl(`/q/${quote.publicToken}`)
+    : null;
 
   return (
     <div>
@@ -66,6 +81,8 @@ export default async function QuoteDetailPage({ params }: Props) {
               status={quote.status}
               canEdit={perms.canEdit}
               canDelete={perms.canDelete}
+              defaultRecipient={primaryEmail}
+              hasProject={quote.project != null}
             />
           </div>
         }
@@ -292,6 +309,34 @@ export default async function QuoteDetailPage({ params }: Props) {
               </dl>
             </CardContent>
           </Card>
+
+          {shareUrl && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Public link</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2 text-sm">
+                <p className="text-xs text-muted-foreground">
+                  Anyone with this link can view, accept, or reject the
+                  quote.
+                </p>
+                <a
+                  href={shareUrl}
+                  target="_blank"
+                  rel="noopener"
+                  className="block font-mono text-xs break-all text-primary hover:underline"
+                >
+                  {shareUrl}
+                </a>
+                {quote.firstViewedAt && (
+                  <p className="text-xs text-muted-foreground">
+                    First viewed{" "}
+                    {format(quote.firstViewedAt, "MMM d, yyyy 'at' h:mm a")}
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+          )}
 
           <Card>
             <CardHeader>

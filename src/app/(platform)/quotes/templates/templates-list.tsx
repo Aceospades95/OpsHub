@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { format } from "date-fns";
-import { Trash2, FilePlus2 } from "lucide-react";
+import { Trash2, FilePlus2, Download } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
@@ -75,6 +75,14 @@ export function TemplatesList({ templates, clients, canCreate, canDelete }: Prop
                   {format(new Date(t.updatedAt), "MMM d, yyyy")}
                 </td>
                 <td className="px-4 py-3 text-right">
+                  <a
+                    href={`/api/quote-templates/${t.id}/docx`}
+                    className="text-muted-foreground hover:text-foreground text-xs mr-3 inline-flex items-center"
+                    aria-label="Download as Word"
+                  >
+                    <Download className="h-3 w-3 inline mr-1" />
+                    .docx
+                  </a>
                   {canCreate && (
                     <button
                       onClick={() => setUseTplOpen(t)}

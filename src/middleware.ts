@@ -4,7 +4,17 @@ import { NextResponse } from "next/server";
 export default auth((req) => {
   const { pathname } = req.nextUrl;
 
-  const publicPaths = ["/login", "/register", "/api/auth", "/api/health"];
+  // Public routes are reachable without a session. The quote token routes
+  // (/q/:token and /api/public/quotes/:token) are how clients view, accept,
+  // and reject the quotes you send them — they must NOT require a login.
+  const publicPaths = [
+    "/login",
+    "/register",
+    "/api/auth",
+    "/api/health",
+    "/q/",
+    "/api/public/",
+  ];
   const isPublic = publicPaths.some((p) => pathname.startsWith(p));
 
   if (!req.auth && !isPublic) {
