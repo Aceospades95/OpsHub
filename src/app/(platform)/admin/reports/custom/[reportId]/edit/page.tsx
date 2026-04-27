@@ -39,13 +39,26 @@ export default async function EditCustomReportPage({ params }: Props) {
 
   const catalog = projectCatalog();
 
+  // Fetch every distinct category so the autocomplete suggests them.
+  const existing = await db.customReport.findMany({
+    where: { category: { not: null } },
+    select: { category: true },
+    distinct: ["category"],
+  });
+  const existingCategories = existing
+    .map((r) => r.category)
+    .filter((c): c is string => Boolean(c))
+    .sort();
+
   return (
     <ReportBuilder
       reportId={report.id}
       catalog={catalog}
+      existingCategories={existingCategories}
       initial={{
         name: report.name,
         description: report.description ?? "",
+        category: report.category ?? "",
         entityType: report.entityType,
         columns: savedColumns,
         filters: savedFilters,

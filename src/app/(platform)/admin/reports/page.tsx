@@ -29,6 +29,23 @@ export default async function AdminReportsPage() {
     include: { createdBy: { select: { id: true, name: true } } },
   });
 
+  // Group custom reports by category so the list mirrors the
+  // module-bucketed system reports below. Null/empty stay in
+  // "Uncategorized" which sorts last.
+  const customByCategory = customReports.reduce<Record<string, typeof customReports>>(
+    (acc, r) => {
+      const key = r.category?.trim() || "Uncategorized";
+      (acc[key] = acc[key] || []).push(r);
+      return acc;
+    },
+    {}
+  );
+  const customCategories = Object.keys(customByCategory).sort((a, b) => {
+    if (a === "Uncategorized") return 1;
+    if (b === "Uncategorized") return -1;
+    return a.localeCompare(b);
+  });
+
   return (
     <div>
       <PageHeader
@@ -71,15 +88,22 @@ export default async function AdminReportsPage() {
         </CardContent>
       </Card>
 
-      {/* Custom reports — listed first because they're the user's own. */}
-      {customReports.length > 0 && (
-        <Card className="mb-6">
+      {/* Custom reports — listed first because they're the user's own.
+          Grouped into one card per category so they line up with the
+          module-bucketed system reports below. */}
+      {customCategories.map((cat) => (
+        <Card key={cat} className="mb-4">
           <CardHeader>
-            <CardTitle>Custom reports</CardTitle>
+            <CardTitle>
+              {cat}{" "}
+              <span className="text-xs font-normal text-muted-foreground">
+                (custom)
+              </span>
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
-              {customReports.map((r) => (
+              {customByCategory[cat].map((r) => (
                 <div
                   key={r.id}
                   className="flex items-center gap-3 rounded border border-border p-3 hover:border-primary/50 hover:bg-muted/30 transition-colors"
@@ -89,7 +113,9 @@ export default async function AdminReportsPage() {
                     className="flex-1 min-w-0 group"
                   >
                     <div className="flex items-center gap-2 flex-wrap">
-                      <p className="text-sm font-semibold group-hover:underline">{r.name}</p>
+                      <p className="text-sm font-semibold group-hover:underline">
+                        {r.name}
+                      </p>
                       <Badge variant="outline" className="text-[10px]">
                         {ENTITY_REGISTRY[r.entityType].label}
                       </Badge>
@@ -119,7 +145,7 @@ export default async function AdminReportsPage() {
             </div>
           </CardContent>
         </Card>
-      )}
+      ))}
 
       {modules.map((mod) => (
         <Card key={mod} className="mb-4">

@@ -1751,6 +1751,10 @@ model CustomReport {
   id           String              @id @default(cuid())
   name         String
   description  String?             @db.Text
+  /// Free-form grouping label rendered on /admin/reports. Lets admins
+  /// organize custom reports the same way system reports group by
+  /// module. Null = "Uncategorized" bucket.
+  category     String?
   entityType   CustomReportEntity
   /// JSON array of column keys from the entity's registry. Order is
   /// the order they appear in the rendered table + CSV.
@@ -1773,4 +1777,5 @@ model CustomReport {
 
   @@index([entityType])
   @@index([isActive])
+  @@index([category])
 }

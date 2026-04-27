@@ -1,6 +1,7 @@
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 
+import { db } from "@/lib/db";
 import { ENTITY_REGISTRY } from "@/lib/reports/custom/entities";
 import { ReportBuilder } from "../report-builder";
 import type { EntityCatalogEntry } from "../shared-types";
@@ -13,13 +14,27 @@ export default async function NewCustomReportPage() {
   const catalog = projectCatalog();
   const first = catalog[0];
 
+  // Pull existing category labels so the autocomplete suggests them.
+  // Distinct query feeds a <datalist> in the builder UI.
+  const existing = await db.customReport.findMany({
+    where: { category: { not: null } },
+    select: { category: true },
+    distinct: ["category"],
+  });
+  const existingCategories = existing
+    .map((r) => r.category)
+    .filter((c): c is string => Boolean(c))
+    .sort();
+
   return (
     <ReportBuilder
       reportId={null}
       catalog={catalog}
+      existingCategories={existingCategories}
       initial={{
         name: "",
         description: "",
+        category: "",
         entityType: first.entity,
         columns: first.defaultColumns,
         filters: [],

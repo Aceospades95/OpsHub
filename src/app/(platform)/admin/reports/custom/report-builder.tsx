@@ -30,6 +30,7 @@ interface ReportBuilderProps {
   initial: {
     name: string;
     description: string;
+    category: string;
     entityType: CustomReportEntity;
     columns: string[];
     filters: SerializedFilter[];
@@ -38,17 +39,21 @@ interface ReportBuilderProps {
     isActive: boolean;
   };
   catalog: EntityCatalogEntry[];
+  /** Existing category labels to suggest in the autocomplete. */
+  existingCategories: string[];
 }
 
 export function ReportBuilder({
   reportId,
   initial,
   catalog,
+  existingCategories,
 }: ReportBuilderProps) {
   const router = useRouter();
 
   const [name, setName] = useState(initial.name);
   const [description, setDescription] = useState(initial.description);
+  const [category, setCategory] = useState(initial.category);
   const [entityType, setEntityType] = useState<CustomReportEntity>(
     initial.entityType
   );
@@ -117,6 +122,7 @@ export function ReportBuilder({
     return {
       name: name.trim(),
       description: description.trim() || null,
+      category: category.trim() || null,
       entityType,
       columns,
       filters: filters.map((f) => ({
@@ -240,6 +246,27 @@ export function ReportBuilder({
                 onChange={(e) => setDescription(e.target.value)}
                 rows={2}
               />
+              <div>
+                <Input
+                  label="Category (optional)"
+                  value={category}
+                  onChange={(e) => setCategory(e.target.value)}
+                  placeholder="e.g. Compliance, Sales, Internal"
+                  list="custom-report-categories"
+                />
+                {existingCategories.length > 0 && (
+                  <datalist id="custom-report-categories">
+                    {existingCategories.map((c) => (
+                      <option key={c} value={c} />
+                    ))}
+                  </datalist>
+                )}
+                <p className="text-xs text-muted-foreground mt-1">
+                  Used to group reports on{" "}
+                  <code>/admin/reports</code>. Reuse an existing label or
+                  type a new one.
+                </p>
+              </div>
               <Select
                 label="What does this report list?"
                 value={entityType}

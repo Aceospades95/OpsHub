@@ -15,13 +15,19 @@ import { certificationsExpiring } from "./reports/certifications-expiring";
 import { teamUtilization } from "./reports/team-utilization";
 import { projectStatus } from "./reports/project-status";
 import { activityAudit } from "./reports/activity-audit";
+import { activityAuditFull } from "./reports/activity-audit-full";
+import { quotePipeline } from "./reports/quote-pipeline";
+import { workflowHealth } from "./reports/workflow-health";
 
 export const REPORTS: ReportDefinition[] = [
   contractsExpiring,
   certificationsExpiring,
   teamUtilization,
   projectStatus,
+  quotePipeline,
+  workflowHealth,
   activityAudit,
+  activityAuditFull,
 ];
 
 const REPORT_MAP = new Map<string, ReportDefinition>(REPORTS.map((r) => [r.key, r]));

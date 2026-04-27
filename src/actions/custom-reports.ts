@@ -46,6 +46,7 @@ const filterSchema = z.object({
 const upsertSchema = z.object({
   name: z.string().min(1, "Name is required"),
   description: z.string().nullish(),
+  category: z.string().nullish(),
   entityType: entitySchema,
   columns: z.array(z.string()),
   filters: z.array(filterSchema),
@@ -79,6 +80,7 @@ export async function createCustomReport(input: CustomReportUpsertInput) {
     data: {
       name: parsed.data.name,
       description: parsed.data.description?.trim() || null,
+      category: parsed.data.category?.trim() || null,
       entityType: parsed.data.entityType as CustomReportEntity,
       columns: JSON.stringify(
         cleanColumns.length > 0 ? cleanColumns : def.defaultColumns
@@ -119,6 +121,7 @@ export async function updateCustomReport(
     data: {
       name: parsed.data.name,
       description: parsed.data.description?.trim() || null,
+      category: parsed.data.category?.trim() || null,
       entityType: parsed.data.entityType as CustomReportEntity,
       columns: JSON.stringify(
         cleanColumns.length > 0 ? cleanColumns : def.defaultColumns
@@ -172,6 +175,7 @@ export async function previewCustomReport(input: CustomReportUpsertInput) {
       id: "preview",
       name: parsed.data.name,
       description: parsed.data.description ?? null,
+      category: parsed.data.category?.trim() || null,
       entityType: parsed.data.entityType as CustomReportEntity,
       columns: JSON.stringify(
         cleanColumns.length > 0 ? cleanColumns : def.defaultColumns

@@ -4,13 +4,14 @@
  */
 
 import { db } from "@/lib/db";
+import { format } from "date-fns";
 import type { ReportDefinition } from "../types";
 
 export const projectStatus: ReportDefinition = {
   key: "project-status",
   name: "Project portfolio status",
   description:
-    "Active and planning projects with status, client, milestone progress, and open task counts.",
+    "Active and planning projects with status, client, milestone progress, open task count, team size, and a flag for projects past their end date. Headline includes overdue count so PMOs can triage.",
   module: "projects",
   schedulable: true,
 
@@ -30,12 +31,20 @@ export const projectStatus: ReportDefinition = {
       orderBy: { name: "asc" },
     });
 
+    const now = new Date();
     const rows = projects.map((p) => {
       const totalMilestones = p.milestones.length;
       const doneMilestones = p.milestones.filter((m) => m.completed).length;
+      const milestonePct =
+        totalMilestones === 0
+          ? null
+          : Math.round((doneMilestones / totalMilestones) * 100);
       const openTasks = p.tasks.filter(
         (t) => t.status === "TODO" || t.status === "IN_PROGRESS"
       ).length;
+      const isOverdue =
+        p.endDate != null && p.endDate < now && p.status !== "COMPLETED";
+
       return {
         name: p.name,
         client: p.client?.name || "—",
@@ -45,9 +54,11 @@ export const projectStatus: ReportDefinition = {
         milestones:
           totalMilestones === 0
             ? "0 / 0"
-            : `${doneMilestones} / ${totalMilestones}`,
+            : `${doneMilestones} / ${totalMilestones}` +
+              (milestonePct != null ? ` (${milestonePct}%)` : ""),
         openTasks,
         teamSize: p._count.assignments,
+        flag: isOverdue ? "Overdue" : "",
       };
     });
 
@@ -58,18 +69,32 @@ export const projectStatus: ReportDefinition = {
     const statusSummary = Object.entries(byStatus)
       .map(([k, v]) => `${v} ${k.toLowerCase()}`)
       .join(" · ");
+    const overdueCount = rows.filter((r) => r.flag === "Overdue").length;
 
     return {
-      summary: `${rows.length} active portfolio projects${statusSummary ? ` · ${statusSummary}` : ""}.`,
+      summary:
+        `${rows.length} active portfolio projects` +
+        (statusSummary ? ` · ${statusSummary}` : "") +
+        (overdueCount > 0 ? ` · ${overdueCount} past end date` : "") +
+        ".",
       columns: [
         { key: "name", label: "Project" },
         { key: "client", label: "Client" },
         { key: "status", label: "Status" },
-        { key: "startDate", label: "Start" },
-        { key: "endDate", label: "End" },
+        {
+          key: "startDate",
+          label: "Start",
+          format: (v) => (v instanceof Date ? format(v, "MMM d, yyyy") : "—"),
+        },
+        {
+          key: "endDate",
+          label: "End",
+          format: (v) => (v instanceof Date ? format(v, "MMM d, yyyy") : "—"),
+        },
         { key: "milestones", label: "Milestones" },
         { key: "openTasks", label: "Open tasks", align: "right" },
         { key: "teamSize", label: "Team", align: "right" },
+        { key: "flag", label: "Flag" },
       ],
       rows,
       emptyMessage: "No active projects.",
