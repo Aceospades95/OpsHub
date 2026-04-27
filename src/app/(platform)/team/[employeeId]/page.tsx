@@ -1,8 +1,9 @@
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
-import { requireAuth } from "@/lib/permissions";
+import { requireAuth, resolveModulePerms } from "@/lib/permissions";
 import { PageHeader } from "@/components/layout/page-header";
 import { EmployeeDetailClient } from "./employee-detail-client";
+import { StartWorkflowButton } from "./start-workflow-button";
 
 interface Props {
   params: Promise<{ employeeId: string }>;
@@ -111,11 +112,34 @@ export default async function EmployeeDetailPage({ params }: Props) {
     createdAt: a.createdAt.toISOString(),
   }));
 
+  // Workflow templates available to start manually for this employee.
+  // Only EMPLOYEE-subject + active templates are shown — no point listing
+  // a candidate-hire template against a sitting team member.
+  const workflowsPerms = await resolveModulePerms(user.id, user.role, "workflows");
+  const workflowTemplates = workflowsPerms.canCreate
+    ? await db.workflowTemplate.findMany({
+        where: {
+          isActive: true,
+          subjectEntityType: "EMPLOYEE",
+        },
+        orderBy: [{ isSeed: "desc" }, { name: "asc" }],
+        select: { id: true, name: true, type: true },
+      })
+    : [];
+
   return (
     <div>
       <PageHeader
         title={employee.name}
         description={[employee.jobTitle, employee.department].filter(Boolean).join(" · ") || employee.email}
+        actions={
+          workflowTemplates.length > 0 ? (
+            <StartWorkflowButton
+              employeeId={employee.id}
+              templates={workflowTemplates}
+            />
+          ) : undefined
+        }
       />
       <EmployeeDetailClient
         employee={serializedEmployee}

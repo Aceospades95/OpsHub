@@ -219,6 +219,20 @@ enum WorkflowInstanceStepStatus {
   FAILED
 }
 
+enum WorkflowTriggerType {
+  /// Auto-start an instance whenever an entity is created — e.g. new
+  /// User → onboarding workflow. Fires synchronously from the
+  /// creating action, after the entity row commits.
+  ENTITY_CREATE
+  /// Auto-start N days before/after a date field on the subject — e.g.
+  /// 7 days before User.terminationDate → offboarding. Evaluated by
+  /// the scheduled tick worker.
+  SCHEDULED_DATE
+  /// Auto-start when a subject's stage field flips to a target value —
+  /// e.g. Candidate.stage = "offer_accepted" → onboarding.
+  STAGE_CHANGE
+}
+
 // ─── USERS ───────────────────────────────────────────────
 
 model User {
@@ -1405,6 +1419,7 @@ model WorkflowTemplate {
   createdBy User               @relation("WorkflowTemplateCreator", fields: [createdById], references: [id])
   steps     WorkflowStep[]
   instances WorkflowInstance[]
+  triggers  WorkflowTrigger[]
 
   @@index([type])
   @@index([isActive])
@@ -1586,4 +1601,27 @@ model WorkflowEvent {
   workflowInstance WorkflowInstance @relation(fields: [workflowInstanceId], references: [id], onDelete: Cascade)
 
   @@index([workflowInstanceId, createdAt])
+}
+
+/// Trigger config for a workflow template — what causes a new instance
+/// to spawn automatically. Manual instances don't need a trigger row.
+/// One template can have many triggers (e.g. fire on user create AND
+/// 7 days before termination).
+model WorkflowTrigger {
+  id                 String              @id @default(cuid())
+  workflowTemplateId String
+  triggerType        WorkflowTriggerType
+  /// Type-specific JSON config:
+  ///  ENTITY_CREATE  → { entityType: "User", filter?: {...} }
+  ///  SCHEDULED_DATE → { dateField: "terminationDate", offsetDays: -7 }
+  ///  STAGE_CHANGE   → { stageField: "stage", targetValue: "offer_accepted" }
+  config             String              @db.Text
+  isActive           Boolean             @default(true)
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+
+  workflowTemplate WorkflowTemplate @relation(fields: [workflowTemplateId], references: [id], onDelete: Cascade)
+
+  @@index([workflowTemplateId])
+  @@index([triggerType, isActive])
 }

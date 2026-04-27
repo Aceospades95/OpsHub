@@ -101,6 +101,22 @@ export async function createUser(_prev: unknown, formData: FormData) {
     }
   }
 
+  // Fire ENTITY_CREATE workflow triggers — onboarding workflows that
+  // are configured to auto-start on new-employee creation. Errors here
+  // never block the create itself; a stuck workflow is recoverable, a
+  // lost employee row isn't.
+  try {
+    const { fireEntityCreateTriggers } = await import("@/lib/workflows/triggers");
+    await fireEntityCreateTriggers({
+      entityType: "User",
+      entityId: user.id,
+      createdById: admin.id,
+    });
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error("[admin] workflow auto-trigger failed:", err);
+  }
+
   return { success: true };
 }
 

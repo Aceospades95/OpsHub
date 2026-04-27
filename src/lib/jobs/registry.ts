@@ -20,6 +20,7 @@ import { certificationExpiryCheck } from "./jobs/certification-expiry-check";
 import { cleanupStaleNotifications } from "./jobs/cleanup-stale-notifications";
 import { cleanupOldActivityLogs } from "./jobs/cleanup-old-activity-logs";
 import { dailyReportsDigest } from "./jobs/daily-reports-digest";
+import { workflowsTick } from "./jobs/workflows-tick";
 
 export const JOBS: JobDefinition[] = [
   contractExpiryCheck,
@@ -27,6 +28,7 @@ export const JOBS: JobDefinition[] = [
   cleanupStaleNotifications,
   cleanupOldActivityLogs,
   dailyReportsDigest,
+  workflowsTick,
 ];
 
 const JOB_MAP = new Map<string, JobDefinition>(JOBS.map((j) => [j.key, j]));
