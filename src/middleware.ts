@@ -5,14 +5,18 @@ export default auth((req) => {
   const { pathname } = req.nextUrl;
 
   // Public routes are reachable without a session. The quote token routes
-  // (/q/:token and /api/public/quotes/:token) are how clients view, accept,
-  // and reject the quotes you send them — they must NOT require a login.
+  // (/q/:token, /api/public/quotes/:token) are how clients view, accept,
+  // and reject the quotes you send them; the workflow portal routes
+  // (/portal/:token, /api/public/portal/:token) are how new hires fill
+  // out forms, upload documents, and sign agreements without an OpsHub
+  // account. None of these may require a login.
   const publicPaths = [
     "/login",
     "/register",
     "/api/auth",
     "/api/health",
     "/q/",
+    "/portal/",
     "/api/public/",
   ];
   const isPublic = publicPaths.some((p) => pathname.startsWith(p));

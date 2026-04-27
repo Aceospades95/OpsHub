@@ -10,11 +10,16 @@ import type {
 
 /**
  * ASSIGN_TASK_TO_SUBJECT — creates a Task assigned to the workflow's
- * subject so the subject sees it on their portal checklist (Phase 5)
- * and on /tasks if they have OpsHub access. The dueDate is computed
- * from the workflow's startDate + the step's dueOffsetDays so the
- * deadline is aligned with the lifecycle, not with when the engine
- * happened to fire.
+ * subject so they see it on their portal checklist and on /tasks if
+ * they have OpsHub access. The step itself stays in "waiting" status
+ * until the subject ticks it off in the portal — that's what
+ * completeWorkflowPortalTaskStep() does. Phase-4 instances that pre-
+ * date this change will show the step as already completed; new
+ * instances correctly wait for subject acknowledgement.
+ *
+ * The dueDate is computed from the workflow's startDate + the step's
+ * dueOffsetDays so the deadline aligns with the lifecycle, not with
+ * when the engine happened to fire.
  */
 export const assignTaskToSubjectHandler: StepHandler = async ({
   config,
@@ -25,9 +30,6 @@ export const assignTaskToSubjectHandler: StepHandler = async ({
 }) => {
   const c = config as unknown as AssignTaskToSubjectConfig;
 
-  // Workflow tasks are subject-assigned. For EMPLOYEE workflows the
-  // subject IS a User so we can wire the assigneeId; for CANDIDATE
-  // (Phase 5+) the task lives on the portal and assigneeId stays null.
   const assigneeId = subjectType === "EMPLOYEE" ? subjectId : null;
   const dueDate = computeDueDate(
     context.workflow.startDate,
@@ -47,10 +49,6 @@ export const assignTaskToSubjectHandler: StepHandler = async ({
       priority: "MEDIUM",
       assigneeId,
       dueDate,
-      // Workflow-created tasks need a `createdBy` — use the subject when
-      // it's an employee, falling back to the workflow creator (we don't
-      // have direct access to that here, so the subject is good enough
-      // for an audit purpose). If even that's null, we have to skip.
       createdById: assigneeId ?? subjectId,
       sourceType: "workflow_step",
       sourceId: instanceStepId,
@@ -58,8 +56,12 @@ export const assignTaskToSubjectHandler: StepHandler = async ({
   });
   if (assigneeId) revalidateTask({ assigneeId });
 
+  // Wait for the subject to ack this task via the portal. The portal
+  // action completeWorkflowPortalTaskStep marks both the Task row AND
+  // the workflow step COMPLETED. Admins can also force-complete from
+  // the instance detail page.
   return {
-    kind: "completed",
+    kind: "waiting",
     output: { taskId: task.id, dueDate: dueDate?.toISOString() ?? null },
   };
 };
