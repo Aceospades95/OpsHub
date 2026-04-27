@@ -42,6 +42,7 @@ const quoteUpsertSchema = z.object({
   projectId: z.string().nullish(),
   title: z.string().min(1, "Title is required"),
   introText: z.string().nullish(),
+  assumptionsText: z.string().nullish(),
   termsText: z.string().nullish(),
   currency: z.string().min(1).default("USD"),
   discountType: discountTypeSchema.default("NONE"),
@@ -115,6 +116,7 @@ async function persistQuoteWithItems(
         projectId: normalizeOptional(data.projectId) || null,
         title: data.title,
         introText: normalizeOptional(data.introText),
+        assumptionsText: normalizeOptional(data.assumptionsText),
         termsText: normalizeOptional(data.termsText),
         currency: data.currency || "USD",
         discountType: data.discountType,
@@ -178,6 +180,7 @@ export async function createQuote(opts: CreateQuoteOptions = {}) {
   let seedProjectId: string | null = opts.projectId ?? null;
   let seedTitle = "Untitled Quote";
   let seedIntro: string | null = null;
+  let seedAssumptions: string | null = null;
   let seedTerms: string | null = null;
   let seedCurrency = "USD";
   let seedDiscountType: "NONE" | "PERCENT" | "FIXED" = "NONE";
@@ -209,6 +212,7 @@ export async function createQuote(opts: CreateQuoteOptions = {}) {
     if (!tpl) return { error: "Template not found" } as const;
     seedTitle = tpl.name;
     seedIntro = tpl.introText;
+    seedAssumptions = tpl.assumptionsText;
     seedTerms = tpl.termsText;
     seedItems = tpl.lineItems.map((li, i) => ({
       position: i,
@@ -236,6 +240,7 @@ export async function createQuote(opts: CreateQuoteOptions = {}) {
     seedProjectId = src.projectId;
     seedTitle = `Copy of ${src.title}`;
     seedIntro = src.introText;
+    seedAssumptions = src.assumptionsText;
     seedTerms = src.termsText;
     seedCurrency = src.currency;
     seedDiscountType = src.discountType;
@@ -288,6 +293,7 @@ export async function createQuote(opts: CreateQuoteOptions = {}) {
           status: "DRAFT",
           title: seedTitle,
           introText: seedIntro,
+          assumptionsText: seedAssumptions,
           termsText: seedTerms,
           currency: seedCurrency,
           discountType: seedDiscountType,
@@ -442,6 +448,7 @@ export async function saveQuoteAsTemplate(input: { id: string; name: string; des
       name,
       description: normalizeOptional(input.description ?? null),
       introText: quote.introText,
+      assumptionsText: quote.assumptionsText,
       termsText: quote.termsText,
       createdById: user.id,
       lineItems: {

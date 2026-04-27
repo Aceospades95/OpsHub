@@ -255,3 +255,104 @@ function startOfUtcDay(date: Date): Date {
   d.setUTCHours(0, 0, 0, 0);
   return d;
 }
+
+// ─── Project assignment triggers ────────────────────────────────────────
+
+export interface ProjectAssignmentEvent {
+  /** The User being assigned to the project. Becomes the workflow's
+   *  EMPLOYEE subject. */
+  userId: string;
+  projectId: string;
+  /** Optional service offering id — lets templates filter by category
+   *  (e.g. "send the engineering welcome flow only when the assignment
+   *  is on the Engineering offering"). */
+  serviceOfferingId?: string | null;
+  /** Who triggered the assignment — used to attribute the spawned
+   *  workflow instance. */
+  createdById: string;
+}
+
+/**
+ * Fire PROJECT_ASSIGNMENT triggers for the given event. Templates can
+ * optionally narrow with config like `{ projectId: "..." }` or
+ * `{ serviceOfferingId: "..." }`; when neither is set the trigger fires
+ * for every assignment.
+ *
+ * Idempotency: if there's already a non-cancelled instance of the same
+ * template + user + project pair, we skip — assigning someone twice to
+ * the same project shouldn't double-spawn the welcome.
+ */
+export async function fireProjectAssignmentTriggers(
+  event: ProjectAssignmentEvent
+): Promise<{ instanceIds: string[]; errors: string[] }> {
+  const triggers = await db.workflowTrigger.findMany({
+    where: {
+      triggerType: "PROJECT_ASSIGNMENT",
+      isActive: true,
+      workflowTemplate: { isActive: true, subjectEntityType: "EMPLOYEE" },
+    },
+    include: { workflowTemplate: true },
+  });
+
+  if (triggers.length === 0) return { instanceIds: [], errors: [] };
+
+  const instanceIds: string[] = [];
+  const errors: string[] = [];
+
+  for (const trigger of triggers) {
+    let cfg: { projectId?: string; serviceOfferingId?: string } = {};
+    try {
+      cfg = JSON.parse(trigger.config);
+    } catch {
+      errors.push(`Trigger ${trigger.id}: invalid config JSON`);
+      continue;
+    }
+
+    if (cfg.projectId && cfg.projectId !== event.projectId) continue;
+    if (
+      cfg.serviceOfferingId &&
+      cfg.serviceOfferingId !== event.serviceOfferingId
+    ) {
+      continue;
+    }
+
+    // De-duplicate: skip if the user already has a non-cancelled
+    // instance of this template that targeted the same project.
+    // We look this up by scanning recent instances + their context.
+    // Since context is JSON, we filter by template + subject and
+    // accept the (rare) cross-project false-positive in exchange for
+    // a simpler query.
+    const existing = await db.workflowInstance.findFirst({
+      where: {
+        workflowTemplateId: trigger.workflowTemplateId,
+        subjectType: "EMPLOYEE",
+        subjectId: event.userId,
+        status: { in: ["PENDING", "IN_PROGRESS", "PAUSED", "COMPLETED"] },
+        // If the template wants per-project specificity it's encoded
+        // in the trigger config; this filter is an idempotency net.
+        AND: cfg.projectId
+          ? [{ context: { contains: event.projectId } }]
+          : undefined,
+      },
+      select: { id: true },
+    });
+    if (existing) continue;
+
+    try {
+      const r = await createInstance({
+        templateId: trigger.workflowTemplateId,
+        subjectType: "EMPLOYEE",
+        subjectId: event.userId,
+        createdById: event.createdById,
+        autoStart: true,
+      });
+      instanceIds.push(r.instanceId);
+    } catch (err) {
+      errors.push(
+        `Trigger ${trigger.id} (${trigger.workflowTemplate.name}): ${err instanceof Error ? err.message : String(err)}`
+      );
+    }
+  }
+
+  return { instanceIds, errors };
+}

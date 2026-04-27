@@ -117,6 +117,49 @@ export async function createUser(_prev: unknown, formData: FormData) {
     console.error("[admin] workflow auto-trigger failed:", err);
   }
 
+  // Manually-selected workflow templates from the create dialog. The
+  // form posts a comma-separated list of template ids in
+  // `workflowTemplateIds` so we don't need a multi-FormData parser.
+  // Auto-trigger templates above + manual selections here may overlap;
+  // we de-duplicate to avoid double-spawning the same template.
+  const manualTemplateIdsRaw = formData.get("workflowTemplateIds");
+  if (typeof manualTemplateIdsRaw === "string" && manualTemplateIdsRaw.trim().length > 0) {
+    const ids = manualTemplateIdsRaw
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (ids.length > 0) {
+      try {
+        const { createInstance } = await import("@/lib/workflows/engine");
+        for (const templateId of ids) {
+          // Skip templates that already auto-fired against this user —
+          // re-spawn would create a duplicate instance for the same
+          // subject + template.
+          const existing = await db.workflowInstance.findFirst({
+            where: {
+              workflowTemplateId: templateId,
+              subjectType: "EMPLOYEE",
+              subjectId: user.id,
+              status: { in: ["PENDING", "IN_PROGRESS", "PAUSED", "COMPLETED"] },
+            },
+            select: { id: true },
+          });
+          if (existing) continue;
+          await createInstance({
+            templateId,
+            subjectType: "EMPLOYEE",
+            subjectId: user.id,
+            createdById: admin.id,
+            autoStart: true,
+          });
+        }
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error("[admin] manual workflow start failed:", err);
+      }
+    }
+  }
+
   return { success: true };
 }
 

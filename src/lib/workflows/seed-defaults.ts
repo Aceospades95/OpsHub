@@ -362,6 +362,13 @@ export const DEFAULT_SEED_TEMPLATES: SeedTemplate[] = [
     ],
   },
 
+  // The Candidate hiring template was removed from the seed list — the
+  // /candidates section it depended on was dropped in favor of using
+  // workflow triggers (ENTITY_CREATE on User + manual workflow start
+  // from the user create form). The Candidate model + engine support
+  // for CANDIDATE-subject workflows remains in place for any future
+  // hiring-flow use cases.
+  /* legacy candidate template removed
   {
     name: "Candidate hiring (default)",
     description:
@@ -464,4 +471,5 @@ export const DEFAULT_SEED_TEMPLATES: SeedTemplate[] = [
       },
     ],
   },
+  */
 ];

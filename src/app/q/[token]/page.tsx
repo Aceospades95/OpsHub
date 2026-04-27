@@ -105,6 +105,7 @@ export default async function PublicQuotePage({ params }: Props) {
             quoteNumber: quote.quoteNumber,
             title: quote.title,
             introText: quote.introText,
+            assumptionsText: quote.assumptionsText,
             termsText: quote.termsText,
             currency: quote.currency,
             status: quote.status,

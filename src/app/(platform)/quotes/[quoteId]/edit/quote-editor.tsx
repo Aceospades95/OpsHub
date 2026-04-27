@@ -43,6 +43,7 @@ interface InitialQuote {
   projectId: string | null;
   title: string;
   introText: string | null;
+  assumptionsText: string | null;
   termsText: string | null;
   currency: string;
   discountType: DiscountType;
@@ -65,12 +66,18 @@ interface CatalogItem {
   isRecurring: boolean;
 }
 
+interface Branding {
+  companyName: string | null;
+  companyLogoUrl: string | null;
+}
+
 interface Props {
   initial: InitialQuote;
   clients: { id: string; name: string }[];
   projects: { id: string; name: string; clientId: string }[];
   users: { id: string; name: string }[];
   catalog: CatalogItem[];
+  branding: Branding;
 }
 
 let nextLineId = 0;
@@ -99,7 +106,7 @@ function emptyLine(position: number): LineItem {
   };
 }
 
-export function QuoteEditor({ initial, clients, projects, users, catalog }: Props) {
+export function QuoteEditor({ initial, clients, projects, users, catalog, branding }: Props) {
   const router = useRouter();
 
   const [title, setTitle] = useState(initial.title);
@@ -108,6 +115,9 @@ export function QuoteEditor({ initial, clients, projects, users, catalog }: Prop
   const [validUntil, setValidUntil] = useState<string>(initial.validUntil ?? "");
   const [currency, setCurrency] = useState(initial.currency);
   const [introText, setIntroText] = useState<string>(initial.introText ?? "");
+  const [assumptionsText, setAssumptionsText] = useState<string>(
+    initial.assumptionsText ?? ""
+  );
   const [termsText, setTermsText] = useState<string>(initial.termsText ?? "");
   const [internalNotes, setInternalNotes] = useState<string>(initial.internalNotes ?? "");
   const [discountType, setDiscountType] = useState<DiscountType>(initial.discountType);
@@ -217,6 +227,7 @@ export function QuoteEditor({ initial, clients, projects, users, catalog }: Prop
         projectId: projectId || null,
         title: title.trim(),
         introText: introText.trim() || null,
+        assumptionsText: assumptionsText.trim() || null,
         termsText: termsText.trim() || null,
         currency: currency || "USD",
         discountType,
@@ -444,9 +455,18 @@ export function QuoteEditor({ initial, clients, projects, users, catalog }: Prop
 
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Terms & notes</CardTitle>
+              <CardTitle className="text-base">Assumptions, terms &amp; notes</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
+              <Textarea
+                label="Assumptions"
+                value={assumptionsText}
+                onChange={(e) => setAssumptionsText(e.target.value)}
+                placeholder={
+                  "Project assumptions / scope clarifications. e.g.\n• Pricing assumes 2 rounds of revisions per deliverable.\n• Hosting + infrastructure costs are not included.\n• Travel billed separately at cost."
+                }
+                rows={5}
+              />
               <Textarea
                 label="Terms"
                 value={termsText}
@@ -471,10 +491,28 @@ export function QuoteEditor({ initial, clients, projects, users, catalog }: Prop
               <CardTitle className="text-base">Preview</CardTitle>
             </CardHeader>
             <CardContent className="text-sm space-y-3">
-              <p className="font-mono text-xs text-muted-foreground">
-                {initial.quoteNumber}
+              {/* Branded header — same shape the public quote page uses,
+                  scaled down to the preview pane. */}
+              <div className="flex items-center justify-between pb-3 border-b border-border">
+                {branding.companyLogoUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={branding.companyLogoUrl}
+                    alt={branding.companyName ?? "Company"}
+                    className="h-6 w-auto"
+                  />
+                ) : (
+                  <span className="font-semibold text-xs">
+                    {branding.companyName ?? "OpsHub"}
+                  </span>
+                )}
+                <span className="font-mono text-[10px] text-muted-foreground">
+                  {initial.quoteNumber}
+                </span>
+              </div>
+              <p className="font-bold text-lg leading-tight">
+                {title || "Untitled"}
               </p>
-              <p className="font-semibold text-base">{title || "Untitled"}</p>
               {introText && (
                 <p className="text-muted-foreground whitespace-pre-wrap text-xs">
                   {introText}
@@ -522,6 +560,17 @@ export function QuoteEditor({ initial, clients, projects, users, catalog }: Prop
                       </p>
                     </div>
                   ))}
+                </div>
+              )}
+
+              {assumptionsText && (
+                <div className="border-t border-border pt-3">
+                  <p className="text-[10px] uppercase tracking-wide text-muted-foreground mb-1 font-semibold">
+                    Assumptions
+                  </p>
+                  <p className="text-[11px] text-muted-foreground whitespace-pre-wrap">
+                    {assumptionsText}
+                  </p>
                 </div>
               )}
 

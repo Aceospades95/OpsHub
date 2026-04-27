@@ -244,6 +244,19 @@ export default async function QuoteDetailPage({ params }: Props) {
             </CardContent>
           </Card>
 
+          {quote.assumptionsText && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Assumptions</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm whitespace-pre-wrap text-muted-foreground">
+                  {quote.assumptionsText}
+                </p>
+              </CardContent>
+            </Card>
+          )}
+
           {quote.termsText && (
             <Card>
               <CardHeader>

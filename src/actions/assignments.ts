@@ -193,6 +193,28 @@ export async function createAssignment(_prev: unknown, formData: FormData) {
     role: assignment.role,
     fte: assignment.allocationFte,
   });
+
+  // Fire PROJECT_ASSIGNMENT workflow triggers — e.g. send the assigned
+  // user a project-welcome workflow with links + onboarding details.
+  // Failure here doesn't roll back the assignment; a stuck workflow
+  // is recoverable, an unmade assignment isn't.
+  if (assignment.projectId) {
+    try {
+      const { fireProjectAssignmentTriggers } = await import(
+        "@/lib/workflows/triggers"
+      );
+      await fireProjectAssignmentTriggers({
+        userId: assignment.employeeId,
+        projectId: assignment.projectId,
+        serviceOfferingId: assignment.serviceOfferingId,
+        createdById: user.id,
+      });
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error("[assignments] project-assignment trigger failed:", err);
+    }
+  }
+
   return { success: true };
 }
 
@@ -358,6 +380,24 @@ export async function quickAssign(data: {
     role: assignment.role,
     fte: assignment.allocationFte,
   });
+
+  if (assignment.projectId) {
+    try {
+      const { fireProjectAssignmentTriggers } = await import(
+        "@/lib/workflows/triggers"
+      );
+      await fireProjectAssignmentTriggers({
+        userId: assignment.employeeId,
+        projectId: assignment.projectId,
+        serviceOfferingId: assignment.serviceOfferingId,
+        createdById: user.id,
+      });
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error("[assignments] project-assignment trigger failed:", err);
+    }
+  }
+
   return { success: true };
 }
 

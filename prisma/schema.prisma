@@ -228,9 +228,14 @@ enum WorkflowTriggerType {
   /// 7 days before User.terminationDate → offboarding. Evaluated by
   /// the scheduled tick worker.
   SCHEDULED_DATE
-  /// Auto-start when a subject's stage field flips to a target value —
-  /// e.g. Candidate.stage = "offer_accepted" → onboarding.
+  /// Auto-start when a subject's stage field flips to a target value.
+  /// Reserved for future stage-driven flows.
   STAGE_CHANGE
+  /// Auto-start when a User is added to a project (via Assignment or
+  /// ProjectMember). Fires synchronously from the assignment-creating
+  /// action with the assigned User as the subject. The trigger config
+  /// can optionally filter to a specific projectId or serviceOffering.
+  PROJECT_ASSIGNMENT
 }
 
 // ─── USERS ───────────────────────────────────────────────
@@ -1216,6 +1221,11 @@ model Quote {
   /// Markdown-friendly intro text rendered above the line items on the
   /// public view. Optional.
   introText             String?     @db.Text
+  /// Project assumptions / scope clarifications rendered between the
+  /// line items and the totals on the public view. Lets the author
+  /// list out "this quote assumes X, Y, Z" so the client knows what's
+  /// been factored in. Optional.
+  assumptionsText       String?     @db.Text
   /// Footer / terms & conditions text rendered below the totals on the
   /// public view. Optional.
   termsText             String?     @db.Text
@@ -1332,14 +1342,15 @@ model CatalogItem {
 // has the same shape as a Quote minus per-quote fields (client, dates,
 // signatures, etc.). Creating a quote from a template clones the line items.
 model QuoteTemplate {
-  id          String   @id @default(cuid())
-  name        String
-  description String?  @db.Text
-  introText   String?  @db.Text
-  termsText   String?  @db.Text
-  createdById String
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id              String   @id @default(cuid())
+  name            String
+  description     String?  @db.Text
+  introText       String?  @db.Text
+  assumptionsText String?  @db.Text
+  termsText       String?  @db.Text
+  createdById     String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   createdBy User @relation("QuoteTemplateCreator", fields: [createdById], references: [id])
 

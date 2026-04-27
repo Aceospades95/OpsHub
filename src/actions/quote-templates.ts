@@ -9,6 +9,7 @@ const templateMetaSchema = z.object({
   name: z.string().min(1, "Name is required"),
   description: z.string().optional().nullable(),
   introText: z.string().optional().nullable(),
+  assumptionsText: z.string().optional().nullable(),
   termsText: z.string().optional().nullable(),
 });
 
@@ -27,6 +28,7 @@ export async function createQuoteTemplate(_prev: unknown, formData: FormData) {
     name: formData.get("name"),
     description: formData.get("description") || undefined,
     introText: formData.get("introText") || undefined,
+    assumptionsText: formData.get("assumptionsText") || undefined,
     termsText: formData.get("termsText") || undefined,
   });
   if (!parsed.success) {
@@ -38,6 +40,7 @@ export async function createQuoteTemplate(_prev: unknown, formData: FormData) {
       name: parsed.data.name,
       description: normalizeOptional(parsed.data.description ?? null),
       introText: normalizeOptional(parsed.data.introText ?? null),
+      assumptionsText: normalizeOptional(parsed.data.assumptionsText ?? null),
       termsText: normalizeOptional(parsed.data.termsText ?? null),
       createdById: user.id,
     },
@@ -58,6 +61,7 @@ export async function updateQuoteTemplateMeta(_prev: unknown, formData: FormData
     name: formData.get("name"),
     description: formData.get("description") || undefined,
     introText: formData.get("introText") || undefined,
+    assumptionsText: formData.get("assumptionsText") || undefined,
     termsText: formData.get("termsText") || undefined,
   });
   if (!parsed.success) {
@@ -70,6 +74,7 @@ export async function updateQuoteTemplateMeta(_prev: unknown, formData: FormData
       name: parsed.data.name,
       description: normalizeOptional(parsed.data.description ?? null),
       introText: normalizeOptional(parsed.data.introText ?? null),
+      assumptionsText: normalizeOptional(parsed.data.assumptionsText ?? null),
       termsText: normalizeOptional(parsed.data.termsText ?? null),
     },
   });

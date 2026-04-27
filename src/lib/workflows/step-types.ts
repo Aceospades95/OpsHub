@@ -142,6 +142,17 @@ export type StepConfig =
   | { stepType: "SEND_REMINDER"; config: SendReminderConfig };
 
 // ─── Zod validators ────────────────────────────────────────────────────
+//
+// Two passes. The "draft" schemas accept partially-filled configs so the
+// template editor can save in-progress work — clicking "Send email" in
+// the step picker should not error just because emailTemplateId is still
+// blank. The runtime check (per-handler) catches missing fields when
+// the engine actually tries to execute the step.
+//
+// Required-at-edit-time fields use `.optional()` (or no `.min(1)`); the
+// handlers in src/lib/workflows/handlers/ assert presence with their
+// own throw-on-missing checks so a half-finished step that escapes to
+// production still fails loudly + shows up as FAILED in the timeline.
 
 const recipientRoleSchema = z.enum([
   "subject",
@@ -154,39 +165,39 @@ const recipientRoleSchema = z.enum([
 export const stepConfigSchemas: Record<WorkflowStepType, z.ZodTypeAny> = {
   SEND_EMAIL: z.object({
     toRecipient: z.enum(["subject", "manager", "hr", "it", "owner", "custom"]),
-    customEmail: z.string().email().optional(),
-    emailTemplateId: z.string().min(1),
+    customEmail: z.string().email().optional().or(z.literal("")),
+    emailTemplateId: z.string().optional(),
     subjectOverride: z.string().optional(),
     bodyOverride: z.string().optional(),
   }),
   ASSIGN_TASK_TO_SUBJECT: z.object({
-    title: z.string().min(1),
+    title: z.string().optional(),
     description: z.string().optional(),
-    dueOffsetDays: z.number().int(),
+    dueOffsetDays: z.number().int().optional(),
   }),
   ASSIGN_TASK_TO_USER: z.object({
     assignee: z.enum(["specific_user", "manager", "hr", "it", "owner"]),
     assigneeUserId: z.string().optional(),
-    title: z.string().min(1),
+    title: z.string().optional(),
     description: z.string().optional(),
-    dueOffsetDays: z.number().int(),
+    dueOffsetDays: z.number().int().optional(),
   }),
   REQUEST_DOCUMENT: z.object({
-    documentName: z.string().min(1),
+    documentName: z.string().optional(),
     description: z.string().optional(),
-    required: z.boolean(),
+    required: z.boolean().optional(),
   }),
   REQUEST_SIGNATURE: z.object({
-    documentText: z.string().min(1),
-    required: z.boolean(),
+    documentText: z.string().optional(),
+    required: z.boolean().optional(),
   }),
   REQUEST_FORM: z.object({
     fields: z.array(
       z.object({
         key: z.string().min(1),
-        label: z.string().min(1),
+        label: z.string().optional(),
         type: z.enum(["text", "textarea", "number", "date", "select", "checkbox"]),
-        required: z.boolean(),
+        required: z.boolean().optional(),
         options: z
           .array(z.object({ label: z.string(), value: z.string() }))
           .optional(),
@@ -198,32 +209,34 @@ export const stepConfigSchemas: Record<WorkflowStepType, z.ZodTypeAny> = {
     delayDays: z.number().int().min(0),
   }),
   CONDITIONAL_BRANCH: z.object({
-    condition: z.string().min(1),
+    condition: z.string().optional(),
     ifTrueStepId: z.string().optional(),
     ifFalseStepId: z.string().optional(),
   }),
   APPROVAL: z.object({
     approver: z.enum(["specific_user", "manager", "hr", "it", "owner"]),
     approverUserId: z.string().optional(),
-    prompt: z.string().min(1),
+    prompt: z.string().optional(),
   }),
   PROVISION_ACCESS: z.object({
-    system: z.string().min(1),
+    system: z.string().optional(),
     notes: z.string().optional(),
   }),
   DEPROVISION_ACCESS: z.object({
-    system: z.string().min(1),
+    system: z.string().optional(),
     notes: z.string().optional(),
   }),
   SCHEDULE_MEETING: z.object({
-    meetingTitle: z.string().min(1),
-    attendees: z.array(recipientRoleSchema),
-    durationMinutes: z.number().int().min(15).max(480),
-    offsetDays: z.number().int(),
+    meetingTitle: z.string().optional(),
+    attendees: z.array(recipientRoleSchema).optional(),
+    // Allow any duration when present so default config (30) is fine,
+    // and skip the bounds check in draft mode.
+    durationMinutes: z.number().int().optional(),
+    offsetDays: z.number().int().optional(),
   }),
   SEND_REMINDER: z.object({
     to: recipientRoleSchema,
-    emailTemplateId: z.string().min(1),
+    emailTemplateId: z.string().optional(),
   }),
 };
 

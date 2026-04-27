@@ -28,7 +28,6 @@ export const DEFAULT_SIDEBAR_CONFIG: SidebarConfig = {
         { key: "tasks", visible: true },
         { key: "team", visible: true },
         { key: "workflows", visible: true },
-        { key: "candidates", visible: true },
       ],
     },
     {

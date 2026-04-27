@@ -9,13 +9,24 @@ import { Plus } from "lucide-react";
 
 const ROLES = ["GUEST", "VIEWER", "CONTRIBUTOR", "DEVELOPER", "MANAGER", "ADMIN"];
 
-interface Props {
-  allUsers: { id: string; name: string }[];
+interface WorkflowTemplate {
+  id: string;
+  name: string;
+  type: string;
 }
 
-export function UserCreateButton({ allUsers }: Props) {
+interface Props {
+  allUsers: { id: string; name: string }[];
+  /** Active EMPLOYEE-subject workflow templates the admin can choose
+   *  to fire against the new user (in addition to any auto-trigger
+   *  templates that always fire on user create). */
+  workflowTemplates: WorkflowTemplate[];
+}
+
+export function UserCreateButton({ allUsers, workflowTemplates }: Props) {
   const [open, setOpen] = useState(false);
   const [hasLogin, setHasLogin] = useState(true);
+  const [selectedTemplateIds, setSelectedTemplateIds] = useState<string[]>([]);
   const [state, action] = useFormState(createUser, null);
   const router = useRouter();
 
@@ -23,9 +34,16 @@ export function UserCreateButton({ allUsers }: Props) {
     if (state?.success) {
       setOpen(false);
       setHasLogin(true);
+      setSelectedTemplateIds([]);
       router.refresh();
     }
   }, [state, router]);
+
+  function toggleTemplate(id: string) {
+    setSelectedTemplateIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+  }
 
   return (
     <>
@@ -101,11 +119,69 @@ export function UserCreateButton({ allUsers }: Props) {
                 </div>
               </div>
 
+              {/* Workflow runner — pick one or more workflows to fire
+                  against this user once they're created. The action
+                  posts the comma-joined ids in `workflowTemplateIds`
+                  and spawns instances synchronously. Any template
+                  that's already configured to auto-fire on user-create
+                  via an ENTITY_CREATE trigger is de-duplicated server
+                  side, so checking it here is a no-op rather than a
+                  double-spawn. */}
+              {workflowTemplates.length > 0 && (
+                <div className="rounded-md border border-input p-3 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-sm font-medium">
+                      Send onboarding workflows
+                    </label>
+                    <span className="text-[10px] text-muted-foreground">
+                      Optional · runs after the user is saved
+                    </span>
+                  </div>
+                  <input
+                    type="hidden"
+                    name="workflowTemplateIds"
+                    value={selectedTemplateIds.join(",")}
+                  />
+                  <div className="space-y-1.5 max-h-40 overflow-y-auto">
+                    {workflowTemplates.map((t) => {
+                      const checked = selectedTemplateIds.includes(t.id);
+                      return (
+                        <label
+                          key={t.id}
+                          className="flex items-start gap-2 text-sm cursor-pointer hover:bg-muted/50 rounded p-1"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => toggleTemplate(t.id)}
+                            className="mt-0.5 accent-primary"
+                          />
+                          <span className="min-w-0">
+                            <span className="block">{t.name}</span>
+                            <span className="block text-[10px] text-muted-foreground">
+                              {t.type.toLowerCase()}
+                            </span>
+                          </span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
               {state?.error && <p className="text-sm text-destructive">{state.error}</p>}
 
               <div className="flex justify-end gap-2">
                 <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-                <Button type="submit">Create User</Button>
+                <Button type="submit">
+                  Create User
+                  {selectedTemplateIds.length > 0 && (
+                    <span className="ml-1 text-xs opacity-80">
+                      + run {selectedTemplateIds.length} workflow
+                      {selectedTemplateIds.length === 1 ? "" : "s"}
+                    </span>
+                  )}
+                </Button>
               </div>
             </form>
           </div>

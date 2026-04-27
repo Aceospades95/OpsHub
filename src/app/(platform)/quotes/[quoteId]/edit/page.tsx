@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import { requireAuth, resolveModulePerms } from "@/lib/permissions";
 import { AccessDenied } from "@/components/shared/access-denied";
+import { getBranding } from "@/lib/branding";
 
 import { QuoteEditor } from "./quote-editor";
 
@@ -24,7 +25,7 @@ export default async function QuoteEditPage({ params }: Props) {
     );
   }
 
-  const [quote, clients, projects, users, catalog] = await Promise.all([
+  const [quote, clients, projects, users, catalog, branding] = await Promise.all([
     db.quote.findUnique({
       where: { id: quoteId },
       include: { lineItems: { orderBy: { position: "asc" } } },
@@ -57,6 +58,7 @@ export default async function QuoteEditPage({ params }: Props) {
       },
       orderBy: { name: "asc" },
     }),
+    getBranding(),
   ]);
 
   if (!quote) notFound();
@@ -83,6 +85,7 @@ export default async function QuoteEditPage({ params }: Props) {
     projectId: quote.projectId,
     title: quote.title,
     introText: quote.introText,
+    assumptionsText: quote.assumptionsText,
     termsText: quote.termsText,
     currency: quote.currency,
     discountType: quote.discountType,
@@ -118,6 +121,10 @@ export default async function QuoteEditPage({ params }: Props) {
       projects={projects}
       users={users}
       catalog={catalog}
+      branding={{
+        companyName: branding.companyName,
+        companyLogoUrl: branding.companyLogoUrl,
+      }}
     />
   );
 }

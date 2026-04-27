@@ -45,6 +45,7 @@ export interface QuotePdfData {
   title: string;
   status: string;
   introText: string | null;
+  assumptionsText: string | null;
   termsText: string | null;
   currency: string;
   taxRate: number | null;
@@ -54,6 +55,9 @@ export interface QuotePdfData {
   clientName: string;
   /** Display name shown in the company header — falls back to "OpsHub". */
   companyName: string | null;
+  /** Public-storage URL of the company logo. When present we render
+   *  the logo instead of the company-name text in the PDF header. */
+  companyLogoUrl: string | null;
   subtotal: number;
   discountAmount: number;
   taxAmount: number;
@@ -269,6 +273,21 @@ function QuoteDocument({ data }: { data: QuotePdfData }) {
             </View>
           </View>
         ))}
+
+        {data.assumptionsText && (
+          <View style={{ marginTop: 16 }}>
+            <Text style={styles.groupHeading}>Assumptions</Text>
+            <Text
+              style={{
+                fontSize: 9,
+                color: "#555",
+                lineHeight: 1.5,
+              }}
+            >
+              {data.assumptionsText}
+            </Text>
+          </View>
+        )}
 
         <View style={styles.totals}>
           <View style={styles.totalsRow}>

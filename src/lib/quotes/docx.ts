@@ -47,6 +47,7 @@ export interface QuoteDocxData {
   reference: string;
   title: string;
   introText: string | null;
+  assumptionsText: string | null;
   termsText: string | null;
   currency: string;
   taxRate: number | null;
@@ -254,6 +255,27 @@ export async function renderQuoteDocx(data: QuoteDocxData): Promise<Buffer> {
       width: { size: 100, type: WidthType.PERCENTAGE },
     })
   );
+
+  // Assumptions block — between line items and totals so the client
+  // sees the scope clarifications before the price.
+  if (data.assumptionsText) {
+    children.push(
+      new Paragraph({ spacing: { before: 240 } }),
+      new Paragraph({
+        children: [
+          plain("ASSUMPTIONS", { bold: true, size: 18, color: "888888" }),
+        ],
+      })
+    );
+    for (const para of data.assumptionsText.split(/\n{2,}/)) {
+      children.push(
+        new Paragraph({
+          children: [plain(para, { size: 20, color: "555555" })],
+          spacing: { after: 120 },
+        })
+      );
+    }
+  }
 
   // Totals
   const totalsRows: TableRow[] = [

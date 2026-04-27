@@ -33,6 +33,7 @@ interface QuoteData {
   quoteNumber: string;
   title: string;
   introText: string | null;
+  assumptionsText: string | null;
   termsText: string | null;
   currency: string;
   status: string;
@@ -160,6 +161,17 @@ export function PublicQuoteClient({ quote, groups, token, initialTotals, expired
             </div>
           ))}
         </section>
+
+        {quote.assumptionsText && (
+          <section className="mt-8 rounded-lg bg-neutral-50 border border-neutral-200 p-4">
+            <h3 className="text-xs uppercase tracking-wide text-neutral-500 mb-2 font-semibold">
+              Assumptions
+            </h3>
+            <p className="text-sm text-neutral-700 whitespace-pre-wrap leading-relaxed">
+              {quote.assumptionsText}
+            </p>
+          </section>
+        )}
 
         {/* Totals */}
         <section className="mt-8 ml-auto max-w-sm">

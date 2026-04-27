@@ -70,6 +70,7 @@ export async function GET(
     reference: `Template`,
     title: template.name,
     introText: template.introText,
+    assumptionsText: template.assumptionsText,
     termsText: template.termsText,
     currency: "USD",
     taxRate: null,

@@ -7,8 +7,8 @@ import { Save, Trash2, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { RichTextEditor } from "@/components/shared/rich-text-editor";
 import {
   updateWorkflowEmailTemplate,
   deleteWorkflowEmailTemplate,
@@ -68,12 +68,8 @@ export function EmailTemplateEditor({ template, canDelete }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<Date | null>(null);
   const [pending, startTransition] = useTransition();
-  const [activeField, setActiveField] = useState<
-    "subject" | "bodyHtml" | "bodyText" | null
-  >(null);
   const subjectRef = useRef<HTMLInputElement | null>(null);
-  const bodyHtmlRef = useRef<HTMLTextAreaElement | null>(null);
-  const bodyTextRef = useRef<HTMLTextAreaElement | null>(null);
+  const [subjectActive, setSubjectActive] = useState(false);
 
   // Live preview — substitute the sample context against current text.
   const renderedSubject = useMemo(
@@ -85,44 +81,21 @@ export function EmailTemplateEditor({ template, canDelete }: Props) {
     [bodyHtml]
   );
 
-  function insertVariable(path: string) {
+  function insertSubjectVariable(path: string) {
+    const el = subjectRef.current;
     const token = `{{${path}}}`;
-    if (activeField === "subject" && subjectRef.current) {
-      const el = subjectRef.current;
-      const start = el.selectionStart ?? subject.length;
-      const end = el.selectionEnd ?? subject.length;
-      setSubject(subject.slice(0, start) + token + subject.slice(end));
-      // Restore focus after React re-renders.
-      requestAnimationFrame(() => {
-        el.focus();
-        el.setSelectionRange(start + token.length, start + token.length);
-      });
+    if (!el) {
+      setSubject((s) => s + token);
       return;
     }
-    if (activeField === "bodyHtml" && bodyHtmlRef.current) {
-      const el = bodyHtmlRef.current;
-      const start = el.selectionStart ?? bodyHtml.length;
-      const end = el.selectionEnd ?? bodyHtml.length;
-      setBodyHtml(bodyHtml.slice(0, start) + token + bodyHtml.slice(end));
-      requestAnimationFrame(() => {
-        el.focus();
-        el.setSelectionRange(start + token.length, start + token.length);
-      });
-      return;
-    }
-    if (activeField === "bodyText" && bodyTextRef.current) {
-      const el = bodyTextRef.current;
-      const start = el.selectionStart ?? bodyText.length;
-      const end = el.selectionEnd ?? bodyText.length;
-      setBodyText(bodyText.slice(0, start) + token + bodyText.slice(end));
-      requestAnimationFrame(() => {
-        el.focus();
-        el.setSelectionRange(start + token.length, start + token.length);
-      });
-      return;
-    }
-    // No field focused — append to the body as a sensible default.
-    setBodyHtml(bodyHtml + token);
+    const start = el.selectionStart ?? subject.length;
+    const end = el.selectionEnd ?? subject.length;
+    const next = subject.slice(0, start) + token + subject.slice(end);
+    setSubject(next);
+    requestAnimationFrame(() => {
+      el.focus();
+      el.setSelectionRange(start + token.length, start + token.length);
+    });
   }
 
   function handleSave() {
@@ -229,36 +202,39 @@ export function EmailTemplateEditor({ template, canDelete }: Props) {
                   ref={subjectRef}
                   value={subject}
                   onChange={(e) => setSubject(e.target.value)}
-                  onFocus={() => setActiveField("subject")}
+                  onFocus={() => setSubjectActive(true)}
+                  onBlur={() => setSubjectActive(false)}
                   className="flex h-10 w-full rounded border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-1"
                 />
+                {subjectActive && (
+                  <SubjectVariablePicker onInsert={insertSubjectVariable} />
+                )}
               </div>
 
               <div>
                 <label className="block text-sm font-medium text-foreground mb-1">
-                  Body (HTML)
+                  Body
                 </label>
-                <textarea
-                  ref={bodyHtmlRef}
+                <RichTextEditor
                   value={bodyHtml}
-                  onChange={(e) => setBodyHtml(e.target.value)}
-                  onFocus={() => setActiveField("bodyHtml")}
-                  rows={14}
-                  className="flex w-full rounded border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-1 font-mono"
+                  onChange={setBodyHtml}
+                  variables={SUGGESTED_VARIABLES}
+                  placeholder="Hi {{subject.firstName}},"
                 />
                 <p className="text-xs text-muted-foreground mt-1">
-                  HTML body. Use <code>{"{{path.to.value}}"}</code> tokens
-                  for variable substitution.
+                  Type in plain English. Use the toolbar for formatting.
+                  Click the variable button to insert chips like{" "}
+                  <span className="font-mono">{"{{subject.firstName}}"}</span> —
+                  they render as the recipient&apos;s actual values when the
+                  email is sent.
                 </p>
               </div>
 
               <Textarea
-                ref={bodyTextRef}
                 label="Plain text fallback (optional)"
                 value={bodyText}
                 onChange={(e) => setBodyText(e.target.value)}
-                onFocus={() => setActiveField("bodyText")}
-                rows={6}
+                rows={5}
                 placeholder="Auto-derived from HTML if blank"
                 className="font-mono"
               />
@@ -301,23 +277,18 @@ export function EmailTemplateEditor({ template, canDelete }: Props) {
             </CardHeader>
             <CardContent>
               <p className="text-xs text-muted-foreground mb-3">
-                Click to insert at the cursor of the focused field.
+                Use the toolbar inside the body editor to insert these as
+                chips. The list below is here for reference.
               </p>
               <ul className="space-y-1">
                 {SUGGESTED_VARIABLES.map((v) => (
-                  <li key={v.path}>
-                    <button
-                      type="button"
-                      onClick={() => insertVariable(v.path)}
-                      className="w-full text-left rounded p-2 hover:bg-muted text-xs group"
-                    >
-                      <span className="font-mono text-primary group-hover:underline">
-                        {`{{${v.path}}}`}
-                      </span>
-                      <span className="block text-muted-foreground text-[10px] mt-0.5">
-                        {v.description}
-                      </span>
-                    </button>
+                  <li key={v.path} className="rounded p-2 text-xs">
+                    <span className="font-mono text-primary">
+                      {`{{${v.path}}}`}
+                    </span>
+                    <span className="block text-muted-foreground text-[10px] mt-0.5">
+                      {v.description}
+                    </span>
                   </li>
                 ))}
               </ul>
@@ -325,6 +296,35 @@ export function EmailTemplateEditor({ template, canDelete }: Props) {
           </Card>
         </div>
       </div>
+    </div>
+  );
+}
+
+// Compact picker that drops in below the subject input when it's
+// focused — gives authors variable-insertion access on the subject
+// line too, since the rich text editor only owns the body field.
+function SubjectVariablePicker({
+  onInsert,
+}: {
+  onInsert: (path: string) => void;
+}) {
+  return (
+    <div className="mt-1 flex flex-wrap gap-1">
+      {SUGGESTED_VARIABLES.slice(0, 6).map((v) => (
+        <button
+          key={v.path}
+          type="button"
+          // onMouseDown so the click registers BEFORE the input's blur
+          // handler fires and tears down the picker.
+          onMouseDown={(e) => {
+            e.preventDefault();
+            onInsert(v.path);
+          }}
+          className="text-[10px] font-mono bg-primary/10 text-primary rounded px-1.5 py-0.5 hover:bg-primary/20"
+        >
+          {`{{${v.path}}}`}
+        </button>
+      ))}
     </div>
   );
 }

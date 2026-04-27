@@ -55,11 +55,14 @@ describe("validateStepConfig", () => {
     expect(r.ok).toBe(true);
   });
 
-  it("rejects SEND_EMAIL without an emailTemplateId", () => {
+  it("accepts SEND_EMAIL with a missing emailTemplateId (draft mode)", () => {
+    // Editor saves partially-filled steps so the user can iterate. The
+    // engine's send-email handler still throws at runtime if the
+    // template id is missing — that's the strict gate.
     const r = validateStepConfig("SEND_EMAIL", {
       toRecipient: "subject",
     });
-    expect(r.ok).toBe(false);
+    expect(r.ok).toBe(true);
   });
 
   it("accepts a valid WAIT config and rejects negative days", () => {
@@ -67,13 +70,13 @@ describe("validateStepConfig", () => {
     expect(validateStepConfig("WAIT", { delayDays: -1 }).ok).toBe(false);
   });
 
-  it("rejects ASSIGN_TASK_TO_USER missing the title", () => {
+  it("accepts ASSIGN_TASK_TO_USER with an empty title (draft mode)", () => {
     const r = validateStepConfig("ASSIGN_TASK_TO_USER", {
       assignee: "manager",
       title: "",
       dueOffsetDays: 0,
     });
-    expect(r.ok).toBe(false);
+    expect(r.ok).toBe(true);
   });
 
   it("accepts a SCHEDULE_MEETING config with attendees array", () => {
@@ -86,14 +89,28 @@ describe("validateStepConfig", () => {
     expect(r.ok).toBe(true);
   });
 
-  it("rejects a SCHEDULE_MEETING with duration outside the allowed range", () => {
+  it("accepts an unbounded SCHEDULE_MEETING duration in draft mode", () => {
+    // Draft saves are permissive — the engine just creates a
+    // 5-minute meeting if that's what the author chose. The previous
+    // tight 15-480 range was overzealous.
     const r = validateStepConfig("SCHEDULE_MEETING", {
       meetingTitle: "Onboarding",
       attendees: ["subject"],
       durationMinutes: 5,
       offsetDays: 0,
     });
-    expect(r.ok).toBe(false);
+    expect(r.ok).toBe(true);
+  });
+
+  it("accepts the picker-added defaults for every step type", () => {
+    // Regression for the bug where "Send email" / "Task for team" /
+    // etc. couldn't be added because their default config was rejected
+    // by overly-strict z.string().min(1) gates. This test pins each
+    // STEP_TYPE_DEFINITIONS default config against its validator.
+    for (const def of STEP_TYPE_DEFINITIONS) {
+      const r = validateStepConfig(def.type, def.defaultConfig);
+      expect(r.ok, `default config for ${def.type} must validate`).toBe(true);
+    }
   });
 });
 

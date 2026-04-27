@@ -6,7 +6,12 @@ import { revalidateWorkflowTemplate } from "@/lib/revalidate-entity";
 import { z } from "zod";
 import type { WorkflowTriggerType } from "@prisma/client";
 
-const triggerTypeSchema = z.enum(["ENTITY_CREATE", "SCHEDULED_DATE", "STAGE_CHANGE"]);
+const triggerTypeSchema = z.enum([
+  "ENTITY_CREATE",
+  "SCHEDULED_DATE",
+  "STAGE_CHANGE",
+  "PROJECT_ASSIGNMENT",
+]);
 
 const upsertSchema = z.object({
   workflowTemplateId: z.string().min(1),

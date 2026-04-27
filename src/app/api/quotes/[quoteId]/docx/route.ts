@@ -73,6 +73,7 @@ export async function GET(
     reference: quote.quoteNumber,
     title: quote.title,
     introText: quote.introText,
+    assumptionsText: quote.assumptionsText,
     termsText: quote.termsText,
     currency: quote.currency,
     taxRate: quote.taxRate,

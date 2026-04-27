@@ -15,7 +15,7 @@ export default async function AdminUsersPage() {
   if (!session?.user) redirect("/login");
   if (session.user.role !== "ADMIN") redirect("/dashboard");
 
-  const [activeUsers, inactiveUsers, allUsers] = await Promise.all([
+  const [activeUsers, inactiveUsers, allUsers, workflowTemplates] = await Promise.all([
     db.user.findMany({
       where: { isActive: true },
       orderBy: { name: "asc" },
@@ -29,6 +29,11 @@ export default async function AdminUsersPage() {
     db.user.findMany({
       select: { id: true, name: true },
       orderBy: { name: "asc" },
+    }),
+    db.workflowTemplate.findMany({
+      where: { isActive: true, subjectEntityType: "EMPLOYEE" },
+      select: { id: true, name: true, type: true },
+      orderBy: [{ isSeed: "desc" }, { name: "asc" }],
     }),
   ]);
 
@@ -94,7 +99,7 @@ export default async function AdminUsersPage() {
       <PageHeader
         title="User Management"
         description="Manage users, roles, and permissions"
-        actions={<UserCreateButton allUsers={allUsers} />}
+        actions={<UserCreateButton allUsers={allUsers} workflowTemplates={workflowTemplates} />}
       />
 
       <Card className="mb-6">

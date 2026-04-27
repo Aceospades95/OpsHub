@@ -25,7 +25,7 @@ export default async function WorkflowTemplateEditPage({ params }: Props) {
     );
   }
 
-  const [template, emailTemplates] = await Promise.all([
+  const [template, emailTemplates, projects] = await Promise.all([
     db.workflowTemplate.findUnique({
       where: { id: templateId },
       include: {
@@ -36,6 +36,15 @@ export default async function WorkflowTemplateEditPage({ params }: Props) {
     db.workflowEmailTemplate.findMany({
       orderBy: { name: "asc" },
       select: { id: true, name: true, subject: true },
+    }),
+    // Active projects available to scope a PROJECT_ASSIGNMENT trigger.
+    // We fetch lazily here rather than inside TriggersPanel because the
+    // panel is a client component and ought to receive projects as a
+    // serializable prop.
+    db.project.findMany({
+      where: { status: { in: ["PLANNING", "ACTIVE"] } },
+      select: { id: true, name: true },
+      orderBy: { name: "asc" },
     }),
   ]);
 
@@ -77,6 +86,7 @@ export default async function WorkflowTemplateEditPage({ params }: Props) {
             config: t.config,
             isActive: t.isActive,
           }))}
+          projects={projects}
           canEdit={perms.canEdit}
         />
       </div>
