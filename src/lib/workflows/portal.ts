@@ -48,21 +48,6 @@ export async function getPortalSubject(
     });
     if (!user || !user.isActive) return null;
     displayName = user.name || "(no name)";
-  } else if (row.subjectType === "CANDIDATE") {
-    const candidate = await db.candidate.findUnique({
-      where: { id: row.subjectId },
-      select: { firstName: true, lastName: true, stage: true },
-    });
-    if (!candidate) return null;
-    // Candidates whose hiring is over (REJECTED/WITHDRAWN/HIRED with
-    // a converted user) shouldn't continue to access the portal.
-    if (
-      candidate.stage === "REJECTED" ||
-      candidate.stage === "WITHDRAWN"
-    ) {
-      return null;
-    }
-    displayName = `${candidate.firstName} ${candidate.lastName}`.trim() || "(no name)";
   } else {
     displayName = `Subject ${row.subjectId.slice(0, 8)}`;
   }

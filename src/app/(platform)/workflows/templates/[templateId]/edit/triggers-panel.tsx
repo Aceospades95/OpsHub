@@ -31,9 +31,10 @@ interface ProjectOption {
 
 interface Props {
   templateId: string;
-  /** Drives which trigger types are appropriate. ENTITY_CREATE for User
-   *  workflows requires subjectEntityType=EMPLOYEE; same for Candidate. */
-  subjectEntityType: "EMPLOYEE" | "CANDIDATE" | "CUSTOM";
+  /** Drives which trigger types are appropriate. ENTITY_CREATE +
+   *  PROJECT_ASSIGNMENT + SCHEDULED_DATE all require
+   *  subjectEntityType=EMPLOYEE today. */
+  subjectEntityType: "EMPLOYEE" | "CUSTOM";
   triggers: TriggerRow[];
   /** Active projects available to scope a PROJECT_ASSIGNMENT trigger. */
   projects: ProjectOption[];
@@ -59,12 +60,7 @@ export function TriggersPanel({
   const [error, setError] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
 
-  const entityType =
-    subjectEntityType === "EMPLOYEE"
-      ? "User"
-      : subjectEntityType === "CANDIDATE"
-        ? "Candidate"
-        : "Custom";
+  const entityType = subjectEntityType === "EMPLOYEE" ? "User" : "Custom";
 
   function run<T>(fn: () => Promise<T>) {
     setError(null);
@@ -237,7 +233,7 @@ function AddTriggerDialog({
   onError,
 }: {
   templateId: string;
-  subjectEntityType: "EMPLOYEE" | "CANDIDATE" | "CUSTOM";
+  subjectEntityType: "EMPLOYEE" | "CUSTOM";
   entityType: string;
   projects: ProjectOption[];
   onClose: (changed: boolean) => void;
@@ -305,8 +301,8 @@ function AddTriggerDialog({
       {options.length === 0 ? (
         <div className="space-y-3">
           <p className="text-sm text-muted-foreground">
-            Set the template&apos;s subject to Employee or Candidate before
-            adding an auto-trigger.
+            Set the template&apos;s subject to Employee before adding
+            an auto-trigger.
           </p>
           <div className="flex justify-end">
             <Button variant="outline" onClick={() => onClose(false)}>

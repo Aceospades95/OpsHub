@@ -112,7 +112,7 @@ describe("fireScheduledDateTriggers", () => {
     expect(createInstanceMock).not.toHaveBeenCalled();
   });
 
-  it("skips when subjectEntityType doesn't match (e.g. CANDIDATE template trying to use terminationDate)", async () => {
+  it("skips when subjectEntityType doesn't match (e.g. CUSTOM template trying to use terminationDate)", async () => {
     triggerMock.findMany.mockResolvedValue([
       {
         id: "t1",
@@ -120,7 +120,7 @@ describe("fireScheduledDateTriggers", () => {
         triggerType: "SCHEDULED_DATE",
         config: JSON.stringify({ dateField: "terminationDate", offsetDays: -7 }),
         isActive: true,
-        workflowTemplate: { name: "Hiring", subjectEntityType: "CANDIDATE" },
+        workflowTemplate: { name: "Custom", subjectEntityType: "CUSTOM" },
       },
     ]);
     const r = await fireScheduledDateTriggers(new Date("2026-06-15"));

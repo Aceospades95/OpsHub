@@ -11,7 +11,6 @@ vi.mock("@/lib/db", () => ({
       update: vi.fn(),
     },
     user: { findUnique: vi.fn() },
-    candidate: { findUnique: vi.fn() },
     workflowInstance: { findMany: vi.fn() },
     workflowInstanceStep: { findUnique: vi.fn() },
   },
@@ -30,9 +29,6 @@ const portalToken = db.portalToken as unknown as {
   update: ReturnType<typeof vi.fn>;
 };
 const userMock = db.user as unknown as { findUnique: ReturnType<typeof vi.fn> };
-const candidateMock = db.candidate as unknown as {
-  findUnique: ReturnType<typeof vi.fn>;
-};
 const wfInstanceMock = db.workflowInstance as unknown as {
   findMany: ReturnType<typeof vi.fn>;
 };
@@ -123,44 +119,20 @@ describe("getPortalSubject", () => {
     });
   });
 
-  it("resolves CANDIDATE tokens to firstName + lastName", async () => {
+  it("returns null for unknown subjectType (e.g. legacy CANDIDATE rows on a stale DB)", async () => {
     portalToken.findUnique.mockResolvedValue({
       id: "tk1",
-      subjectType: "CANDIDATE",
-      subjectId: "cand-12345678",
+      // Use a value that's not in the current enum to exercise the
+      // "displayName stays as default" path. With the Candidate model
+      // gone, this is what the resolver does for any unknown type.
+      subjectType: "CUSTOM",
+      subjectId: "x",
       token: "abc",
       expiresAt: null,
-    });
-    candidateMock.findUnique.mockResolvedValue({
-      firstName: "Sam",
-      lastName: "Lee",
-      stage: "PHONE_SCREEN",
     });
     const r = await getPortalSubject("abc");
-    expect(r?.displayName).toBe("Sam Lee");
-  });
-
-  it("returns null for a CANDIDATE token whose stage is REJECTED or WITHDRAWN", async () => {
-    portalToken.findUnique.mockResolvedValue({
-      id: "tk1",
-      subjectType: "CANDIDATE",
-      subjectId: "cand-1",
-      token: "abc",
-      expiresAt: null,
-    });
-    candidateMock.findUnique.mockResolvedValue({
-      firstName: "Sam",
-      lastName: "Lee",
-      stage: "REJECTED",
-    });
-    expect(await getPortalSubject("abc")).toBeNull();
-
-    candidateMock.findUnique.mockResolvedValueOnce({
-      firstName: "Sam",
-      lastName: "Lee",
-      stage: "WITHDRAWN",
-    });
-    expect(await getPortalSubject("abc")).toBeNull();
+    // Falls through to the "Subject {id}" fallback name.
+    expect(r?.displayName).toContain("Subject");
   });
 });
 

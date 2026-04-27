@@ -184,7 +184,7 @@ export function revalidateWorkflowEmailTemplate(templateId: string) {
 export function revalidateWorkflowInstance(
   instanceId: string,
   opts?: {
-    subjectType?: "EMPLOYEE" | "CANDIDATE" | "CUSTOM";
+    subjectType?: "EMPLOYEE" | "CUSTOM";
     subjectId?: string | null;
   }
 ) {

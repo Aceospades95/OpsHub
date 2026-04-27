@@ -13,7 +13,7 @@ import { createWorkflowInstance } from "@/actions/workflow-instances";
 interface TemplateOption {
   id: string;
   name: string;
-  type: "ONBOARDING" | "OFFBOARDING" | "CANDIDATE" | "CUSTOM";
+  type: "ONBOARDING" | "OFFBOARDING" | "CUSTOM";
 }
 
 interface Props {

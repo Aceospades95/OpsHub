@@ -20,7 +20,7 @@ import type { WorkflowSubjectType } from "@prisma/client";
 
 // ─── Validation ──────────────────────────────────────────────────────────
 
-const subjectTypeSchema = z.enum(["EMPLOYEE", "CANDIDATE", "CUSTOM"]);
+const subjectTypeSchema = z.enum(["EMPLOYEE", "CUSTOM"]);
 
 const createInstanceSchema = z.object({
   templateId: z.string().min(1),
@@ -55,8 +55,7 @@ export async function createWorkflowInstance(
   }
 
   // Validate subject for EMPLOYEE — confirm the user actually exists.
-  // CANDIDATE / CUSTOM can be free-form for now (Phase 5 fills in the
-  // Candidate model + lookup).
+  // CUSTOM can be free-form (engine resolves it at run time).
   if (parsed.data.subjectType === "EMPLOYEE") {
     const subject = await db.user.findUnique({
       where: { id: parsed.data.subjectId },

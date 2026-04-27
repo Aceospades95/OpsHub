@@ -17,7 +17,7 @@ import { FormCard } from "./form-card";
 import { TaskCompletionCard } from "./task-completion-card";
 
 interface PortalSubject {
-  subjectType: "EMPLOYEE" | "CANDIDATE" | "CUSTOM";
+  subjectType: "EMPLOYEE" | "CUSTOM";
   subjectId: string;
   displayName: string;
   tokenId: string;

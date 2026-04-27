@@ -155,7 +155,7 @@ export function RichTextEditor({
       <Toolbar editor={editor} variables={variables} />
       <EditorContent
         editor={editor}
-        className="prose prose-sm max-w-none p-3 min-h-[160px] focus:outline-none [&_.ProseMirror]:outline-none [&_.ProseMirror]:min-h-[140px]"
+        className="p-3 text-sm focus:outline-none"
       />
     </div>
   );

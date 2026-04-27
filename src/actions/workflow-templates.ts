@@ -13,14 +13,9 @@ import {
 import { z } from "zod";
 import type { WorkflowStepType, WorkflowTimingType, WorkflowType, WorkflowSubjectType } from "@prisma/client";
 
-const workflowTypeSchema = z.enum([
-  "ONBOARDING",
-  "OFFBOARDING",
-  "CANDIDATE",
-  "CUSTOM",
-]);
+const workflowTypeSchema = z.enum(["ONBOARDING", "OFFBOARDING", "CUSTOM"]);
 
-const subjectTypeSchema = z.enum(["EMPLOYEE", "CANDIDATE", "CUSTOM"]);
+const subjectTypeSchema = z.enum(["EMPLOYEE", "CUSTOM"]);
 
 const templateMetaSchema = z.object({
   name: z.string().min(1, "Name is required"),

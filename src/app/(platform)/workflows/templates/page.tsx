@@ -15,7 +15,6 @@ import { WorkflowTemplateCreateButton } from "./template-create-button";
 const TYPE_LABEL: Record<string, string> = {
   ONBOARDING: "Onboarding",
   OFFBOARDING: "Offboarding",
-  CANDIDATE: "Candidate hiring",
   CUSTOM: "Custom",
 };
 
@@ -36,10 +35,10 @@ export default async function WorkflowTemplatesPage({
     );
   }
 
-  const typeFilter = ["ONBOARDING", "OFFBOARDING", "CANDIDATE", "CUSTOM"].includes(
+  const typeFilter = ["ONBOARDING", "OFFBOARDING", "CUSTOM"].includes(
     searchParams.type ?? ""
   )
-    ? (searchParams.type as "ONBOARDING" | "OFFBOARDING" | "CANDIDATE" | "CUSTOM")
+    ? (searchParams.type as "ONBOARDING" | "OFFBOARDING" | "CUSTOM")
     : undefined;
   const showArchived = searchParams.archived === "1";
 
@@ -88,12 +87,6 @@ export default async function WorkflowTemplatesPage({
           active={typeFilter === "OFFBOARDING"}
         >
           Offboarding
-        </FilterPill>
-        <FilterPill
-          href="/workflows/templates?type=CANDIDATE"
-          active={typeFilter === "CANDIDATE"}
-        >
-          Candidate
         </FilterPill>
         <FilterPill
           href="/workflows/templates?type=CUSTOM"

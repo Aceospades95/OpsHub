@@ -16,8 +16,8 @@ export function WorkflowTemplateCreateButton() {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const [type, setType] = useState<"ONBOARDING" | "OFFBOARDING" | "CANDIDATE" | "CUSTOM">("CUSTOM");
-  const [subjectEntityType, setSubjectEntityType] = useState<"EMPLOYEE" | "CANDIDATE" | "CUSTOM">("EMPLOYEE");
+  const [type, setType] = useState<"ONBOARDING" | "OFFBOARDING" | "CUSTOM">("CUSTOM");
+  const [subjectEntityType, setSubjectEntityType] = useState<"EMPLOYEE" | "CUSTOM">("EMPLOYEE");
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
@@ -72,7 +72,6 @@ export function WorkflowTemplateCreateButton() {
                 { label: "Custom", value: "CUSTOM" },
                 { label: "Onboarding", value: "ONBOARDING" },
                 { label: "Offboarding", value: "OFFBOARDING" },
-                { label: "Candidate hiring", value: "CANDIDATE" },
               ]}
             />
             <Select
@@ -83,7 +82,6 @@ export function WorkflowTemplateCreateButton() {
               }
               options={[
                 { label: "Employee", value: "EMPLOYEE" },
-                { label: "Candidate", value: "CANDIDATE" },
                 { label: "Custom", value: "CUSTOM" },
               ]}
             />

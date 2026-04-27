@@ -71,9 +71,9 @@ describe("fireEntityCreateTriggers", () => {
         id: "t1",
         workflowTemplateId: "tpl1",
         triggerType: "ENTITY_CREATE",
-        config: JSON.stringify({ entityType: "Candidate" }),
+        config: JSON.stringify({ entityType: "Project" }),
         isActive: true,
-        workflowTemplate: { name: "Hiring", subjectEntityType: "CANDIDATE" },
+        workflowTemplate: { name: "Project flow", subjectEntityType: "CUSTOM" },
       },
     ]);
     const r = await fireEntityCreateTriggers({
@@ -91,10 +91,12 @@ describe("fireEntityCreateTriggers", () => {
         id: "t1",
         workflowTemplateId: "tpl1",
         triggerType: "ENTITY_CREATE",
-        // Mismatch: trigger says User but template subject is CANDIDATE.
+        // Mismatch: trigger says User but template subject is CUSTOM —
+        // misconfigured because ENTITY_CREATE for User must run against
+        // an EMPLOYEE-subject template.
         config: JSON.stringify({ entityType: "User" }),
         isActive: true,
-        workflowTemplate: { name: "Misconfigured", subjectEntityType: "CANDIDATE" },
+        workflowTemplate: { name: "Misconfigured", subjectEntityType: "CUSTOM" },
       },
     ]);
     const r = await fireEntityCreateTriggers({

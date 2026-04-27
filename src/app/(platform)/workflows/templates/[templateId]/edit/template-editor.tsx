@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -91,6 +91,14 @@ export function TemplateEditor({
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
+  // Sync server-fetched steps into local state when the prop changes
+  // (e.g. after a refresh()). Without this, useState's initial-value-only
+  // semantics keep the local copy stale, so the step picker would
+  // appear to "do nothing" until a hard reload.
+  useEffect(() => {
+    setSteps(initialSteps);
+  }, [initialSteps]);
+
   function refresh() {
     router.refresh();
   }
@@ -113,6 +121,22 @@ export function TemplateEditor({
         setError(res.error ?? "Could not add step");
         return;
       }
+      // Append optimistically so the timeline updates immediately —
+      // router.refresh() reconciles in the background.
+      setSteps((prev) => [
+        ...prev,
+        {
+          id: res.id,
+          position: prev.length,
+          name: def.label,
+          stepType: def.type,
+          config: JSON.stringify(def.defaultConfig),
+          timingType: "ON_ENTRY",
+          timingValue: 0,
+          afterStepId: null,
+          isRequired: true,
+        },
+      ]);
       refresh();
     });
   }
@@ -590,7 +614,6 @@ function TemplateSettingsDialog({
               { label: "Custom", value: "CUSTOM" },
               { label: "Onboarding", value: "ONBOARDING" },
               { label: "Offboarding", value: "OFFBOARDING" },
-              { label: "Candidate", value: "CANDIDATE" },
             ]}
           />
           <Select
@@ -601,7 +624,6 @@ function TemplateSettingsDialog({
             }
             options={[
               { label: "Employee", value: "EMPLOYEE" },
-              { label: "Candidate", value: "CANDIDATE" },
               { label: "Custom", value: "CUSTOM" },
             ]}
           />

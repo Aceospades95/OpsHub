@@ -169,13 +169,11 @@ enum QuoteRecurringInterval {
 enum WorkflowType {
   ONBOARDING
   OFFBOARDING
-  CANDIDATE
   CUSTOM
 }
 
 enum WorkflowSubjectType {
   EMPLOYEE
-  CANDIDATE
   CUSTOM
 }
 
@@ -299,8 +297,6 @@ model User {
   createdWorkflowInstances       WorkflowInstance[]      @relation("WorkflowInstanceCreator")
   completedWorkflowInstanceSteps WorkflowInstanceStep[]  @relation("WorkflowInstanceStepCompletedBy")
   createdWorkflowEmailTemplates  WorkflowEmailTemplate[] @relation("WorkflowEmailTemplateCreator")
-  createdCandidates              Candidate[]             @relation("CandidateCreator")
-  convertedFromCandidate         Candidate?              @relation("CandidateConvertedUser")
 }
 
 model ModulePermission {
@@ -1477,9 +1473,8 @@ model WorkflowInstance {
   id                 String                 @id @default(cuid())
   workflowTemplateId String
   /// Polymorphic FK — subjectId points at a User (when subjectType is
-  /// EMPLOYEE), a Candidate row (CANDIDATE — model added in Phase 4),
-  /// or a free-form id (CUSTOM). No DB-level FK because the type
-  /// varies; the engine resolves the subject in code.
+  /// EMPLOYEE) or a free-form id (CUSTOM). No DB-level FK because the
+  /// type varies; the engine resolves the subject in code.
   subjectType        WorkflowSubjectType
   subjectId          String
   status             WorkflowInstanceStatus @default(PENDING)
@@ -1643,50 +1638,6 @@ model WorkflowTrigger {
   @@index([triggerType, isActive])
 }
 
-// ─── CANDIDATES ─────────────────────────────────────────────
-//
-// Minimal applicant model. Phase 3's seeded "Candidate hiring (default)"
-// workflow template targets CANDIDATE-subject instances; Phase 6 finally
-// gives those instances a real entity to live against. The list is small
-// on purpose — once a candidate accepts an offer they get converted into
-// a User and the Employee Onboarding workflow takes over from there.
-
-enum CandidateStage {
-  APPLIED
-  PHONE_SCREEN
-  TECHNICAL_INTERVIEW
-  OFFER
-  OFFER_ACCEPTED
-  HIRED
-  REJECTED
-  WITHDRAWN
-}
-
-model Candidate {
-  id          String         @id @default(cuid())
-  firstName   String
-  lastName    String
-  email       String         @unique
-  phone       String?
-  /// Position they applied for ("Senior Engineer", "Sales Lead").
-  /// Free-text so workflows that route by role can match against it
-  /// in conditional_branch step configs without needing a separate
-  /// Role table for hiring.
-  position    String?
-  stage       CandidateStage @default(APPLIED)
-  source      String?        // "linkedin", "referral", etc.
-  resumeUrl   String?
-  notes       String?        @db.Text
-  createdById String
-  createdAt   DateTime       @default(now())
-  updatedAt   DateTime       @updatedAt
-  /// Once a candidate is converted into a User the link is set here
-  /// so the candidate row stays as the audit trail for the hire.
-  convertedUserId String?    @unique
-
-  createdBy User  @relation("CandidateCreator", fields: [createdById], references: [id])
-  convertedUser User? @relation("CandidateConvertedUser", fields: [convertedUserId], references: [id], onDelete: SetNull)
-
-  @@index([stage])
-  @@index([createdAt])
-}
+// (Candidate model removed — hiring now flows through workflow
+//  triggers on User creation and project assignment. The
+//  WorkflowSubjectType enum no longer offers CANDIDATE.)

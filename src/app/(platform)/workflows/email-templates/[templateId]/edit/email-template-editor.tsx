@@ -259,7 +259,7 @@ export function EmailTemplateEditor({ template, canDelete }: Props) {
                   Body:
                 </p>
                 <div
-                  className="prose prose-sm max-w-none text-sm"
+                  className="email-preview max-w-none"
                   // dangerouslySetInnerHTML is safe here — the rendered
                   // HTML is the template author's own content rendered
                   // for their own preview, not user-supplied content.

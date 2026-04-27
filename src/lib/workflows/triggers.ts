@@ -10,13 +10,13 @@
  *
  *   ENTITY_CREATE  — fired by the action that creates the entity, right
  *                    after the row commits. config.entityType selects
- *                    which entity ("User" today; "Candidate" Phase 5+).
+ *                    which entity ("User" today).
  *
  *   SCHEDULED_DATE — evaluated by the cron tick worker. config.dateField
  *                    + offsetDays decide when to fire.
  *
- *   STAGE_CHANGE   — Phase 5+. Fires when a Candidate's stage flips to
- *                    a target value.
+ *   STAGE_CHANGE   — reserved. Fires when a subject's stage field
+ *                    flips to a target value.
  *
  * Failure handling: triggers must NEVER throw out of the originating
  * action. If onboarding-template-spawn fails for some reason, we
@@ -32,7 +32,7 @@ import type { WorkflowSubjectType } from "@prisma/client";
 export interface EntityCreateEvent {
   /** Entity type that was just created. Compared case-insensitively
    *  against the trigger config. */
-  entityType: "User" | "Candidate";
+  entityType: "User";
   /** Id of the entity row. Becomes the workflow instance's subjectId. */
   entityId: string;
   /** User performing the create — attribution for the spawned instance. */
@@ -51,19 +51,13 @@ export interface EntityCreateEvent {
 export async function fireEntityCreateTriggers(
   event: EntityCreateEvent
 ): Promise<{ instanceIds: string[]; errors: string[] }> {
-  // Map subject type from the entity type — User → EMPLOYEE,
-  // Candidate → CANDIDATE. Any other entity stays out of scope, and
-  // we short-circuit BEFORE the DB query so unrelated creates don't
-  // pay the round trip.
-  const subjectType: WorkflowSubjectType | null =
-    event.entityType === "User"
-      ? "EMPLOYEE"
-      : event.entityType === "Candidate"
-        ? "CANDIDATE"
-        : null;
-  if (!subjectType) {
+  // Only User-created events can trigger workflows today; the engine
+  // shorts-circuit BEFORE the DB query so unrelated creates don't pay
+  // the round trip.
+  if (event.entityType !== "User") {
     return { instanceIds: [], errors: [] };
   }
+  const subjectType: WorkflowSubjectType = "EMPLOYEE";
 
   const triggers = await db.workflowTrigger.findMany({
     where: {
@@ -92,9 +86,8 @@ export async function fireEntityCreateTriggers(
       continue;
     }
 
-    // Skip when the template's subject type doesn't match the entity —
-    // e.g. an ENTITY_CREATE trigger for User shouldn't kick a CANDIDATE
-    // template even if someone misconfigured them.
+    // Skip when the template's subject type doesn't match the
+    // resolved entity type — defensive against misconfiguration.
     if (t.workflowTemplate.subjectEntityType !== subjectType) {
       continue;
     }
