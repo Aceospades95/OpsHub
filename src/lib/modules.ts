@@ -24,6 +24,7 @@ export type ModuleKey =
   | "tools"
   | "intranet"
   | "quotes"
+  | "workflows"
   | "settings";
 
 export type PermissionFlag =
@@ -198,6 +199,15 @@ export const MODULES: ModuleDefinition[] = [
     icon: "ReceiptText",
     description: "Sales quotes, line-item builder, templates, and catalog",
     section: "delivery",
+    permissioned: true,
+  },
+  {
+    key: "workflows",
+    label: "Workflows",
+    href: "/workflows",
+    icon: "Workflow",
+    description: "Automated onboarding, offboarding, and hiring sequences",
+    section: "main",
     permissioned: true,
   },
   {

@@ -10,6 +10,7 @@
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
     "promote:admin": "npx tsx prisma/promote-admin.ts",
+    "seed:workflows": "npx tsx prisma/seed-workflow-defaults.ts",
     "db:studio": "prisma studio",
     "test": "vitest run",
     "test:watch": "vitest"

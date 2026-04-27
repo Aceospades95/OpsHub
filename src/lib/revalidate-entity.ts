@@ -159,6 +159,44 @@ export function revalidateQuote(
   }
 }
 
+// ─── WORKFLOW TEMPLATE ────────────────────────────────────────
+//
+// A template appears on: /workflows/templates list, the editor page,
+// and indirectly on instance views (instance shows template name).
+
+export function revalidateWorkflowTemplate(templateId: string) {
+  revalidatePath("/workflows", "layout");
+  revalidatePath(`/workflows/templates/${templateId}/edit`);
+  revalidatePath("/workflows/templates");
+}
+
+export function revalidateWorkflowEmailTemplate(templateId: string) {
+  revalidatePath("/workflows/email-templates");
+  revalidatePath(`/workflows/email-templates/${templateId}/edit`);
+}
+
+// ─── WORKFLOW INSTANCE ────────────────────────────────────────
+//
+// An instance appears on: /workflows/instances dashboard, the per-
+// instance detail view, the subject's profile (employee or candidate),
+// and possibly the dashboard via "my tasks" widget.
+
+export function revalidateWorkflowInstance(
+  instanceId: string,
+  opts?: {
+    subjectType?: "EMPLOYEE" | "CANDIDATE" | "CUSTOM";
+    subjectId?: string | null;
+  }
+) {
+  revalidatePath(`/workflows/instances/${instanceId}`);
+  revalidatePath("/workflows/instances");
+  revalidatePath("/workflows", "layout");
+  revalidatePath("/dashboard");
+  if (opts?.subjectType === "EMPLOYEE" && opts.subjectId) {
+    revalidatePath(`/team/${opts.subjectId}`);
+  }
+}
+
 // ─── COMMENT ──────────────────────────────────────────────────
 //
 // Comments are attached to a parent entity (project, client, task, etc.). A

@@ -166,6 +166,59 @@ enum QuoteRecurringInterval {
   ANNUALLY
 }
 
+enum WorkflowType {
+  ONBOARDING
+  OFFBOARDING
+  CANDIDATE
+  CUSTOM
+}
+
+enum WorkflowSubjectType {
+  EMPLOYEE
+  CANDIDATE
+  CUSTOM
+}
+
+enum WorkflowStepType {
+  SEND_EMAIL
+  ASSIGN_TASK_TO_SUBJECT
+  ASSIGN_TASK_TO_USER
+  REQUEST_DOCUMENT
+  REQUEST_SIGNATURE
+  REQUEST_FORM
+  WAIT
+  CONDITIONAL_BRANCH
+  APPROVAL
+  PROVISION_ACCESS
+  DEPROVISION_ACCESS
+  SCHEDULE_MEETING
+  SEND_REMINDER
+}
+
+enum WorkflowTimingType {
+  ON_ENTRY
+  DAYS_AFTER_START
+  DAYS_BEFORE_TARGET
+  AFTER_STEP
+}
+
+enum WorkflowInstanceStatus {
+  PENDING
+  IN_PROGRESS
+  PAUSED
+  COMPLETED
+  CANCELLED
+}
+
+enum WorkflowInstanceStepStatus {
+  PENDING
+  SCHEDULED
+  IN_PROGRESS
+  COMPLETED
+  SKIPPED
+  FAILED
+}
+
 // ─── USERS ───────────────────────────────────────────────
 
 model User {
@@ -219,6 +272,10 @@ model User {
   createdQuotes         Quote[]           @relation("QuoteCreator")
   assignedQuotes        Quote[]           @relation("QuoteAssignee")
   createdQuoteTemplates QuoteTemplate[]   @relation("QuoteTemplateCreator")
+  createdWorkflowTemplates       WorkflowTemplate[]      @relation("WorkflowTemplateCreator")
+  createdWorkflowInstances       WorkflowInstance[]      @relation("WorkflowInstanceCreator")
+  completedWorkflowInstanceSteps WorkflowInstanceStep[]  @relation("WorkflowInstanceStepCompletedBy")
+  createdWorkflowEmailTemplates  WorkflowEmailTemplate[] @relation("WorkflowEmailTemplateCreator")
 }
 
 model ModulePermission {
@@ -269,6 +326,12 @@ model Task {
   clientId    String?
   assigneeId  String?
   createdById String
+  /// Source attribution for tasks created by the workflow engine. Lets
+  /// the /tasks UI badge a row "from workflow" and link back to the
+  /// instance step that produced it. Null for manually created tasks.
+  /// Examples of `sourceType`: "workflow_step".
+  sourceType  String?
+  sourceId    String?
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
 
@@ -281,6 +344,7 @@ model Task {
   @@index([projectId])
   @@index([clientId])
   @@index([status])
+  @@index([sourceType, sourceId])
 }
 
 // ─── CLIENTS ─────────────────────────────────────────────
@@ -628,7 +692,8 @@ model File {
   certification    Certification?    @relation(fields: [certificationId], references: [id])
   user             User?             @relation("FileOwner", fields: [userId], references: [id], onDelete: SetNull)
 
-  quotes Quote[] @relation("QuotePdf")
+  quotes            Quote[]            @relation("QuotePdf")
+  workflowDocuments WorkflowDocument[]
 
   @@index([storageDriver])
   @@index([uploadedById])
@@ -1305,4 +1370,220 @@ model QuoteEvent {
   quote Quote @relation(fields: [quoteId], references: [id], onDelete: Cascade)
 
   @@index([quoteId, createdAt])
+}
+
+// ─── WORKFLOWS ──────────────────────────────────────────
+//
+// Generic workflow engine for sequential automations like Employee
+// Onboarding, Offboarding, and Candidate Hiring. A WorkflowTemplate is
+// the blueprint; a WorkflowInstance is a single in-flight execution
+// attached to a subject (employee, candidate, or other entity).
+//
+// Phase 3 covers the data model + template builder. Phase 4 wires the
+// scheduled background worker that ticks instances forward. Phase 5
+// adds the self-service portal that subjects use to fill out forms,
+// upload documents, and sign agreements.
+
+model WorkflowTemplate {
+  id                 String              @id @default(cuid())
+  name               String
+  description        String?             @db.Text
+  type               WorkflowType        @default(CUSTOM)
+  /// What kind of subject this workflow operates on. Drives which
+  /// trigger options are available and which variable paths the
+  /// template editor offers in the autocomplete.
+  subjectEntityType  WorkflowSubjectType @default(EMPLOYEE)
+  isActive           Boolean             @default(true)
+  /// True for the seeded defaults (Onboarding/Offboarding/Candidate)
+  /// the migration ships with. The UI hides delete on these so users
+  /// don't accidentally drop a system template.
+  isSeed             Boolean             @default(false)
+  createdById        String
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+
+  createdBy User               @relation("WorkflowTemplateCreator", fields: [createdById], references: [id])
+  steps     WorkflowStep[]
+  instances WorkflowInstance[]
+
+  @@index([type])
+  @@index([isActive])
+}
+
+model WorkflowStep {
+  id                 String             @id @default(cuid())
+  workflowTemplateId String
+  /// 1-based ordering within the template. The editor renders steps
+  /// in `position` order; reordering is a position rewrite.
+  position           Int                @default(0)
+  name               String
+  stepType           WorkflowStepType
+  /// Step-type-specific config blob — see src/lib/workflows/step-types.ts
+  /// for the discriminated union the UI and engine share.
+  config             String             @db.Text
+  timingType         WorkflowTimingType @default(ON_ENTRY)
+  /// When timingType is DAYS_AFTER_START / DAYS_BEFORE_TARGET this is
+  /// the offset in days. When AFTER_STEP, this field is unused and
+  /// `afterStepId` holds the dependency. ON_ENTRY ignores it.
+  timingValue        Int                @default(0)
+  afterStepId        String?
+  isRequired         Boolean            @default(true)
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  workflowTemplate WorkflowTemplate @relation(fields: [workflowTemplateId], references: [id], onDelete: Cascade)
+  afterStep        WorkflowStep?    @relation("StepOrder", fields: [afterStepId], references: [id])
+  followingSteps   WorkflowStep[]   @relation("StepOrder")
+
+  instanceSteps WorkflowInstanceStep[]
+
+  @@index([workflowTemplateId, position])
+  @@index([afterStepId])
+}
+
+model WorkflowInstance {
+  id                 String                 @id @default(cuid())
+  workflowTemplateId String
+  /// Polymorphic FK — subjectId points at a User (when subjectType is
+  /// EMPLOYEE), a Candidate row (CANDIDATE — model added in Phase 4),
+  /// or a free-form id (CUSTOM). No DB-level FK because the type
+  /// varies; the engine resolves the subject in code.
+  subjectType        WorkflowSubjectType
+  subjectId          String
+  status             WorkflowInstanceStatus @default(PENDING)
+  startDate          DateTime
+  /// Optional target date — required for offboarding and any timing
+  /// rule that uses DAYS_BEFORE_TARGET.
+  targetDate         DateTime?
+  startedAt          DateTime?
+  completedAt        DateTime?
+  createdById        String
+  /// JSON snapshot of the subject at instance-start time. The engine
+  /// uses this for variable substitution so renames after kickoff
+  /// don't retroactively change emails that already went out.
+  context            String?                @db.Text
+  createdAt          DateTime               @default(now())
+  updatedAt          DateTime               @updatedAt
+
+  workflowTemplate WorkflowTemplate       @relation(fields: [workflowTemplateId], references: [id])
+  createdBy        User                   @relation("WorkflowInstanceCreator", fields: [createdById], references: [id])
+  steps            WorkflowInstanceStep[]
+  events           WorkflowEvent[]
+
+  @@index([workflowTemplateId])
+  @@index([subjectType, subjectId])
+  @@index([status])
+  @@index([startDate])
+}
+
+model WorkflowInstanceStep {
+  id                 String                     @id @default(cuid())
+  workflowInstanceId String
+  workflowStepId     String
+  status             WorkflowInstanceStepStatus @default(PENDING)
+  scheduledFor       DateTime?
+  startedAt          DateTime?
+  completedAt        DateTime?
+  completedByUserId  String?
+  /// Step-type-specific output: form responses, uploaded file ids,
+  /// signature ids, approval decisions.
+  output             String?                    @db.Text
+  /// Last failure message — surfaced in the admin "stuck workflows"
+  /// view so retries can be diagnosed.
+  error              String?                    @db.Text
+  createdAt          DateTime                   @default(now())
+  updatedAt          DateTime                   @updatedAt
+
+  workflowInstance WorkflowInstance @relation(fields: [workflowInstanceId], references: [id], onDelete: Cascade)
+  workflowStep     WorkflowStep     @relation(fields: [workflowStepId], references: [id])
+  completedByUser  User?            @relation("WorkflowInstanceStepCompletedBy", fields: [completedByUserId], references: [id], onDelete: SetNull)
+
+  documents  WorkflowDocument[]
+  signatures WorkflowSignature[]
+
+  @@index([workflowInstanceId])
+  @@index([workflowStepId])
+  @@index([scheduledFor, status])
+}
+
+/// Reusable email body with `{{path.to.field}}` variable substitution.
+/// Distinct from src/lib/email/templates.ts (typed code-defined templates
+/// for transactional system emails) — these are USER-EDITABLE templates
+/// that workflow steps reference by id.
+model WorkflowEmailTemplate {
+  id                 String   @id @default(cuid())
+  name               String
+  subject            String
+  bodyHtml           String   @db.Text
+  bodyText           String?  @db.Text
+  /// JSON array of variable paths suggested by the editor's
+  /// autocomplete, e.g. ["subject.firstName", "company.name"].
+  availableVariables String?  @db.Text
+  createdById        String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  createdBy User? @relation("WorkflowEmailTemplateCreator", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([name])
+}
+
+model WorkflowDocument {
+  id                     String   @id @default(cuid())
+  workflowInstanceStepId String
+  fileId                 String
+  uploadedAt             DateTime @default(now())
+
+  workflowInstanceStep WorkflowInstanceStep @relation(fields: [workflowInstanceStepId], references: [id], onDelete: Cascade)
+  file                 File                 @relation(fields: [fileId], references: [id], onDelete: Cascade)
+
+  @@index([workflowInstanceStepId])
+}
+
+model WorkflowSignature {
+  id                     String   @id @default(cuid())
+  workflowInstanceStepId String
+  signedName             String
+  signatureData          String?  @db.Text
+  signedIp               String?
+  /// Snapshot of the document text the subject saw at sign time so
+  /// later edits to the request_signature step config don't change
+  /// what's been signed already.
+  documentTextSnapshot   String?  @db.Text
+  signedAt               DateTime @default(now())
+
+  workflowInstanceStep WorkflowInstanceStep @relation(fields: [workflowInstanceStepId], references: [id], onDelete: Cascade)
+
+  @@index([workflowInstanceStepId])
+}
+
+/// Single durable token per subject for portal access. Kept distinct
+/// from per-action tokens (like quote tokens) because portals are
+/// long-lived: a new hire fills out forms over multiple sessions and
+/// shouldn't have to request a new link each time.
+model PortalToken {
+  id          String              @id @default(cuid())
+  subjectType WorkflowSubjectType
+  subjectId   String
+  token       String              @unique
+  expiresAt   DateTime?
+  lastUsedAt  DateTime?
+  createdAt   DateTime            @default(now())
+
+  @@unique([subjectType, subjectId])
+}
+
+model WorkflowEvent {
+  id                 String   @id @default(cuid())
+  workflowInstanceId String
+  eventType          String
+  /// "user" | "subject" | "system"
+  actorType          String
+  actorId            String?
+  metadata           String?  @db.Text
+  createdAt          DateTime @default(now())
+
+  workflowInstance WorkflowInstance @relation(fields: [workflowInstanceId], references: [id], onDelete: Cascade)
+
+  @@index([workflowInstanceId, createdAt])
 }
