@@ -24,20 +24,48 @@ const DRIVERS: Record<string, EmailDriver> = {
 };
 
 /**
- * Resolve the active driver based on environment. Falls back to the log
- * driver if the requested driver doesn't exist, so sendEmail() never
- * throws due to configuration errors.
+ * Resolve the active driver based on environment.
+ *
+ * Production safety: if NODE_ENV=production and the resolved driver is
+ * `log` (or EMAIL_DRIVER points at an unregistered name and the
+ * fallback would be log), we throw rather than silently dropping every
+ * customer-facing email. Override with ALLOW_LOG_DRIVER_IN_PROD=true
+ * for the rare case (load test, dry run, sandbox env) where the log
+ * driver in production is actually intended.
+ *
+ * The boot-time validator (scripts/validate-env.mjs) catches this
+ * earlier, but we keep a runtime guard here as defense-in-depth — env
+ * can drift at runtime (operator deletes a var while the container is
+ * up) and it's better to fail loud at the next send than to write
+ * "sent" rows to EmailLog with no actual delivery.
  */
 export function getActiveDriver(): EmailDriver {
+  const isProduction = process.env.NODE_ENV === "production";
+  const allowLogInProd = process.env.ALLOW_LOG_DRIVER_IN_PROD === "true";
   const name = process.env.EMAIL_DRIVER?.toLowerCase() || "log";
   const driver = DRIVERS[name];
+
   if (!driver) {
+    if (isProduction && !allowLogInProd) {
+      throw new Error(
+        `EMAIL_DRIVER="${name}" is not a registered driver and falling back to 'log' would silently drop email in production. ` +
+          `Valid drivers: ${Object.keys(DRIVERS).join(", ")}. Set EMAIL_DRIVER explicitly, or opt in to log fallback with ALLOW_LOG_DRIVER_IN_PROD=true.`
+      );
+    }
     // eslint-disable-next-line no-console
     console.warn(
       `[email] EMAIL_DRIVER="${name}" is not registered. Falling back to log driver.`
     );
     return logDriver;
   }
+
+  if (isProduction && name === "log" && !allowLogInProd) {
+    throw new Error(
+      `EMAIL_DRIVER=log in production would silently drop every customer-facing email. ` +
+        `Set EMAIL_DRIVER=ses (or smtp) and EMAIL_FROM, or opt in explicitly with ALLOW_LOG_DRIVER_IN_PROD=true.`
+    );
+  }
+
   return driver;
 }
 

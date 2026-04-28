@@ -1,5 +1,11 @@
 FROM node:18-slim AS base
-RUN apt-get update -y && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
+# openssl: prisma's query engine needs it.
+# curl: HEALTHCHECK probes /api/health.
+# tini: optional but small init that reaps zombies; keeps SIGTERM behavior
+# clean when the orchestrator stops the container.
+RUN apt-get update -y \
+  && apt-get install -y --no-install-recommends openssl curl tini \
+  && rm -rf /var/lib/apt/lists/*
 
 # Install dependencies
 FROM base AS deps
@@ -35,16 +41,31 @@ COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
-# Copy Prisma files and FULL node_modules for CLI
-COPY --from=builder /app/prisma ./prisma
-COPY --from=deps /app/node_modules ./node_modules
+# Copy Prisma files and FULL node_modules for CLI. Both need
+# nextjs:nodejs ownership so prisma can write the .prisma cache and
+# query-engine binaries on first boot when the container runs as the
+# unprivileged user.
+COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
+COPY --from=deps --chown=nextjs:nodejs /app/node_modules ./node_modules
 
-# Copy startup script
-COPY --from=builder /app/start.sh ./start.sh
+# Copy startup script + boot-time env validator. Validator is plain
+# JS so it works even before any TypeScript module loads.
+COPY --from=builder --chown=nextjs:nodejs /app/start.sh ./start.sh
+COPY --from=builder --chown=nextjs:nodejs /app/scripts ./scripts
 
 USER nextjs
 EXPOSE 3000
 ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
 
+# Liveness probe — orchestrators (ECS, Kubernetes, plain Docker) use
+# this to detect a wedged container. /api/health does a SELECT 1 and
+# returns 200 / 503. Generous start-period because prisma migrate
+# deploy on a fresh DB can take a moment.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+  CMD curl --silent --fail --max-time 4 http://localhost:3000/api/health || exit 1
+
+# tini handles SIGTERM/SIGCHLD cleanly so docker stop / ECS task drain
+# don't end up sending SIGKILL after timeout.
+ENTRYPOINT ["tini", "--"]
 CMD ["sh", "start.sh"]
