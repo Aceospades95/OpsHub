@@ -84,10 +84,17 @@ export async function runJob(
     const result: JobResult = await job.handler(ctx);
     const finishedAt = new Date();
     const durationMs = finishedAt.getTime() - startedAt.getTime();
+    // Handlers may opt to record a "skipped" row by returning
+    // { status: "skipped" } — used by cadence gates so the admin Jobs
+    // page reflects "we evaluated this and chose not to run" instead
+    // of leaving no row behind. A skipped run does NOT count toward
+    // the cadence gate (see lib/jobs/gating.ts).
+    const finalStatus: "completed" | "skipped" =
+      result.status === "skipped" ? "skipped" : "completed";
     await db.jobLog.update({
       where: { id: logRow.id },
       data: {
-        status: "completed",
+        status: finalStatus,
         finishedAt,
         durationMs,
         output: result.output || null,
@@ -95,7 +102,7 @@ export async function runJob(
       },
     });
     return {
-      status: "completed",
+      status: finalStatus,
       output: result.output,
       processed: result.processed,
       logId: logRow.id,

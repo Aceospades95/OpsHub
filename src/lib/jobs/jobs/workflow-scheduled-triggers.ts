@@ -17,6 +17,7 @@
  */
 
 import { fireScheduledDateTriggers } from "@/lib/workflows/triggers";
+import { shouldRunDaily } from "../gating";
 import type { JobDefinition } from "../types";
 
 export const workflowScheduledTriggers: JobDefinition = {
@@ -27,6 +28,9 @@ export const workflowScheduledTriggers: JobDefinition = {
   schedule: "Daily",
 
   async handler() {
+    if (!(await shouldRunDaily("workflow-scheduled-triggers"))) {
+      return { status: "skipped", output: "Already ran today", processed: 0 };
+    }
     const result = await fireScheduledDateTriggers();
     const summary =
       `${result.instanceIds.length} instance(s) spawned` +

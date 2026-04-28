@@ -11,6 +11,7 @@
  */
 
 import { db } from "@/lib/db";
+import { shouldRunWeekly } from "../gating";
 import type { JobDefinition } from "../types";
 
 export const cleanupStaleNotifications: JobDefinition = {
@@ -21,6 +22,9 @@ export const cleanupStaleNotifications: JobDefinition = {
   schedule: "Weekly",
 
   async handler() {
+    if (!(await shouldRunWeekly("cleanup-stale-notifications"))) {
+      return { status: "skipped", output: "Already ran this week", processed: 0 };
+    }
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - 60);
 

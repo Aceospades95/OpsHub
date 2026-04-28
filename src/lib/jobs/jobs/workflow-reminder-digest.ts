@@ -14,6 +14,7 @@ import { db } from "@/lib/db";
 import { sendFromTemplate } from "@/lib/email";
 import { absoluteUrl } from "@/lib/url";
 import { findStuckSteps } from "@/lib/workflows/analytics";
+import { shouldRunDaily } from "../gating";
 import type { JobDefinition } from "../types";
 
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
@@ -26,6 +27,9 @@ export const workflowReminderDigest: JobDefinition = {
   schedule: "Daily",
 
   async handler() {
+    if (!(await shouldRunDaily("workflow-reminder-digest"))) {
+      return { status: "skipped", output: "Already ran today", processed: 0 };
+    }
     const stuck = await findStuckSteps();
 
     // "Expiring or expired" — quotes with validUntil within ±7 days,

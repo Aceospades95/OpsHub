@@ -20,6 +20,13 @@ export interface JobResult {
   output?: string;
   /** Number of items processed — useful for at-a-glance metrics in the admin page */
   processed?: number;
+  /**
+   * Optional handler-driven status override. When omitted the runner
+   * records "completed". Set to "skipped" from a cadence gate (see
+   * src/lib/jobs/gating.ts) so the JobLog row reflects "evaluated but
+   * intentionally not run" rather than "ran successfully".
+   */
+  status?: "skipped";
 }
 
 /**
