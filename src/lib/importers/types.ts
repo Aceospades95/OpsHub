@@ -94,4 +94,15 @@ export interface ImporterDefinition {
    * row in that case.
    */
   sampleRows?(): Promise<Record<string, string>[]>;
+
+  /**
+   * Optional: supply EVERY row currently in the database in the same
+   * column shape the importer expects. Powers the "Download current
+   * data" button so admins can export → edit in Excel → re-upload to
+   * update existing records. Only implement on importers whose
+   * `commit()` supports an idempotent UPSERT (matching by a stable
+   * key like email / contractNumber / name) — otherwise re-uploading
+   * the export creates duplicates or thrashes.
+   */
+  exportRows?(): Promise<Record<string, string>[]>;
 }

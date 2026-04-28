@@ -178,6 +178,33 @@ export const usersImporter: ImporterDefinition = {
     }));
   },
 
+  async exportRows() {
+    // Full export — everything in the User table, in the same column
+    // shape commit() expects. Re-uploading this CSV is a no-op on rows
+    // that haven't changed (the upsert path matches by lowercased
+    // email and the comparison is value-by-value on the rest).
+    const users = await db.user.findMany({
+      orderBy: [{ isActive: "desc" }, { name: "asc" }],
+      include: { manager: { select: { email: true } } },
+    });
+    return users.map((u) => ({
+      name: u.name,
+      email: u.email,
+      role: u.role,
+      department: u.department || "",
+      jobTitle: u.jobTitle || "",
+      location: u.location || "",
+      phone: u.phone || "",
+      managerEmail: u.manager?.email || "",
+      hasLoginAccess: u.hasLoginAccess ? "true" : "false",
+      isActive: u.isActive ? "true" : "false",
+      avatar: u.avatar || "",
+      terminationDate: u.terminationDate
+        ? u.terminationDate.toISOString().slice(0, 10)
+        : "",
+    }));
+  },
+
   async commit(rows, ctx) {
     const results: ImportRowResult[] = [];
     let imported = 0;
