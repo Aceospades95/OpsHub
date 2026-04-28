@@ -1,13 +1,22 @@
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
+import Link from "next/link";
 import { db } from "@/lib/db";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Clock, CheckCircle2, AlertCircle, PlayCircle, Repeat } from "lucide-react";
+import {
+  Clock,
+  CheckCircle2,
+  AlertCircle,
+  PlayCircle,
+  Repeat,
+  ChevronRight,
+} from "lucide-react";
 import { formatDistanceToNow, format } from "date-fns";
 import { listJobs } from "@/lib/jobs";
 import { JobRunButton } from "./job-run-button";
+import { JobToggleButton } from "./job-toggle-button";
 
 export default async function AdminJobsPage() {
   const session = await auth();
@@ -18,7 +27,8 @@ export default async function AdminJobsPage() {
   const jobKeys = jobs.map((j) => j.key);
 
   // Pull the most recent run for each job + the last 50 across all jobs
-  const [recentRunsByJob, recentLogs, totals] = await Promise.all([
+  // + the JobConfig rows so we can render enabled/disabled state.
+  const [recentRunsByJob, recentLogs, totals, configs] = await Promise.all([
     db.jobLog.findMany({
       where: { jobKey: { in: jobKeys } },
       orderBy: { startedAt: "desc" },
@@ -33,7 +43,12 @@ export default async function AdminJobsPage() {
       by: ["status"],
       _count: { _all: true },
     }),
+    db.jobConfig.findMany({
+      where: { jobKey: { in: jobKeys } },
+    }),
   ]);
+
+  const enabledByKey = new Map(configs.map((c) => [c.jobKey, c.isEnabled]));
 
   // Build a map of job key → most recent run
   const lastRunByKey = new Map<string, (typeof recentRunsByJob)[number]>();
@@ -58,8 +73,8 @@ export default async function AdminJobsPage() {
 
       {/* Cron status banner */}
       <Card className="mb-6">
-        <CardContent className="py-4 flex items-center gap-3">
-          <Repeat className="h-5 w-5 text-muted-foreground" />
+        <CardContent className="py-4 flex items-start gap-3">
+          <Repeat className="h-5 w-5 text-muted-foreground mt-0.5" />
           <div className="flex-1">
             <p className="text-sm">
               Cron endpoint:{" "}
@@ -76,10 +91,52 @@ export default async function AdminJobsPage() {
                 to run all jobs.
               </p>
             ) : (
-              <p className="text-xs text-destructive mt-1">
-                Set <code>CRON_SECRET</code> in env to enable scheduled runs.
-                You can still run jobs manually below.
-              </p>
+              <details className="mt-1">
+                <summary className="text-xs text-destructive cursor-pointer">
+                  <code>CRON_SECRET</code> is missing — scheduled runs are paused.
+                  Click for setup steps.
+                </summary>
+                <ol className="mt-2 ml-4 list-decimal text-xs text-muted-foreground space-y-1">
+                  <li>
+                    Generate a strong random string (e.g.{" "}
+                    <code>openssl rand -hex 32</code>).
+                  </li>
+                  <li>
+                    Add <code>CRON_SECRET=&lt;that string&gt;</code> to your env
+                    (Vercel project settings, <code>.env</code>, or your
+                    deployment platform).
+                  </li>
+                  <li>
+                    Restart the app so the env var is picked up.
+                  </li>
+                  <li>
+                    Configure a scheduler to POST{" "}
+                    <code>/api/jobs/run</code> on whatever cadence you want
+                    (hourly is a sensible default), passing the same secret in
+                    the <code>x-cron-secret</code> header. Examples:
+                    <ul className="ml-4 mt-1 list-disc">
+                      <li>
+                        <strong>Vercel Cron</strong>: add an entry to{" "}
+                        <code>vercel.json</code> &mdash; Vercel injects the
+                        header automatically when the value matches the env.
+                      </li>
+                      <li>
+                        <strong>GitHub Actions</strong>: a scheduled workflow
+                        with a <code>curl</code> call passing the secret from a
+                        repo secret.
+                      </li>
+                      <li>
+                        <strong>OS cron / Cloudflare</strong>: any tool that can
+                        send an HTTP POST with a header.
+                      </li>
+                    </ul>
+                  </li>
+                </ol>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  You can still trigger jobs manually with the{" "}
+                  <strong>Run now</strong> button while the secret is missing.
+                </p>
+              </details>
             )}
           </div>
           <div className="flex gap-4">
@@ -101,6 +158,45 @@ export default async function AdminJobsPage() {
         </CardContent>
       </Card>
 
+      {/* System-vs-custom explainer — long enough to deserve its own
+           card so first-time admins know where to look for what. */}
+      <Card className="mb-6 border-dashed">
+        <CardContent className="py-4 text-sm">
+          <p className="font-medium mb-1">
+            What is this page, and what&apos;s the difference vs Scheduled
+            Tasks?
+          </p>
+          <p className="text-muted-foreground text-xs leading-relaxed">
+            <strong>Scheduled Jobs</strong> (this page) are{" "}
+            <em>system jobs</em> — code-defined background work that ships
+            with OpsHub. They handle things like cleanup, expiry checks,
+            workflow ticking, and the runner that fires custom tasks. The
+            registry lives in <code>src/lib/jobs/registry.ts</code>; new
+            jobs are added by a developer there, not from the UI. Admins
+            can <strong>open</strong> a job to see its run history,{" "}
+            <strong>enable / disable</strong> it (paused jobs are skipped
+            by cron but can still be force-run from <strong>Run now</strong>
+            ), and delete logs.
+          </p>
+          <p className="text-muted-foreground text-xs leading-relaxed mt-2">
+            <strong>
+              <Link
+                href="/admin/scheduled-tasks"
+                className="text-primary hover:underline"
+              >
+                Scheduled Tasks
+              </Link>
+            </strong>{" "}
+            (separate page) are <em>admin-built</em> recurring tasks. Use
+            those to email a report on a schedule, broadcast a message,
+            etc. — those <strong>can</strong> be created and edited
+            entirely from the UI. The <code>custom-scheduled-tasks</code>{" "}
+            job below is the cron entry that fires those tasks; if you
+            disable it, your scheduled tasks will stop firing.
+          </p>
+        </CardContent>
+      </Card>
+
       {/* Registered jobs */}
       <Card className="mb-6">
         <CardHeader>
@@ -110,20 +206,35 @@ export default async function AdminJobsPage() {
           <div className="space-y-3">
             {jobs.map((job) => {
               const lastRun = lastRunByKey.get(job.key);
+              const isEnabled = enabledByKey.get(job.key) ?? true;
               return (
                 <div
                   key={job.key}
-                  className="flex items-start gap-3 rounded border border-border p-3"
+                  className={`flex items-start gap-3 rounded border p-3 transition-colors ${
+                    isEnabled
+                      ? "border-border hover:border-primary/50"
+                      : "border-border bg-muted/30"
+                  }`}
                 >
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <p className="text-sm font-semibold">{job.name}</p>
+                  <Link
+                    href={`/admin/jobs/${job.key}`}
+                    className="flex-1 min-w-0 group"
+                  >
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p className="text-sm font-semibold group-hover:underline">
+                        {job.name}
+                      </p>
                       <Badge variant="outline" className="text-[10px] font-mono">
                         {job.key}
                       </Badge>
                       <Badge variant="outline" className="text-[10px]">
                         {job.schedule}
                       </Badge>
+                      {!isEnabled && (
+                        <Badge variant="secondary" className="text-[10px]">
+                          paused
+                        </Badge>
+                      )}
                     </div>
                     <p className="text-xs text-muted-foreground mt-0.5">
                       {job.description}
@@ -151,8 +262,18 @@ export default async function AdminJobsPage() {
                         )}
                       </p>
                     )}
+                  </Link>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <JobToggleButton jobKey={job.key} isEnabled={isEnabled} />
+                    <JobRunButton jobKey={job.key} />
+                    <Link
+                      href={`/admin/jobs/${job.key}`}
+                      className="text-muted-foreground hover:text-foreground"
+                      aria-label="Open job details"
+                    >
+                      <ChevronRight className="h-4 w-4" />
+                    </Link>
                   </div>
-                  <JobRunButton jobKey={job.key} />
                 </div>
               );
             })}

@@ -9,6 +9,8 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { runReport, renderCsv } from "@/lib/reports";
+import { runCustomReportFromRow } from "@/lib/reports/custom/runtime";
+import { db } from "@/lib/db";
 
 export async function GET(
   _request: Request,
@@ -22,12 +24,30 @@ export async function GET(
     return new NextResponse("Forbidden", { status: 403 });
   }
 
-  const { key } = await params;
+  const { key: rawKey } = await params;
+  // Browsers encode the `:` in `custom:{id}` as `%3A` when used in a
+  // path segment — decode so the prefix check works either way.
+  const key = decodeURIComponent(rawKey);
+
   try {
-    const { output, name } = await runReport(key, {
-      triggeredAt: new Date(),
-      triggeredBy: session.user.id,
-    });
+    let output: Awaited<ReturnType<typeof runReport>>["output"];
+    let name: string;
+    if (key.startsWith("custom:")) {
+      const id = key.slice("custom:".length);
+      const row = await db.customReport.findUnique({ where: { id } });
+      if (!row) {
+        return new NextResponse(`Custom report ${id} not found`, { status: 404 });
+      }
+      output = await runCustomReportFromRow(row);
+      name = row.name;
+    } else {
+      const result = await runReport(key, {
+        triggeredAt: new Date(),
+        triggeredBy: session.user.id,
+      });
+      output = result.output;
+      name = result.name;
+    }
 
     const csv = renderCsv(output);
     // Turn the display name into a safe filename base

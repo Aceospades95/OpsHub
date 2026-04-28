@@ -129,6 +129,74 @@ export function revalidateTask(opts: {
   }
 }
 
+// ─── QUOTE ────────────────────────────────────────────────────
+//
+// A quote appears on: quotes list, quote editor/detail, client detail
+// (client's quotes section), project detail (project's quotes section),
+// dashboard.
+
+export function revalidateQuote(
+  quoteId: string,
+  opts?: {
+    clientId?: string | null;
+    previousClientId?: string | null;
+    projectId?: string | null;
+    previousProjectId?: string | null;
+  }
+) {
+  revalidatePath(`/quotes/${quoteId}`);
+  revalidatePath(`/quotes/${quoteId}/edit`);
+  revalidatePath("/quotes", "layout");
+  revalidatePath("/dashboard");
+
+  if (opts?.clientId) revalidatePath(`/clients/${opts.clientId}`);
+  if (opts?.previousClientId && opts.previousClientId !== opts.clientId) {
+    revalidatePath(`/clients/${opts.previousClientId}`);
+  }
+  if (opts?.projectId) revalidatePath(`/projects/${opts.projectId}`);
+  if (opts?.previousProjectId && opts.previousProjectId !== opts.projectId) {
+    revalidatePath(`/projects/${opts.previousProjectId}`);
+  }
+}
+
+// ─── WORKFLOW TEMPLATE ────────────────────────────────────────
+//
+// A template appears on: /workflows/templates list, the editor page,
+// and indirectly on instance views (instance shows template name).
+
+export function revalidateWorkflowTemplate(templateId: string) {
+  revalidatePath("/workflows", "layout");
+  revalidatePath(`/workflows/templates/${templateId}/edit`);
+  revalidatePath("/workflows/templates");
+}
+
+export function revalidateWorkflowEmailTemplate(templateId: string) {
+  revalidatePath("/workflows/email-templates");
+  revalidatePath(`/workflows/email-templates/${templateId}/edit`);
+}
+
+// ─── WORKFLOW INSTANCE ────────────────────────────────────────
+//
+// An instance appears on: /workflows/instances dashboard, the per-
+// instance detail view, the subject's profile (employee or candidate),
+// and possibly the dashboard via "my tasks" widget.
+
+export function revalidateWorkflowInstance(
+  instanceId: string,
+  opts?: {
+    subjectType?: "EMPLOYEE" | "CUSTOM";
+    subjectId?: string | null;
+  }
+) {
+  revalidatePath(`/workflows/instances/${instanceId}`);
+  revalidatePath("/workflows/instances");
+  revalidatePath("/workflows", "layout");
+  revalidatePath("/dashboard");
+  if (opts?.subjectType === "EMPLOYEE" && opts.subjectId) {
+    revalidatePath(`/team/${opts.subjectId}`);
+  }
+}
+
 // ─── COMMENT ──────────────────────────────────────────────────
 //
 // Comments are attached to a parent entity (project, client, task, etc.). A

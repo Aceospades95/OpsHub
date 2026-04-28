@@ -1,12 +1,19 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { OrgChartTree, buildOrgTree } from "@/components/shared/org-chart-tree";
 import { Network, Grid3x3, Users, Search } from "lucide-react";
-import { useMemo } from "react";
 import { StaffingMatrix } from "./components/staffing-matrix";
 import { EmployeeList } from "./components/employee-list";
-import type { UserData, ProjectData, ClientData, ServiceOfferingData, RoleDefinitionData, ProjectRoleData } from "./components/team-types";
+import { OrgEditDrawer } from "./org-edit-drawer";
+import type {
+  UserData,
+  ProjectData,
+  ClientData,
+  ServiceOfferingData,
+  RoleDefinitionData,
+  ProjectRoleData,
+} from "./components/team-types";
 
 type ViewType = "org-chart" | "staffing" | "breakdown";
 
@@ -28,7 +35,17 @@ const VIEW_TABS: { key: ViewType; label: string; icon: React.ElementType }[] = [
   { key: "breakdown", label: "Employees", icon: Users },
 ];
 
-export function TeamPageClient({ users, inactiveUsers, projects, clients, serviceOfferings, roleDefinitions, projectRoles, currentUserId, canManage }: TeamPageClientProps) {
+export function TeamPageClient({
+  users,
+  inactiveUsers,
+  projects,
+  clients,
+  serviceOfferings,
+  roleDefinitions,
+  projectRoles,
+  currentUserId,
+  canManage,
+}: TeamPageClientProps) {
   const [view, setView] = useState<ViewType>("org-chart");
   const [search, setSearch] = useState("");
 
@@ -68,7 +85,12 @@ export function TeamPageClient({ users, inactiveUsers, projects, clients, servic
       </div>
 
       {view === "org-chart" && (
-        <OrgChartView users={users} search={search} currentUserId={currentUserId} />
+        <OrgChartView
+          users={users}
+          search={search}
+          canManage={canManage}
+          currentUserId={currentUserId}
+        />
       )}
       {view === "staffing" && (
         <StaffingMatrix
@@ -91,28 +113,128 @@ export function TeamPageClient({ users, inactiveUsers, projects, clients, servic
 
 // ─── Org Chart View ─────────────────────────────────
 
-function OrgChartView({ users, search, currentUserId }: { users: UserData[]; search: string; currentUserId: string }) {
-  const filtered = useMemo(() => {
-    if (!search) return users;
-    const q = search.toLowerCase();
-    return users.filter((u) =>
-      u.name.toLowerCase().includes(q) ||
-      u.jobTitle?.toLowerCase().includes(q) ||
-      u.department?.toLowerCase().includes(q) ||
-      u.location?.toLowerCase().includes(q)
-    );
-  }, [users, search]);
+function OrgChartView({
+  users,
+  search,
+  canManage,
+  currentUserId,
+}: {
+  users: UserData[];
+  search: string;
+  canManage: boolean;
+  currentUserId: string;
+}) {
+  // Org chart edit drawer state. We track only the selected id and
+  // resolve the user from the prop list — keeps the drawer in sync
+  // when the page re-fetches after a save.
+  const [selectedId, setSelectedId] = useState<string | null>(null);
 
-  const tree = useMemo(() => buildOrgTree(
-    filtered.map((u) => ({ ...u, href: `/team/${u.id}` }))
-  ), [filtered]);
+  // Always pass the FULL user list to buildOrgTree. Filtering by
+  // search would orphan the descendants of any unmatched manager and
+  // shred the tree. We pass `search` to the chart as a HIGHLIGHT
+  // hint instead — the chart rings matching cards in primary color.
+  const tree = useMemo(
+    () =>
+      buildOrgTree(
+        users.map((u) => ({
+          id: u.id,
+          name: u.name,
+          jobTitle: u.jobTitle,
+          department: u.department,
+          location: u.location,
+          avatar: u.avatar,
+          role: u.role,
+          managerId: u.managerId ?? undefined,
+          // Don't set href — clicking opens the edit drawer instead
+          // when the viewer can manage. For non-managers we route
+          // to the canonical profile via href.
+          href: canManage ? undefined : `/team/${u.id}`,
+        }))
+      ),
+    [users, canManage]
+  );
+
+  const selected = useMemo(
+    () => (selectedId ? users.find((u) => u.id === selectedId) ?? null : null),
+    [selectedId, users]
+  );
+
+  // Manager picker options exclude the current user (can't manage
+  // yourself) and anyone whose existing ancestry passes through
+  // them — preventing cycles at edit time. Cheap because user counts
+  // are typically O(100s).
+  const managerOptions = useMemo(() => {
+    if (!selected) return [];
+    const descendantIds = collectDescendants(users, selected.id);
+    return users
+      .filter((u) => u.id !== selected.id && !descendantIds.has(u.id))
+      .map((u) => ({ id: u.id, name: u.name }));
+  }, [selected, users]);
 
   return (
     <div>
       <div className="text-xs text-muted-foreground mb-3">
-        {users.length} team members · Click a person to view their profile
+        {users.length} team members ·{" "}
+        {canManage
+          ? "Click a card to edit. Use search to highlight people without breaking the tree."
+          : "Click a card to view the profile."}
       </div>
-      <OrgChartTree nodes={tree} />
+
+      <OrgChartTree
+        nodes={tree}
+        highlight={search}
+        onCardClick={canManage ? (id) => setSelectedId(id) : undefined}
+      />
+
+      {canManage && selected && (
+        <OrgEditDrawer
+          user={{
+            id: selected.id,
+            name: selected.name,
+            email: selected.email,
+            role: selected.role,
+            jobTitle: selected.jobTitle ?? null,
+            department: selected.department ?? null,
+            location: selected.location ?? null,
+            managerId: selected.managerId ?? null,
+            isActive: selected.isActive,
+          }}
+          managerOptions={managerOptions}
+          onClose={() => setSelectedId(null)}
+        />
+      )}
+
+      {/* Hidden heading-only marker so screen-readers announce who's
+          currently being edited. The actual content is in the drawer. */}
+      {selected && currentUserId === selected.id && (
+        <span className="sr-only">Editing your own org-chart entry.</span>
+      )}
     </div>
   );
+}
+
+/**
+ * Walk the user list to find every descendant of a given id. Used by
+ * the manager picker to forbid cycle-creating reassignments.
+ */
+function collectDescendants(users: UserData[], rootId: string): Set<string> {
+  const childrenByManager = new Map<string, string[]>();
+  for (const u of users) {
+    if (u.managerId) {
+      const arr = childrenByManager.get(u.managerId) ?? [];
+      arr.push(u.id);
+      childrenByManager.set(u.managerId, arr);
+    }
+  }
+  const out = new Set<string>();
+  function visit(id: string): void {
+    const kids = childrenByManager.get(id) ?? [];
+    for (const k of kids) {
+      if (out.has(k)) continue;
+      out.add(k);
+      visit(k);
+    }
+  }
+  visit(rootId);
+  return out;
 }

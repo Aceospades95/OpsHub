@@ -17,6 +17,7 @@ import {
   KeyRound,
   ShieldQuestion,
   History,
+  CalendarClock,
 } from "lucide-react";
 
 const SETTINGS_SECTIONS = [
@@ -51,6 +52,7 @@ const SETTINGS_SECTIONS = [
       { label: "Notifications", href: "/admin/notifications", icon: Bell, description: "In-app notification audit and test sender" },
       { label: "Activity Log", href: "/admin/activity", icon: History, description: "Audit trail of every change, filterable by project, client, and actor" },
       { label: "Scheduled Jobs", href: "/admin/jobs", icon: Repeat, description: "Recurring background jobs and run history" },
+      { label: "Scheduled Tasks", href: "/admin/scheduled-tasks", icon: CalendarClock, description: "Admin-built recurring tasks (email reports, broadcast messages)" },
     ],
   },
 ];

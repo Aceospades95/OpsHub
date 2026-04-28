@@ -144,6 +144,98 @@ enum EmbedType {
   other
 }
 
+enum QuoteStatus {
+  DRAFT
+  SENT
+  VIEWED
+  ACCEPTED
+  REJECTED
+  EXPIRED
+  REVISED
+}
+
+enum QuoteDiscountType {
+  NONE
+  PERCENT
+  FIXED
+}
+
+enum QuoteRecurringInterval {
+  MONTHLY
+  QUARTERLY
+  ANNUALLY
+}
+
+enum WorkflowType {
+  ONBOARDING
+  OFFBOARDING
+  CUSTOM
+}
+
+enum WorkflowSubjectType {
+  EMPLOYEE
+  CUSTOM
+}
+
+enum WorkflowStepType {
+  SEND_EMAIL
+  ASSIGN_TASK_TO_SUBJECT
+  ASSIGN_TASK_TO_USER
+  REQUEST_DOCUMENT
+  REQUEST_SIGNATURE
+  REQUEST_FORM
+  WAIT
+  CONDITIONAL_BRANCH
+  APPROVAL
+  PROVISION_ACCESS
+  DEPROVISION_ACCESS
+  SCHEDULE_MEETING
+  SEND_REMINDER
+}
+
+enum WorkflowTimingType {
+  ON_ENTRY
+  DAYS_AFTER_START
+  DAYS_BEFORE_TARGET
+  AFTER_STEP
+}
+
+enum WorkflowInstanceStatus {
+  PENDING
+  IN_PROGRESS
+  PAUSED
+  COMPLETED
+  CANCELLED
+}
+
+enum WorkflowInstanceStepStatus {
+  PENDING
+  SCHEDULED
+  IN_PROGRESS
+  COMPLETED
+  SKIPPED
+  FAILED
+}
+
+enum WorkflowTriggerType {
+  /// Auto-start an instance whenever an entity is created — e.g. new
+  /// User → onboarding workflow. Fires synchronously from the
+  /// creating action, after the entity row commits.
+  ENTITY_CREATE
+  /// Auto-start N days before/after a date field on the subject — e.g.
+  /// 7 days before User.terminationDate → offboarding. Evaluated by
+  /// the scheduled tick worker.
+  SCHEDULED_DATE
+  /// Auto-start when a subject's stage field flips to a target value.
+  /// Reserved for future stage-driven flows.
+  STAGE_CHANGE
+  /// Auto-start when a User is added to a project (via Assignment or
+  /// ProjectMember). Fires synchronously from the assignment-creating
+  /// action with the assigned User as the subject. The trigger config
+  /// can optionally filter to a specific projectId or serviceOffering.
+  PROJECT_ASSIGNMENT
+}
+
 // ─── USERS ───────────────────────────────────────────────
 
 model User {
@@ -165,6 +257,10 @@ model User {
   location       String?
   phone          String?
   managerId      String?
+  /// Last day of employment. Null for active employees. Read by the
+  /// SCHEDULED_DATE trigger evaluator to fire offboarding workflows
+  /// at the right offset (e.g. 7 days before terminationDate).
+  terminationDate DateTime?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
@@ -194,6 +290,15 @@ model User {
   notificationsSent     Notification[]    @relation("NotificationActor")
   accessRequestsMade    AccessRequest[]   @relation("AccessRequestRequester")
   accessRequestsReviewed AccessRequest[]  @relation("AccessRequestReviewer")
+  createdQuotes         Quote[]           @relation("QuoteCreator")
+  assignedQuotes        Quote[]           @relation("QuoteAssignee")
+  createdQuoteTemplates QuoteTemplate[]   @relation("QuoteTemplateCreator")
+  createdWorkflowTemplates       WorkflowTemplate[]      @relation("WorkflowTemplateCreator")
+  createdWorkflowInstances       WorkflowInstance[]      @relation("WorkflowInstanceCreator")
+  completedWorkflowInstanceSteps WorkflowInstanceStep[]  @relation("WorkflowInstanceStepCompletedBy")
+  createdWorkflowEmailTemplates  WorkflowEmailTemplate[] @relation("WorkflowEmailTemplateCreator")
+  createdScheduledTasks          ScheduledTask[]         @relation("ScheduledTaskCreator")
+  createdCustomReports           CustomReport[]          @relation("CustomReportCreator")
 }
 
 model ModulePermission {
@@ -244,6 +349,12 @@ model Task {
   clientId    String?
   assigneeId  String?
   createdById String
+  /// Source attribution for tasks created by the workflow engine. Lets
+  /// the /tasks UI badge a row "from workflow" and link back to the
+  /// instance step that produced it. Null for manually created tasks.
+  /// Examples of `sourceType`: "workflow_step".
+  sourceType  String?
+  sourceId    String?
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
 
@@ -256,6 +367,7 @@ model Task {
   @@index([projectId])
   @@index([clientId])
   @@index([status])
+  @@index([sourceType, sourceId])
 }
 
 // ─── CLIENTS ─────────────────────────────────────────────
@@ -282,6 +394,7 @@ model Client {
   sandboxPages   SandboxPage[]
   assignments    Assignment[]
   activityLogs   ActivityLog[]
+  quotes         Quote[]
 }
 
 model ClientContact {
@@ -336,6 +449,7 @@ model Project {
   assignments      Assignment[]
   projectRoles     ProjectRole[]
   activityLogs     ActivityLog[]
+  quotes           Quote[]
 
   @@index([serviceOfferingId])
 }
@@ -600,6 +714,9 @@ model File {
   intranetResource IntranetResource? @relation(fields: [intranetResourceId], references: [id])
   certification    Certification?    @relation(fields: [certificationId], references: [id])
   user             User?             @relation("FileOwner", fields: [userId], references: [id], onDelete: SetNull)
+
+  quotes            Quote[]            @relation("QuotePdf")
+  workflowDocuments WorkflowDocument[]
 
   @@index([storageDriver])
   @@index([uploadedById])
@@ -967,6 +1084,18 @@ model JobLog {
   @@index([status])
 }
 
+// ─── JOB CONFIG ────────────────────────────────────────
+//
+// Per-jobKey settings — currently just isEnabled. System jobs are
+// code-defined (see src/lib/jobs/registry.ts) so we don't store
+// definitions here, only operator-controlled toggles. A row is created
+// lazily the first time an admin disables/enables a job.
+model JobConfig {
+  jobKey    String   @id
+  isEnabled Boolean  @default(true)
+  updatedAt DateTime @updatedAt
+}
+
 // ─── NOTIFICATIONS ─────────────────────────────────────
 //
 // In-app notification for a user. Written by src/lib/notifications/notify().
@@ -1009,6 +1138,9 @@ model Notification {
 model EmailLog {
   id          String   @id @default(cuid())
   toAddresses String   // comma-separated recipient list
+  ccAddresses String?  // comma-separated CC recipients
+  bccAddresses String? // comma-separated BCC recipients
+  replyTo     String?
   fromAddress String
   subject     String
   bodyHtml    String   @db.Text
@@ -1077,4 +1209,573 @@ model AccessRequest {
 
   @@index([status])
   @@index([requesterId])
+}
+
+// ─── QUOTES ─────────────────────────────────────────────
+//
+// Sales quote / proposal builder. A Quote belongs to a Client and optionally
+// to a Project. Line items can be reusable CatalogItem references or one-off
+// custom rows. Quotes can be revised — a revision links back to the parent
+// via parentQuoteId and the parent transitions to REVISED.
+//
+// Phase 1 covers: draft authoring, line items, totals, templates, catalog.
+// Phases 2+ wire up sending, public token view, accept/reject, e-sig, PDF.
+
+model Quote {
+  id                    String      @id @default(cuid())
+  /// Human-readable identifier auto-generated on create (e.g. "Q-2026-0001").
+  /// Unique across the org. Format is fixed; renumbering would invalidate
+  /// the URL the client received in their email.
+  quoteNumber           String      @unique
+  clientId              String
+  projectId             String?
+  status                QuoteStatus @default(DRAFT)
+  title                 String
+  /// Markdown-friendly intro text rendered above the line items on the
+  /// public view. Optional.
+  introText             String?     @db.Text
+  /// Project assumptions / scope clarifications rendered between the
+  /// line items and the totals on the public view. Lets the author
+  /// list out "this quote assumes X, Y, Z" so the client knows what's
+  /// been factored in. Optional.
+  assumptionsText       String?     @db.Text
+  /// Footer / terms & conditions text rendered below the totals on the
+  /// public view. Optional.
+  termsText             String?     @db.Text
+  currency              String      @default("USD")
+  /// Cached subtotal of all line items (after per-line discounts, before
+  /// quote-level discount and tax). Recomputed on every save.
+  subtotal              Float       @default(0)
+  discountType          QuoteDiscountType @default(NONE)
+  discountValue         Float       @default(0)
+  /// Tax rate as a percentage. Nullable so tax-exempt quotes can render
+  /// cleanly without a 0% line on the public view.
+  taxRate               Float?
+  taxAmount             Float       @default(0)
+  total                 Float       @default(0)
+  validUntil            DateTime?
+  acceptedAt            DateTime?
+  rejectedAt            DateTime?
+  sentAt                DateTime?
+  firstViewedAt         DateTime?
+  acceptedSignatureName String?
+  acceptedSignatureData String?     @db.Text
+  acceptedIp            String?
+  rejectionReason       String?     @db.Text
+  /// Links a revision to the prior version. The parent transitions to
+  /// REVISED when a child is created.
+  parentQuoteId         String?
+  createdById           String
+  assignedToId          String?
+  /// Owner-only notes — never rendered on the client-facing public view.
+  internalNotes         String?     @db.Text
+  /// Cryptographically random token used in the public share URL `/q/:token`.
+  /// Set when the quote is first sent. Nullable on drafts.
+  publicToken           String?     @unique
+  /// File reference to the most recently generated PDF. Regenerated on
+  /// edit so consumers can rely on `pdfFile.url` being current.
+  pdfFileId             String?
+  createdAt             DateTime    @default(now())
+  updatedAt             DateTime    @updatedAt
+
+  client       Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  project      Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  parentQuote  Quote?   @relation("QuoteRevisions", fields: [parentQuoteId], references: [id])
+  revisions    Quote[]  @relation("QuoteRevisions")
+  createdBy    User     @relation("QuoteCreator", fields: [createdById], references: [id])
+  assignedTo   User?    @relation("QuoteAssignee", fields: [assignedToId], references: [id], onDelete: SetNull)
+  pdfFile      File?    @relation("QuotePdf", fields: [pdfFileId], references: [id], onDelete: SetNull)
+
+  lineItems QuoteLineItem[]
+  events    QuoteEvent[]
+
+  @@index([clientId])
+  @@index([projectId])
+  @@index([status])
+  @@index([createdById])
+  @@index([assignedToId])
+  @@index([validUntil])
+}
+
+model QuoteLineItem {
+  id                String                  @id @default(cuid())
+  quoteId           String
+  position          Int                     @default(0)
+  /// Optional grouping label rendered as a section divider on the public
+  /// view (e.g. "Hardware", "Services", "Optional Add-ons").
+  groupLabel        String?
+  /// When true, the client can toggle this row on/off on the public quote
+  /// page. The total recalculates as they toggle.
+  isOptional        Boolean                 @default(false)
+  /// Whether this optional row is currently selected. Always true for
+  /// non-optional rows. The client mutates this on accept.
+  isSelected        Boolean                 @default(true)
+  catalogItemId     String?
+  name              String
+  description       String?                 @db.Text
+  quantity          Float                   @default(1)
+  unit              String?
+  unitPrice         Float                   @default(0)
+  discountType      QuoteDiscountType       @default(NONE)
+  discountValue     Float                   @default(0)
+  isRecurring       Boolean                 @default(false)
+  recurringInterval QuoteRecurringInterval?
+  /// Cached row subtotal (qty * unitPrice, after this row's discount).
+  subtotal          Float                   @default(0)
+
+  quote       Quote        @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  catalogItem CatalogItem? @relation(fields: [catalogItemId], references: [id], onDelete: SetNull)
+
+  @@index([quoteId, position])
+}
+
+// Reusable service / product catalog. Powers line-item autocomplete in the
+// quote editor — typing in a row's name field pulls suggestions from here.
+// Catalog items are global; per-line edits don't write back to the catalog.
+model CatalogItem {
+  id               String   @id @default(cuid())
+  name             String
+  description      String?  @db.Text
+  defaultUnitPrice Float    @default(0)
+  defaultUnit      String?
+  category         String?
+  isRecurring      Boolean  @default(false)
+  isActive         Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  quoteLineItems    QuoteLineItem[]
+  templateLineItems QuoteTemplateLineItem[]
+
+  @@index([isActive])
+  @@index([category])
+}
+
+// Saved quote shapes used as the starting point for new quotes. A template
+// has the same shape as a Quote minus per-quote fields (client, dates,
+// signatures, etc.). Creating a quote from a template clones the line items.
+model QuoteTemplate {
+  id              String   @id @default(cuid())
+  name            String
+  description     String?  @db.Text
+  introText       String?  @db.Text
+  assumptionsText String?  @db.Text
+  termsText       String?  @db.Text
+  createdById     String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  createdBy User @relation("QuoteTemplateCreator", fields: [createdById], references: [id])
+
+  lineItems QuoteTemplateLineItem[]
+}
+
+model QuoteTemplateLineItem {
+  id                String                  @id @default(cuid())
+  templateId        String
+  position          Int                     @default(0)
+  groupLabel        String?
+  isOptional        Boolean                 @default(false)
+  catalogItemId     String?
+  name              String
+  description       String?                 @db.Text
+  quantity          Float                   @default(1)
+  unit              String?
+  unitPrice         Float                   @default(0)
+  discountType      QuoteDiscountType       @default(NONE)
+  discountValue     Float                   @default(0)
+  isRecurring       Boolean                 @default(false)
+  recurringInterval QuoteRecurringInterval?
+
+  template    QuoteTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  catalogItem CatalogItem?  @relation(fields: [catalogItemId], references: [id], onDelete: SetNull)
+
+  @@index([templateId, position])
+}
+
+// Audit / activity log for a single quote. Distinct from the global
+// ActivityLog because public actors (clients viewing/accepting) are not
+// User rows and we want richer per-event metadata.
+model QuoteEvent {
+  id        String   @id @default(cuid())
+  quoteId   String
+  /// One of: created, sent, viewed, downloaded, accepted, rejected,
+  /// revised, edited, comment_added. Stored as a string so adding a new
+  /// event type doesn't require a migration.
+  eventType String
+  /// "user" | "client" | "system"
+  actorType String
+  /// User id when actorType="user". Null for client and system actors.
+  actorId   String?
+  /// Free-form JSON payload for event-specific data.
+  metadata  String?  @db.Text
+  createdAt DateTime @default(now())
+
+  quote Quote @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+
+  @@index([quoteId, createdAt])
+}
+
+// ─── WORKFLOWS ──────────────────────────────────────────
+//
+// Generic workflow engine for sequential automations like Employee
+// Onboarding, Offboarding, and Candidate Hiring. A WorkflowTemplate is
+// the blueprint; a WorkflowInstance is a single in-flight execution
+// attached to a subject (employee, candidate, or other entity).
+//
+// Phase 3 covers the data model + template builder. Phase 4 wires the
+// scheduled background worker that ticks instances forward. Phase 5
+// adds the self-service portal that subjects use to fill out forms,
+// upload documents, and sign agreements.
+
+model WorkflowTemplate {
+  id                 String              @id @default(cuid())
+  name               String
+  description        String?             @db.Text
+  type               WorkflowType        @default(CUSTOM)
+  /// What kind of subject this workflow operates on. Drives which
+  /// trigger options are available and which variable paths the
+  /// template editor offers in the autocomplete.
+  subjectEntityType  WorkflowSubjectType @default(EMPLOYEE)
+  isActive           Boolean             @default(true)
+  /// True for the seeded defaults (Onboarding/Offboarding/Candidate)
+  /// the migration ships with. The UI hides delete on these so users
+  /// don't accidentally drop a system template.
+  isSeed             Boolean             @default(false)
+  createdById        String
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+
+  createdBy User               @relation("WorkflowTemplateCreator", fields: [createdById], references: [id])
+  steps     WorkflowStep[]
+  instances WorkflowInstance[]
+  triggers  WorkflowTrigger[]
+
+  @@index([type])
+  @@index([isActive])
+}
+
+model WorkflowStep {
+  id                 String             @id @default(cuid())
+  workflowTemplateId String
+  /// 1-based ordering within the template. The editor renders steps
+  /// in `position` order; reordering is a position rewrite.
+  position           Int                @default(0)
+  name               String
+  stepType           WorkflowStepType
+  /// Step-type-specific config blob — see src/lib/workflows/step-types.ts
+  /// for the discriminated union the UI and engine share.
+  config             String             @db.Text
+  timingType         WorkflowTimingType @default(ON_ENTRY)
+  /// When timingType is DAYS_AFTER_START / DAYS_BEFORE_TARGET this is
+  /// the offset in days. When AFTER_STEP, this field is unused and
+  /// `afterStepId` holds the dependency. ON_ENTRY ignores it.
+  timingValue        Int                @default(0)
+  afterStepId        String?
+  isRequired         Boolean            @default(true)
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  workflowTemplate WorkflowTemplate @relation(fields: [workflowTemplateId], references: [id], onDelete: Cascade)
+  afterStep        WorkflowStep?    @relation("StepOrder", fields: [afterStepId], references: [id])
+  followingSteps   WorkflowStep[]   @relation("StepOrder")
+
+  instanceSteps WorkflowInstanceStep[]
+
+  @@index([workflowTemplateId, position])
+  @@index([afterStepId])
+}
+
+model WorkflowInstance {
+  id                 String                 @id @default(cuid())
+  workflowTemplateId String
+  /// Polymorphic FK — subjectId points at a User (when subjectType is
+  /// EMPLOYEE) or a free-form id (CUSTOM). No DB-level FK because the
+  /// type varies; the engine resolves the subject in code.
+  subjectType        WorkflowSubjectType
+  subjectId          String
+  status             WorkflowInstanceStatus @default(PENDING)
+  startDate          DateTime
+  /// Optional target date — required for offboarding and any timing
+  /// rule that uses DAYS_BEFORE_TARGET.
+  targetDate         DateTime?
+  startedAt          DateTime?
+  completedAt        DateTime?
+  createdById        String
+  /// JSON snapshot of the subject at instance-start time. The engine
+  /// uses this for variable substitution so renames after kickoff
+  /// don't retroactively change emails that already went out.
+  context            String?                @db.Text
+  createdAt          DateTime               @default(now())
+  updatedAt          DateTime               @updatedAt
+
+  workflowTemplate WorkflowTemplate       @relation(fields: [workflowTemplateId], references: [id])
+  createdBy        User                   @relation("WorkflowInstanceCreator", fields: [createdById], references: [id])
+  steps            WorkflowInstanceStep[]
+  events           WorkflowEvent[]
+
+  @@index([workflowTemplateId])
+  @@index([subjectType, subjectId])
+  @@index([status])
+  @@index([startDate])
+}
+
+model WorkflowInstanceStep {
+  id                 String                     @id @default(cuid())
+  workflowInstanceId String
+  workflowStepId     String
+  status             WorkflowInstanceStepStatus @default(PENDING)
+  scheduledFor       DateTime?
+  startedAt          DateTime?
+  completedAt        DateTime?
+  completedByUserId  String?
+  /// Step-type-specific output: form responses, uploaded file ids,
+  /// signature ids, approval decisions.
+  output             String?                    @db.Text
+  /// Last failure message — surfaced in the admin "stuck workflows"
+  /// view so retries can be diagnosed.
+  error              String?                    @db.Text
+  createdAt          DateTime                   @default(now())
+  updatedAt          DateTime                   @updatedAt
+
+  workflowInstance WorkflowInstance @relation(fields: [workflowInstanceId], references: [id], onDelete: Cascade)
+  workflowStep     WorkflowStep     @relation(fields: [workflowStepId], references: [id])
+  completedByUser  User?            @relation("WorkflowInstanceStepCompletedBy", fields: [completedByUserId], references: [id], onDelete: SetNull)
+
+  documents  WorkflowDocument[]
+  signatures WorkflowSignature[]
+
+  @@index([workflowInstanceId])
+  @@index([workflowStepId])
+  @@index([scheduledFor, status])
+}
+
+/// Reusable email body with `{{path.to.field}}` variable substitution.
+/// Distinct from src/lib/email/templates.ts (typed code-defined templates
+/// for transactional system emails) — these are USER-EDITABLE templates
+/// that workflow steps reference by id.
+model WorkflowEmailTemplate {
+  id                 String   @id @default(cuid())
+  name               String
+  subject            String
+  bodyHtml           String   @db.Text
+  bodyText           String?  @db.Text
+  /// JSON array of variable paths suggested by the editor's
+  /// autocomplete, e.g. ["subject.firstName", "company.name"].
+  availableVariables String?  @db.Text
+  createdById        String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  createdBy User? @relation("WorkflowEmailTemplateCreator", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([name])
+}
+
+model WorkflowDocument {
+  id                     String   @id @default(cuid())
+  workflowInstanceStepId String
+  fileId                 String
+  uploadedAt             DateTime @default(now())
+
+  workflowInstanceStep WorkflowInstanceStep @relation(fields: [workflowInstanceStepId], references: [id], onDelete: Cascade)
+  file                 File                 @relation(fields: [fileId], references: [id], onDelete: Cascade)
+
+  @@index([workflowInstanceStepId])
+}
+
+model WorkflowSignature {
+  id                     String   @id @default(cuid())
+  workflowInstanceStepId String
+  signedName             String
+  signatureData          String?  @db.Text
+  signedIp               String?
+  /// Snapshot of the document text the subject saw at sign time so
+  /// later edits to the request_signature step config don't change
+  /// what's been signed already.
+  documentTextSnapshot   String?  @db.Text
+  signedAt               DateTime @default(now())
+
+  workflowInstanceStep WorkflowInstanceStep @relation(fields: [workflowInstanceStepId], references: [id], onDelete: Cascade)
+
+  @@index([workflowInstanceStepId])
+}
+
+/// Single durable token per subject for portal access. Kept distinct
+/// from per-action tokens (like quote tokens) because portals are
+/// long-lived: a new hire fills out forms over multiple sessions and
+/// shouldn't have to request a new link each time.
+model PortalToken {
+  id          String              @id @default(cuid())
+  subjectType WorkflowSubjectType
+  subjectId   String
+  token       String              @unique
+  expiresAt   DateTime?
+  lastUsedAt  DateTime?
+  createdAt   DateTime            @default(now())
+
+  @@unique([subjectType, subjectId])
+}
+
+model WorkflowEvent {
+  id                 String   @id @default(cuid())
+  workflowInstanceId String
+  eventType          String
+  /// "user" | "subject" | "system"
+  actorType          String
+  actorId            String?
+  metadata           String?  @db.Text
+  createdAt          DateTime @default(now())
+
+  workflowInstance WorkflowInstance @relation(fields: [workflowInstanceId], references: [id], onDelete: Cascade)
+
+  @@index([workflowInstanceId, createdAt])
+}
+
+/// Trigger config for a workflow template — what causes a new instance
+/// to spawn automatically. Manual instances don't need a trigger row.
+/// One template can have many triggers (e.g. fire on user create AND
+/// 7 days before termination).
+model WorkflowTrigger {
+  id                 String              @id @default(cuid())
+  workflowTemplateId String
+  triggerType        WorkflowTriggerType
+  /// Type-specific JSON config:
+  ///  ENTITY_CREATE  → { entityType: "User", filter?: {...} }
+  ///  SCHEDULED_DATE → { dateField: "terminationDate", offsetDays: -7 }
+  ///  STAGE_CHANGE   → { stageField: "stage", targetValue: "offer_accepted" }
+  config             String              @db.Text
+  isActive           Boolean             @default(true)
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+
+  workflowTemplate WorkflowTemplate @relation(fields: [workflowTemplateId], references: [id], onDelete: Cascade)
+
+  @@index([workflowTemplateId])
+  @@index([triggerType, isActive])
+}
+
+// (Candidate model removed — hiring now flows through workflow
+//  triggers on User creation and project assignment. The
+//  WorkflowSubjectType enum no longer offers CANDIDATE.)
+
+// ─── SCHEDULED TASKS ────────────────────────────────────────
+//
+// Admin-built recurring jobs. Distinct from src/lib/jobs/ which holds
+// code-defined system jobs (contract expiry, certification expiry,
+// etc.) — those ship as part of the build. Scheduled tasks are
+// data-driven so non-developers can wire up things like "email the
+// project-status report to the leadership group every Monday at 9 AM"
+// from the admin UI.
+//
+// The runner — `custom-scheduled-tasks` in src/lib/jobs/jobs/ —
+// wakes up hourly via cron, finds rows whose next run window has
+// arrived, and dispatches each to its handler.
+
+enum ScheduledTaskFrequency {
+  HOURLY
+  DAILY
+  WEEKLY
+  MONTHLY
+}
+
+enum ScheduledTaskType {
+  /// Render a registered report and email it to a recipient list.
+  /// config: { reportKey: string, recipients: string[] }
+  EMAIL_REPORT
+  /// Send a static or lightly-templated message to a recipient list.
+  /// config: { subject: string, body: string, recipients: string[] }
+  EMAIL_MESSAGE
+}
+
+model ScheduledTask {
+  id            String                 @id @default(cuid())
+  name          String
+  description   String?                @db.Text
+  taskType      ScheduledTaskType
+  frequency     ScheduledTaskFrequency
+  /// Hour of the day (UTC) the task should fire. 0-23. Honored by
+  /// DAILY / WEEKLY / MONTHLY. HOURLY tasks ignore it.
+  hourUtc       Int                    @default(9)
+  /// 0=Sunday … 6=Saturday. Honored by WEEKLY only.
+  dayOfWeek     Int?
+  /// 1-28. Honored by MONTHLY only. Capped at 28 so every month has
+  /// a valid trigger date — calendars with fewer days don't surprise.
+  dayOfMonth    Int?
+  /// Type-specific JSON config — see ScheduledTaskType comments above.
+  config        String                 @db.Text
+  isActive      Boolean                @default(true)
+  /// When the task last fired. Drives idempotency in the runner —
+  /// a task that already ran in the current window is skipped.
+  lastRunAt     DateTime?
+  /// "success" | "failed" — surfaces in the admin list as a colored
+  /// badge so failing tasks are visible at a glance.
+  lastRunStatus String?
+  lastRunOutput String?                @db.Text
+  lastRunError  String?                @db.Text
+  createdById   String
+  createdAt     DateTime               @default(now())
+  updatedAt     DateTime               @updatedAt
+
+  createdBy User @relation("ScheduledTaskCreator", fields: [createdById], references: [id])
+
+  @@index([isActive, frequency])
+  @@index([lastRunAt])
+}
+
+// ─── CUSTOM REPORTS ─────────────────────────────────────────
+//
+// Admin-built reports — distinct from src/lib/reports/ which holds
+// code-defined system reports. Custom reports are data-driven so
+// non-developers can compose "show me all active projects with their
+// FTE total and client name" without writing TypeScript.
+//
+// The shape is intentionally constrained: pick a registered entity
+// type, choose columns from the curated list for that entity, add
+// filters from the curated list, and pick a sort. No free SQL, no
+// arbitrary joins — admins should never be able to read tables they
+// can't already see in the UI.
+
+enum CustomReportEntity {
+  USER
+  PROJECT
+  CLIENT
+  QUOTE
+  TASK
+  CONTRACT
+  CERTIFICATION
+  ASSIGNMENT
+}
+
+model CustomReport {
+  id           String              @id @default(cuid())
+  name         String
+  description  String?             @db.Text
+  /// Free-form grouping label rendered on /admin/reports. Lets admins
+  /// organize custom reports the same way system reports group by
+  /// module. Null = "Uncategorized" bucket.
+  category     String?
+  entityType   CustomReportEntity
+  /// JSON array of column keys from the entity's registry. Order is
+  /// the order they appear in the rendered table + CSV.
+  columns      String              @db.Text
+  /// JSON array of { field, op, value } filter clauses. AND-combined.
+  filters      String              @db.Text
+  /// Column key to sort by, prefixed with "-" for descending.
+  /// E.g. "name", "-createdAt".
+  sortBy       String?
+  /// Hard cap on rows returned. Null = use the registry default
+  /// (typically 500). Useful for emailed digests where you only want
+  /// the top N.
+  limit        Int?
+  isActive     Boolean             @default(true)
+  createdById  String
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+
+  createdBy User @relation("CustomReportCreator", fields: [createdById], references: [id])
+
+  @@index([entityType])
+  @@index([isActive])
+  @@index([category])
 }

@@ -33,6 +33,7 @@ where the entity could appear.**
 | Assignment | (no standalone page — shown on user, project, team) | `revalidateAssignment({ employeeId?, projectId? })` | `/team`, `/projects`, employee profile, project detail, `/dashboard` |
 | Task | (list page `/tasks`) | `revalidateTask({ projectId?, assigneeId?, clientId?, previousAssigneeId? })` | `/tasks`, `/dashboard`, project detail, client detail, assignee profile |
 | Comment | (attached to parent entity) | `revalidateComment({ entityType, entityId, authorId? })` | parent entity's detail page, `/dashboard`, author profile |
+| Quote | `/quotes/{id}` | `revalidateQuote(id, { clientId?, previousClientId?, projectId?, previousProjectId? })` | `/quotes`, `/quotes/{id}/edit`, `/dashboard`, client detail, project detail |
 
 ## Where the Client entity appears (and how to link)
 

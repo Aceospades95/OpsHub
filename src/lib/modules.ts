@@ -23,6 +23,8 @@ export type ModuleKey =
   | "suppliers"
   | "tools"
   | "intranet"
+  | "quotes"
+  | "workflows"
   | "settings";
 
 export type PermissionFlag =
@@ -189,6 +191,24 @@ export const MODULES: ModuleDefinition[] = [
     description: "HR resources, policies, handbooks, and time off",
     section: "resources",
     permissioned: false,
+  },
+  {
+    key: "quotes",
+    label: "Quotes",
+    href: "/quotes",
+    icon: "ReceiptText",
+    description: "Sales quotes, line-item builder, templates, and catalog",
+    section: "delivery",
+    permissioned: true,
+  },
+  {
+    key: "workflows",
+    label: "Workflows",
+    href: "/workflows",
+    icon: "Workflow",
+    description: "Automated onboarding, offboarding, and project-welcome sequences",
+    section: "admin",
+    permissioned: true,
   },
   {
     key: "settings",

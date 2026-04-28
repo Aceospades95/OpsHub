@@ -258,6 +258,29 @@ export async function addProjectMember(_prev: unknown, formData: FormData) {
     }
   }
 
+  // Fire PROJECT_ASSIGNMENT triggers for legacy ProjectMember-based
+  // assignments too. createAssignment fires its own; both code paths
+  // reach the same helper so a workflow author who configures the
+  // trigger doesn't have to know which mechanism added the member.
+  try {
+    const project = await db.project.findUnique({
+      where: { id: projectId },
+      select: { serviceOfferingId: true },
+    });
+    const { fireProjectAssignmentTriggers } = await import(
+      "@/lib/workflows/triggers"
+    );
+    await fireProjectAssignmentTriggers({
+      userId,
+      projectId,
+      serviceOfferingId: project?.serviceOfferingId ?? null,
+      createdById: user.id,
+    });
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error("[projects] project-assignment trigger failed:", err);
+  }
+
   return { success: true };
 }
 

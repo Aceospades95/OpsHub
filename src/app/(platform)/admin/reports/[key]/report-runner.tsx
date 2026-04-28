@@ -65,6 +65,9 @@ export function ReportRunner({ reportKey, reportName, recipients }: Props) {
   // Email picker state
   const [pickedIds, setPickedIds] = useState<Set<string>>(new Set());
   const [extraEmail, setExtraEmail] = useState("");
+  const [ccEmail, setCcEmail] = useState("");
+  const [bccEmail, setBccEmail] = useState("");
+  const [replyTo, setReplyTo] = useState("");
   const [emailStatus, setEmailStatus] = useState<
     | { type: "success"; message: string }
     | { type: "error"; message: string }
@@ -100,16 +103,22 @@ export function ReportRunner({ reportKey, reportName, recipients }: Props) {
 
   const handleEmail = () => {
     setEmailStatus(null);
-    const all = [
-      ...Array.from(pickedIds),
-      ...extraEmail.split(/[,\s]+/).filter(Boolean),
-    ];
+    const splitAddrs = (raw: string) =>
+      raw.split(/[,;\s]+/).map((s) => s.trim()).filter(Boolean);
+    const all = [...Array.from(pickedIds), ...splitAddrs(extraEmail)];
     if (all.length === 0) {
       setEmailStatus({ type: "error", message: "Pick a recipient or type an email address" });
       return;
     }
+    const cc = splitAddrs(ccEmail);
+    const bcc = splitAddrs(bccEmail);
+    const replyToTrimmed = replyTo.trim() || undefined;
     startEmail(async () => {
-      const result = await emailReportAction(reportKey, all);
+      const result = await emailReportAction(reportKey, all, {
+        cc,
+        bcc,
+        replyTo: replyToTrimmed,
+      });
       if (!result.success) {
         setEmailStatus({
           type: "error",
@@ -123,6 +132,9 @@ export function ReportRunner({ reportKey, reportName, recipients }: Props) {
       });
       setPickedIds(new Set());
       setExtraEmail("");
+      setCcEmail("");
+      setBccEmail("");
+      setReplyTo("");
     });
   };
 
@@ -146,7 +158,7 @@ export function ReportRunner({ reportKey, reportName, recipients }: Props) {
               Refresh
             </Button>
             <a
-              href={`/api/reports/${reportKey}/csv`}
+              href={`/api/reports/${encodeURIComponent(reportKey)}/csv`}
               download
               className="inline-flex items-center rounded border border-border px-3 py-1.5 text-xs hover:bg-muted transition-colors"
             >
@@ -262,7 +274,7 @@ export function ReportRunner({ reportKey, reportName, recipients }: Props) {
           </div>
 
           <div>
-            <p className="text-xs font-semibold mb-2">Or add email addresses</p>
+            <p className="text-xs font-semibold mb-2">Or add email addresses (To)</p>
             <input
               type="text"
               value={extraEmail}
@@ -272,6 +284,44 @@ export function ReportRunner({ reportKey, reportName, recipients }: Props) {
             />
             <p className="text-[10px] text-muted-foreground mt-1">
               Comma or space separated. External addresses are allowed.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div>
+              <p className="text-xs font-semibold mb-2">CC (optional)</p>
+              <input
+                type="text"
+                value={ccEmail}
+                onChange={(e) => setCcEmail(e.target.value)}
+                placeholder="manager@example.com"
+                className="w-full h-9 rounded border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+              />
+            </div>
+            <div>
+              <p className="text-xs font-semibold mb-2">BCC (optional)</p>
+              <input
+                type="text"
+                value={bccEmail}
+                onChange={(e) => setBccEmail(e.target.value)}
+                placeholder="audit@example.com"
+                className="w-full h-9 rounded border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+              />
+            </div>
+          </div>
+
+          <div>
+            <p className="text-xs font-semibold mb-2">Reply-To (optional)</p>
+            <input
+              type="email"
+              value={replyTo}
+              onChange={(e) => setReplyTo(e.target.value)}
+              placeholder="ops@example.com"
+              className="w-full h-9 rounded border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+            />
+            <p className="text-[10px] text-muted-foreground mt-1">
+              Helpful when From is a no-reply mailbox — replies will route
+              here instead of bouncing.
             </p>
           </div>
 

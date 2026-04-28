@@ -18,6 +18,7 @@
 
 import { requireAuth } from "@/lib/permissions";
 import { runReport, renderHtml, renderText } from "@/lib/reports";
+import { runCustomReportFromRow } from "@/lib/reports/custom/runtime";
 import { sendFromTemplate } from "@/lib/email";
 import { absoluteUrl } from "@/lib/url";
 import { db } from "@/lib/db";
@@ -36,10 +37,7 @@ export async function runReportAction(key: string) {
   requireAdmin(user.role);
 
   try {
-    const { output, name, description } = await runReport(key, {
-      triggeredAt: new Date(),
-      triggeredBy: user.id,
-    });
+    const { output, name, description } = await resolveAndRun(key, user.id);
     // Strip non-serializable `format` callbacks from columns before
     // returning to the client — the client has its own formatCell.
     const safeOutput = {
@@ -56,6 +54,36 @@ export async function runReportAction(key: string) {
 }
 
 /**
+ * Resolve a report key — either a system-report key or a `custom:{id}`
+ * reference to a CustomReport row — and execute it. Returns a uniform
+ * shape so callers don't have to know which kind they got.
+ */
+async function resolveAndRun(
+  key: string,
+  triggeredBy: string
+): Promise<{
+  output: Awaited<ReturnType<typeof runReport>>["output"];
+  name: string;
+  description: string;
+}> {
+  if (key.startsWith("custom:")) {
+    const id = key.slice("custom:".length);
+    const row = await db.customReport.findUnique({ where: { id } });
+    if (!row) throw new Error(`Custom report ${id} not found`);
+    const output = await runCustomReportFromRow(row);
+    return {
+      output,
+      name: row.name,
+      description: row.description ?? "Custom report",
+    };
+  }
+  return runReport(key, {
+    triggeredAt: new Date(),
+    triggeredBy,
+  });
+}
+
+/**
  * Run a report and email it to the supplied addresses (or to the current
  * admin user if no recipients are given). The email uses the `report`
  * template and embeds the full HTML table + plain-text fallback.
@@ -63,10 +91,20 @@ export async function runReportAction(key: string) {
  * We resolve user ids to email addresses when they look like cuids,
  * otherwise we treat them as raw email addresses — that way the
  * recipient picker in the UI can pass either.
+ *
+ * `cc` / `bcc` accept the same shape (user ids or raw addresses) and are
+ * resolved the same way. `replyTo` is a single email — useful when the
+ * From address is a no-reply mailbox and you want responses to land in a
+ * shared inbox instead of bouncing.
  */
 export async function emailReportAction(
   key: string,
-  recipients: string[]
+  recipients: string[],
+  options: {
+    cc?: string[];
+    bcc?: string[];
+    replyTo?: string;
+  } = {}
 ) {
   const user = await requireAuth();
   requireAdmin(user.role);
@@ -76,28 +114,34 @@ export async function emailReportAction(
   }
 
   try {
-    const { output, name, description } = await runReport(key, {
-      triggeredAt: new Date(),
-      triggeredBy: user.id,
-    });
+    const { output, name, description } = await resolveAndRun(key, user.id);
 
     // Resolve recipients → email addresses. Anything that looks like a
     // valid email is used as-is; anything else is treated as a user id
     // and looked up.
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    const directEmails = recipients.filter((r) => emailRegex.test(r));
-    const userIds = recipients.filter((r) => !emailRegex.test(r));
+    const allInputs = [
+      ...recipients,
+      ...(options.cc ?? []),
+      ...(options.bcc ?? []),
+    ];
+    const userIds = allInputs.filter((r) => !emailRegex.test(r));
     const users = userIds.length
       ? await db.user.findMany({
           where: { id: { in: userIds }, isActive: true },
-          select: { id: true, name: true, email: true },
+          select: { id: true, email: true },
         })
       : [];
+    const userIdToEmail = new Map(users.map((u) => [u.id, u.email]));
 
-    const toList = [
-      ...directEmails,
-      ...users.map((u) => u.email),
-    ].filter(Boolean);
+    const resolveList = (raw: string[]) =>
+      raw
+        .map((r) => (emailRegex.test(r) ? r : userIdToEmail.get(r)))
+        .filter((v): v is string => Boolean(v));
+
+    const toList = resolveList(recipients);
+    const ccList = resolveList(options.cc ?? []);
+    const bccList = resolveList(options.bcc ?? []);
 
     if (toList.length === 0) {
       return { success: false as const, error: "No valid recipients resolved" };
@@ -105,39 +149,46 @@ export async function emailReportAction(
 
     const htmlBody = renderHtml(output);
     const textBody = renderText(output);
-    // Each recipient gets their own email so the "Hi {name}" line can be
-    // personalized. Fall back to "team" when we can't resolve a name.
-    const nameByEmail = new Map(users.map((u) => [u.email, u.name]));
 
-    let sent = 0;
-    let failed = 0;
-    for (const to of toList) {
-      const recipientName = nameByEmail.get(to) || "team";
-      const result = await sendFromTemplate(
-        "report",
-        {
-          recipientName,
-          reportName: name,
-          description,
-          summary: output.summary,
-          htmlBody,
-          textBody,
-          cta: {
-            label: "Open in OpsHub",
-            url: absoluteUrl(`/admin/reports/${key}`),
-          },
+    // One send per click — all addresses share the same envelope so
+    // CC/BCC people see the To list as the conversation context. The
+    // greeting falls back to "team" since a single mailing-list email
+    // can't be personalized to N different recipients.
+    const ctaUrl = key.startsWith("custom:")
+      ? absoluteUrl(`/admin/reports/custom/${key.slice("custom:".length)}`)
+      : absoluteUrl(`/admin/reports/${key}`);
+
+    const result = await sendFromTemplate(
+      "report",
+      {
+        recipientName: "team",
+        reportName: name,
+        description,
+        summary: output.summary,
+        htmlBody,
+        textBody,
+        cta: {
+          label: "Open in OpsHub",
+          url: ctaUrl,
         },
-        { to, entityType: "report", entityId: key }
-      );
-      if (result.success) sent++;
-      else failed++;
-    }
+      },
+      {
+        to: toList,
+        cc: ccList.length > 0 ? ccList : undefined,
+        bcc: bccList.length > 0 ? bccList : undefined,
+        replyTo: options.replyTo?.trim() || undefined,
+        entityType: "report",
+        entityId: key,
+      }
+    );
 
+    const total = toList.length + ccList.length + bccList.length;
     return {
       success: true as const,
-      sent,
-      failed,
-      total: toList.length,
+      sent: result.success ? total : 0,
+      failed: result.success ? 0 : total,
+      total,
+      error: result.success ? undefined : result.error,
     };
   } catch (err) {
     return {

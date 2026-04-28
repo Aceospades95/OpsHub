@@ -7,6 +7,7 @@
  */
 
 import { db } from "@/lib/db";
+import { format } from "date-fns";
 import type { ReportDefinition } from "../types";
 
 function daysBetween(a: Date, b: Date): number {
@@ -17,7 +18,7 @@ export const certificationsExpiring: ReportDefinition = {
   key: "certifications-expiring",
   name: "Certifications expiring soon",
   description:
-    "Active and expiring-soon certifications that lapse within 90 days, with renewal cost, owner, point of contact, and sign-off state.",
+    "Active and expiring-soon certifications that lapse within 90 days, with renewal cost, owner, point of contact, and sign-off state. Headline numbers include unassigned count and total renewal cost so compliance can prioritize.",
   module: "certifications",
   schedulable: true,
 
@@ -48,17 +49,36 @@ export const certificationsExpiring: ReportDefinition = {
       status: c.status,
       expirationDate: c.expirationDate,
       daysUntil: c.expirationDate ? daysBetween(c.expirationDate, now) : null,
-      renewalCost: c.renewalCost
-        ? `${c.currency || "USD"} ${c.renewalCost.toLocaleString()}`
-        : "—",
+      renewalCost: c.renewalCost,
+      currency: c.currency || "USD",
       assignee: c.assignee?.name || "Unassigned",
       pointOfContact: c.pointOfContact?.name || "—",
-      signedOffAt: c.signedOffAt ? c.signedOffAt.toISOString().split("T")[0] : "—",
+      signedOff: c.signedOffAt,
       client: c.client?.name || "Internal",
     }));
 
+    const unassigned = rows.filter((r) => r.assignee === "Unassigned").length;
+    const totalRenewalCost = rows.reduce(
+      (sum, r) => sum + (r.renewalCost ?? 0),
+      0
+    );
+    const urgent30 = rows.filter(
+      (r) => r.daysUntil != null && r.daysUntil <= 30
+    ).length;
+    const summaryExtras: string[] = [];
+    if (urgent30 > 0) summaryExtras.push(`${urgent30} within 30 days`);
+    if (unassigned > 0) summaryExtras.push(`${unassigned} unassigned`);
+    if (totalRenewalCost > 0) {
+      summaryExtras.push(
+        `$${Math.round(totalRenewalCost).toLocaleString()} total renewal cost`
+      );
+    }
+
     return {
-      summary: `${rows.length} certification${rows.length === 1 ? "" : "s"} expiring in the next 90 days.`,
+      summary:
+        `${rows.length} certification${rows.length === 1 ? "" : "s"} expiring in the next 90 days` +
+        (summaryExtras.length > 0 ? ` · ${summaryExtras.join(" · ")}` : "") +
+        ".",
       columns: [
         { key: "name", label: "Certification" },
         { key: "issuingBody", label: "Issuer" },
@@ -66,12 +86,29 @@ export const certificationsExpiring: ReportDefinition = {
         { key: "jurisdictionName", label: "Jurisdiction detail" },
         { key: "type", label: "Type" },
         { key: "status", label: "Status" },
-        { key: "expirationDate", label: "Expires" },
+        {
+          key: "expirationDate",
+          label: "Expires",
+          format: (v) => (v instanceof Date ? format(v, "MMM d, yyyy") : "—"),
+        },
         { key: "daysUntil", label: "Days", align: "right" },
-        { key: "renewalCost", label: "Renewal cost", align: "right" },
+        {
+          key: "renewalCost",
+          label: "Renewal cost",
+          align: "right",
+          format: (v) => {
+            if (typeof v !== "number") return "—";
+            return v.toLocaleString(undefined, { maximumFractionDigits: 2 });
+          },
+        },
+        { key: "currency", label: "Cur" },
         { key: "assignee", label: "Assignee" },
         { key: "pointOfContact", label: "Point of contact" },
-        { key: "signedOffAt", label: "Signed off" },
+        {
+          key: "signedOff",
+          label: "Signed off",
+          format: (v) => (v instanceof Date ? format(v, "MMM d, yyyy") : "—"),
+        },
         { key: "client", label: "Client" },
       ],
       rows,

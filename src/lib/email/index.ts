@@ -46,7 +46,9 @@ export async function sendEmail(
   audit: EmailAuditContext = {}
 ): Promise<EmailSendResult> {
   const driver = getActiveDriver();
-  const toList = Array.isArray(message.to) ? message.to : [message.to];
+  const toList = toAddressList(message.to);
+  const ccList = toAddressList(message.cc);
+  const bccList = toAddressList(message.bcc);
 
   // Resolve `from` inside the try so a missing EMAIL_FROM under a real
   // driver (which throws from getDefaultFrom) lands as a clean
@@ -76,6 +78,9 @@ export async function sendEmail(
     await db.emailLog.create({
       data: {
         toAddresses: toList.join(", "),
+        ccAddresses: ccList.length > 0 ? ccList.join(", ") : null,
+        bccAddresses: bccList.length > 0 ? bccList.join(", ") : null,
+        replyTo: message.replyTo || null,
         fromAddress: from,
         subject: message.subject,
         bodyHtml: message.html,
@@ -97,6 +102,12 @@ export async function sendEmail(
   return result;
 }
 
+function toAddressList(value: string | string[] | undefined): string[] {
+  if (!value) return [];
+  if (Array.isArray(value)) return value.filter((v) => v && v.trim().length > 0);
+  return value.trim() ? [value] : [];
+}
+
 /**
  * Render a template and send the result. This is the preferred API —
  * callers pass the template key and typed data, and everything else
@@ -107,6 +118,8 @@ export async function sendFromTemplate<K extends TemplateKey>(
   data: TemplateDataMap[K],
   options: {
     to: string | string[];
+    cc?: string | string[];
+    bcc?: string | string[];
     from?: string;
     replyTo?: string;
     entityType?: string;
@@ -127,6 +140,8 @@ export async function sendFromTemplate<K extends TemplateKey>(
   return sendEmail(
     {
       to: options.to,
+      cc: options.cc,
+      bcc: options.bcc,
       from: options.from,
       replyTo: options.replyTo,
       subject: rendered.subject,

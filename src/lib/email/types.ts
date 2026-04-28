@@ -9,6 +9,10 @@
 export interface EmailMessage {
   /** Recipient(s). Accepts a single address or an array. */
   to: string | string[];
+  /** CC recipient(s). Accepts a single address or an array. */
+  cc?: string | string[];
+  /** BCC recipient(s). Accepts a single address or an array. */
+  bcc?: string | string[];
   /** Subject line */
   subject: string;
   /** HTML body */
@@ -17,7 +21,11 @@ export interface EmailMessage {
   text?: string;
   /** Sender override. Defaults to EMAIL_FROM env var. */
   from?: string;
-  /** Reply-To override */
+  /**
+   * Reply-To override. Useful when the From address is a no-reply
+   * mailbox and you want responses to land somewhere a human reads
+   * (e.g. an ops@ alias).
+   */
   replyTo?: string;
 }
 

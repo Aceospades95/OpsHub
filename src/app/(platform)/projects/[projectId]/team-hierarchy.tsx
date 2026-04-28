@@ -44,7 +44,7 @@ export function TeamHierarchy({ members }: { members: Member[] }) {
           <List className="h-3.5 w-3.5" /> List view
         </button>
       </div>
-      <OrgChartTree nodes={tree} compact showRoleBadge />
+      <OrgChartTree nodes={tree} hideTopHeaderForSingleRoot={true} />
     </div>
   );
 }

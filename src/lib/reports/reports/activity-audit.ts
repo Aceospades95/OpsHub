@@ -1,24 +1,28 @@
 /**
- * activity-audit — who did what in the last 7 days.
+ * activity-audit — who did what in the last 7 days, summarized.
  *
- * Pulls the ActivityLog table, grouped by user + action type. Useful for
- * compliance/governance or just a weekly "what happened this week" digest.
+ * Pulls the ActivityLog table, grouped by user + action type so the
+ * email digest reads well at a glance. For the underlying per-event
+ * detail (one row per action, suitable for CSV archives), see the
+ * companion `activity-audit-full` report.
  */
 
 import { db } from "@/lib/db";
 import type { ReportDefinition } from "../types";
 
+const WINDOW_DAYS = 7;
+
 export const activityAudit: ReportDefinition = {
   key: "activity-audit",
-  name: "Activity audit (7 days)",
+  name: "Activity audit summary (7 days)",
   description:
-    "Counts of actions logged against entities in the last 7 days, grouped by user and action type.",
+    "Counts of actions logged against entities in the last 7 days, grouped by user and action type. Pair with the full-detail report for one row per event.",
   module: "admin",
   schedulable: true,
 
   async run() {
     const since = new Date();
-    since.setDate(since.getDate() - 7);
+    since.setDate(since.getDate() - WINDOW_DAYS);
 
     const logs = await db.activityLog.findMany({
       where: { createdAt: { gte: since } },
@@ -71,8 +75,17 @@ export const activityAudit: ReportDefinition = {
       }))
       .sort((a, b) => b.count - a.count);
 
+    // Highlight the busiest user/action so the digest line carries
+    // signal beyond just totals.
+    const top = rows[0];
+    const highlight = top
+      ? ` · top: ${top.user} (${top.count} ${top.action})`
+      : "";
+
     return {
-      summary: `${logs.length} logged event${logs.length === 1 ? "" : "s"} in the last 7 days across ${userIds.length} user${userIds.length === 1 ? "" : "s"}.`,
+      summary:
+        `${logs.length} logged event${logs.length === 1 ? "" : "s"} in the last ${WINDOW_DAYS} days across ${userIds.length} user${userIds.length === 1 ? "" : "s"}${highlight}. ` +
+        `Use the "Activity audit (full detail, 30 days)" report for a per-event CSV.`,
       columns: [
         { key: "user", label: "User" },
         { key: "action", label: "Action" },
@@ -80,7 +93,7 @@ export const activityAudit: ReportDefinition = {
         { key: "entityTypes", label: "Entities touched" },
       ],
       rows,
-      emptyMessage: "No activity logged in the last 7 days.",
+      emptyMessage: `No activity logged in the last ${WINDOW_DAYS} days.`,
     };
   },
 };

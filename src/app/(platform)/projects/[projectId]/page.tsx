@@ -22,6 +22,7 @@ import { AddToolButton } from "./add-tool-button";
 import { TeamHierarchy } from "./team-hierarchy";
 import { PageLayout } from "@/components/shared/page-layout";
 import { TaskCheckbox } from "@/app/(platform)/tasks/task-checkbox";
+import { QuotesCard } from "@/components/quotes/quotes-card";
 
 interface Props {
   params: Promise<{ projectId: string }>;
@@ -44,6 +45,9 @@ export default async function ProjectDetailPage({ params }: Props) {
 
   const perms = await resolveModulePerms(user.id, user.role, "projects");
   if (!perms.canView) return <AccessDenied module="projects" moduleLabel="Projects" moduleDescription="Project portfolio, milestones, staffing, and documents" />;
+
+  // Quotes module visibility is independent of projects.
+  const quotePerms = await resolveModulePerms(user.id, user.role, "quotes");
 
   const project = await db.project.findUnique({
     where: { id: projectId },
@@ -407,6 +411,9 @@ export default async function ProjectDetailPage({ params }: Props) {
         </CardContent>
       </Card>
     ),
+    quotes: quotePerms.canView ? (
+      <QuotesCard projectId={project.id} canCreate={quotePerms.canCreate} />
+    ) : null,
   };
 
   return (

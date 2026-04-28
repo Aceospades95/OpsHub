@@ -24,7 +24,7 @@ export async function runJob(
   triggeredBy: string,
   options: { force?: boolean } = {}
 ): Promise<{
-  status: "completed" | "failed" | "skipped" | "unknown";
+  status: "completed" | "failed" | "skipped" | "unknown" | "disabled";
   output?: string;
   error?: string;
   processed?: number;
@@ -33,6 +33,19 @@ export async function runJob(
   const job = getJob(jobKey);
   if (!job) {
     return { status: "unknown", error: `No job registered with key "${jobKey}"` };
+  }
+
+  // Skip disabled jobs unless the caller is force-running (the admin
+  // "Run now" button in the UI passes force:true so toggling a job off
+  // doesn't lock out manual testing).
+  if (!options.force) {
+    const config = await db.jobConfig.findUnique({ where: { jobKey } });
+    if (config && !config.isEnabled) {
+      return {
+        status: "disabled",
+        output: `Job "${jobKey}" is disabled — re-enable it from /admin/jobs to resume scheduled runs.`,
+      };
+    }
   }
 
   // Concurrency check — don't double-run

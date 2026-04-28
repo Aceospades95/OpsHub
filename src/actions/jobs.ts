@@ -2,7 +2,8 @@
 
 import { db } from "@/lib/db";
 import { requireAuth } from "@/lib/permissions";
-import { runJob } from "@/lib/jobs";
+import { runJob, getJob } from "@/lib/jobs";
+import { logActivity } from "@/lib/activity";
 import { revalidatePath } from "next/cache";
 
 function requireAdmin(role: string) {
@@ -15,7 +16,8 @@ function requireAdmin(role: string) {
  * distinguishable from cron runs in the audit history.
  *
  * Force-runs (bypasses concurrency guard) so an admin can re-run a job
- * even if a previous instance is stuck.
+ * even if a previous instance is stuck. Force also overrides the
+ * disabled-toggle, so manual testing of a paused job stays possible.
  */
 export async function triggerJob(jobKey: string) {
   const user = await requireAuth();
@@ -23,6 +25,7 @@ export async function triggerJob(jobKey: string) {
 
   const result = await runJob(jobKey, user.id, { force: true });
   revalidatePath("/admin/jobs");
+  revalidatePath(`/admin/jobs/${jobKey}`);
   return result;
 }
 
@@ -34,4 +37,36 @@ export async function deleteJobLog(id: string) {
   await db.jobLog.delete({ where: { id } });
   revalidatePath("/admin/jobs");
   return { success: true };
+}
+
+/**
+ * Enable or disable a registered job. Disabled jobs are skipped by the
+ * cron runner but can still be force-run manually from the admin UI.
+ *
+ * The JobConfig row is created lazily on first toggle — every job is
+ * implicitly enabled until an admin opts to pause it.
+ */
+export async function toggleJobEnabled(jobKey: string, isEnabled: boolean) {
+  const user = await requireAuth();
+  requireAdmin(user.role);
+
+  if (!getJob(jobKey)) {
+    return { error: `No job registered with key "${jobKey}"` } as const;
+  }
+
+  await db.jobConfig.upsert({
+    where: { jobKey },
+    update: { isEnabled },
+    create: { jobKey, isEnabled },
+  });
+  await logActivity(
+    isEnabled ? "enabled" : "disabled",
+    "job",
+    jobKey,
+    user.id,
+    jobKey
+  );
+  revalidatePath("/admin/jobs");
+  revalidatePath(`/admin/jobs/${jobKey}`);
+  return { success: true } as const;
 }

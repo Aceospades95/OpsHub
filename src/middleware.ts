@@ -4,7 +4,18 @@ import { NextResponse } from "next/server";
 export default auth((req) => {
   const { pathname } = req.nextUrl;
 
-  const publicPaths = ["/login", "/register", "/api/auth", "/api/health"];
+  // Public routes are reachable without a session. The workflow portal
+  // routes (/portal/:token, /api/public/portal/:token) are how new
+  // hires fill out forms, upload documents, and sign agreements
+  // without an OpsHub account. None of these may require a login.
+  const publicPaths = [
+    "/login",
+    "/register",
+    "/api/auth",
+    "/api/health",
+    "/portal/",
+    "/api/public/",
+  ];
   const isPublic = publicPaths.some((p) => pathname.startsWith(p));
 
   if (!req.auth && !isPublic) {
