@@ -10,6 +10,7 @@ import {
   STEP_TYPE_DEFINITIONS,
   validateStepConfig,
 } from "@/lib/workflows/step-types";
+import { wouldCreateAfterStepCycle } from "@/lib/workflows/cycle-check";
 import { z } from "zod";
 import type { WorkflowStepType, WorkflowTimingType, WorkflowType, WorkflowSubjectType } from "@prisma/client";
 
@@ -216,6 +217,16 @@ export async function addWorkflowStep(input: z.infer<typeof stepUpsertSchema>) {
   );
   if (!cfgValidation.ok) return { error: cfgValidation.error } as const;
 
+  const afterStepId = normalizeOptional(parsed.data.afterStepId ?? null);
+  if (
+    afterStepId &&
+    (await wouldCreateAfterStepCycle(parsed.data.workflowTemplateId, null, afterStepId))
+  ) {
+    return {
+      error: "Choosing that predecessor would create a cycle in the step ordering.",
+    } as const;
+  }
+
   // Append at the end of the template's steps.
   const lastStep = await db.workflowStep.findFirst({
     where: { workflowTemplateId: parsed.data.workflowTemplateId },
@@ -233,7 +244,7 @@ export async function addWorkflowStep(input: z.infer<typeof stepUpsertSchema>) {
       config: JSON.stringify(cfgValidation.config),
       timingType: parsed.data.timingType as WorkflowTimingType,
       timingValue: parsed.data.timingValue,
-      afterStepId: normalizeOptional(parsed.data.afterStepId ?? null) || null,
+      afterStepId: afterStepId,
       isRequired: parsed.data.isRequired,
     },
   });
@@ -262,6 +273,16 @@ export async function updateWorkflowStep(
   );
   if (!cfgValidation.ok) return { error: cfgValidation.error } as const;
 
+  const afterStepId = normalizeOptional(parsed.data.afterStepId ?? null);
+  if (
+    afterStepId &&
+    (await wouldCreateAfterStepCycle(parsed.data.workflowTemplateId, input.id, afterStepId))
+  ) {
+    return {
+      error: "Choosing that predecessor would create a cycle in the step ordering.",
+    } as const;
+  }
+
   await db.workflowStep.update({
     where: { id: input.id },
     data: {
@@ -270,7 +291,7 @@ export async function updateWorkflowStep(
       config: JSON.stringify(cfgValidation.config),
       timingType: parsed.data.timingType as WorkflowTimingType,
       timingValue: parsed.data.timingValue,
-      afterStepId: normalizeOptional(parsed.data.afterStepId ?? null) || null,
+      afterStepId: afterStepId,
       isRequired: parsed.data.isRequired,
     },
   });

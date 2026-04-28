@@ -6,6 +6,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 vi.mock("@/lib/db", () => ({
   db: {
     workflowTrigger: { findMany: vi.fn() },
+    workflowInstance: { findFirst: vi.fn() },
   },
 }));
 vi.mock("./engine", () => ({
@@ -17,11 +18,16 @@ import { createInstance } from "./engine";
 import { fireEntityCreateTriggers } from "./triggers";
 
 const mockedFindMany = db.workflowTrigger.findMany as ReturnType<typeof vi.fn>;
+const mockedInstanceFindFirst = db.workflowInstance
+  .findFirst as ReturnType<typeof vi.fn>;
 const mockedCreateInstance = createInstance as ReturnType<typeof vi.fn>;
 
 describe("fireEntityCreateTriggers", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Default: no existing instance for the subject — dedup check
+    // passes through. Tests that exercise the dedup branch override.
+    mockedInstanceFindFirst.mockResolvedValue(null);
     mockedCreateInstance.mockResolvedValue({
       instanceId: "inst1",
       scheduledStepIds: [],
@@ -146,6 +152,50 @@ describe("fireEntityCreateTriggers", () => {
       createdById: "admin",
     });
     expect(r.instanceIds).toEqual(["inst1"]);
+  });
+
+  it("skips firing when a non-cancelled instance for the same subject already exists", async () => {
+    mockedFindMany.mockResolvedValue([
+      {
+        id: "t1",
+        workflowTemplateId: "tpl1",
+        triggerType: "ENTITY_CREATE",
+        config: JSON.stringify({ entityType: "User" }),
+        isActive: true,
+        workflowTemplate: { name: "Onboarding", subjectEntityType: "EMPLOYEE" },
+      },
+    ]);
+    // Dedup hit: the user already has an in-progress onboarding.
+    mockedInstanceFindFirst.mockResolvedValueOnce({ id: "existing-instance" });
+
+    const r = await fireEntityCreateTriggers({
+      entityType: "User",
+      entityId: "u1",
+      createdById: "admin",
+    });
+    expect(r.instanceIds).toEqual([]);
+    expect(mockedCreateInstance).not.toHaveBeenCalled();
+  });
+
+  it("fires when no existing instance shadows this subject", async () => {
+    mockedFindMany.mockResolvedValue([
+      {
+        id: "t1",
+        workflowTemplateId: "tpl1",
+        triggerType: "ENTITY_CREATE",
+        config: JSON.stringify({ entityType: "User" }),
+        isActive: true,
+        workflowTemplate: { name: "Onboarding", subjectEntityType: "EMPLOYEE" },
+      },
+    ]);
+    mockedInstanceFindFirst.mockResolvedValueOnce(null);
+    const r = await fireEntityCreateTriggers({
+      entityType: "User",
+      entityId: "u1",
+      createdById: "admin",
+    });
+    expect(r.instanceIds).toEqual(["inst1"]);
+    expect(mockedCreateInstance).toHaveBeenCalled();
   });
 
   it("ignores triggers with malformed config JSON and reports an error", async () => {

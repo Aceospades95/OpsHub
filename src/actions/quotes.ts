@@ -34,6 +34,15 @@ const lineItemSchema = z.object({
   recurringInterval: recurringIntervalSchema.nullish(),
 });
 
+/**
+ * Cap on line items per quote. Sized for the largest legitimate quote
+ * we've seen in production (multi-phase enterprise SOW with itemized
+ * milestones) while keeping the PDF/DOCX renderer well under memory
+ * pressure. The renderer loads every line item before laying out, so
+ * an unbounded array could OOM the worker.
+ */
+const MAX_LINE_ITEMS = 500;
+
 const quoteUpsertSchema = z.object({
   clientId: z.string().min(1, "Client is required"),
   projectId: z.string().nullish(),
@@ -48,7 +57,10 @@ const quoteUpsertSchema = z.object({
   validUntil: z.string().nullish(), // ISO date string from <input type="date">
   assignedToId: z.string().nullish(),
   internalNotes: z.string().nullish(),
-  lineItems: z.array(lineItemSchema).default([]),
+  lineItems: z
+    .array(lineItemSchema)
+    .max(MAX_LINE_ITEMS, `Quotes are capped at ${MAX_LINE_ITEMS} line items`)
+    .default([]),
 });
 
 export type QuoteUpsertInput = z.infer<typeof quoteUpsertSchema>;
@@ -262,6 +274,15 @@ export async function createQuote(opts: CreateQuoteOptions = {}) {
   }
 
   if (!seedClientId) return { error: "A client is required to create a quote" } as const;
+
+  // Same MAX_LINE_ITEMS guard as the upsert path. A template or source
+  // quote larger than the cap would have hit it on its own create, but
+  // the data could pre-date the cap or have been imported.
+  if (seedItems.length > MAX_LINE_ITEMS) {
+    return {
+      error: `Source has ${seedItems.length} line items; quotes are capped at ${MAX_LINE_ITEMS}.`,
+    } as const;
+  }
 
   // Resolve client + (optional) project names so the quote-number
   // generator can build a CLIENT-PROJECT-YEAR-NNNN style id. We've
