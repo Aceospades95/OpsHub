@@ -5,8 +5,9 @@ import { requireAuth } from "@/lib/permissions";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
-function requireAdmin(role: string) {
-  if (role !== "ADMIN") throw new Error("Admin access required");
+function requireAdmin(role: string): { error: string } | null {
+  if (role !== "ADMIN") return { error: "Admin access required" };
+  return null;
 }
 
 const domainSchema = z
@@ -19,7 +20,8 @@ const domainSchema = z
 
 export async function addAllowedDomain(_prev: unknown, formData: FormData) {
   const user = await requireAuth();
-  requireAdmin(user.role);
+  const gate = requireAdmin(user.role);
+  if (gate) return gate;
 
   const raw = (formData.get("domain") as string)?.trim().toLowerCase();
   const parsed = domainSchema.safeParse(raw);
@@ -42,7 +44,8 @@ export async function addAllowedDomain(_prev: unknown, formData: FormData) {
 
 export async function removeAllowedDomain(id: string) {
   const user = await requireAuth();
-  requireAdmin(user.role);
+  const gate = requireAdmin(user.role);
+  if (gate) return gate;
 
   await db.allowedDomain.delete({ where: { id } });
   revalidatePath("/admin/sso");
@@ -50,7 +53,8 @@ export async function removeAllowedDomain(id: string) {
 
 export async function getAllowedDomains() {
   const user = await requireAuth();
-  requireAdmin(user.role);
+  const gate = requireAdmin(user.role);
+  if (gate) return gate;
 
   return db.allowedDomain.findMany({ orderBy: { createdAt: "asc" } });
 }

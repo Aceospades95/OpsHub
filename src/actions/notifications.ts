@@ -63,7 +63,7 @@ export async function fetchRecent(limit = 10) {
  */
 export async function sendTestNotification(params: { withEmail: boolean }) {
   const user = await requireAuth();
-  if (user.role !== "ADMIN") throw new Error("Admin access required");
+  if (user.role !== "ADMIN") return { error: "Admin access required" } as const;
 
   await notify({
     recipientId: user.id,
@@ -96,7 +96,7 @@ export async function sendTestNotification(params: { withEmail: boolean }) {
 /** Admin-only: delete an arbitrary notification regardless of recipient. */
 export async function adminDeleteNotification(notificationId: string) {
   const user = await requireAuth();
-  if (user.role !== "ADMIN") throw new Error("Admin access required");
+  if (user.role !== "ADMIN") return { error: "Admin access required" } as const;
 
   await db.notification.delete({ where: { id: notificationId } });
   revalidatePath("/admin/notifications");

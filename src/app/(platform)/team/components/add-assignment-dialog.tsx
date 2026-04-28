@@ -39,7 +39,7 @@ export function AddAssignmentDialog({
   const [selectedRoleDefId, setSelectedRoleDefId] = useState(defaultRoleDefinitionId || "");
 
   useEffect(() => {
-    if (state?.success) {
+    if (state && "success" in state && state.success) {
       onClose();
       router.refresh();
     }
@@ -79,7 +79,7 @@ export function AddAssignmentDialog({
     let roleDefId = selectedRoleDefId;
     if (roleMode === "new" && newRoleName.trim()) {
       const result = await createRoleDefinition(newRoleName.trim());
-      if (result.id) {
+      if ("id" in result && result.id) {
         roleDefId = result.id;
         formData.set("role", newRoleName.trim());
       }

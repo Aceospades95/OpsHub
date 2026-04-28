@@ -12,8 +12,9 @@ import {
 import { asUploadedFile } from "@/lib/uploaded-file";
 import { revalidatePath } from "next/cache";
 
-function requireAdmin(role: string) {
-  if (role !== "ADMIN") throw new Error("Admin access required");
+function requireAdmin(role: string): { error: string } | null {
+  if (role !== "ADMIN") return { error: "Admin access required" };
+  return null;
 }
 
 const MAX_CSV_BYTES = 10 * 1024 * 1024; // 10 MB
@@ -56,7 +57,8 @@ export async function previewImport(
   // without server logs.
   try {
     const user = await requireAuth();
-    requireAdmin(user.role);
+    const gate = requireAdmin(user.role);
+    if (gate) return { success: false, error: gate.error };
 
     const importerKey = formData.get("importerKey") as string;
     const importer = getImporter(importerKey);
@@ -115,14 +117,14 @@ export async function previewImport(
       totalRows: parsed.rowCount,
     };
   } catch (err) {
+    // Top-level safety net. Don't surface raw err.message — it can be
+    // a Prisma / NextAuth / FS error with stack-trace-quality detail.
     // eslint-disable-next-line no-console
     console.error("[import] previewImport threw:", err);
     return {
       success: false,
       error:
-        err instanceof Error
-          ? `Could not parse upload: ${err.message}`
-          : "Unexpected error parsing upload",
+        "Could not parse the upload. Check the file format and try again, or contact an administrator.",
     };
   }
 }
@@ -156,7 +158,8 @@ export async function commitImport(
   // wizard error instead of a 500 page.
   try {
     const user = await requireAuth();
-    requireAdmin(user.role);
+    const gate = requireAdmin(user.role);
+    if (gate) return { success: false, error: gate.error };
 
     const importerKey = formData.get("importerKey") as string;
     const importer = getImporter(importerKey);
@@ -221,9 +224,14 @@ export async function commitImport(
     try {
       result = await importer.commit(mappedRows, { triggeredBy: user.id });
     } catch (err) {
+      // Importer-thrown errors can include row-level Prisma details
+      // (foreign-key constraint violations, table names). Log them
+      // server-side and return a generic message.
+      // eslint-disable-next-line no-console
+      console.error(`[import] importer "${importerKey}" commit threw:`, err);
       return {
         success: false,
-        error: err instanceof Error ? err.message : "Importer commit failed",
+        error: "Importer commit failed. Check server logs for details.",
       };
     }
 
@@ -282,9 +290,7 @@ export async function commitImport(
     return {
       success: false,
       error:
-        err instanceof Error
-          ? `Could not import: ${err.message}`
-          : "Unexpected error during import",
+        "Could not import. Check server logs for details, or contact an administrator.",
     };
   }
 }

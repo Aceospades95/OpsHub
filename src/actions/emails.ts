@@ -5,8 +5,9 @@ import { requireAuth } from "@/lib/permissions";
 import { sendFromTemplate } from "@/lib/email";
 import { revalidatePath } from "next/cache";
 
-function requireAdmin(role: string) {
-  if (role !== "ADMIN") throw new Error("Admin access required");
+function requireAdmin(role: string): { error: string } | null {
+  if (role !== "ADMIN") return { error: "Admin access required" };
+  return null;
 }
 
 /**
@@ -15,7 +16,8 @@ function requireAdmin(role: string) {
  */
 export async function sendTestEmail() {
   const user = await requireAuth();
-  requireAdmin(user.role);
+  const gate = requireAdmin(user.role);
+  if (gate) return gate;
 
   const result = await sendFromTemplate(
     "test",
@@ -36,7 +38,8 @@ export async function sendTestEmail() {
  */
 export async function deleteEmailLog(id: string) {
   const user = await requireAuth();
-  requireAdmin(user.role);
+  const gate = requireAdmin(user.role);
+  if (gate) return gate;
 
   await db.emailLog.delete({ where: { id } });
   revalidatePath("/admin/emails");

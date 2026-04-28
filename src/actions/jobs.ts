@@ -6,8 +6,9 @@ import { runJob, getJob } from "@/lib/jobs";
 import { logActivity } from "@/lib/activity";
 import { revalidatePath } from "next/cache";
 
-function requireAdmin(role: string) {
-  if (role !== "ADMIN") throw new Error("Admin access required");
+function requireAdmin(role: string): { error: string } | null {
+  if (role !== "ADMIN") return { error: "Admin access required" };
+  return null;
 }
 
 /**
@@ -21,7 +22,8 @@ function requireAdmin(role: string) {
  */
 export async function triggerJob(jobKey: string) {
   const user = await requireAuth();
-  requireAdmin(user.role);
+  const gate = requireAdmin(user.role);
+  if (gate) return gate;
 
   const result = await runJob(jobKey, user.id, { force: true });
   revalidatePath("/admin/jobs");
@@ -32,7 +34,8 @@ export async function triggerJob(jobKey: string) {
 /** Delete a single job log entry — admin maintenance. */
 export async function deleteJobLog(id: string) {
   const user = await requireAuth();
-  requireAdmin(user.role);
+  const gate = requireAdmin(user.role);
+  if (gate) return gate;
 
   await db.jobLog.delete({ where: { id } });
   revalidatePath("/admin/jobs");
@@ -48,7 +51,8 @@ export async function deleteJobLog(id: string) {
  */
 export async function toggleJobEnabled(jobKey: string, isEnabled: boolean) {
   const user = await requireAuth();
-  requireAdmin(user.role);
+  const gate = requireAdmin(user.role);
+  if (gate) return gate;
 
   if (!getJob(jobKey)) {
     return { error: `No job registered with key "${jobKey}"` } as const;

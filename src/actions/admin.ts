@@ -11,8 +11,11 @@ import { absoluteUrl } from "@/lib/url";
 import { hash } from "bcryptjs";
 import { z } from "zod";
 
-function requireAdminOrManager(role: string) {
-  if (role !== "ADMIN" && role !== "MANAGER") throw new Error("Admin or Manager access required");
+function requireAdminOrManager(role: string): { error: string } | null {
+  if (role !== "ADMIN" && role !== "MANAGER") {
+    return { error: "Admin or Manager access required" };
+  }
+  return null;
 }
 
 /**
@@ -45,7 +48,8 @@ const createUserSchema = z.object({
 
 export async function createUser(_prev: unknown, formData: FormData) {
   const admin = await requireAuth();
-  requireAdminOrManager(admin.role);
+  const gate = requireAdminOrManager(admin.role);
+  if (gate) return gate;
 
   const hasLogin = formData.get("hasLoginAccess") !== "false";
   // Normalize email to lowercase so login is case-insensitive and we never
@@ -193,7 +197,8 @@ const updateUserSchema = z.object({
 
 export async function updateUser(_prev: unknown, formData: FormData) {
   const admin = await requireAuth();
-  requireAdminOrManager(admin.role);
+  const gate = requireAdminOrManager(admin.role);
+  if (gate) return gate;
 
   const id = formData.get("id") as string;
   const rawManagerId = formData.get("managerId") as string;
@@ -264,7 +269,8 @@ export async function updateUser(_prev: unknown, formData: FormData) {
 
 export async function deleteUser(_prev: unknown, formData: FormData) {
   const admin = await requireAuth();
-  requireAdminOrManager(admin.role);
+  const gate = requireAdminOrManager(admin.role);
+  if (gate) return gate;
 
   const id = formData.get("id") as string;
   if (id === admin.id) return { error: "Cannot delete yourself" };
@@ -282,7 +288,7 @@ export async function resetUserPassword(_prev: unknown, formData: FormData) {
   const admin = await requireAuth();
   // Restricted to ADMIN — managers can edit profile fields but not reset
   // login credentials for other users.
-  if (admin.role !== "ADMIN") throw new Error("Admin access required");
+  if (admin.role !== "ADMIN") return { error: "Admin access required" };
 
   const id = formData.get("id") as string;
   const newPassword = (formData.get("newPassword") as string)?.trim() ?? "";
@@ -307,7 +313,8 @@ export async function resetUserPassword(_prev: unknown, formData: FormData) {
 
 export async function toggleUserActive(_prev: unknown, formData: FormData) {
   const admin = await requireAuth();
-  requireAdminOrManager(admin.role);
+  const gate = requireAdminOrManager(admin.role);
+  if (gate) return gate;
 
   const id = formData.get("id") as string;
   const user = await db.user.findUnique({ where: { id } });

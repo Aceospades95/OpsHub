@@ -10,10 +10,11 @@ import type { CustomReportEntity, Role } from "@prisma/client";
 import { getEntityDef } from "@/lib/reports/custom/entities";
 import { runCustomReportFromRow } from "@/lib/reports/custom/runtime";
 
-function requireAdmin(role: Role): void {
+function requireAdmin(role: Role): { error: string } | null {
   if (role !== "ADMIN") {
-    throw new Error("Admin access required");
+    return { error: "Admin access required" };
   }
+  return null;
 }
 
 const entitySchema = z.enum([
@@ -59,7 +60,8 @@ export type CustomReportUpsertInput = z.infer<typeof upsertSchema>;
 
 export async function createCustomReport(input: CustomReportUpsertInput) {
   const user = await requireAuth();
-  requireAdmin(user.role);
+  const gate = requireAdmin(user.role);
+  if (gate) return gate;
 
   const parsed = upsertSchema.safeParse(input);
   if (!parsed.success) {
@@ -102,7 +104,8 @@ export async function updateCustomReport(
   input: { id: string } & CustomReportUpsertInput
 ) {
   const user = await requireAuth();
-  requireAdmin(user.role);
+  const gate = requireAdmin(user.role);
+  if (gate) return gate;
 
   const parsed = upsertSchema.safeParse(input);
   if (!parsed.success) {
@@ -140,7 +143,8 @@ export async function updateCustomReport(
 
 export async function deleteCustomReport(id: string) {
   const user = await requireAuth();
-  requireAdmin(user.role);
+  const gate = requireAdmin(user.role);
+  if (gate) return gate;
   const existing = await db.customReport.findUnique({
     where: { id },
     select: { name: true },
@@ -159,7 +163,8 @@ export async function deleteCustomReport(id: string) {
  */
 export async function previewCustomReport(input: CustomReportUpsertInput) {
   const user = await requireAuth();
-  requireAdmin(user.role);
+  const gate = requireAdmin(user.role);
+  if (gate) return gate;
 
   const parsed = upsertSchema.safeParse(input);
   if (!parsed.success) {
@@ -218,8 +223,14 @@ export async function previewCustomReport(input: CustomReportUpsertInput) {
       },
     } as const;
   } catch (err) {
+    // Don't surface the raw error message — it can include Prisma SQL,
+    // table names, and constraint details. Log server-side so an admin
+    // can debug, return a generic message to the client.
+    // eslint-disable-next-line no-console
+    console.error("[custom-reports] previewCustomReport failed:", err);
     return {
-      error: err instanceof Error ? err.message : "Preview failed",
+      error:
+        "Preview failed. Check server logs for details, or simplify the filters and try again.",
     } as const;
   }
 }

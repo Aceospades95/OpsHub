@@ -23,8 +23,11 @@ import { sendFromTemplate } from "@/lib/email";
 import { absoluteUrl } from "@/lib/url";
 import { db } from "@/lib/db";
 
-function requireAdmin(role: string) {
-  if (role !== "ADMIN") throw new Error("Admin access required");
+function requireAdmin(role: string): { error: string } | null {
+  if (role !== "ADMIN") {
+    return { error: "Admin access required" };
+  }
+  return null;
 }
 
 /**
@@ -34,7 +37,8 @@ function requireAdmin(role: string) {
  */
 export async function runReportAction(key: string) {
   const user = await requireAuth();
-  requireAdmin(user.role);
+  const gate = requireAdmin(user.role);
+  if (gate) return { success: false as const, error: gate.error };
 
   try {
     const { output, name, description } = await resolveAndRun(key, user.id);
@@ -46,9 +50,13 @@ export async function runReportAction(key: string) {
     };
     return { success: true as const, name, description, output: safeOutput };
   } catch (err) {
+    // Log the raw cause server-side; return a generic message so we
+    // don't leak Prisma table names / SQL fragments to the client.
+    // eslint-disable-next-line no-console
+    console.error(`[reports] runReportAction(${key}) failed:`, err);
     return {
       success: false as const,
-      error: err instanceof Error ? err.message : "Failed to run report",
+      error: "Failed to run report. Check server logs for details.",
     };
   }
 }
@@ -107,7 +115,8 @@ export async function emailReportAction(
   } = {}
 ) {
   const user = await requireAuth();
-  requireAdmin(user.role);
+  const gate = requireAdmin(user.role);
+  if (gate) return { success: false as const, error: gate.error };
 
   if (recipients.length === 0) {
     return { success: false as const, error: "No recipients specified" };
@@ -183,17 +192,27 @@ export async function emailReportAction(
     );
 
     const total = toList.length + ccList.length + bccList.length;
+    if (!result.success) {
+      // Driver error messages can include SMTP server details and
+      // host paths — log them but don't surface them to the admin UI.
+      // eslint-disable-next-line no-console
+      console.error(`[reports] emailReportAction(${key}) driver error:`, result.error);
+    }
     return {
       success: true as const,
       sent: result.success ? total : 0,
       failed: result.success ? 0 : total,
       total,
-      error: result.success ? undefined : result.error,
+      error: result.success
+        ? undefined
+        : "Email driver returned an error — see server logs.",
     };
   } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error(`[reports] emailReportAction(${key}) failed:`, err);
     return {
       success: false as const,
-      error: err instanceof Error ? err.message : "Failed to email report",
+      error: "Failed to email report. Check server logs for details.",
     };
   }
 }

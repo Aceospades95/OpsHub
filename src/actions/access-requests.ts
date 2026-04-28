@@ -105,13 +105,18 @@ export async function requestAccess(params: RequestAccessParams) {
 
 export async function approveAccessRequest(requestId: string) {
   const admin = await requireAuth();
-  if (admin.role !== "ADMIN") throw new Error("Unauthorized");
+  if (admin.role !== "ADMIN") {
+    return { error: "Admin access required" } as const;
+  }
 
   const request = await db.accessRequest.findUnique({
     where: { id: requestId },
     include: { requester: { select: { id: true, name: true, email: true } } },
   });
-  if (!request || request.status !== "PENDING") return { success: false };
+  if (!request) return { error: "Request not found" } as const;
+  if (request.status !== "PENDING") {
+    return { error: "Request is not pending" } as const;
+  }
 
   await db.accessRequest.update({
     where: { id: requestId },
@@ -176,13 +181,18 @@ export async function approveAccessRequest(requestId: string) {
 
 export async function denyAccessRequest(requestId: string) {
   const admin = await requireAuth();
-  if (admin.role !== "ADMIN") throw new Error("Unauthorized");
+  if (admin.role !== "ADMIN") {
+    return { error: "Admin access required" } as const;
+  }
 
   const request = await db.accessRequest.findUnique({
     where: { id: requestId },
     include: { requester: { select: { id: true, name: true } } },
   });
-  if (!request || request.status !== "PENDING") return { success: false };
+  if (!request) return { error: "Request not found" } as const;
+  if (request.status !== "PENDING") {
+    return { error: "Request is not pending" } as const;
+  }
 
   await db.accessRequest.update({
     where: { id: requestId },

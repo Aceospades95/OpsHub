@@ -16,7 +16,7 @@ export function AddEmployeeButton({ managers }: { managers: { id: string; name: 
   const router = useRouter();
 
   useEffect(() => {
-    if (state?.success) {
+    if (state && "success" in state && state.success) {
       setOpen(false);
       setHasLogin(true);
       router.refresh();

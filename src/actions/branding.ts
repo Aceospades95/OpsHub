@@ -11,8 +11,9 @@ import {
 } from "@/lib/branding";
 import { revalidatePath } from "next/cache";
 
-function requireAdmin(role: string) {
-  if (role !== "ADMIN") throw new Error("Admin access required");
+function requireAdmin(role: string): { error: string } | null {
+  if (role !== "ADMIN") return { error: "Admin access required" };
+  return null;
 }
 
 /** Max upload size for branding images — keep small since they're shown everywhere */
@@ -31,7 +32,8 @@ export async function uploadBrandingImage(
   formData: FormData
 ): Promise<{ success: boolean; error?: string; fileId?: string }> {
   const user = await requireAuth();
-  requireAdmin(user.role);
+  const gate = requireAdmin(user.role);
+  if (gate) return { success: false, error: gate.error };
 
   const target = formData.get("target") as BrandingKey | null;
   if (target !== "companyLogoFileId" && target !== "backgroundImageFileId") {
@@ -94,7 +96,8 @@ export async function uploadBrandingImage(
  */
 export async function clearBrandingImage(target: BrandingKey) {
   const user = await requireAuth();
-  requireAdmin(user.role);
+  const gate = requireAdmin(user.role);
+  if (gate) return gate;
 
   if (target !== "companyLogoFileId" && target !== "backgroundImageFileId") {
     throw new Error("Invalid target");
@@ -122,7 +125,8 @@ export async function clearBrandingImage(target: BrandingKey) {
 /** Update or clear the displayed company name. */
 export async function setCompanyName(name: string) {
   const user = await requireAuth();
-  requireAdmin(user.role);
+  const gate = requireAdmin(user.role);
+  if (gate) return gate;
 
   const trimmed = name.trim();
   await setBrandingValue(BRANDING_KEYS.companyName, trimmed || null);

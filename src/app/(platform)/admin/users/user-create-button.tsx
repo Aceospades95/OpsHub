@@ -31,7 +31,7 @@ export function UserCreateButton({ allUsers, workflowTemplates }: Props) {
   const router = useRouter();
 
   useEffect(() => {
-    if (state?.success) {
+    if (state && "success" in state && state.success) {
       setOpen(false);
       setHasLogin(true);
       setSelectedTemplateIds([]);

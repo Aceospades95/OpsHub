@@ -93,11 +93,11 @@ export function ThemeEditor({ currentTheme, customPresets }: ThemeEditorProps) {
   }, [colors, customPresets]);
 
   useEffect(() => {
-    if (saveState?.success) router.refresh();
+    if (saveState && "success" in saveState && saveState.success) router.refresh();
   }, [saveState, router]);
 
   useEffect(() => {
-    if (resetState?.success) {
+    if (resetState && "success" in resetState && resetState.success) {
       setColors({ ...DEFAULT_THEME });
       router.refresh();
     }
@@ -320,12 +320,12 @@ export function ThemeEditor({ currentTheme, customPresets }: ThemeEditorProps) {
               </Card>
             ))}
 
-            {saveState?.error && (
+            {saveState && "error" in saveState && saveState.error && (
               <div className="rounded bg-destructive/10 p-3 text-sm text-destructive mb-4">
                 {saveState.error}
               </div>
             )}
-            {saveState?.success && (
+            {saveState && "success" in saveState && saveState.success && (
               <div className="rounded bg-success/10 p-3 text-sm text-success mb-4">
                 Theme saved successfully.
               </div>

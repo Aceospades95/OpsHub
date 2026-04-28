@@ -6,8 +6,9 @@ import { uploadFile, deleteFile, blobToBuffer } from "@/lib/storage";
 import { asUploadedFile } from "@/lib/uploaded-file";
 import { revalidatePath } from "next/cache";
 
-function requireAdmin(role: string) {
-  if (role !== "ADMIN") throw new Error("Admin access required");
+function requireAdmin(role: string): { error: string } | null {
+  if (role !== "ADMIN") return { error: "Admin access required" };
+  return null;
 }
 
 /** Hard limit so a runaway upload can't fill the disk. 10MB by default. */
@@ -57,7 +58,8 @@ export async function uploadFileFromForm(
 /** Delete a file — admin-only path for the admin viewer. */
 export async function adminDeleteFile(fileId: string) {
   const user = await requireAuth();
-  requireAdmin(user.role);
+  const gate = requireAdmin(user.role);
+  if (gate) return gate;
 
   await deleteFile(fileId);
   revalidatePath("/admin/files");
@@ -71,7 +73,8 @@ export async function adminDeleteFile(fileId: string) {
  */
 export async function purgeOrphanLegacyFiles() {
   const user = await requireAuth();
-  requireAdmin(user.role);
+  const gate = requireAdmin(user.role);
+  if (gate) return gate;
 
   const result = await db.file.deleteMany({
     where: {

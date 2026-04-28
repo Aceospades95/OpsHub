@@ -154,7 +154,7 @@ export function EmployeeDetailClient({
     const fd = new FormData();
     fd.set("id", employee.id);
     const result = await deleteUser(null, fd);
-    if (result.success) router.push("/team");
+    if ("success" in result && result.success) router.push("/team");
   }
 
   // Map user data for the assignment dialog

@@ -22,7 +22,7 @@ export function SandboxCreateButton({ projects, clients }: Props) {
   const router = useRouter();
 
   useEffect(() => {
-    if (state?.success) {
+    if (state && "success" in state && state.success) {
       setOpen(false);
       router.refresh();
     }

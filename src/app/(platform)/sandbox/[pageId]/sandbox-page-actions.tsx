@@ -43,7 +43,7 @@ export function SandboxPageActions({ page, canEdit, canDelete, isAdmin, projects
     const fd = new FormData();
     fd.set("id", page.id);
     const result = await deleteSandboxPage(null, fd);
-    if (result.success) router.push("/sandbox");
+    if ("success" in result && result.success) router.push("/sandbox");
   }
 
   return (
