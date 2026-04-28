@@ -5,7 +5,63 @@ import { db } from "@/lib/db";
 import { revalidateTask } from "@/lib/revalidate-entity";
 import { notify } from "@/lib/notifications";
 import { absoluteUrl } from "@/lib/url";
+import { resolveModulePerms } from "@/lib/permissions";
+import type { Role } from "@prisma/client";
 import { z } from "zod";
+
+/**
+ * Verify the actor is allowed to mutate this specific task. Without
+ * this gate, any authenticated user could iterate task IDs and edit
+ * or delete every task in the org — server actions are reachable via
+ * direct POST regardless of UI gating.
+ *
+ * Allow when ANY of:
+ *   - Actor is the assignee
+ *   - Actor is the creator
+ *   - Actor has canEdit on the parent project (via assignment / entity
+ *     permission / org-wide manage)
+ *   - Actor has canManage on the tasks module overall (admin-equivalent)
+ *
+ * Returns null on success or { error } on rejection.
+ */
+async function authorizeTaskMutation(
+  user: { id: string; role: Role },
+  taskId: string
+): Promise<{ error: string } | null> {
+  const task = await db.task.findUnique({
+    where: { id: taskId },
+    select: {
+      assigneeId: true,
+      createdById: true,
+      projectId: true,
+      clientId: true,
+    },
+  });
+  if (!task) return { error: "Task not found" };
+
+  // Org-wide manage (ADMIN / DEVELOPER) and the actor's own tasks
+  // short-circuit fast.
+  if (task.assigneeId === user.id || task.createdById === user.id) {
+    return null;
+  }
+  const tasksPerms = await resolveModulePerms(user.id, user.role, "tasks");
+  if (tasksPerms.canManage) return null;
+  if (tasksPerms.canEdit && task.assigneeId === null) {
+    // Unassigned tasks within scope are editable by anyone with edit
+    // — covers "team can pick up backlog tickets" workflows.
+    return null;
+  }
+  // Final fallback: project-level edit permission.
+  if (task.projectId) {
+    const projectPerms = await resolveModulePerms(
+      user.id,
+      user.role,
+      "projects"
+    );
+    if (projectPerms.canEdit || projectPerms.canManage) return null;
+  }
+  return { error: "You don't have permission to edit this task." };
+}
 
 /**
  * Notify a user that they've been assigned a task. Best-effort — failures
@@ -150,6 +206,12 @@ export async function updateTaskStatus(taskId: string, status: string) {
   const session = await auth();
   if (!session?.user) return { error: "Unauthorized" };
 
+  const denied = await authorizeTaskMutation(
+    { id: session.user.id, role: session.user.role },
+    taskId
+  );
+  if (denied) return denied;
+
   const completedAt = status === "DONE" ? new Date() : null;
 
   const task = await db.task.update({
@@ -173,6 +235,11 @@ export async function updateTask(_prevState: unknown, formData: FormData) {
   if (!session?.user) return { error: "Unauthorized" };
 
   const taskId = formData.get("taskId") as string;
+  const denied = await authorizeTaskMutation(
+    { id: session.user.id, role: session.user.role },
+    taskId
+  );
+  if (denied) return denied;
   const raw = {
     title: formData.get("title") as string,
     description: (formData.get("description") as string) || undefined,
@@ -248,6 +315,12 @@ export async function updateTask(_prevState: unknown, formData: FormData) {
 export async function deleteTask(taskId: string) {
   const session = await auth();
   if (!session?.user) return { error: "Unauthorized" };
+
+  const denied = await authorizeTaskMutation(
+    { id: session.user.id, role: session.user.role },
+    taskId
+  );
+  if (denied) return denied;
 
   // Look up before delete so we can revalidate the right pages
   const task = await db.task.findUnique({

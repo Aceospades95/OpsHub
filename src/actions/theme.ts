@@ -17,6 +17,7 @@ function requireAdmin(role: string) {
 }
 
 export async function getThemeSettings(): Promise<Record<string, string>> {
+  await requireAuth();
   try {
     const rows = await db.themeSetting.findMany({
       where: { key: { not: { startsWith: CUSTOM_PRESET_PREFIX } } },
@@ -104,6 +105,7 @@ export async function applyPresetTheme(colors: Record<string, string>) {
 }
 
 export async function getCustomPresets(): Promise<ThemePreset[]> {
+  await requireAuth();
   try {
     const rows = await db.themeSetting.findMany({
       where: { key: { startsWith: CUSTOM_PRESET_PREFIX } },

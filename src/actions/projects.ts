@@ -201,12 +201,40 @@ export async function deleteProject(_prev: unknown, formData: FormData) {
 }
 
 // Members
+
+// Allowed values for ProjectMember.role. The form previously cast
+// whatever string came in straight to the enum, so an attacker could
+// pass `role: "ADMIN"` and end up labeled an admin on the project
+// (which the legacy member-role code paths read in some places, and
+// which shows up in the UI as "Admin").
+const PROJECT_MEMBER_ROLES = ["ADMIN", "MANAGER", "DEVELOPER", "CONTRIBUTOR", "VIEWER"] as const;
+type ProjectMemberRole = (typeof PROJECT_MEMBER_ROLES)[number];
+
+// Roles ranked for the "actor can't grant a higher role than their own"
+// check. ADMIN/DEVELOPER (org-wide manage) can grant anything; everyone
+// else is bounded by their own level.
+const ROLE_RANK: Record<ProjectMemberRole, number> = {
+  ADMIN: 4,
+  DEVELOPER: 4,
+  MANAGER: 3,
+  CONTRIBUTOR: 2,
+  VIEWER: 1,
+};
+
 export async function addProjectMember(_prev: unknown, formData: FormData) {
   const user = await requireAuth();
 
   const projectId = formData.get("projectId") as string;
   const userId = formData.get("userId") as string;
-  const role = (formData.get("role") as string) || "CONTRIBUTOR";
+  const roleRaw = (formData.get("role") as string | null)?.trim().toUpperCase() || "CONTRIBUTOR";
+
+  // Validate role against the closed enum BEFORE any DB writes.
+  if (!PROJECT_MEMBER_ROLES.includes(roleRaw as ProjectMemberRole)) {
+    return {
+      error: `Invalid role "${roleRaw}". Must be one of: ${PROJECT_MEMBER_ROLES.join(", ")}`,
+    };
+  }
+  const role = roleRaw as ProjectMemberRole;
 
   // Only admins, developers, and managers *assigned to this project* can
   // add members. A manager can't grow their own scope by adding themselves
@@ -214,13 +242,24 @@ export async function addProjectMember(_prev: unknown, formData: FormData) {
   if (!(await canManageProjectAssignments(user.id, user.role, projectId)))
     return { error: "Permission denied" };
 
+  // Refuse if the actor would be granting a higher role than their own.
+  // ADMIN/DEVELOPER pass through (rank 4); MANAGER can't make someone
+  // "ADMIN" on a project, etc.
+  const actorRank = ROLE_RANK[user.role as ProjectMemberRole] ?? 0;
+  const targetRank = ROLE_RANK[role];
+  if (targetRank > actorRank) {
+    return {
+      error: `You can't grant a project role higher than your own (${user.role}).`,
+    };
+  }
+
   const existing = await db.projectMember.findUnique({
     where: { userId_projectId: { userId, projectId } },
   });
   if (existing) return { error: "User is already a member" };
 
   await db.projectMember.create({
-    data: { userId, projectId, role: role as "ADMIN" | "MANAGER" | "CONTRIBUTOR" | "VIEWER" },
+    data: { userId, projectId, role },
   });
 
   // Bump GUEST / VIEWER up to CONTRIBUTOR now that they have project access.

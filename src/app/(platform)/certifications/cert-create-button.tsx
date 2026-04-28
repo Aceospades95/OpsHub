@@ -34,7 +34,7 @@ export function CertCreateButton({
   const router = useRouter();
 
   useEffect(() => {
-    if (state?.success && state.id) {
+    if (state && "success" in state && state.success && state.id) {
       router.push(`/certifications/${state.id}`);
     }
   }, [state, router]);
@@ -255,7 +255,7 @@ export function CertCreateButton({
                 />
               </div>
 
-              {state?.error && <p className="text-sm text-destructive">{state.error}</p>}
+              {state && "error" in state && <p className="text-sm text-destructive">{state.error}</p>}
 
               <div className="flex justify-end gap-2">
                 <Button type="button" variant="outline" onClick={() => setOpen(false)}>

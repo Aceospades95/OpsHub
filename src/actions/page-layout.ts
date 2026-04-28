@@ -14,6 +14,9 @@ function templateKey(pageType: string, name: string): string {
 }
 
 export async function getPageLayout(pageType: string): Promise<PageLayoutConfig | null> {
+  // Layout shape leaks the structure of detail pages (e.g. which cards
+  // exist, in what order). Authenticated users only.
+  await requireAuth();
   try {
     const setting = await db.themeSetting.findUnique({ where: { key: layoutKey(pageType) } });
     if (setting) return JSON.parse(setting.value) as PageLayoutConfig;
@@ -77,6 +80,7 @@ export async function saveLayoutTemplate(pageType: string, name: string, config:
 
 /** Fetch ALL layout templates across all page types */
 export async function getAllLayoutTemplates(): Promise<LayoutTemplate[]> {
+  await requireAuth();
   try {
     const settings = await db.themeSetting.findMany({
       where: { key: { startsWith: "layout_template_" } },

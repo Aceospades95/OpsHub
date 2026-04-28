@@ -15,6 +15,21 @@ function requireAdminOrManager(role: string) {
   if (role !== "ADMIN" && role !== "MANAGER") throw new Error("Admin or Manager access required");
 }
 
+/**
+ * Restricts an action to ADMIN role only. Used for edits to the
+ * permissions matrix itself — letting a MANAGER call those would
+ * be a privilege-escalation surface (self-grant `canManage:true` on
+ * every module, or hand the same to anyone). Returns a structured
+ * error rather than throwing so the action wrapper can surface it
+ * inline instead of crashing to a Next.js 500.
+ */
+function requireAdmin(role: string): { error: string } | null {
+  if (role !== "ADMIN") {
+    return { error: "Admin access required" };
+  }
+  return null;
+}
+
 const createUserSchema = z.object({
   name: z.string().min(2, "Name required"),
   email: z.string().email("Invalid email").optional(),
@@ -307,10 +322,13 @@ export async function toggleUserActive(_prev: unknown, formData: FormData) {
   return { success: true };
 }
 
-// Module Permissions
+// Module Permissions — ADMIN ONLY. Letting a MANAGER call this would
+// let them self-grant canManage on every module (effectively a private
+// admin promotion).
 export async function saveModulePermissions(_prev: unknown, formData: FormData) {
   const admin = await requireAuth();
-  requireAdminOrManager(admin.role);
+  const gate = requireAdmin(admin.role);
+  if (gate) return gate;
 
   const userId = formData.get("userId") as string;
 
@@ -350,10 +368,13 @@ export async function saveModulePermissions(_prev: unknown, formData: FormData) 
   return { success: true };
 }
 
-// Entity Permissions
+// Entity Permissions — ADMIN ONLY for the same reason as
+// saveModulePermissions: lets the actor grant canManage on any
+// specific project/client/etc.
 export async function saveEntityPermission(_prev: unknown, formData: FormData) {
   const admin = await requireAuth();
-  requireAdminOrManager(admin.role);
+  const gate = requireAdmin(admin.role);
+  if (gate) return gate;
 
   const userId = formData.get("userId") as string;
   const entityType = formData.get("entityType") as string;
@@ -384,9 +405,12 @@ export async function saveEntityPermission(_prev: unknown, formData: FormData) {
   return { success: true };
 }
 
+// ADMIN ONLY — same reasoning as the save actions above; revoking a
+// permission row is editing the permissions matrix.
 export async function deleteEntityPermission(_prev: unknown, formData: FormData) {
   const admin = await requireAuth();
-  requireAdminOrManager(admin.role);
+  const gate = requireAdmin(admin.role);
+  if (gate) return gate;
 
   const id = formData.get("id") as string;
   const perm = await db.entityPermission.findUnique({ where: { id }, select: { userId: true } });

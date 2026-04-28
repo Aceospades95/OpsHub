@@ -7,7 +7,6 @@ import { signIn } from "next-auth/react";
 import { loginAction } from "@/actions/auth";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import Link from "next/link";
 
 interface Props {
   companyName: string;
@@ -126,10 +125,7 @@ export function LoginForm({
       </form>
 
       <p className="mt-4 text-center text-sm text-muted-foreground">
-        Don&apos;t have an account?{" "}
-        <Link href="/register" className="text-primary hover:underline">
-          Register
-        </Link>
+        Need an account? Contact your administrator.
       </p>
     </div>
   );
