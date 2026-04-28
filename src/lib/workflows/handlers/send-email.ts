@@ -50,8 +50,12 @@ export const sendEmailHandler: StepHandler = async ({
     : template.subject;
   const bodyRaw = c.bodyOverride?.trim() ? c.bodyOverride : template.bodyHtml;
 
+  // Subject is plain text in headers; the bodyText path is plain too —
+  // neither needs HTML escaping. The HTML body does: context values
+  // come from User rows whose name/title/department fields are
+  // user-editable and could contain markup.
   const subject = substituteVariables(subjectRaw, context as unknown as Record<string, unknown>);
-  const html = substituteVariables(bodyRaw, context as unknown as Record<string, unknown>);
+  const html = substituteVariables(bodyRaw, context as unknown as Record<string, unknown>, "html");
   const text = template.bodyText
     ? substituteVariables(template.bodyText, context as unknown as Record<string, unknown>)
     : undefined;

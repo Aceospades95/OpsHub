@@ -44,6 +44,58 @@ describe("substituteVariables", () => {
   it("leaves text without braces untouched", () => {
     expect(substituteVariables("plain text", ctx)).toBe("plain text");
   });
+
+  // ─── HTML-escape mode ─────────────────────────────────────────────────
+  // User-editable name / job-title fields can contain HTML. When the
+  // result is fed into an email's html body or `dangerouslySetInnerHTML`,
+  // we must escape values but leave the surrounding admin-authored
+  // template markup intact.
+
+  it("escapes HTML in substituted values when mode is 'html'", () => {
+    const evilCtx = {
+      subject: { firstName: '<script>alert(1)</script>' },
+    };
+    const out = substituteVariables(
+      "<p>Hi {{subject.firstName}}!</p>",
+      evilCtx,
+      "html"
+    );
+    expect(out).toBe(
+      "<p>Hi &lt;script&gt;alert(1)&lt;/script&gt;!</p>"
+    );
+  });
+
+  it("does not escape values in 'text' (default) mode", () => {
+    const evilCtx = {
+      subject: { firstName: '<b>bold</b>' },
+    };
+    expect(
+      substituteVariables("Hi {{subject.firstName}}", evilCtx)
+    ).toBe("Hi <b>bold</b>");
+  });
+
+  it("leaves the admin-authored template markup intact in HTML mode", () => {
+    const out = substituteVariables(
+      "<p>Hi {{subject.firstName}}</p>",
+      ctx,
+      "html"
+    );
+    // The <p> tags from the template literal aren't escaped — only the
+    // substituted value is. Admin-authored HTML is intentionally trusted.
+    expect(out).toBe("<p>Hi Alex</p>");
+  });
+
+  it("escapes attribute-breaking characters (\", ', &) in HTML mode", () => {
+    const evilCtx = {
+      subject: { firstName: `O"Connor & 'co'` },
+    };
+    const out = substituteVariables(
+      "{{subject.firstName}}",
+      evilCtx,
+      "html"
+    );
+    expect(out).toBe("O&quot;Connor &amp; &#39;co&#39;");
+  });
 });
 
 describe("validateStepConfig", () => {

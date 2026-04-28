@@ -76,8 +76,13 @@ export function EmailTemplateEditor({ template, canDelete }: Props) {
     () => substituteVariables(subject, PREVIEW_CONTEXT),
     [subject]
   );
+  // HTML mode mirrors the runtime send path so the preview matches what
+  // recipients actually see. PREVIEW_CONTEXT is a hardcoded fixture
+  // here, but preserving the same escape contract keeps the preview
+  // honest and prevents an admin-set fixture from misleading the
+  // template author about what gets through.
   const renderedHtml = useMemo(
-    () => substituteVariables(bodyHtml, PREVIEW_CONTEXT),
+    () => substituteVariables(bodyHtml, PREVIEW_CONTEXT, "html"),
     [bodyHtml]
   );
 
