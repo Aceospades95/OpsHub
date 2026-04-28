@@ -67,8 +67,14 @@ export async function sendEmail(
     result = {
       success: false,
       driver: driver.name,
-      error: err instanceof Error ? err.message : String(err),
+      error: truncateError(err instanceof Error ? err.message : String(err)),
     };
+  }
+
+  // Cap whatever the driver returned too — SES SDK errors bring along
+  // a verbose request-id + http-headers blob that bloats EmailLog rows.
+  if (result.error) {
+    result = { ...result, error: truncateError(result.error) };
   }
 
   // Record every attempt, success or failure, for audit and debugging.
@@ -106,6 +112,22 @@ function toAddressList(value: string | string[] | undefined): string[] {
   if (!value) return [];
   if (Array.isArray(value)) return value.filter((v) => v && v.trim().length > 0);
   return value.trim() ? [value] : [];
+}
+
+/**
+ * EmailLog.error is meant to give an admin a one-glance reason a send
+ * failed. Driver libraries (especially the AWS SDK) tend to throw
+ * Errors whose `message` includes a request id, response headers, and
+ * sometimes the entire wire payload — a 4 KB message per row balloons
+ * the audit table without adding diagnostic value beyond the first
+ * line. Cap at a generous 500 chars; rely on server-side console
+ * output for the full stack when an admin needs to dig deeper.
+ */
+const MAX_EMAIL_ERROR_LEN = 500;
+const TRUNCATION_SUFFIX = "… [truncated]";
+export function truncateError(err: string): string {
+  if (err.length <= MAX_EMAIL_ERROR_LEN) return err;
+  return err.slice(0, MAX_EMAIL_ERROR_LEN - TRUNCATION_SUFFIX.length) + TRUNCATION_SUFFIX;
 }
 
 /**

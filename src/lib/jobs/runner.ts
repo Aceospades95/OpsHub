@@ -51,6 +51,31 @@ export async function runJob(
   // Concurrency check — don't double-run
   if (!options.force) {
     const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+
+    // Reap abandoned "running" rows older than an hour. The previous
+    // worker crashed mid-job (OOM / container kill / hard deploy) and
+    // never updated the row to "failed". The 1h window is wide enough
+    // to never collide with a still-live worker but tight enough that
+    // the admin Jobs page reflects reality within an hour of any crash.
+    const reaped = await db.jobLog.updateMany({
+      where: {
+        jobKey,
+        status: "running",
+        startedAt: { lt: oneHourAgo },
+      },
+      data: {
+        status: "failed",
+        finishedAt: new Date(),
+        error: "Abandoned: worker did not finish within 1h, presumed crashed",
+      },
+    });
+    if (reaped.count > 0) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[jobs] reaped ${reaped.count} abandoned "running" row(s) for ${jobKey}`
+      );
+    }
+
     const inProgress = await db.jobLog.findFirst({
       where: {
         jobKey,
