@@ -41,8 +41,13 @@ export function parseCsv(input: string): ParsedCsv {
     throw new Error("CSV is empty");
   }
 
+  // Strip the UTF-8 byte-order mark Excel and some other tools prepend
+  // when exporting "CSV UTF-8". If we leave the BOM in, the first
+  // header gets a leading "﻿" and the auto-mapper misses it.
+  const debommed = input.charCodeAt(0) === 0xfeff ? input.slice(1) : input;
+
   // Normalize line endings — handle CRLF and CR by treating both as LF
-  const normalized = input.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  const normalized = debommed.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
 
   // Tokenize into rows, respecting quoted state. We can't just split on
   // \n because quoted fields might contain newlines.

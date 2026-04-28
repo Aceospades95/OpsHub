@@ -17,6 +17,34 @@ function requireAdmin(role: string) {
 
 const MAX_CSV_BYTES = 10 * 1024 * 1024; // 10 MB
 
+/**
+ * What the FormData entry looks like when the browser uploads a File.
+ *
+ * We avoid `instanceof File` for the type narrowing here because `File`
+ * isn't a global in Node 18 (it lives on `node:buffer` from 18.13 but
+ * isn't exposed on globalThis). The Dockerfile pins node:18-slim so
+ * `instanceof File` throws a ReferenceError at runtime. Structural
+ * duck-typing covers both Node 18 and Node 20+ without that risk.
+ */
+interface UploadedFile {
+  name: string;
+  size: number;
+  type: string;
+  text(): Promise<string>;
+  arrayBuffer(): Promise<ArrayBuffer>;
+}
+
+function asUploadedFile(value: unknown): UploadedFile | null {
+  if (!value || typeof value !== "object") return null;
+  if (typeof value === "string") return null;
+  const v = value as Record<string, unknown>;
+  if (typeof v.name !== "string") return null;
+  if (typeof v.size !== "number") return null;
+  if (typeof v.text !== "function") return null;
+  if (typeof v.arrayBuffer !== "function") return null;
+  return value as unknown as UploadedFile;
+}
+
 interface PreviewResponse {
   success: boolean;
   error?: string;
@@ -59,17 +87,24 @@ export async function previewImport(
       return { success: false, error: `Unknown importer "${importerKey}"` };
     }
 
-    const blob = formData.get("file");
-    if (!blob || !(blob instanceof File)) {
-      return { success: false, error: "No file provided" };
+    const blob = asUploadedFile(formData.get("file"));
+    if (!blob) {
+      return {
+        success: false,
+        error:
+          "No file received. Pick a CSV file from the upload box and try again.",
+      };
     }
     if (blob.size === 0) {
-      return { success: false, error: "File is empty" };
+      return {
+        success: false,
+        error: "The file is empty. Make sure your CSV has a header row and at least one data row, then try again.",
+      };
     }
     if (blob.size > MAX_CSV_BYTES) {
       return {
         success: false,
-        error: `File exceeds ${MAX_CSV_BYTES / 1024 / 1024}MB limit`,
+        error: `File is ${(blob.size / 1024 / 1024).toFixed(1)}MB which exceeds the ${MAX_CSV_BYTES / 1024 / 1024}MB limit. Split the import into smaller files (no more than ~50,000 rows each) or contact an administrator if you need the limit raised.`,
       };
     }
 
@@ -80,12 +115,19 @@ export async function previewImport(
     } catch (err) {
       return {
         success: false,
-        error: err instanceof Error ? err.message : "Failed to parse CSV",
+        error:
+          err instanceof Error
+            ? `Could not parse this file as CSV: ${err.message}. If you exported from Excel, choose "CSV UTF-8" as the format.`
+            : "Could not parse this file as CSV. Check the file encoding and try again.",
       };
     }
 
     if (parsed.rowCount === 0) {
-      return { success: false, error: "CSV has no data rows" };
+      return {
+        success: false,
+        error:
+          "The file has a header row but no data rows. Add at least one row of data, save, and re-upload.",
+      };
     }
 
     return {
@@ -145,14 +187,18 @@ export async function commitImport(
       return { success: false, error: `Unknown importer "${importerKey}"` };
     }
 
-    const blob = formData.get("file");
-    if (!blob || !(blob instanceof File)) {
-      return { success: false, error: "No file provided" };
+    const blob = asUploadedFile(formData.get("file"));
+    if (!blob) {
+      return {
+        success: false,
+        error:
+          "The upload form lost the file between preview and import. Click 'Start over' and pick the file again.",
+      };
     }
     if (blob.size > MAX_CSV_BYTES) {
       return {
         success: false,
-        error: `File exceeds ${MAX_CSV_BYTES / 1024 / 1024}MB limit`,
+        error: `File is ${(blob.size / 1024 / 1024).toFixed(1)}MB which exceeds the ${MAX_CSV_BYTES / 1024 / 1024}MB limit.`,
       };
     }
 
@@ -161,17 +207,20 @@ export async function commitImport(
     try {
       mapping = JSON.parse(mappingRaw);
     } catch {
-      return { success: false, error: "Invalid mapping payload" };
+      return {
+        success: false,
+        error: "Internal error: column mapping was malformed. Click 'Start over' and try again.",
+      };
     }
 
-    // Required-field check on the mapping itself
+    // Required-field check on the mapping itself.
     const missingRequired = importer.fields
       .filter((f) => f.required && !mapping[f.key])
       .map((f) => f.label);
     if (missingRequired.length > 0) {
       return {
         success: false,
-        error: `Missing required field mapping: ${missingRequired.join(", ")}`,
+        error: `Required column${missingRequired.length === 1 ? "" : "s"} ${missingRequired.map((l) => `"${l}"`).join(", ")} ${missingRequired.length === 1 ? "isn't" : "aren't"} mapped. Pick the matching CSV header in the dropdown above each unmapped field, then click Import again.`,
       };
     }
 
@@ -182,7 +231,10 @@ export async function commitImport(
     } catch (err) {
       return {
         success: false,
-        error: err instanceof Error ? err.message : "Failed to parse CSV",
+        error:
+          err instanceof Error
+            ? `Could not parse this file as CSV: ${err.message}.`
+            : "Could not parse this file as CSV.",
       };
     }
 
