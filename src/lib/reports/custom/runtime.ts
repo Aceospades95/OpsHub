@@ -14,6 +14,9 @@ import type { ReportOutput, ReportColumn } from "../types";
 import {
   getEntityDef,
   type ColumnDef,
+  type EntityDef,
+  type FieldType,
+  type FilterDef,
   type FilterOperator,
 } from "./entities";
 import type { CustomReport } from "@prisma/client";
@@ -89,8 +92,8 @@ export async function runCustomReportFromRow(
   for (const c of selectedColumns) {
     if (c.requiresRelation) includes.add(c.requiresRelation);
   }
-  const where = buildWhere(report, config, includes);
-  const orderBy = buildOrderBy(report, config, def, includes);
+  const where = buildWhere(config, def, includes);
+  const orderBy = buildOrderBy(config, def, includes);
   const take = Math.min(
     Math.max(1, config.limit ?? def.defaultLimit),
     5000
@@ -130,70 +133,134 @@ export async function runCustomReportFromRow(
 }
 
 // ─── where / orderBy builders ─────────────────────────────────────────
+//
+// Exported for unit testing. These are pure functions of (config + def)
+// — no DB access — so they belong in a test that exercises edge cases
+// (unknown field, mismatched operator, malformed value) directly.
 
+export {
+  buildWhere as _testBuildWhere,
+  buildOrderBy as _testBuildOrderBy,
+  coerce as _testCoerceFilterValue,
+};
+
+
+/**
+ * Build the Prisma `where` for a saved report.
+ *
+ * Every filter is routed through the entity's registered FilterDef
+ * list — saved filters that reference an unknown field, use an
+ * operator the field doesn't expose, or carry a value that doesn't
+ * coerce to the field's declared type are dropped silently. Without
+ * this, an admin who hand-edits the JSON (or a stale saved report from
+ * before a registry change) can:
+ *
+ *   - filter on fields that aren't supposed to be exposed (e.g.
+ *     `hashedPassword`)
+ *   - send a `gt` against a string column and crash the query with a
+ *     cryptic Prisma error
+ *   - pass `"true"` / `"2024-01-01"` as untyped strings and silently
+ *     never match
+ */
 function buildWhere(
-  _report: CustomReport,
   config: CustomReportConfig,
+  def: EntityDef,
   includes: Set<string>
 ): Record<string, unknown> {
+  const filterByKey = new Map<string, FilterDef>(
+    def.filters.map((f) => [f.key, f])
+  );
+
   const where: Record<string, unknown> = {};
   for (const clause of config.filters) {
-    const { field, op, value } = clause;
+    const filterDef = filterByKey.get(clause.field);
+    if (!filterDef) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[custom-reports] dropping filter on unknown field "${clause.field}"`
+      );
+      continue;
+    }
+    if (!filterDef.operators.includes(clause.op)) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[custom-reports] dropping unsupported "${clause.op}" on "${clause.field}" (allowed: ${filterDef.operators.join(", ")})`
+      );
+      continue;
+    }
+    const subClause = applyOp(clause.op, clause.value, filterDef);
+    if (subClause === null) continue;
+
     // Relation filters are encoded as "client.name" → { client: { name: ... } }
-    const dotIdx = field.indexOf(".");
+    const dotIdx = clause.field.indexOf(".");
     if (dotIdx > -1) {
-      const relation = field.slice(0, dotIdx);
-      const sub = field.slice(dotIdx + 1);
+      const relation = clause.field.slice(0, dotIdx);
+      const sub = clause.field.slice(dotIdx + 1);
       includes.add(relation); // ensure relation also loads for column projection
-      const subClause = applyOp(op, value, "string");
-      if (subClause === null) continue;
       const existing = (where[relation] as Record<string, unknown>) ?? {};
       where[relation] = { ...existing, [sub]: subClause };
       continue;
     }
-    const fieldClause = applyOp(op, value, undefined);
-    if (fieldClause === null) continue;
-    where[field] = fieldClause;
+    where[clause.field] = subClause;
   }
   return where;
 }
 
 /**
  * Translate one (operator, value) pair into the Prisma filter shape.
+ *
  * Returns null when the operator should produce no filter — e.g. an
- * empty value with a `contains` operator.
+ * empty value with `contains`, or a value that fails type coercion
+ * (`gte` on a date column with an unparseable string).
  */
 function applyOp(
   op: FilterOperator,
   value: unknown,
-  hint: string | undefined
+  def: FilterDef
 ): unknown {
   switch (op) {
-    case "equals":
-      return value;
+    case "equals": {
+      const c = coerce(value, def);
+      // Drop `equals` filters with a missing/empty value; the UI uses
+      // an empty value to mean "don't filter" rather than "is empty
+      // string." Use `isNull` for that.
+      if (c === null || c === undefined || c === "") return null;
+      return c;
+    }
     case "contains": {
       const s = String(value ?? "").trim();
       if (!s) return null;
       return { contains: s, mode: "insensitive" };
     }
     case "in": {
-      const list = Array.isArray(value)
+      const raw = Array.isArray(value)
         ? value
         : String(value ?? "")
             .split(/[,;\s]+/)
             .map((s) => s.trim())
             .filter((s) => s.length > 0);
-      if (list.length === 0) return null;
-      return { in: list };
+      const coerced = raw
+        .map((v) => coerce(v, def))
+        .filter((v): v is string | number | boolean | Date => v !== null && v !== undefined);
+      if (coerced.length === 0) return null;
+      return { in: coerced };
     }
-    case "gt":
-      return { gt: coerce(value, hint) };
-    case "gte":
-      return { gte: coerce(value, hint) };
-    case "lt":
-      return { lt: coerce(value, hint) };
-    case "lte":
-      return { lte: coerce(value, hint) };
+    case "gt": {
+      const c = coerce(value, def);
+      return c === null ? null : { gt: c };
+    }
+    case "gte": {
+      const c = coerce(value, def);
+      return c === null ? null : { gte: c };
+    }
+    case "lt": {
+      const c = coerce(value, def);
+      return c === null ? null : { lt: c };
+    }
+    case "lte": {
+      const c = coerce(value, def);
+      return c === null ? null : { lte: c };
+    }
     case "isNull":
       return { equals: null };
     case "isNotNull":
@@ -202,28 +269,72 @@ function applyOp(
   return null;
 }
 
-function coerce(value: unknown, hint: string | undefined): unknown {
-  if (hint === "date" && typeof value === "string") {
-    const d = new Date(value);
-    return isNaN(d.getTime()) ? value : d;
+/**
+ * Coerce a raw filter value to the field's declared type.
+ *
+ *   string  — passed through after String()
+ *   number  — string→Number, finite check; returns null if NaN
+ *   date    — string→Date, valid-date check; returns null on invalid
+ *   boolean — "true"/"1"/true → true; "false"/"0"/""/null → false;
+ *             everything else → null
+ *   enum    — must be a string in the field's enumValues whitelist
+ *
+ * null is returned for "couldn't coerce" so callers can drop the whole
+ * filter rather than feed Prisma a bogus value.
+ */
+function coerce(value: unknown, def: FilterDef): string | number | boolean | Date | null {
+  const t: FieldType = def.type;
+  if (value === null || value === undefined) return null;
+
+  if (t === "number") {
+    const n = typeof value === "number" ? value : Number(String(value));
+    return Number.isFinite(n) ? n : null;
   }
-  if (hint === "number" && typeof value === "string") {
-    const n = Number(value);
-    return Number.isFinite(n) ? n : value;
+  if (t === "date") {
+    if (value instanceof Date) {
+      return isNaN(value.getTime()) ? null : value;
+    }
+    const d = new Date(String(value));
+    return isNaN(d.getTime()) ? null : d;
   }
-  return value;
+  if (t === "boolean") {
+    if (typeof value === "boolean") return value;
+    const s = String(value).trim().toLowerCase();
+    if (s === "true" || s === "1" || s === "yes") return true;
+    if (s === "false" || s === "0" || s === "no" || s === "") return false;
+    return null;
+  }
+  if (t === "enum") {
+    const s = String(value);
+    if (def.enumValues && def.enumValues.length > 0 && !def.enumValues.includes(s)) {
+      return null;
+    }
+    return s;
+  }
+  // string
+  return String(value);
 }
 
+/**
+ * Build the Prisma `orderBy`.
+ *
+ * Sort key must resolve to a registered column — otherwise an admin
+ * with raw JSON access could sort users by `hashedPassword`. The
+ * default falls back to the entity's `defaultSort` when the saved
+ * sortBy points at a no-longer-registered column, then null when no
+ * default exists either.
+ */
 function buildOrderBy(
-  _report: CustomReport,
   config: CustomReportConfig,
-  def: ReturnType<typeof getEntityDef>,
+  def: EntityDef,
   includes: Set<string>
 ): Record<string, "asc" | "desc"> | undefined {
-  const raw = config.sortBy ?? def.defaultSort;
+  const columnKeys = new Set(def.columns.map((c) => c.key));
+
+  const raw = parseSortKey(config.sortBy, def, columnKeys);
   if (!raw) return undefined;
-  const desc = raw.startsWith("-");
-  const key = desc ? raw.slice(1) : raw;
+  const { key, desc } = raw;
+
   // Don't allow sorting through a relation — Prisma supports it but
   // the syntax is more complex and we want predictable behavior.
   // Strip the "relation.field" form back to the relation root.
@@ -233,6 +344,20 @@ function buildOrderBy(
     return { [relation]: desc ? "desc" : "asc" };
   }
   return { [key]: desc ? "desc" : "asc" };
+}
+
+function parseSortKey(
+  rawSort: string | null | undefined,
+  def: EntityDef,
+  columnKeys: Set<string>
+): { key: string; desc: boolean } | null {
+  function tryParse(s: string | null | undefined): { key: string; desc: boolean } | null {
+    if (!s) return null;
+    const desc = s.startsWith("-");
+    const key = desc ? s.slice(1) : s;
+    return columnKeys.has(key) ? { key, desc } : null;
+  }
+  return tryParse(rawSort) ?? tryParse(def.defaultSort);
 }
 
 // ─── Read dot-paths from row objects ────────────────────────────────────
