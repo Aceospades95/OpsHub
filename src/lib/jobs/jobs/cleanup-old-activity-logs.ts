@@ -17,6 +17,7 @@
  */
 
 import { db } from "@/lib/db";
+import { shouldRunWeekly } from "../gating";
 import type { JobDefinition } from "../types";
 
 const DEFAULT_RETENTION_DAYS = 365;
@@ -29,6 +30,9 @@ export const cleanupOldActivityLogs: JobDefinition = {
   schedule: "Weekly",
 
   async handler() {
+    if (!(await shouldRunWeekly("cleanup-old-activity-logs"))) {
+      return { status: "skipped", output: "Already ran this week", processed: 0 };
+    }
     const retentionDaysRaw = process.env.ACTIVITY_LOG_RETENTION_DAYS;
     const retentionDays = retentionDaysRaw
       ? Number.parseInt(retentionDaysRaw, 10)

@@ -19,6 +19,7 @@ import {
   renderHtml,
   renderText,
 } from "@/lib/reports";
+import { shouldRunDaily } from "../gating";
 import type { JobDefinition } from "../types";
 
 export const dailyReportsDigest: JobDefinition = {
@@ -29,6 +30,9 @@ export const dailyReportsDigest: JobDefinition = {
   schedule: "Daily",
 
   async handler(ctx) {
+    if (!(await shouldRunDaily("daily-reports-digest"))) {
+      return { status: "skipped", output: "Already ran today", processed: 0 };
+    }
     const reports = listSchedulableReports();
     if (reports.length === 0) {
       return { output: "No schedulable reports configured.", processed: 0 };

@@ -14,6 +14,7 @@
 import { db } from "@/lib/db";
 import { notify } from "@/lib/notifications";
 import { absoluteUrl } from "@/lib/url";
+import { shouldRunDaily } from "../gating";
 import type { JobDefinition } from "../types";
 
 export const contractExpiryCheck: JobDefinition = {
@@ -24,6 +25,9 @@ export const contractExpiryCheck: JobDefinition = {
   schedule: "Daily",
 
   async handler() {
+    if (!(await shouldRunDaily("contract-expiry-check"))) {
+      return { status: "skipped", output: "Already ran today", processed: 0 };
+    }
     const now = new Date();
     const horizon = new Date();
     horizon.setDate(horizon.getDate() + 30);
