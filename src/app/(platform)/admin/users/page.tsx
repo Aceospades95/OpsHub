@@ -19,12 +19,18 @@ export default async function AdminUsersPage() {
     db.user.findMany({
       where: { isActive: true },
       orderBy: { name: "asc" },
-      include: { manager: { select: { name: true } } },
+      include: {
+        manager: { select: { name: true } },
+        accounts: { select: { provider: true } },
+      },
     }),
     db.user.findMany({
       where: { isActive: false },
       orderBy: { name: "asc" },
-      include: { manager: { select: { name: true } } },
+      include: {
+        manager: { select: { name: true } },
+        accounts: { select: { provider: true } },
+      },
     }),
     db.user.findMany({
       select: { id: true, name: true },
@@ -79,6 +85,13 @@ export default async function AdminUsersPage() {
                   <ToggleActiveButton userId={user.id} isActive={user.isActive} />
                   {!user.hasLoginAccess && (
                     <Badge variant="outline" className="text-[10px]">No Login</Badge>
+                  )}
+                  {user.accounts.some((a) => a.provider === "google") && (
+                    <span title="Linked to a Google account for SSO">
+                      <Badge variant="outline" className="text-[10px]">
+                        Google
+                      </Badge>
+                    </span>
                   )}
                 </div>
               </td>

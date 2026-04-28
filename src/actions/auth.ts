@@ -5,6 +5,9 @@ import { db } from "@/lib/db";
 import { hash } from "bcryptjs";
 import { z } from "zod";
 import { AuthError } from "next-auth";
+import { revalidatePath } from "next/cache";
+import { requireAuth } from "@/lib/permissions";
+import { logActivity } from "@/lib/activity";
 
 const loginSchema = z.object({
   email: z.string().email("Invalid email"),
@@ -85,4 +88,44 @@ export async function registerAction(_prev: unknown, formData: FormData) {
     }
     throw error;
   }
+}
+
+/**
+ * Force-unlink a user's Google Account row. The user is unaffected
+ * apart from losing their SSO link — they re-link automatically on
+ * the next Google sign-in (assuming `hasLoginAccess` is still true).
+ *
+ * Useful when:
+ *   - An admin needs to reset a user whose Google identity has been
+ *     compromised or rotated
+ *   - The wrong identity got linked (rare, but recoverable)
+ *   - As part of off-boarding before flipping `hasLoginAccess: false`
+ */
+export async function unlinkGoogleAccount(userId: string) {
+  const admin = await requireAuth();
+  if (admin.role !== "ADMIN") {
+    return { error: "Admin access required" } as const;
+  }
+
+  const target = await db.user.findUnique({
+    where: { id: userId },
+    select: { id: true, name: true, email: true },
+  });
+  if (!target) return { error: "User not found" } as const;
+
+  const result = await db.account.deleteMany({
+    where: { userId, provider: "google" },
+  });
+
+  await logActivity(
+    "unlinked-google",
+    "user",
+    target.id,
+    admin.id,
+    target.name
+  );
+
+  revalidatePath(`/team/${userId}`);
+  revalidatePath("/admin/users");
+  return { success: true, removed: result.count } as const;
 }

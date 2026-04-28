@@ -39,6 +39,10 @@ export default async function EmployeeDetailPage({ params }: Props) {
       },
       modulePermissions: true,
       entityPermissions: true,
+      accounts: {
+        select: { id: true, provider: true, createdAt: true },
+        orderBy: { createdAt: "desc" },
+      },
     },
   });
 
@@ -104,6 +108,10 @@ export default async function EmployeeDetailPage({ params }: Props) {
     projectMembers: employee.projectMembers.map((pm) => ({
       ...pm,
       createdAt: pm.createdAt.toISOString(),
+    })),
+    accounts: employee.accounts.map((a) => ({
+      ...a,
+      createdAt: a.createdAt.toISOString(),
     })),
   };
 

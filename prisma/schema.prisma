@@ -299,6 +299,42 @@ model User {
   createdWorkflowEmailTemplates  WorkflowEmailTemplate[] @relation("WorkflowEmailTemplateCreator")
   createdScheduledTasks          ScheduledTask[]         @relation("ScheduledTaskCreator")
   createdCustomReports           CustomReport[]          @relation("CustomReportCreator")
+  accounts                       Account[]
+}
+
+// ─── ACCOUNTS ──────────────────────────────────────
+//
+// OAuth-provider linkage (currently just Google). One row per
+// (provider, providerAccountId) pair; FK to User. Populated by the
+// signIn callback so a pre-provisioned User row links to a Google
+// identity on first SSO without creating a duplicate User. The
+// (provider, providerAccountId) unique constraint prevents one Google
+// identity from ever pointing to two Users.
+//
+// Token columns (refresh_token, access_token, etc.) follow the
+// standard NextAuth Account shape so existing tooling that introspects
+// the schema works unchanged. We don't currently rely on those fields
+// because sessions are JWT-only.
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String  // "oauth" | "credentials" — currently always "oauth"
+  provider          String  // "google", etc.
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+  createdAt         DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
 }
 
 model ModulePermission {
