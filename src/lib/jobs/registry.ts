@@ -19,6 +19,9 @@ import { contractExpiryCheck } from "./jobs/contract-expiry-check";
 import { certificationExpiryCheck } from "./jobs/certification-expiry-check";
 import { cleanupStaleNotifications } from "./jobs/cleanup-stale-notifications";
 import { cleanupOldActivityLogs } from "./jobs/cleanup-old-activity-logs";
+import { cleanupOldJobLogs } from "./jobs/cleanup-old-job-logs";
+import { cleanupOldEmailLogs } from "./jobs/cleanup-old-email-logs";
+import { cleanupOldWorkflowEvents } from "./jobs/cleanup-old-workflow-events";
 import { dailyReportsDigest } from "./jobs/daily-reports-digest";
 import { workflowsTick } from "./jobs/workflows-tick";
 import { workflowScheduledTriggers } from "./jobs/workflow-scheduled-triggers";
@@ -30,6 +33,9 @@ export const JOBS: JobDefinition[] = [
   certificationExpiryCheck,
   cleanupStaleNotifications,
   cleanupOldActivityLogs,
+  cleanupOldJobLogs,
+  cleanupOldEmailLogs,
+  cleanupOldWorkflowEvents,
   dailyReportsDigest,
   workflowsTick,
   workflowScheduledTriggers,
