@@ -8,11 +8,15 @@ export default auth((req) => {
   // routes (/portal/:token, /api/public/portal/:token) are how new
   // hires fill out forms, upload documents, and sign agreements
   // without an OpsHub account. None of these may require a login.
+  // /api/jobs/ is also public because the cron runner authenticates
+  // itself via the x-cron-secret header — middleware would otherwise
+  // 307 the unauthenticated POST from cron providers to /login.
   const publicPaths = [
     "/login",
     "/register",
     "/api/auth",
     "/api/health",
+    "/api/jobs/",
     "/portal/",
     "/api/public/",
   ];
