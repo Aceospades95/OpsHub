@@ -1,7 +1,6 @@
 "use client";
 
 import { Avatar } from "@/components/ui/avatar";
-import { Badge } from "@/components/ui/badge";
 import Link from "next/link";
 import { ChevronDown, ChevronRight, Pencil, Users } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -144,13 +143,6 @@ export function OrgChartTree({
       <div
         ref={containerRef}
         className="overflow-auto rounded border border-border bg-muted/20 p-6 max-h-[75vh]"
-        // Subtle dotted background so the user has spatial reference
-        // when they scroll the chart around.
-        style={{
-          backgroundImage:
-            "radial-gradient(var(--card-border) 1px, transparent 1px)",
-          backgroundSize: "16px 16px",
-        }}
       >
         <div className="w-fit mx-auto" style={{ minWidth: "100%" }}>
           <OrgBranch
@@ -335,11 +327,6 @@ function NodeCard({
           )}
         </div>
       </div>
-      {node.role && (
-        <Badge variant="outline" className="text-[9px] mt-2">
-          {node.role}
-        </Badge>
-      )}
       {onCardClick && (
         <span
           className="absolute top-2 right-2 text-muted-foreground/60"
