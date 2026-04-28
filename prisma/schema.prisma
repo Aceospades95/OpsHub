@@ -1584,6 +1584,9 @@ model WorkflowInstanceStep {
   @@index([workflowInstanceId])
   @@index([workflowStepId])
   @@index([scheduledFor, status])
+  /// Powers the watchdog sweep in lib/workflows/engine.ts that reverts
+  /// stuck IN_PROGRESS synchronous steps after a worker crash.
+  @@index([status, startedAt])
 }
 
 /// Reusable email body with `{{path.to.field}}` variable substitution.

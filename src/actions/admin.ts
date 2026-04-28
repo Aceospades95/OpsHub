@@ -278,7 +278,34 @@ export async function deleteUser(_prev: unknown, formData: FormData) {
   const user = await db.user.findUnique({ where: { id } });
   if (!user) return { error: "User not found" };
 
-  await db.user.delete({ where: { id } });
+  // Hard delete fails when the user is referenced by a record we don't
+  // cascade-delete from (Comment.author, ActivityLog.user, SandboxPage
+  // .createdBy, CustomWidget.createdBy, plus countless audit references).
+  // Surface a clean message so the admin can deactivate instead of
+  // hard-deleting, rather than crashing to a 500 page with a Prisma
+  // "Foreign key constraint failed" stack.
+  try {
+    await db.user.delete({ where: { id } });
+  } catch (err) {
+    // Prisma marks FK violations with code P2003. Anything else
+    // bubbles as a real failure since we can't translate it.
+    if (
+      err &&
+      typeof err === "object" &&
+      "code" in err &&
+      (err as { code: string }).code === "P2003"
+    ) {
+      return {
+        error:
+          "This user has comments, activity history, or other authored records that block deletion. Deactivate the user instead (toggle 'Has login access' off and set inactive) — that preserves history while disabling sign-in.",
+      };
+    }
+    // eslint-disable-next-line no-console
+    console.error("[admin] deleteUser failed:", err);
+    return {
+      error: "Could not delete user. Check server logs for details.",
+    };
+  }
   await logActivity("deleted", "user", id, admin.id, user.name);
   revalidateUser(id, { managerId: user.managerId });
   return { success: true };
