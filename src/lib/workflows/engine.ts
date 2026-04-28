@@ -112,11 +112,17 @@ export async function createInstance(
   let portalToken = existingToken?.token ?? null;
   if (!portalToken) {
     const tokenValue = generatePortalToken();
+    // 90-day default expiry — long enough for a multi-session
+    // onboarding/offboarding flow but not "forever". The token can
+    // outlive an instance; if a subject needs continued access an
+    // admin can issue a fresh one through the workflow detail page.
+    const expiresAt = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000);
     await db.portalToken.create({
       data: {
         subjectType: input.subjectType,
         subjectId: input.subjectId,
         token: tokenValue,
+        expiresAt,
       },
     });
     portalToken = tokenValue;
