@@ -1,34 +1,34 @@
 "use client";
 
-import { Avatar } from "@/components/ui/avatar";
-import Link from "next/link";
-import { ChevronDown, ChevronRight, Pencil, Users } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
-
 /**
- * Scalable org chart.
+ * OrgChartTree — production-grade org chart powered by d3-org-chart.
  *
- * Design choices we've come back to several times — documenting them
- * here so future iterations don't fight the layout:
+ * Why d3-org-chart instead of a custom layout:
+ *   • Pan + zoom canvas (Figma-style) is built in. The previous
+ *     bespoke component scrolled horizontally only and broke past
+ *     5-ish siblings — see the "huge mess with cards stacking" report.
+ *   • Compact mode is built in: deep/wide branches automatically stack
+ *     vertically with the connector line moving to the side, exactly
+ *     the layout we wanted for high-fanout roots.
+ *   • Click-to-collapse / search highlighting / responsive resize all
+ *     ship out of the box; the previous component reimplemented these
+ *     by hand.
  *
- *  • Container is a single horizontally + vertically scrollable box.
- *    The inner tree uses `min-width: max-content` so wide trees grow
- *    rather than wrapping awkwardly.
- *  • Connector lines are CSS pseudo-element divs, not SVG. The grid
- *    columns are equal-width per parent so the parent's center aligns
- *    with the midpoint between the leftmost and rightmost child.
- *  • Multi-root scenarios get a synthetic "Top of org" header and the
- *    roots are laid out as siblings under that header — same shape as
- *    any other branch, no special-casing in the renderer.
- *  • Per-node collapse state lives in this component (Set<string>);
- *    children of collapsed nodes don't render so wide subtrees can
- *    be hidden without destroying the layout.
- *  • Search HIGHLIGHTS rather than filters. Filtering destroys the
- *    tree because removing a manager makes their reports orphaned
- *    roots; highlighting keeps the structure intact and shows where
- *    the matches sit.
- *  • Card click opens an editor drawer (parent-supplied callback).
+ * Public API is unchanged: callers still pass `nodes` (a tree of
+ * OrgChartNode) and optional `highlight` / `onCardClick` /
+ * `hideTopHeaderForSingleRoot`. Internally we flatten the tree to the
+ * { id, parentId, ... } shape d3-org-chart expects, optionally
+ * prepending a synthetic "Top of org" root when there are multiple
+ * top-level users.
+ *
+ * Card markup is rendered as an HTML string via .nodeContent() — this
+ * is the only API d3-org-chart offers for custom node visuals. We
+ * keep the dark-theme card design close to the previous component so
+ * the visual change is layout-only.
  */
+
+import { useEffect, useMemo, useRef, useState } from "react";
+import { OrgChart } from "d3-org-chart";
 
 export interface OrgChartNode {
   id: string;
@@ -53,7 +53,22 @@ interface OrgChartTreeProps {
   hideTopHeaderForSingleRoot?: boolean;
 }
 
-const lineColor = "var(--card-border)";
+interface FlatNode {
+  id: string;
+  parentId: string | null;
+  name: string;
+  jobTitle?: string;
+  department?: string;
+  location?: string;
+  avatar?: string | null;
+  href?: string;
+  /** True for the synthetic "Top of org" wrapper, rendered differently. */
+  isVirtualRoot?: boolean;
+  /** Lowercased blob used for the search-highlight check at render time. */
+  searchBlob: string;
+}
+
+const VIRTUAL_ROOT_ID = "__virtual_root__";
 
 export function OrgChartTree({
   nodes,
@@ -61,365 +76,248 @@ export function OrgChartTree({
   onCardClick,
   hideTopHeaderForSingleRoot = true,
 }: OrgChartTreeProps) {
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const chartRef = useRef<OrgChart<FlatNode> | null>(null);
+  const onCardClickRef = useRef(onCardClick);
+  const [compact, setCompact] = useState(true);
 
-  // After mount, scroll horizontally to center the chart so the root
-  // is visible by default. Without this, very wide trees open with the
-  // viewport pinned to the left edge and the user has to hunt for it.
+  // Keep the latest onCardClick reachable from the chart's own click
+  // handler without re-instantiating the chart. d3-org-chart isn't a
+  // React component, so prop changes don't otherwise propagate.
   useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-    const inner = el.firstElementChild as HTMLElement | null;
-    if (!inner) return;
-    const overflow = inner.scrollWidth - el.clientWidth;
-    if (overflow > 0) {
-      el.scrollLeft = overflow / 2;
+    onCardClickRef.current = onCardClick;
+  }, [onCardClick]);
+
+  const flat = useMemo<FlatNode[]>(() => {
+    return flattenForOrgChart(nodes, hideTopHeaderForSingleRoot);
+  }, [nodes, hideTopHeaderForSingleRoot]);
+
+  // Re-derive the highlight on every render — d3-org-chart re-runs
+  // the node template, which reads the closure value.
+  const highlightLower = (highlight ?? "").trim().toLowerCase();
+
+  // Mount + data updates. We instantiate the chart once and call
+  // .data().render() on subsequent updates so the pan/zoom state and
+  // collapsed-node set are preserved across re-renders.
+  useEffect(() => {
+    if (!containerRef.current) return;
+    if (!chartRef.current) {
+      chartRef.current = new OrgChart<FlatNode>();
     }
-  }, [nodes]);
+    const chart = chartRef.current;
+    chart
+      .container(containerRef.current as unknown as string)
+      .data(flat)
+      .nodeWidth(() => 240)
+      .nodeHeight(() => 96)
+      .childrenMargin(() => 50)
+      .siblingsMargin(() => 16)
+      .neighbourMargin(() => 16)
+      .compactMarginBetween(() => 16)
+      .compactMarginPair(() => 64)
+      .compact(compact)
+      .nodeContent((d) => renderCardHtml(d.data, highlightLower))
+      .onNodeClick((nodeOrId) => {
+        // Library typing changed across versions: callback receives
+        // either the raw id (older releases) or the full node object
+        // (newer ones). Normalize both shapes.
+        const id =
+          typeof nodeOrId === "string"
+            ? nodeOrId
+            : (nodeOrId as { data?: FlatNode })?.data?.id;
+        if (!id || id === VIRTUAL_ROOT_ID) return;
+        const cb = onCardClickRef.current;
+        if (cb) {
+          cb(id);
+          return;
+        }
+        const target = flat.find((f) => f.id === id);
+        if (target?.href) {
+          window.location.href = target.href;
+        }
+      })
+      .render();
+    return () => {
+      // No teardown method on d3-org-chart; emptying the container is
+      // enough to drop the SVG / event listeners cleanly.
+      if (containerRef.current) containerRef.current.innerHTML = "";
+      chartRef.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  function toggle(id: string) {
-    setCollapsed((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }
-
-  const total = useMemo(() => countNodes(nodes), [nodes]);
-  const matchCount = useMemo(() => {
-    if (!highlight?.trim()) return 0;
-    const q = highlight.toLowerCase();
-    let n = 0;
-    walk(nodes, (node) => {
-      if (matchesHighlight(node, q)) n++;
-    });
-    return n;
-  }, [nodes, highlight]);
-
-  if (nodes.length === 0) {
-    return <p className="text-sm text-muted-foreground">No team members to display</p>;
-  }
-
-  // Single virtual root: when there are multiple top-level people,
-  // wrap them under a synthetic "Top of org" node so the renderer
-  // doesn't need a special "multiple roots" mode. The synthetic node
-  // is unclickable and renders smaller.
-  const useVirtualRoot =
-    nodes.length > 1 || !hideTopHeaderForSingleRoot;
-  const renderable: OrgChartNode = useVirtualRoot
-    ? {
-        id: "__virtual_root__",
-        name: "Top of org",
-        children: nodes,
-      }
-    : nodes[0];
-
-  const totalCollapsed = collapsed.size;
+  // Push fresh data + highlight on every change without remounting.
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) return;
+    chart
+      .data(flat)
+      .compact(compact)
+      .nodeContent((d) => renderCardHtml(d.data, highlightLower))
+      .render();
+  }, [flat, compact, highlightLower]);
 
   return (
     <div className="space-y-2">
-      <div className="flex items-center gap-3 text-xs text-muted-foreground">
+      <div className="flex items-center gap-2 text-xs text-muted-foreground">
         <span>
-          {total} {total === 1 ? "person" : "people"} on the chart
+          {flat.filter((n) => !n.isVirtualRoot).length} team member
+          {flat.filter((n) => !n.isVirtualRoot).length === 1 ? "" : "s"} ·
+          drag to pan, scroll to zoom, click a card to edit.
         </span>
-        {totalCollapsed > 0 && (
-          <button
-            type="button"
-            onClick={() => setCollapsed(new Set())}
-            className="text-primary hover:underline"
-          >
-            Expand all ({totalCollapsed} collapsed)
-          </button>
-        )}
-        {highlight?.trim() && (
-          <span className="ml-auto">
-            {matchCount} match{matchCount === 1 ? "" : "es"} for &quot;{highlight}&quot;
-          </span>
-        )}
-      </div>
-
-      <div
-        ref={containerRef}
-        className="overflow-auto rounded border border-border bg-muted/20 p-6 max-h-[75vh]"
-      >
-        <div className="w-fit mx-auto" style={{ minWidth: "100%" }}>
-          <OrgBranch
-            node={renderable}
-            isVirtual={renderable.id === "__virtual_root__"}
-            collapsed={collapsed}
-            onToggle={toggle}
-            highlight={highlight?.trim().toLowerCase()}
-            onCardClick={onCardClick}
-          />
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ─── Branch / Card ─────────────────────────────────────────────────────
-
-function OrgBranch({
-  node,
-  isVirtual,
-  collapsed,
-  onToggle,
-  highlight,
-  onCardClick,
-}: {
-  node: OrgChartNode;
-  isVirtual: boolean;
-  collapsed: Set<string>;
-  onToggle: (id: string) => void;
-  highlight?: string;
-  onCardClick?: (id: string) => void;
-}) {
-  const isCollapsed = collapsed.has(node.id);
-  const childCount = node.children.length;
-  const showChildren = childCount > 0 && !isCollapsed;
-
-  return (
-    <div className="flex flex-col items-center">
-      {isVirtual ? (
-        <VirtualHeader />
-      ) : (
-        <NodeCard
-          node={node}
-          highlight={highlight}
-          onCardClick={onCardClick}
-          collapsed={isCollapsed}
-          childCount={childCount}
-          onToggle={() => onToggle(node.id)}
-        />
-      )}
-
-      {showChildren && (
-        <>
-          <div style={{ width: 1, height: 24, backgroundColor: lineColor }} />
-          {childCount === 1 ? (
-            <OrgBranch
-              node={node.children[0]}
-              isVirtual={false}
-              collapsed={collapsed}
-              onToggle={onToggle}
-              highlight={highlight}
-              onCardClick={onCardClick}
-            />
-          ) : (
-            <div
-              className="grid items-start"
-              style={{
-                gridTemplateColumns: `repeat(${childCount}, minmax(220px, 1fr))`,
-                columnGap: 24,
-              }}
-            >
-              {node.children.map((child, idx) => {
-                const isFirst = idx === 0;
-                const isLast = idx === childCount - 1;
-                return (
-                  <div key={child.id} className="flex flex-col items-center min-w-0">
-                    {/* Connector segment: horizontal line that links
-                        the parent's vertical down-line to this child,
-                        plus a short vertical down-line into the child
-                        card. */}
-                    <div className="self-stretch relative" style={{ height: 24 }}>
-                      <div
-                        className="absolute top-0"
-                        style={{
-                          height: 1,
-                          backgroundColor: lineColor,
-                          left: isFirst ? "50%" : -12,
-                          right: isLast ? "50%" : -12,
-                        }}
-                      />
-                      <div
-                        className="absolute top-0 left-1/2"
-                        style={{
-                          width: 1,
-                          height: "100%",
-                          backgroundColor: lineColor,
-                          transform: "translateX(-0.5px)",
-                        }}
-                      />
-                    </div>
-                    <OrgBranch
-                      node={child}
-                      isVirtual={false}
-                      collapsed={collapsed}
-                      onToggle={onToggle}
-                      highlight={highlight}
-                      onCardClick={onCardClick}
-                    />
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </>
-      )}
-
-      {childCount > 0 && isCollapsed && (
+        <div className="flex-1" />
         <button
           type="button"
-          onClick={() => onToggle(node.id)}
-          className="mt-2 text-[10px] text-muted-foreground hover:text-foreground inline-flex items-center gap-1"
+          onClick={() => setCompact((v) => !v)}
+          className="rounded border border-border px-2 py-1 hover:bg-muted/40 transition-colors"
+          title="Compact mode stacks deep branches vertically with a side connector — best for org charts with many siblings."
         >
-          <ChevronRight className="h-3 w-3" />
-          {childCount} hidden
+          {compact ? "Compact layout: ON" : "Compact layout: OFF"}
         </button>
-      )}
-    </div>
-  );
-}
-
-function VirtualHeader() {
-  return (
-    <div className="rounded-lg border border-dashed border-border bg-background/50 px-3 py-1.5 text-[10px] uppercase tracking-wide text-muted-foreground inline-flex items-center gap-1.5">
-      <Users className="h-3 w-3" />
-      Top of org
-    </div>
-  );
-}
-
-function NodeCard({
-  node,
-  highlight,
-  onCardClick,
-  collapsed,
-  childCount,
-  onToggle,
-}: {
-  node: OrgChartNode;
-  highlight?: string;
-  onCardClick?: (id: string) => void;
-  collapsed: boolean;
-  childCount: number;
-  onToggle: () => void;
-}) {
-  const isMatch = highlight ? matchesHighlight(node, highlight) : false;
-
-  const card = (
-    <div
-      className={`rounded-lg text-left transition-shadow hover:shadow-lg bg-card text-card-foreground shadow-md px-4 py-3 min-w-[200px] max-w-[260px] relative ${
-        isMatch ? "ring-2 ring-primary" : ""
-      }`}
-      style={{ border: "1px solid var(--card-border)" }}
-    >
-      <div className="flex items-center gap-3">
-        <Avatar name={node.name} size="sm" />
-        <div className="min-w-0 flex-1">
-          <p className="font-semibold truncate text-sm">{node.name}</p>
-          {node.jobTitle ? (
-            <p className="text-primary/80 font-medium truncate text-xs">
-              {node.jobTitle}
-            </p>
-          ) : (
-            <p className="text-muted-foreground italic truncate text-xs">
-              No title
-            </p>
-          )}
-          {(node.department || node.location) && (
-            <p className="text-[10px] text-muted-foreground truncate">
-              {[node.department, node.location].filter(Boolean).join(" · ")}
-            </p>
-          )}
-        </div>
-      </div>
-      {onCardClick && (
-        <span
-          className="absolute top-2 right-2 text-muted-foreground/60"
-          aria-hidden
+        <button
+          type="button"
+          onClick={() => chartRef.current?.expandAll().fit()}
+          className="rounded border border-border px-2 py-1 hover:bg-muted/40 transition-colors"
         >
-          <Pencil className="h-3 w-3" />
-        </span>
-      )}
+          Expand all
+        </button>
+        <button
+          type="button"
+          onClick={() => chartRef.current?.collapseAll().fit()}
+          className="rounded border border-border px-2 py-1 hover:bg-muted/40 transition-colors"
+        >
+          Collapse all
+        </button>
+        <button
+          type="button"
+          onClick={() => chartRef.current?.fit()}
+          className="rounded border border-border px-2 py-1 hover:bg-muted/40 transition-colors"
+        >
+          Fit to view
+        </button>
+      </div>
+      <div
+        ref={containerRef}
+        className="rounded border border-border bg-muted/20"
+        style={{ height: "75vh", width: "100%" }}
+      />
     </div>
   );
+}
 
-  // Collapse toggle floats over the bottom of the card so users can
-  // hide a manager's subtree without losing access to the card itself.
-  const collapseToggle = childCount > 0 ? (
-    <button
-      type="button"
-      onClick={(e) => {
-        e.stopPropagation();
-        e.preventDefault();
-        onToggle();
-      }}
-      aria-label={collapsed ? "Expand reports" : "Collapse reports"}
-      className="absolute -bottom-2.5 left-1/2 -translate-x-1/2 inline-flex items-center justify-center w-5 h-5 rounded-full bg-background border border-border text-muted-foreground hover:text-foreground hover:border-primary z-10"
-    >
-      {collapsed ? (
-        <ChevronRight className="h-3 w-3" />
-      ) : (
-        <ChevronDown className="h-3 w-3" />
-      )}
-    </button>
-  ) : null;
+// ─── Card HTML renderer ──────────────────────────────────────────────────
 
-  // Click target: prefer onCardClick (edit drawer) over href so the
-  // org-chart edit experience doesn't navigate away. The href version
-  // remains for legacy use-sites that still want a link.
-  const inner = (
-    <div className="relative">
-      {card}
-      {collapseToggle}
+function renderCardHtml(node: FlatNode, highlightLower: string): string {
+  if (node.isVirtualRoot) {
+    return `<div style="display:flex;align-items:center;justify-content:center;width:100%;height:100%;border:1px dashed var(--border);border-radius:8px;color:var(--muted-foreground);font-size:11px;text-transform:uppercase;letter-spacing:0.08em;">Top of org</div>`;
+  }
+  const isHit =
+    highlightLower.length > 0 && node.searchBlob.includes(highlightLower);
+  const ringColor = isHit ? "var(--primary)" : "var(--border)";
+  const initials = node.name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((s) => s[0]?.toUpperCase() ?? "")
+    .join("");
+  const subline = [node.department, node.location].filter(Boolean).join(" · ");
+  return `
+    <div style="
+      box-sizing:border-box;
+      width:100%;
+      height:100%;
+      padding:12px 14px;
+      border:1px solid ${ringColor};
+      border-radius:8px;
+      background:var(--card);
+      color:var(--card-foreground);
+      display:flex;
+      align-items:center;
+      gap:12px;
+      cursor:pointer;
+      box-shadow:${isHit ? "0 0 0 2px var(--primary)" : "none"};
+    ">
+      <div style="
+        width:40px;height:40px;border-radius:50%;
+        background:var(--primary);
+        color:var(--primary-foreground);
+        display:flex;align-items:center;justify-content:center;
+        font-size:13px;font-weight:600;flex-shrink:0;
+      ">${escapeHtml(initials)}</div>
+      <div style="min-width:0;flex:1;">
+        <div style="font-weight:600;font-size:13px;line-height:1.2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(node.name)}</div>
+        ${
+          node.jobTitle
+            ? `<div style="font-size:12px;color:var(--primary);font-weight:500;line-height:1.3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(node.jobTitle)}</div>`
+            : `<div style="font-size:11px;color:var(--muted-foreground);font-style:italic;">No title</div>`
+        }
+        ${
+          subline
+            ? `<div style="font-size:10px;color:var(--muted-foreground);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(subline)}</div>`
+            : ""
+        }
+      </div>
     </div>
-  );
-
-  if (onCardClick) {
-    return (
-      <button
-        type="button"
-        onClick={() => onCardClick(node.id)}
-        className="block focus:outline-none focus:ring-2 focus:ring-primary rounded-lg"
-      >
-        {inner}
-      </button>
-    );
-  }
-  if (node.href) {
-    return (
-      <Link href={node.href} className="block">
-        {inner}
-      </Link>
-    );
-  }
-  return inner;
+  `;
 }
 
-// ─── Helpers ───────────────────────────────────────────────────────────
-
-function matchesHighlight(node: OrgChartNode, q: string): boolean {
-  return (
-    node.name.toLowerCase().includes(q) ||
-    (node.jobTitle?.toLowerCase().includes(q) ?? false) ||
-    (node.department?.toLowerCase().includes(q) ?? false) ||
-    (node.location?.toLowerCase().includes(q) ?? false)
-  );
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
-function countNodes(nodes: OrgChartNode[]): number {
-  let n = 0;
-  walk(nodes, () => {
-    n++;
-  });
-  return n;
-}
+// ─── Tree → flat conversion ──────────────────────────────────────────────
 
-function walk(
+function flattenForOrgChart(
   nodes: OrgChartNode[],
-  fn: (node: OrgChartNode) => void
-): void {
-  for (const node of nodes) {
-    fn(node);
-    if (node.children.length > 0) walk(node.children, fn);
+  hideTopHeaderForSingleRoot: boolean
+): FlatNode[] {
+  const useVirtualRoot = nodes.length > 1 || !hideTopHeaderForSingleRoot;
+
+  const out: FlatNode[] = [];
+
+  if (useVirtualRoot) {
+    out.push({
+      id: VIRTUAL_ROOT_ID,
+      parentId: null,
+      name: "Top of org",
+      isVirtualRoot: true,
+      searchBlob: "",
+    });
   }
+
+  function walk(node: OrgChartNode, parentId: string | null): void {
+    out.push({
+      id: node.id,
+      parentId,
+      name: node.name,
+      jobTitle: node.jobTitle,
+      department: node.department,
+      location: node.location,
+      avatar: node.avatar,
+      href: node.href,
+      searchBlob: [node.name, node.jobTitle, node.department, node.location]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase(),
+    });
+    for (const child of node.children) {
+      walk(child, node.id);
+    }
+  }
+
+  for (const root of nodes) {
+    walk(root, useVirtualRoot ? VIRTUAL_ROOT_ID : null);
+  }
+
+  return out;
 }
 
-// ─── Tree builder ──────────────────────────────────────────────────────
+// ─── Tree builder (unchanged public API) ─────────────────────────────────
 
 /**
  * Build a tree of `OrgChartNode` from a flat user list. Detects cycles
@@ -484,9 +382,6 @@ export function buildOrgTree(
     }
   }
 
-  // Sort siblings consistently: by jobTitle (managers tend to have
-  // titled positions and bubble up) then by name. Avoids the org
-  // chart re-shuffling on every re-render.
   function sortChildren(n: OrgChartNode): void {
     n.children.sort((a, b) => {
       const at = a.jobTitle ?? "";
@@ -497,12 +392,6 @@ export function buildOrgTree(
     for (const c of n.children) sortChildren(c);
   }
   for (const r of roots) sortChildren(r);
-  roots.sort((a, b) => {
-    const at = a.jobTitle ?? "";
-    const bt = b.jobTitle ?? "";
-    if (at !== bt) return at.localeCompare(bt);
-    return a.name.localeCompare(b.name);
-  });
 
   return roots;
 }
