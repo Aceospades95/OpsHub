@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { uploadFile } from "@/lib/storage";
+import { asUploadedFile } from "@/lib/uploaded-file";
 import { getPortalSubject, loadPortalStep } from "@/lib/workflows/portal";
 
 // File upload happens via FormData/multipart, which server actions don't
@@ -46,9 +47,9 @@ export async function POST(
     return NextResponse.json({ error: "Multipart body required" }, { status: 400 });
   }
 
-  const file = formData.get("file");
+  const file = asUploadedFile(formData.get("file"));
   const instanceStepId = formData.get("instanceStepId");
-  if (!(file instanceof File)) {
+  if (!file) {
     return NextResponse.json({ error: "No file provided" }, { status: 400 });
   }
   if (file.size > MAX_FILE_SIZE) {

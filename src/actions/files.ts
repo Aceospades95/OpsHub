@@ -3,6 +3,7 @@
 import { db } from "@/lib/db";
 import { requireAuth } from "@/lib/permissions";
 import { uploadFile, deleteFile, blobToBuffer } from "@/lib/storage";
+import { asUploadedFile } from "@/lib/uploaded-file";
 import { revalidatePath } from "next/cache";
 
 function requireAdmin(role: string) {
@@ -22,8 +23,8 @@ export async function uploadFileFromForm(
 ): Promise<{ success: boolean; error?: string; fileId?: string }> {
   const user = await requireAuth();
 
-  const blob = formData.get("file");
-  if (!blob || !(blob instanceof File)) {
+  const blob = asUploadedFile(formData.get("file"));
+  if (!blob) {
     return { success: false, error: "No file provided" };
   }
   if (blob.size === 0) {
@@ -39,7 +40,7 @@ export async function uploadFileFromForm(
   const visibility =
     formData.get("visibility") === "public" ? "public" : "private";
 
-  const buffer = await blobToBuffer(blob);
+  const buffer = await blobToBuffer(blob as unknown as Blob);
 
   const file = await uploadFile({
     content: buffer,

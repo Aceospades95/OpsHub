@@ -2,6 +2,7 @@
 
 import { requireAuth } from "@/lib/permissions";
 import { uploadFile, deleteFile, blobToBuffer } from "@/lib/storage";
+import { asUploadedFile } from "@/lib/uploaded-file";
 import {
   setBrandingValue,
   getBranding,
@@ -37,8 +38,8 @@ export async function uploadBrandingImage(
     return { success: false, error: "Invalid target" };
   }
 
-  const blob = formData.get("file");
-  if (!blob || !(blob instanceof File)) {
+  const blob = asUploadedFile(formData.get("file"));
+  if (!blob) {
     return { success: false, error: "No file provided" };
   }
   if (blob.size === 0) {
@@ -56,7 +57,7 @@ export async function uploadBrandingImage(
 
   // Upload the new file first so we have a valid replacement before
   // deleting the old one (no broken state if upload fails)
-  const buffer = await blobToBuffer(blob);
+  const buffer = await blobToBuffer(blob as unknown as Blob);
   const file = await uploadFile({
     content: buffer,
     filename: blob.name,

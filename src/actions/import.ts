@@ -9,6 +9,7 @@ import {
   applyMapping,
   type ParsedCsv,
 } from "@/lib/importers";
+import { asUploadedFile } from "@/lib/uploaded-file";
 import { revalidatePath } from "next/cache";
 
 function requireAdmin(role: string) {
@@ -17,33 +18,9 @@ function requireAdmin(role: string) {
 
 const MAX_CSV_BYTES = 10 * 1024 * 1024; // 10 MB
 
-/**
- * What the FormData entry looks like when the browser uploads a File.
- *
- * We avoid `instanceof File` for the type narrowing here because `File`
- * isn't a global in Node 18 (it lives on `node:buffer` from 18.13 but
- * isn't exposed on globalThis). The Dockerfile pins node:18-slim so
- * `instanceof File` throws a ReferenceError at runtime. Structural
- * duck-typing covers both Node 18 and Node 20+ without that risk.
- */
-interface UploadedFile {
-  name: string;
-  size: number;
-  type: string;
-  text(): Promise<string>;
-  arrayBuffer(): Promise<ArrayBuffer>;
-}
-
-function asUploadedFile(value: unknown): UploadedFile | null {
-  if (!value || typeof value !== "object") return null;
-  if (typeof value === "string") return null;
-  const v = value as Record<string, unknown>;
-  if (typeof v.name !== "string") return null;
-  if (typeof v.size !== "number") return null;
-  if (typeof v.text !== "function") return null;
-  if (typeof v.arrayBuffer !== "function") return null;
-  return value as unknown as UploadedFile;
-}
+// `asUploadedFile` lives in src/lib/uploaded-file.ts now — same helper
+// is used by the branding, portal-upload, and admin-file-upload paths
+// for the same Node-18-`File`-not-defined reason.
 
 interface PreviewResponse {
   success: boolean;
