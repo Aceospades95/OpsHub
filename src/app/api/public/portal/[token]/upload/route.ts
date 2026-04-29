@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { uploadFile } from "@/lib/storage";
 import { asUploadedFile } from "@/lib/uploaded-file";
 import { getPortalSubject, loadPortalStep } from "@/lib/workflows/portal";
+import { consume, clientIpFromRequest } from "@/lib/rate-limit";
 
 // File upload happens via FormData/multipart, which server actions don't
 // natively support cleanly — so it lives as a route handler. After the
@@ -26,15 +27,56 @@ const ALLOWED_MIME_PREFIXES = [
   "text/",
 ];
 
+// Rate limits picked to be looser than legitimate user behavior but
+// tight enough to bound storage cost from a leaked token. Capacity
+// covers the burst when a user re-uploads after a transient network
+// blip; refill is the sustained rate.
+//
+// IP-side limit catches a single attacker scanning many tokens; token-
+// side limit caps damage from a single leaked token.
+const IP_RATE = { capacity: 20, refillRatePerSec: 0.5 }; // ~30/min sustained
+const TOKEN_RATE = { capacity: 5, refillRatePerSec: 1 / 30 }; // 1 per 30s sustained
+
 export async function POST(
   req: Request,
   { params }: { params: Promise<{ token: string }> }
 ) {
   const { token } = await params;
 
+  // IP gate first — token resolution does a DB read so we don't want
+  // a brute-force scanner to incur that cost.
+  const ip = clientIpFromRequest(req);
+  const ipGate = consume(`portal-upload:ip:${ip}`, IP_RATE);
+  if (!ipGate.allowed) {
+    return NextResponse.json(
+      { error: "Too many requests" },
+      {
+        status: 429,
+        headers: {
+          "Retry-After": String(Math.ceil(ipGate.retryAfterMs / 1000)),
+        },
+      }
+    );
+  }
+
   const subject = await getPortalSubject(token);
   if (!subject) {
     return NextResponse.json({ error: "Invalid token" }, { status: 404 });
+  }
+
+  // Per-token gate. Caps storage cost from a leaked token even when
+  // the attacker rotates IPs.
+  const tokenGate = consume(`portal-upload:token:${token}`, TOKEN_RATE);
+  if (!tokenGate.allowed) {
+    return NextResponse.json(
+      { error: "Upload rate limit reached. Please wait before retrying." },
+      {
+        status: 429,
+        headers: {
+          "Retry-After": String(Math.ceil(tokenGate.retryAfterMs / 1000)),
+        },
+      }
+    );
   }
 
   // Accept either a free-floating file (will be associated by the caller

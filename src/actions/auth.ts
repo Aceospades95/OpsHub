@@ -5,13 +5,37 @@ import { db } from "@/lib/db";
 import { z } from "zod";
 import { AuthError } from "next-auth";
 import { revalidatePath } from "next/cache";
+import { headers } from "next/headers";
 import { requireAuth } from "@/lib/permissions";
 import { logActivity } from "@/lib/activity";
+import { consume } from "@/lib/rate-limit";
 
 const loginSchema = z.object({
   email: z.string().email("Invalid email"),
   password: z.string().min(1, "Password is required"),
 });
+
+/**
+ * Resolve the calling client's IP from request headers in a server-action
+ * context. Mirrors clientIpFromRequest() from lib/rate-limit but reads
+ * `headers()` from next/headers (server actions don't get a Request
+ * object the way a route handler does).
+ */
+function loginClientIp(): string {
+  const trustProxy =
+    (process.env.RATE_LIMIT_TRUST_PROXY ?? "true").toLowerCase() !== "false";
+  if (trustProxy) {
+    const h = headers();
+    const xff = h.get("x-forwarded-for");
+    if (xff) {
+      const first = xff.split(",")[0]?.trim();
+      if (first) return first;
+    }
+    const real = h.get("x-real-ip");
+    if (real) return real.trim();
+  }
+  return "remote";
+}
 
 export async function loginAction(_prev: unknown, formData: FormData) {
   const parsed = loginSchema.safeParse({
@@ -21,6 +45,40 @@ export async function loginAction(_prev: unknown, formData: FormData) {
 
   if (!parsed.success) {
     return { error: "Invalid credentials", fieldErrors: parsed.error.flatten().fieldErrors };
+  }
+
+  // Per-IP brute-force throttle. Capacity covers the legitimate
+  // "fat-fingered my password three times" case; refill rate keeps
+  // the long-run attempts/hour below what online password guessing
+  // needs.
+  const ip = loginClientIp();
+  const ipGate = consume(`login:ip:${ip}`, {
+    capacity: 8,
+    refillRatePerSec: 1 / 30, // ~120/hour sustained
+  });
+  if (!ipGate.allowed) {
+    return {
+      error: "Too many login attempts. Please wait and try again.",
+    };
+  }
+
+  // Per-email throttle (also keyed off the input). Slightly tighter:
+  // an attacker rotating IPs against a single account hits this even
+  // when the per-IP bucket isn't full. Email is already lowercased
+  // by the credentials provider, but normalize here too so the bucket
+  // key is stable across casing.
+  const emailKey = parsed.data.email.trim().toLowerCase();
+  const emailGate = consume(`login:email:${emailKey}`, {
+    capacity: 5,
+    refillRatePerSec: 1 / 60, // ~60/hour sustained
+  });
+  if (!emailGate.allowed) {
+    // Same generic message as the IP-blocked case so a probing
+    // attacker can't distinguish "I'm rate-limited" from "this email
+    // is rate-limited."
+    return {
+      error: "Too many login attempts. Please wait and try again.",
+    };
   }
 
   try {

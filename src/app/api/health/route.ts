@@ -26,6 +26,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { log } from "@/lib/log";
+import { consume, clientIpFromRequest } from "@/lib/rate-limit";
 
 // Always run this fresh on each call — caching a health check defeats
 // the point.
@@ -87,6 +88,30 @@ function checkCronSecret(): ServiceCheck {
 export async function GET(request: Request) {
   const url = new URL(request.url);
   const verbose = url.searchParams.get("check") === "services";
+
+  // Liveness mode (default) is intentionally cheap and unrate-limited
+  // — orchestrators poll it every few seconds and a token bucket would
+  // either sit unused or refuse legitimate health checks under load.
+  // Verbose mode runs four checks including a DB roundtrip, so a
+  // public scanner could exhaust the worker pool. Bucket it per-IP.
+  if (verbose) {
+    const ip = clientIpFromRequest(request);
+    const gate = consume(`health-verbose:ip:${ip}`, {
+      capacity: 5,
+      refillRatePerSec: 0.1, // ~6/min sustained
+    });
+    if (!gate.allowed) {
+      return NextResponse.json(
+        { error: "Too many requests" },
+        {
+          status: 429,
+          headers: {
+            "Retry-After": String(Math.ceil(gate.retryAfterMs / 1000)),
+          },
+        }
+      );
+    }
+  }
 
   const dbCheck = await checkDatabase();
 
