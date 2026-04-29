@@ -1,3 +1,17 @@
 {
-  "extends": "next/core-web-vitals"
+  "extends": "next/core-web-vitals",
+  "rules": {
+    "no-restricted-imports": [
+      "error",
+      {
+        "paths": [
+          {
+            "name": "react",
+            "importNames": ["useActionState", "useOptimistic"],
+            "message": "These hooks ship in React 19 but the runtime is React 18.3. They will be `undefined` at runtime and crash the component. Use `useFormState` from `react-dom` instead of `useActionState`. `useOptimistic` has no React-18 equivalent — model the optimistic state manually with `useState`."
+          }
+        ]
+      }
+    ]
+  }
 }
