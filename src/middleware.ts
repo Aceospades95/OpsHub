@@ -11,9 +11,12 @@ export default auth((req) => {
   // /api/jobs/ is also public because the cron runner authenticates
   // itself via the x-cron-secret header — middleware would otherwise
   // 307 the unauthenticated POST from cron providers to /login.
+  //
+  // /register is deliberately NOT in this list — self-registration is
+  // disabled (see src/actions/auth.ts:registerAction). Anyone hitting
+  // /register gets bounced to /login.
   const publicPaths = [
     "/login",
-    "/register",
     "/api/auth",
     "/api/health",
     "/api/jobs/",

@@ -45,7 +45,9 @@ export function EditAssignmentDialog({ open, onClose, assignment, projects, clie
   }, [assignment?.clientId]);
 
   useEffect(() => {
-    if (updateState?.success || deleteState?.success) {
+    const updateSucceeded = updateState && "success" in updateState && updateState.success;
+    const deleteSucceeded = deleteState && "success" in deleteState && deleteState.success;
+    if (updateSucceeded || deleteSucceeded) {
       onClose();
       router.refresh();
     }
@@ -59,12 +61,12 @@ export function EditAssignmentDialog({ open, onClose, assignment, projects, clie
 
   return (
     <Dialog open={open} onClose={onClose} title="Edit Assignment" className="max-w-xl">
-      {updateState?.error && (
+      {updateState && "error" in updateState && updateState.error && (
         <div className="mb-4 rounded bg-destructive/10 p-3 text-sm text-destructive">
           {updateState.error}
         </div>
       )}
-      {deleteState?.error && (
+      {deleteState && "error" in deleteState && deleteState.error && (
         <div className="mb-4 rounded bg-destructive/10 p-3 text-sm text-destructive">
           {deleteState.error}
         </div>

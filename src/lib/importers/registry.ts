@@ -16,6 +16,7 @@
 
 import type { ImporterDefinition } from "./types";
 import { usersImporter } from "./importers/users";
+import { clientsImporter } from "./importers/clients";
 import { certificationsImporter } from "./importers/certifications";
 import { contractsImporter } from "./importers/contracts";
 import { contractTermsImporter } from "./importers/contract-terms";
@@ -39,6 +40,7 @@ export const IMPORTERS: ImporterDefinition[] = [
   // the registry surfaces it in the /admin/import wizard so users
   // import in the right sequence on day one.
   usersImporter,
+  clientsImporter,
   projectsImporter,
   clientContactsImporter,
   contractsImporter,

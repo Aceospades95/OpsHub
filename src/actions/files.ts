@@ -2,11 +2,13 @@
 
 import { db } from "@/lib/db";
 import { requireAuth } from "@/lib/permissions";
-import { uploadFile, deleteFile, blobToBuffer } from "@/lib/storage";
+import { uploadFile, deleteFile, blobToBuffer, StorageQuotaExceededError } from "@/lib/storage";
+import { asUploadedFile } from "@/lib/uploaded-file";
 import { revalidatePath } from "next/cache";
 
-function requireAdmin(role: string) {
-  if (role !== "ADMIN") throw new Error("Admin access required");
+function requireAdmin(role: string): { error: string } | null {
+  if (role !== "ADMIN") return { error: "Admin access required" };
+  return null;
 }
 
 /** Hard limit so a runaway upload can't fill the disk. 10MB by default. */
@@ -22,8 +24,8 @@ export async function uploadFileFromForm(
 ): Promise<{ success: boolean; error?: string; fileId?: string }> {
   const user = await requireAuth();
 
-  const blob = formData.get("file");
-  if (!blob || !(blob instanceof File)) {
+  const blob = asUploadedFile(formData.get("file"));
+  if (!blob) {
     return { success: false, error: "No file provided" };
   }
   if (blob.size === 0) {
@@ -39,15 +41,26 @@ export async function uploadFileFromForm(
   const visibility =
     formData.get("visibility") === "public" ? "public" : "private";
 
-  const buffer = await blobToBuffer(blob);
+  const buffer = await blobToBuffer(blob as unknown as Blob);
 
-  const file = await uploadFile({
-    content: buffer,
-    filename: blob.name,
-    contentType: blob.type || "application/octet-stream",
-    uploadedById: user.id,
-    visibility,
-  });
+  let file;
+  try {
+    file = await uploadFile({
+      content: buffer,
+      filename: blob.name,
+      contentType: blob.type || "application/octet-stream",
+      uploadedById: user.id,
+      visibility,
+    });
+  } catch (err) {
+    if (err instanceof StorageQuotaExceededError) {
+      return {
+        success: false,
+        error: `Storage quota reached (${(err.quota / 1024 / 1024 / 1024).toFixed(1)} GB). Delete older files or contact an administrator.`,
+      };
+    }
+    throw err;
+  }
 
   revalidatePath("/admin/files");
   return { success: true, fileId: file.id };
@@ -56,7 +69,8 @@ export async function uploadFileFromForm(
 /** Delete a file — admin-only path for the admin viewer. */
 export async function adminDeleteFile(fileId: string) {
   const user = await requireAuth();
-  requireAdmin(user.role);
+  const gate = requireAdmin(user.role);
+  if (gate) return gate;
 
   await deleteFile(fileId);
   revalidatePath("/admin/files");
@@ -70,7 +84,8 @@ export async function adminDeleteFile(fileId: string) {
  */
 export async function purgeOrphanLegacyFiles() {
   const user = await requireAuth();
-  requireAdmin(user.role);
+  const gate = requireAdmin(user.role);
+  if (gate) return gate;
 
   const result = await db.file.deleteMany({
     where: {

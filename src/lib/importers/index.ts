@@ -143,3 +143,25 @@ function csvEscape(value: string): string {
   }
   return value;
 }
+
+/**
+ * Generate a full CSV export for an importer that supports
+ * `exportRows()`. Same column shape as `generateSampleCsv` (so the
+ * file round-trips back through the same importer's `commit()`) but
+ * dumps every row currently in the database.
+ *
+ * Caller is responsible for guarding against `importer.exportRows`
+ * being undefined — this function returns `null` in that case so the
+ * route can answer 404 with a clear message.
+ */
+export async function generateExportCsv(
+  importer: ImporterDefinition
+): Promise<string | null> {
+  if (!importer.exportRows) return null;
+  const headerLine = importer.fields.map((f) => csvEscape(f.key)).join(",");
+  const dataRows = await importer.exportRows();
+  const dataLines = dataRows.map((row) =>
+    importer.fields.map((f) => csvEscape(row[f.key] ?? "")).join(",")
+  );
+  return [headerLine, ...dataLines].join("\r\n") + "\r\n";
+}

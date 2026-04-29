@@ -20,6 +20,7 @@ import {
 
 import { formatDistanceToNow } from "date-fns";
 import { updateUser, deleteUser, saveModulePermissions, saveEntityPermission, deleteEntityPermission, resetUserPassword } from "@/actions/admin";
+import { unlinkGoogleAccount } from "@/actions/auth";
 import { deleteAssignment } from "@/actions/assignments";
 import { AddAssignmentDialog } from "../components/add-assignment-dialog";
 import { getPermissionedModules, ALL_PERMISSION_FLAGS, PERMISSION_FLAG_LABELS } from "@/lib/modules";
@@ -64,6 +65,8 @@ interface Employee {
   assignments: Assignment[];
   modulePermissions: { module: string; canView: boolean; canEdit: boolean; canCreate: boolean; canDelete: boolean; canComment: boolean; canUpload: boolean; canManage: boolean }[];
   entityPermissions: { id: string; entityType: string; entityId: string; canView: boolean; canEdit: boolean; canComment: boolean; canUpload: boolean; canManage: boolean }[];
+  /** OAuth-provider linkage rows (currently always provider="google"). Empty = password-only. */
+  accounts: { id: string; provider: string; createdAt: string }[];
 }
 
 interface ActivityLog {
@@ -151,7 +154,7 @@ export function EmployeeDetailClient({
     const fd = new FormData();
     fd.set("id", employee.id);
     const result = await deleteUser(null, fd);
-    if (result.success) router.push("/team");
+    if ("success" in result && result.success) router.push("/team");
   }
 
   // Map user data for the assignment dialog
@@ -187,6 +190,11 @@ export function EmployeeDetailClient({
                 </Badge>
                 <Badge variant={employee.role === "ADMIN" ? "default" : "secondary"}>{employee.role}</Badge>
                 {!employee.hasLoginAccess && <Badge variant="outline">No Login</Badge>}
+                {employee.accounts.some((a) => a.provider === "google") && (
+                  <span title="Linked to a Google account for SSO">
+                    <Badge variant="outline">Google linked</Badge>
+                  </span>
+                )}
               </div>
               {employee.jobTitle && <p className="text-sm text-primary/80 font-medium mt-1">{employee.jobTitle}</p>}
               <div className="flex items-center gap-4 mt-3 text-sm text-muted-foreground flex-wrap">
@@ -207,6 +215,25 @@ export function EmployeeDetailClient({
                   {canResetPassword && (
                     <Button variant="outline" size="sm" onClick={() => setResetPwOpen(true)}>
                       <KeyRound className="h-3.5 w-3.5 mr-1" /> Reset Password
+                    </Button>
+                  )}
+                  {isAdmin && employee.accounts.some((a) => a.provider === "google") && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={async () => {
+                        if (
+                          !confirm(
+                            `Unlink the Google account from ${employee.name}? They will re-link automatically on their next Google sign-in (assuming login access stays enabled).`
+                          )
+                        ) {
+                          return;
+                        }
+                        await unlinkGoogleAccount(employee.id);
+                        router.refresh();
+                      }}
+                    >
+                      Unlink Google
                     </Button>
                   )}
                   {isAdmin && (

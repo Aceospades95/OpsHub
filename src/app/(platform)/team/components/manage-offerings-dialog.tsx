@@ -19,7 +19,7 @@ export function ManageOfferingsDialog({ open, onClose, serviceOfferings }: Props
   const router = useRouter();
 
   useEffect(() => {
-    if (state?.success) {
+    if (state && "success" in state && state.success) {
       router.refresh();
     }
   }, [state, router]);
@@ -48,10 +48,10 @@ export function ManageOfferingsDialog({ open, onClose, serviceOfferings }: Props
         {/* Add New */}
         <div className="border-t border-border pt-4">
           <p className="text-sm font-medium mb-2">Add New Offering</p>
-          {state?.error && (
+          {state && "error" in state && state.error && (
             <div className="mb-3 rounded bg-destructive/10 p-2 text-sm text-destructive">{state.error}</div>
           )}
-          {state?.success && (
+          {state && "success" in state && state.success && (
             <div className="mb-3 rounded bg-green-50 border border-green-200 p-2 text-sm text-green-800">Service offering created.</div>
           )}
           <form action={action} className="flex gap-2">

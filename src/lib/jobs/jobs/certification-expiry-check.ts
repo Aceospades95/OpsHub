@@ -11,6 +11,7 @@
  */
 
 import { db } from "@/lib/db";
+import { log } from "@/lib/log";
 import { notify } from "@/lib/notifications";
 import { absoluteUrl } from "@/lib/url";
 import { shouldRunDaily } from "../gating";
@@ -104,11 +105,10 @@ export const certificationExpiryCheck: JobDefinition = {
           });
           notifiedCount++;
         } catch (err) {
-          // eslint-disable-next-line no-console
-          console.error(
-            `[certification-expiry-check] failed to notify ${recipient.id} for ${cert.id}:`,
-            err
-          );
+          log.error("jobs.certExpiry", "Notify failed", err, {
+            recipientId: recipient.id,
+            certId: cert.id,
+          });
         }
       }
 

@@ -7,19 +7,27 @@ import { signIn } from "next-auth/react";
 import { loginAction } from "@/actions/auth";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import Link from "next/link";
 
 interface Props {
   companyName: string;
   companyLogoUrl: string | null;
   googleEnabled: boolean;
+  /** Friendly message for a sign-in error surfaced via ?error=… in the URL. */
+  initialError?: string | null;
 }
 
-export function LoginForm({ companyName, companyLogoUrl, googleEnabled }: Props) {
+export function LoginForm({
+  companyName,
+  companyLogoUrl,
+  googleEnabled,
+  initialError,
+}: Props) {
   const [state, formAction] = useFormState(loginAction, null);
   const [pending, setPending] = useState(false);
   const [googlePending, setGooglePending] = useState(false);
   const router = useRouter();
+
+  const errorMessage = state?.error ?? initialError ?? null;
 
   useEffect(() => {
     setPending(false);
@@ -44,9 +52,9 @@ export function LoginForm({ companyName, companyLogoUrl, googleEnabled }: Props)
         <p className="mt-1 text-sm text-muted-foreground">Sign in to your account</p>
       </div>
 
-      {state?.error && (
+      {errorMessage && (
         <div className="mb-4 rounded bg-destructive/10 p-3 text-sm text-destructive">
-          {state.error}
+          {errorMessage}
         </div>
       )}
 
@@ -117,10 +125,7 @@ export function LoginForm({ companyName, companyLogoUrl, googleEnabled }: Props)
       </form>
 
       <p className="mt-4 text-center text-sm text-muted-foreground">
-        Don&apos;t have an account?{" "}
-        <Link href="/register" className="text-primary hover:underline">
-          Register
-        </Link>
+        Need an account? Contact your administrator.
       </p>
     </div>
   );

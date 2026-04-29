@@ -7,10 +7,11 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import type { Role } from "@prisma/client";
 
-function requireSandboxAccess(role: string) {
+function requireSandboxAccess(role: string): { error: string } | null {
   if (!canAccessSandbox(role as Role)) {
-    throw new Error("Sandbox access requires Developer or Admin role");
+    return { error: "Sandbox access requires Developer or Admin role" };
   }
+  return null;
 }
 
 const sandboxPageSchema = z.object({
@@ -26,7 +27,8 @@ const sandboxPageSchema = z.object({
 
 export async function createSandboxPage(_prev: unknown, formData: FormData) {
   const user = await requireAuth();
-  requireSandboxAccess(user.role);
+  const gate = requireSandboxAccess(user.role);
+  if (gate) return gate;
 
   const parsed = sandboxPageSchema.safeParse({
     title: formData.get("title"),
@@ -67,7 +69,8 @@ export async function createSandboxPage(_prev: unknown, formData: FormData) {
 
 export async function updateSandboxPage(_prev: unknown, formData: FormData) {
   const user = await requireAuth();
-  requireSandboxAccess(user.role);
+  const gate = requireSandboxAccess(user.role);
+  if (gate) return gate;
 
   const id = formData.get("id") as string;
   const page = await db.sandboxPage.findUnique({ where: { id } });
@@ -119,7 +122,8 @@ export async function updateSandboxPage(_prev: unknown, formData: FormData) {
 
 export async function deleteSandboxPage(_prev: unknown, formData: FormData) {
   const user = await requireAuth();
-  requireSandboxAccess(user.role);
+  const gate = requireSandboxAccess(user.role);
+  if (gate) return gate;
 
   const id = formData.get("id") as string;
   const page = await db.sandboxPage.findUnique({ where: { id } });

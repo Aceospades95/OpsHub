@@ -74,9 +74,28 @@ function extractCertData(formData: FormData) {
 }
 
 // ─── CRUD ──────────────────────────────────────────────
+//
+// The certifications module is `adminOnly` in src/lib/modules.ts (the
+// sidebar hides it from non-admins) but server actions are reachable
+// by anyone with a session via direct POST. We re-assert the gate
+// here so a logged-in GUEST can't mutate compliance data.
+
+/**
+ * Restricts cert mutations to ADMIN. MANAGERs can sign off via
+ * `signOffCertification` but should not be creating/editing/deleting
+ * cert rows themselves — that's compliance metadata.
+ */
+function requireCertAdmin(role: string): { error: string } | null {
+  if (role !== "ADMIN") {
+    return { error: "Admin access required to manage certifications" };
+  }
+  return null;
+}
 
 export async function createCertification(_prev: unknown, formData: FormData) {
   const user = await requireAuth();
+  const gate = requireCertAdmin(user.role);
+  if (gate) return gate;
 
   const name = (formData.get("name") as string | null)?.trim();
   if (!name) return { error: "Name is required" };
@@ -94,6 +113,9 @@ export async function createCertification(_prev: unknown, formData: FormData) {
 
 export async function updateCertification(_prev: unknown, formData: FormData) {
   const user = await requireAuth();
+  const gate = requireCertAdmin(user.role);
+  if (gate) return gate;
+
   const id = formData.get("id") as string;
   if (!id) return { error: "ID required" };
 
@@ -116,6 +138,9 @@ export async function updateCertification(_prev: unknown, formData: FormData) {
 
 export async function deleteCertification(_prev: unknown, formData: FormData) {
   const user = await requireAuth();
+  const gate = requireCertAdmin(user.role);
+  if (gate) return gate;
+
   const id = formData.get("id") as string;
   if (!id) return { error: "ID required" };
 

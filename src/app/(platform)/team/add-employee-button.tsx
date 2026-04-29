@@ -9,19 +9,28 @@ import { UserPlus } from "lucide-react";
 
 const ROLES = ["VIEWER", "CONTRIBUTOR", "DEVELOPER", "MANAGER", "ADMIN"];
 
-export function AddEmployeeButton({ managers }: { managers: { id: string; name: string }[] }) {
+export function AddEmployeeButton({
+  managers,
+  defaultSendWelcomeEmail,
+}: {
+  managers: { id: string; name: string }[];
+  /** Org-wide default for the "Send welcome email" checkbox. */
+  defaultSendWelcomeEmail: boolean;
+}) {
   const [open, setOpen] = useState(false);
   const [hasLogin, setHasLogin] = useState(true);
+  const [sendWelcomeEmail, setSendWelcomeEmail] = useState(defaultSendWelcomeEmail);
   const [state, action] = useFormState(createUser, null);
   const router = useRouter();
 
   useEffect(() => {
-    if (state?.success) {
+    if (state && "success" in state && state.success) {
       setOpen(false);
       setHasLogin(true);
+      setSendWelcomeEmail(defaultSendWelcomeEmail);
       router.refresh();
     }
-  }, [state, router]);
+  }, [state, router, defaultSendWelcomeEmail]);
 
   return (
     <>
@@ -65,6 +74,21 @@ export function AddEmployeeButton({ managers }: { managers: { id: string; name: 
                     <label className="text-sm font-medium">Password *</label>
                     <input name="password" type="password" minLength={6} className="w-full mt-1 px-3 py-2 text-sm border border-input rounded-md bg-background" />
                   </div>
+                </div>
+              )}
+
+              {hasLogin && (
+                <div className="flex items-center gap-2 p-3 rounded-md bg-muted">
+                  <input type="hidden" name="sendWelcomeEmail" value={sendWelcomeEmail ? "true" : "false"} />
+                  <label className="flex items-center gap-2 text-sm cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={sendWelcomeEmail}
+                      onChange={(e) => setSendWelcomeEmail(e.target.checked)}
+                      className="accent-primary"
+                    />
+                    Send welcome email
+                  </label>
                 </div>
               )}
 

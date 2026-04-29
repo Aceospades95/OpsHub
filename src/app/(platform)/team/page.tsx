@@ -3,6 +3,7 @@ import { requireAuth } from "@/lib/permissions";
 import { PageHeader } from "@/components/layout/page-header";
 import { TeamPageClient } from "./team-page-client";
 import { AddEmployeeButton } from "./add-employee-button";
+import { ADMIN_SETTING_KEYS, getBooleanAdminSetting } from "@/lib/admin-settings";
 
 export default async function TeamPage() {
   const user = await requireAuth();
@@ -96,12 +97,23 @@ export default async function TeamPage() {
     }),
   ]);
 
+  const defaultSendWelcomeEmail = canManage
+    ? await getBooleanAdminSetting(ADMIN_SETTING_KEYS.sendWelcomeEmailDefault, true)
+    : true;
+
   return (
     <div>
       <PageHeader
         title="Team"
         description="Organization chart, staffing, and employee overview"
-        actions={canManage ? <AddEmployeeButton managers={allUsers} /> : undefined}
+        actions={
+          canManage ? (
+            <AddEmployeeButton
+              managers={allUsers}
+              defaultSendWelcomeEmail={defaultSendWelcomeEmail}
+            />
+          ) : undefined
+        }
       />
       <TeamPageClient
         users={activeUsers as Parameters<typeof TeamPageClient>[0]["users"]}

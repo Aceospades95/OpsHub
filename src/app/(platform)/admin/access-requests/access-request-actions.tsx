@@ -12,12 +12,18 @@ interface Props {
 export function AccessRequestActions({ requestId }: Props) {
   const [loading, setLoading] = useState<"approve" | "deny" | null>(null);
   const [resolved, setResolved] = useState<"APPROVED" | "DENIED" | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const router = useRouter();
 
   async function handleApprove() {
     setLoading("approve");
+    setError(null);
     try {
-      await approveAccessRequest(requestId);
+      const result = await approveAccessRequest(requestId);
+      if ("error" in result && result.error) {
+        setError(result.error);
+        return;
+      }
       setResolved("APPROVED");
       router.refresh();
     } finally {
@@ -27,8 +33,13 @@ export function AccessRequestActions({ requestId }: Props) {
 
   async function handleDeny() {
     setLoading("deny");
+    setError(null);
     try {
-      await denyAccessRequest(requestId);
+      const result = await denyAccessRequest(requestId);
+      if ("error" in result && result.error) {
+        setError(result.error);
+        return;
+      }
       setResolved("DENIED");
       router.refresh();
     } finally {
@@ -45,23 +56,26 @@ export function AccessRequestActions({ requestId }: Props) {
   }
 
   return (
-    <div className="flex items-center gap-2 shrink-0">
-      <Button
-        size="sm"
-        variant="default"
-        onClick={handleApprove}
-        disabled={loading !== null}
-      >
-        {loading === "approve" ? "..." : "Approve"}
-      </Button>
-      <Button
-        size="sm"
-        variant="outline"
-        onClick={handleDeny}
-        disabled={loading !== null}
-      >
-        {loading === "deny" ? "..." : "Deny"}
-      </Button>
+    <div className="flex flex-col items-end gap-1 shrink-0">
+      <div className="flex items-center gap-2">
+        <Button
+          size="sm"
+          variant="default"
+          onClick={handleApprove}
+          disabled={loading !== null}
+        >
+          {loading === "approve" ? "..." : "Approve"}
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={handleDeny}
+          disabled={loading !== null}
+        >
+          {loading === "deny" ? "..." : "Deny"}
+        </Button>
+      </div>
+      {error && <span className="text-xs text-destructive">{error}</span>}
     </div>
   );
 }

@@ -7,7 +7,13 @@ import { executeDataSourceQuery } from "@/lib/widget-builder/data-source-executo
 import { getDataSource } from "@/lib/widget-builder/data-source-registry";
 import type { WidgetConfig } from "@/lib/widget-builder/widget-config-types";
 
+// Reads still require an authenticated session — server actions are
+// reachable via the Next.js POST endpoint, and these queries return
+// data-source query bodies + dashboard wiring that are tenant config,
+// not public.
+
 export async function listCustomWidgets() {
+  await requireAuth();
   try {
     return await db.customWidget.findMany({
       orderBy: { updatedAt: "desc" },
@@ -19,6 +25,7 @@ export async function listCustomWidgets() {
 }
 
 export async function listPublishedCustomWidgets() {
+  await requireAuth();
   try {
     return await db.customWidget.findMany({
       where: { isPublished: true },
@@ -31,6 +38,7 @@ export async function listPublishedCustomWidgets() {
 }
 
 export async function getCustomWidget(id: string) {
+  await requireAuth();
   return db.customWidget.findUnique({
     where: { id },
     include: { createdBy: { select: { name: true } } },

@@ -1,6 +1,7 @@
 "use server";
 
 import { db } from "@/lib/db";
+import { log } from "@/lib/log";
 import { requireAuth, resolveModulePerms } from "@/lib/permissions";
 import { logActivity } from "@/lib/activity";
 import { deriveActivityScope } from "@/lib/activity-scope";
@@ -153,8 +154,7 @@ async function notifyMentions(opts: {
       },
     });
   } catch (err) {
-    // eslint-disable-next-line no-console
-    console.error("[comments] mention notify failed:", err);
+    log.error("comments.notify", "Mention notify failed", err);
   }
 }
 
@@ -211,23 +211,34 @@ export async function addComment(_prev: unknown, formData: FormData) {
  * people collaborating outside that module.
  */
 export async function searchMentionableUsers(query: string) {
-  await requireAuth();
-  const q = query.trim();
-  if (q.length === 0) {
-    // Empty query: return the first 8 active users alphabetically so the
-    // dropdown still feels useful immediately after typing "@"
-    const users = await db.user.findMany({
-      where: { isActive: true },
-      select: { id: true, name: true, email: true, jobTitle: true },
-      orderBy: { name: "asc" },
-      take: 8,
-    });
-    return { users };
+  const user = await requireAuth();
+  // Mention autocomplete exposes the directory (names, emails, titles).
+  // Restrict to users with `team` module access so a leaked GUEST
+  // credential can't dump the whole employee list. Requires login
+  // PLUS canView on team — which is implicitly true for almost every
+  // role in src/lib/permissions.ts but explicitly false for GUESTs
+  // not on team.
+  const teamPerms = await resolveModulePerms(user.id, user.role, "team");
+  if (!teamPerms.canView) {
+    return { users: [] };
   }
-
+  const q = query.trim();
+  // Empty-query firehose removed: a stray "@" used to dump every
+  // active user (id, name, email, title) — useful UX, but a phishing
+  // dataset for any leaked credential. Require at least one
+  // character. The mention plugin should suppress the dropdown until
+  // the user types something anyway.
+  if (q.length === 0) {
+    return { users: [] };
+  }
+  // Only filter notification-eligible users (tracked-only employees
+  // never get notified, so don't surface them in the dropdown — the
+  // author would think they pinged someone who can't actually
+  // receive the ping). hasLoginAccess: true matches notifyMentions.
   const users = await db.user.findMany({
     where: {
       isActive: true,
+      hasLoginAccess: true,
       OR: [
         { name: { contains: q, mode: "insensitive" } },
         { email: { contains: q, mode: "insensitive" } },

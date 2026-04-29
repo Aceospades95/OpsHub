@@ -33,7 +33,7 @@ export function DomainManager({ domains: initial }: { domains: Domain[] }) {
             label="Domain"
             placeholder="company.com"
             required
-            error={state?.error}
+            error={state && "error" in state ? state.error : undefined}
           />
         </div>
         <Button type="submit" size="sm" disabled={pending} className="shrink-0">
@@ -42,7 +42,7 @@ export function DomainManager({ domains: initial }: { domains: Domain[] }) {
         </Button>
       </form>
 
-      {state?.success && (
+      {state && "success" in state && state.success && (
         <div className="rounded bg-green-500/10 p-3 text-sm text-green-700 dark:text-green-400">
           Domain added successfully.
         </div>

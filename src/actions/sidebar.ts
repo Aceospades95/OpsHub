@@ -9,6 +9,10 @@ import { DEFAULT_SIDEBAR_CONFIG, type SidebarConfig } from "@/lib/sidebar-config
 const SIDEBAR_KEY = "sidebar_config";
 
 export async function getSidebarConfig(): Promise<SidebarConfig> {
+  // Sidebar config exposes module keys including admin-only ones — keep
+  // it gated to authenticated users so unauthenticated visitors don't
+  // see the structure of admin surfaces.
+  await requireAuth();
   try {
     const setting = await db.themeSetting.findUnique({ where: { key: SIDEBAR_KEY } });
     if (setting) {

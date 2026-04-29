@@ -3,6 +3,7 @@ import Credentials from "next-auth/providers/credentials";
 import Google from "next-auth/providers/google";
 import { compare } from "bcryptjs";
 import { db } from "@/lib/db";
+import { handleGoogleSignIn } from "@/lib/auth-google-signin";
 import type { Role } from "@prisma/client";
 
 declare module "next-auth" {
@@ -74,58 +75,11 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     }),
   ],
   callbacks: {
-    async signIn({ user, account }) {
-      if (account?.provider !== "google") return true;
-
-      const rawEmail = user.email;
-      if (!rawEmail) return false;
-
-      // Normalize to lowercase — we never want two User rows for the same
-      // Google identity just because the token returned different casing.
-      const email = rawEmail.trim().toLowerCase();
-      const domain = email.split("@")[1];
-      if (!domain) return false;
-
-      // Check domain allowlist — if rows exist, only those domains are allowed
-      const allowedDomains = await db.allowedDomain.findMany();
-      if (allowedDomains.length > 0) {
-        const isAllowed = allowedDomains.some(
-          (d) => d.domain.toLowerCase() === domain
-        );
-        if (!isAllowed) return false;
-      }
-
-      // Find or create user record for this Google account. findFirst with
-      // insensitive mode so we pick up a legacy mixed-case row if it exists.
-      const existing = await db.user.findFirst({
-        where: { email: { equals: email, mode: "insensitive" } },
-      });
-
-      if (existing) {
-        if (!existing.isActive) return false;
-        // Update avatar from Google profile if not already set
-        if (!existing.avatar && user.image) {
-          await db.user.update({
-            where: { id: existing.id },
-            data: { avatar: user.image },
-          });
-        }
-      } else {
-        // Auto-provision new user from Google SSO. New users start as GUEST:
-        // they can only see Intranet + Team until a manager/admin grants
-        // additional access (typically by assigning them to a project).
-        await db.user.create({
-          data: {
-            name: user.name || email.split("@")[0],
-            email,
-            authProvider: "google",
-            avatar: user.image || null,
-            role: "GUEST",
-          },
-        });
-      }
-
-      return true;
+    async signIn({ user, account, profile }) {
+      // Google flow lives in a separate, testable helper. Credentials
+      // sign-ins fall through (the credentials provider's `authorize`
+      // already gates them).
+      return handleGoogleSignIn({ user, account, profile }, { db });
     },
     async jwt({ token, user, account }) {
       // On initial sign-in, populate token from user object or DB

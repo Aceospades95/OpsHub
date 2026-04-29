@@ -1,6 +1,7 @@
 "use server";
 
 import { db } from "@/lib/db";
+import { log } from "@/lib/log";
 import { requireAuth, canManageProjectAssignments } from "@/lib/permissions";
 import { hasOrgWideManage } from "@/lib/scope";
 import { maybePromoteUserRole, maybeDemoteUserRole } from "@/lib/auto-role";
@@ -82,8 +83,7 @@ async function notifyAssignmentChange(opts: {
           : undefined,
     });
   } catch (err) {
-    // eslint-disable-next-line no-console
-    console.error("[assignments] notify failed:", err);
+    log.error("assignments.notify", "Notify failed", err);
   }
 }
 
@@ -92,32 +92,42 @@ async function notifyAssignmentChange(opts: {
  * (e.g. service offerings, role definitions, generic "can this user reach
  * any staffing action at all"). Per-project gating uses
  * canManageProjectAssignments so a manager can only touch their projects.
+ *
+ * Returns a structured error rather than throwing so callers — which are
+ * server actions invoked via useFormState — can surface it inline instead
+ * of crashing to a Next.js 500 page.
  */
-function requireAssignmentManager(role: string) {
-  if (role !== "ADMIN" && role !== "DEVELOPER" && role !== "MANAGER")
-    throw new Error("Assignment manager access required");
+function requireAssignmentManager(role: string): { error: string } | null {
+  if (role !== "ADMIN" && role !== "DEVELOPER" && role !== "MANAGER") {
+    return { error: "Assignment manager access required" };
+  }
+  return null;
 }
 
 /**
- * Throws if the current user (by role + id) can't manage assignments on the
- * given project. ADMIN and DEVELOPER always pass; MANAGER must be assigned
- * to the project. Internal-only (no project) assignments still require the
- * coarse gate — a contributor isn't allowed to create them.
+ * Returns a structured error if the current user (by role + id) can't
+ * manage assignments on the given project, otherwise null. ADMIN and
+ * DEVELOPER always pass; MANAGER must be assigned to the project.
+ * Internal-only (no project) assignments still require the coarse gate —
+ * a contributor isn't allowed to create them.
  */
 async function requireManageForAssignment(
   userId: string,
   role: string,
   projectId: string | null | undefined
-) {
-  if (hasOrgWideManage(role as Parameters<typeof hasOrgWideManage>[0])) return;
-  if (role !== "MANAGER") throw new Error("Permission denied");
-  if (!projectId) throw new Error("Permission denied");
+): Promise<{ error: string } | null> {
+  if (hasOrgWideManage(role as Parameters<typeof hasOrgWideManage>[0])) {
+    return null;
+  }
+  if (role !== "MANAGER") return { error: "Permission denied" };
+  if (!projectId) return { error: "Permission denied" };
   const ok = await canManageProjectAssignments(
     userId,
     role as Parameters<typeof canManageProjectAssignments>[1],
     projectId
   );
-  if (!ok) throw new Error("Permission denied");
+  if (!ok) return { error: "Permission denied" };
+  return null;
 }
 
 // Revalidate all paths where an assignment could appear.
@@ -144,7 +154,8 @@ const assignmentSchema = z.object({
 
 export async function createAssignment(_prev: unknown, formData: FormData) {
   const user = await requireAuth();
-  requireAssignmentManager(user.role);
+  const gate = requireAssignmentManager(user.role);
+  if (gate) return gate;
 
   const parsed = assignmentSchema.safeParse({
     employeeId: formData.get("employeeId"),
@@ -165,7 +176,8 @@ export async function createAssignment(_prev: unknown, formData: FormData) {
   if (!parsed.success) return { error: "Invalid input", fieldErrors: parsed.error.flatten().fieldErrors };
 
   // Managers may only assign to projects they themselves are on.
-  await requireManageForAssignment(user.id, user.role, parsed.data.projectId);
+  const projectGate = await requireManageForAssignment(user.id, user.role, parsed.data.projectId);
+  if (projectGate) return projectGate;
 
   const assignment = await db.assignment.create({
     data: {
@@ -210,8 +222,7 @@ export async function createAssignment(_prev: unknown, formData: FormData) {
         createdById: user.id,
       });
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error("[assignments] project-assignment trigger failed:", err);
+      log.error("assignments.triggers", "project-assignment trigger failed", err);
     }
   }
 
@@ -220,7 +231,8 @@ export async function createAssignment(_prev: unknown, formData: FormData) {
 
 export async function updateAssignment(_prev: unknown, formData: FormData) {
   const user = await requireAuth();
-  requireAssignmentManager(user.role);
+  const gate = requireAssignmentManager(user.role);
+  if (gate) return gate;
 
   const id = formData.get("id") as string;
 
@@ -242,7 +254,8 @@ export async function updateAssignment(_prev: unknown, formData: FormData) {
 
   if (!parsed.success) return { error: "Invalid input", fieldErrors: parsed.error.flatten().fieldErrors };
 
-  await requireManageForAssignment(user.id, user.role, parsed.data.projectId);
+  const projectGate = await requireManageForAssignment(user.id, user.role, parsed.data.projectId);
+  if (projectGate) return projectGate;
 
   const previous = await db.assignment.findUnique({
     where: { id },
@@ -276,7 +289,8 @@ export async function updateAssignment(_prev: unknown, formData: FormData) {
 
 export async function deleteAssignment(_prev: unknown, formData: FormData) {
   const user = await requireAuth();
-  requireAssignmentManager(user.role);
+  const gate = requireAssignmentManager(user.role);
+  if (gate) return gate;
 
   const id = formData.get("id") as string;
   if (!id) return { error: "Assignment ID is required" };
@@ -286,7 +300,8 @@ export async function deleteAssignment(_prev: unknown, formData: FormData) {
     select: { employeeId: true, projectId: true, clientId: true },
   });
   if (!assignment) return { error: "Assignment not found" };
-  await requireManageForAssignment(user.id, user.role, assignment.projectId);
+  const projectGate = await requireManageForAssignment(user.id, user.role, assignment.projectId);
+  if (projectGate) return projectGate;
 
   await db.assignment.delete({ where: { id } });
   await maybeDemoteUserRole(assignment.employeeId);
@@ -295,13 +310,14 @@ export async function deleteAssignment(_prev: unknown, formData: FormData) {
     clientId: assignment.clientId,
   });
   revalidateAssignmentPaths(assignment.employeeId, assignment.projectId);
-  return { success: true, error: null };
+  return { success: true };
 }
 
 // Direct delete (for inline remove from staffing matrix)
 export async function removeAssignment(assignmentId: string) {
   const user = await requireAuth();
-  requireAssignmentManager(user.role);
+  const gate = requireAssignmentManager(user.role);
+  if (gate) return gate;
 
   if (!assignmentId) return { error: "Assignment ID is required" };
 
@@ -312,7 +328,8 @@ export async function removeAssignment(assignmentId: string) {
     select: { employeeId: true, projectId: true, clientId: true, role: true, allocationFte: true },
   });
   if (!assignment) return { error: "Assignment not found" };
-  await requireManageForAssignment(user.id, user.role, assignment.projectId);
+  const projectGate = await requireManageForAssignment(user.id, user.role, assignment.projectId);
+  if (projectGate) return projectGate;
 
   await db.assignment.delete({ where: { id: assignmentId } });
   await maybeDemoteUserRole(assignment.employeeId);
@@ -345,10 +362,12 @@ export async function quickAssign(data: {
   serviceOfferingId?: string;
 }) {
   const user = await requireAuth();
-  requireAssignmentManager(user.role);
+  const gate = requireAssignmentManager(user.role);
+  if (gate) return gate;
 
   if (!data.employeeId || !data.projectId) return { error: "Employee and project are required" };
-  await requireManageForAssignment(user.id, user.role, data.projectId);
+  const projectGate = await requireManageForAssignment(user.id, user.role, data.projectId);
+  if (projectGate) return projectGate;
 
   const assignment = await db.assignment.create({
     data: {
@@ -393,8 +412,7 @@ export async function quickAssign(data: {
         createdById: user.id,
       });
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error("[assignments] project-assignment trigger failed:", err);
+      log.error("assignments.triggers", "project-assignment trigger failed", err);
     }
   }
 
@@ -404,7 +422,8 @@ export async function quickAssign(data: {
 // Inline field updates (for staffing matrix direct editing)
 export async function updateAssignmentNotes(assignmentId: string, notes: string) {
   const user = await requireAuth();
-  requireAssignmentManager(user.role);
+  const gate = requireAssignmentManager(user.role);
+  if (gate) return gate;
 
   const updated = await db.assignment.update({
     where: { id: assignmentId },
@@ -422,7 +441,8 @@ export async function updateAssignmentNotes(assignmentId: string, notes: string)
 
 export async function updateAssignmentRole(assignmentId: string, role: string, roleDefinitionId: string | null) {
   const user = await requireAuth();
-  requireAssignmentManager(user.role);
+  const gate = requireAssignmentManager(user.role);
+  if (gate) return gate;
 
   // Look up the assignment's project so we can re-link projectRoleId
   // to a matching ProjectRole on the same project (if one exists).
@@ -461,7 +481,8 @@ export async function updateAssignmentRole(assignmentId: string, role: string, r
 
 export async function updateAssignmentFte(assignmentId: string, allocationFte: number) {
   const user = await requireAuth();
-  requireAssignmentManager(user.role);
+  const gate = requireAssignmentManager(user.role);
+  if (gate) return gate;
 
   if (allocationFte < 0 || allocationFte > 2) return { error: "FTE must be between 0 and 2" };
 
@@ -481,7 +502,8 @@ export async function updateAssignmentFte(assignmentId: string, allocationFte: n
 
 export async function updateProjectOffering(projectId: string, serviceOfferingId: string | null) {
   const user = await requireAuth();
-  requireAssignmentManager(user.role);
+  const gate = requireAssignmentManager(user.role);
+  if (gate) return gate;
 
   await db.project.update({
     where: { id: projectId },
@@ -498,7 +520,8 @@ export async function updateProjectOffering(projectId: string, serviceOfferingId
 // Role Definition CRUD
 export async function createRoleDefinition(name: string) {
   const user = await requireAuth();
-  requireAssignmentManager(user.role);
+  const gate = requireAssignmentManager(user.role);
+  if (gate) return gate;
 
   if (!name.trim()) return { error: "Name is required" };
 
@@ -514,7 +537,8 @@ export async function createRoleDefinition(name: string) {
 // Project Role CRUD
 export async function createProjectRole(projectId: string, roleDefinitionId: string, requiredFte: number, quantity: number) {
   const user = await requireAuth();
-  requireAssignmentManager(user.role);
+  const gate = requireAssignmentManager(user.role);
+  if (gate) return gate;
 
   if (!projectId || !roleDefinitionId) return { error: "Project and role are required" };
   if (requiredFte < 0 || requiredFte > 2) return { error: "FTE must be between 0 and 2" };
@@ -530,7 +554,8 @@ export async function createProjectRole(projectId: string, roleDefinitionId: str
 
 export async function updateProjectRole(id: string, requiredFte: number, quantity: number) {
   const user = await requireAuth();
-  requireAssignmentManager(user.role);
+  const gate = requireAssignmentManager(user.role);
+  if (gate) return gate;
 
   const updated = await db.projectRole.update({
     where: { id },
@@ -546,7 +571,8 @@ export async function updateProjectRole(id: string, requiredFte: number, quantit
 
 export async function deleteProjectRole(id: string) {
   const user = await requireAuth();
-  requireAssignmentManager(user.role);
+  const gate = requireAssignmentManager(user.role);
+  if (gate) return gate;
 
   const pr = await db.projectRole.findUnique({ where: { id }, select: { projectId: true } });
   // Unlink assignments from this project role before deleting
@@ -567,7 +593,8 @@ const serviceOfferingSchema = z.object({
 
 export async function createServiceOffering(_prev: unknown, formData: FormData) {
   const user = await requireAuth();
-  requireAssignmentManager(user.role);
+  const gate = requireAssignmentManager(user.role);
+  if (gate) return gate;
 
   const parsed = serviceOfferingSchema.safeParse({
     name: formData.get("name"),

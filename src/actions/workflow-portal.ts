@@ -7,6 +7,30 @@ import { z } from "zod";
 import { completeStep } from "@/lib/workflows/engine";
 import { revalidateWorkflowInstance } from "@/lib/revalidate-entity";
 import { loadPortalStep } from "@/lib/workflows/portal";
+import { consume } from "@/lib/rate-limit";
+
+/**
+ * Per-token rate cap on portal write actions. Capacity allows a small
+ * burst (the user may submit a form, then immediately upload a
+ * follow-up document) while the refill rate keeps the long-run
+ * behavior sane. A leaked token is still useful for finishing
+ * legitimate paperwork but can't be weaponized to spam writes.
+ */
+const PORTAL_ACTION_RATE = {
+  capacity: 10,
+  refillRatePerSec: 1 / 6, // ~10/min sustained
+};
+
+function checkPortalActionRate(token: string):
+  | { error: string; retryAfterSec: number }
+  | null {
+  const gate = consume(`portal-action:${token}`, PORTAL_ACTION_RATE);
+  if (gate.allowed) return null;
+  return {
+    error: "Too many submissions in a short time. Please wait and retry.",
+    retryAfterSec: Math.ceil(gate.retryAfterMs / 1000),
+  };
+}
 
 // ─── Schemas ───────────────────────────────────────────────────────────
 
@@ -57,6 +81,8 @@ export async function finalizeWorkflowPortalDocument(
       fieldErrors: parsed.error.flatten().fieldErrors,
     } as const;
   }
+  const limited = checkPortalActionRate(parsed.data.token);
+  if (limited) return limited;
   const resolved = await loadPortalStep(parsed.data.token, parsed.data.instanceStepId);
   if (!resolved) {
     return { error: "Token or step not found" } as const;
@@ -121,6 +147,8 @@ export async function submitWorkflowPortalSignature(
       fieldErrors: parsed.error.flatten().fieldErrors,
     } as const;
   }
+  const limited = checkPortalActionRate(parsed.data.token);
+  if (limited) return limited;
   const resolved = await loadPortalStep(parsed.data.token, parsed.data.instanceStepId);
   if (!resolved) {
     return { error: "Token or step not found" } as const;
@@ -186,6 +214,8 @@ export async function submitWorkflowPortalForm(
       fieldErrors: parsed.error.flatten().fieldErrors,
     } as const;
   }
+  const limited = checkPortalActionRate(parsed.data.token);
+  if (limited) return limited;
   const resolved = await loadPortalStep(parsed.data.token, parsed.data.instanceStepId);
   if (!resolved) {
     return { error: "Token or step not found" } as const;
@@ -250,6 +280,8 @@ export async function completeWorkflowPortalTaskStep(
       fieldErrors: parsed.error.flatten().fieldErrors,
     } as const;
   }
+  const limited = checkPortalActionRate(parsed.data.token);
+  if (limited) return limited;
   const resolved = await loadPortalStep(parsed.data.token, parsed.data.instanceStepId);
   if (!resolved) {
     return { error: "Token or step not found" } as const;

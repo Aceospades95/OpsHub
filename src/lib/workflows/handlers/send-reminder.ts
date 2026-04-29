@@ -37,7 +37,7 @@ export const sendReminderHandler: StepHandler = async ({
     {
       to: recipient,
       subject: substituteVariables(template.subject, context as unknown as Record<string, unknown>),
-      html: substituteVariables(template.bodyHtml, context as unknown as Record<string, unknown>),
+      html: substituteVariables(template.bodyHtml, context as unknown as Record<string, unknown>, "html"),
       text: template.bodyText
         ? substituteVariables(template.bodyText, context as unknown as Record<string, unknown>)
         : undefined,

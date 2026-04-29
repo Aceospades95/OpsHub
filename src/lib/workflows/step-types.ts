@@ -419,17 +419,45 @@ export function getStepTypeDefinition(
  *
  * Doesn't support function calls, conditionals, or expressions — that's
  * deliberate. Templates with logic should compose multiple steps instead.
+ *
+ * The `mode` argument controls how substituted values are escaped:
+ *
+ *   "text" (default) — values are returned literally. Use this when the
+ *     output is plain text (email subject line, plain-text body, task
+ *     title, approval prompt). React handles its own escaping when
+ *     rendering text into JSX.
+ *
+ *   "html" — values are HTML-escaped before insertion. Use this for the
+ *     `html` body of outbound emails and any other string the caller is
+ *     about to feed into `dangerouslySetInnerHTML` or an SMTP
+ *     `text/html` part. Without this, a User row whose `firstName` is
+ *     `<img src=x onerror=...>` would inject markup into every email
+ *     fired by a workflow that references `{{subject.firstName}}`.
+ *     The template literal itself (the part outside `{{ }}` braces) is
+ *     left alone — it's admin-authored HTML and intentionally trusted.
  */
 export function substituteVariables(
   input: string,
-  context: Record<string, unknown>
+  context: Record<string, unknown>,
+  mode: "text" | "html" = "text"
 ): string {
   return input.replace(/\{\{\s*([\w.]+)\s*\}\}/g, (_match, path) => {
     const value = resolvePath(context, String(path).split("."));
-    if (value == null) return "";
-    if (value instanceof Date) return value.toLocaleDateString();
-    return String(value);
+    let str: string;
+    if (value == null) str = "";
+    else if (value instanceof Date) str = value.toLocaleDateString();
+    else str = String(value);
+    return mode === "html" ? escapeHtml(str) : str;
   });
+}
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
 function resolvePath(obj: unknown, parts: string[]): unknown {

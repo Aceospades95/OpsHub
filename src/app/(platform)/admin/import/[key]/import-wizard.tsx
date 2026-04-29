@@ -39,6 +39,10 @@ interface CommitOutcome {
 interface Props {
   importerKey: string;
   fields: ImporterFieldLite[];
+  /** When true, render the "Download current data" button alongside the
+   *  blank template. Driven by whether the importer's exportRows() is
+   *  defined. */
+  supportsExport: boolean;
 }
 
 /**
@@ -47,7 +51,7 @@ interface Props {
  *   2. Preview + map — show first 20 rows + mapping form
  *   3. Result — show how many rows imported / skipped / failed
  */
-export function ImportWizard({ importerKey, fields }: Props) {
+export function ImportWizard({ importerKey, fields, supportsExport }: Props) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -299,20 +303,37 @@ export function ImportWizard({ importerKey, fields }: Props) {
   return (
     <Card>
       <CardHeader>
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between flex-wrap gap-2">
           <CardTitle>Upload CSV</CardTitle>
-          <a
-            href={`/api/import/${importerKey}/template`}
-            download
-            className="inline-flex items-center rounded border border-border px-3 py-1.5 text-xs hover:bg-muted transition-colors"
-          >
-            <Download className="h-3 w-3 mr-1.5" />
-            Download template
-          </a>
+          <div className="flex items-center gap-2">
+            <a
+              href={`/api/import/${importerKey}/template`}
+              download
+              className="inline-flex items-center rounded border border-border px-3 py-1.5 text-xs hover:bg-muted transition-colors"
+              title="Blank CSV with the expected column headers and a couple of example rows. Use this for a fresh import."
+            >
+              <Download className="h-3 w-3 mr-1.5" />
+              Download blank template
+            </a>
+            {supportsExport && (
+              <a
+                href={`/api/import/${importerKey}/export`}
+                download
+                className="inline-flex items-center rounded border border-primary/40 px-3 py-1.5 text-xs hover:bg-primary/10 transition-colors text-primary"
+                title="Every row currently in the database, in the same column shape this importer expects. Edit in Excel and re-upload to update existing records — name/email matches are upserted in place."
+              >
+                <Download className="h-3 w-3 mr-1.5" />
+                Download current data
+              </a>
+            )}
+          </div>
         </div>
         <p className="text-sm text-muted-foreground">
           Pick a CSV file to import. After upload you&rsquo;ll see a preview
           of the first 20 rows and can map columns before committing.
+          {supportsExport
+            ? " To update existing records, click \"Download current data\", edit in Excel, and re-upload — rows are matched by their key (e.g. email or name) and updated in place."
+            : ""}
         </p>
       </CardHeader>
       <CardContent className="space-y-4">

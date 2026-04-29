@@ -20,7 +20,13 @@ export function JobRunButton({ jobKey }: { jobKey: string }) {
     setResult(null);
     startTransition(async () => {
       const r = await triggerJob(jobKey);
-      setResult(r);
+      // Map the gate-only `{ error }` shape into the run-result shape
+      // the UI renders so non-admins see "failed" with a reason.
+      if ("error" in r && !("status" in r)) {
+        setResult({ status: "failed", error: r.error });
+      } else {
+        setResult(r);
+      }
       router.refresh();
       // Auto-clear after a few seconds so the button doesn't stay decorated
       setTimeout(() => setResult(null), 5000);

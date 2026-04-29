@@ -1,8 +1,13 @@
 "use server";
 
 import { db } from "@/lib/db";
+import { log } from "@/lib/log";
 import { requireAuth } from "@/lib/permissions";
 import { logActivity } from "@/lib/activity";
+import {
+  ADMIN_SETTING_KEYS,
+  getBooleanAdminSetting,
+} from "@/lib/admin-settings";
 import { revalidatePath } from "next/cache";
 import { revalidateUser } from "@/lib/revalidate-entity";
 import { getPermissionedModules, ALL_PERMISSION_FLAGS } from "@/lib/modules";
@@ -11,8 +16,26 @@ import { absoluteUrl } from "@/lib/url";
 import { hash } from "bcryptjs";
 import { z } from "zod";
 
-function requireAdminOrManager(role: string) {
-  if (role !== "ADMIN" && role !== "MANAGER") throw new Error("Admin or Manager access required");
+function requireAdminOrManager(role: string): { error: string } | null {
+  if (role !== "ADMIN" && role !== "MANAGER") {
+    return { error: "Admin or Manager access required" };
+  }
+  return null;
+}
+
+/**
+ * Restricts an action to ADMIN role only. Used for edits to the
+ * permissions matrix itself — letting a MANAGER call those would
+ * be a privilege-escalation surface (self-grant `canManage:true` on
+ * every module, or hand the same to anyone). Returns a structured
+ * error rather than throwing so the action wrapper can surface it
+ * inline instead of crashing to a Next.js 500.
+ */
+function requireAdmin(role: string): { error: string } | null {
+  if (role !== "ADMIN") {
+    return { error: "Admin access required" };
+  }
+  return null;
 }
 
 const createUserSchema = z.object({
@@ -30,7 +53,8 @@ const createUserSchema = z.object({
 
 export async function createUser(_prev: unknown, formData: FormData) {
   const admin = await requireAuth();
-  requireAdminOrManager(admin.role);
+  const gate = requireAdminOrManager(admin.role);
+  if (gate) return gate;
 
   const hasLogin = formData.get("hasLoginAccess") !== "false";
   // Normalize email to lowercase so login is case-insensitive and we never
@@ -75,11 +99,31 @@ export async function createUser(_prev: unknown, formData: FormData) {
   await logActivity("created", "user", user.id, admin.id, user.name);
   revalidateUser(user.id, { managerId: user.managerId });
 
-  // Send a welcome email to login-enabled users so they know their account
-  // exists and where to sign in. No-login placeholder users (e.g., tracked
-  // employees who don't actually use the system) skip this since their
-  // email column is a fake placeholder.
+  // Welcome email — opt-out per-user via the create-user dialog, with
+  // a configurable org-wide default at /admin/settings. Originally this
+  // fired unconditionally on every login-enabled user create, which
+  // surprised admins who'd archived their welcome workflow expecting
+  // the email to stop. The send is now driven by an explicit form
+  // field with the org default as fallback so the action is always
+  // visible to whoever's creating the user.
+  //
+  // The send is skipped for no-login placeholder users (tracked-only
+  // employees) since their email column is a fake placeholder.
+  let shouldSendWelcome = false;
   if (hasLogin && parsed.data.email) {
+    const fieldValue = formData.get("sendWelcomeEmail");
+    if (fieldValue === "true") shouldSendWelcome = true;
+    else if (fieldValue === "false") shouldSendWelcome = false;
+    else {
+      // No field at all (legacy client / script POST) — fall back to
+      // the org-wide default so existing automation keeps working.
+      shouldSendWelcome = await getBooleanAdminSetting(
+        ADMIN_SETTING_KEYS.sendWelcomeEmailDefault,
+        true
+      );
+    }
+  }
+  if (shouldSendWelcome) {
     try {
       await sendFromTemplate(
         "welcome",
@@ -96,8 +140,7 @@ export async function createUser(_prev: unknown, formData: FormData) {
     } catch (err) {
       // Don't fail user creation if the welcome email errors out — the
       // failure is logged in EmailLog and visible at /admin/emails
-      // eslint-disable-next-line no-console
-      console.error("[admin] welcome email failed:", err);
+      log.error("admin.user.welcomeEmail", "Welcome email failed", err);
     }
   }
 
@@ -113,8 +156,7 @@ export async function createUser(_prev: unknown, formData: FormData) {
       createdById: admin.id,
     });
   } catch (err) {
-    // eslint-disable-next-line no-console
-    console.error("[admin] workflow auto-trigger failed:", err);
+    log.error("admin.user.triggers", "Workflow auto-trigger failed", err);
   }
 
   // Manually-selected workflow templates from the create dialog. The
@@ -154,8 +196,7 @@ export async function createUser(_prev: unknown, formData: FormData) {
           });
         }
       } catch (err) {
-        // eslint-disable-next-line no-console
-        console.error("[admin] manual workflow start failed:", err);
+        log.error("admin.user.manualWorkflow", "Manual workflow start failed", err);
       }
     }
   }
@@ -178,7 +219,8 @@ const updateUserSchema = z.object({
 
 export async function updateUser(_prev: unknown, formData: FormData) {
   const admin = await requireAuth();
-  requireAdminOrManager(admin.role);
+  const gate = requireAdminOrManager(admin.role);
+  if (gate) return gate;
 
   const id = formData.get("id") as string;
   const rawManagerId = formData.get("managerId") as string;
@@ -249,7 +291,8 @@ export async function updateUser(_prev: unknown, formData: FormData) {
 
 export async function deleteUser(_prev: unknown, formData: FormData) {
   const admin = await requireAuth();
-  requireAdminOrManager(admin.role);
+  const gate = requireAdminOrManager(admin.role);
+  if (gate) return gate;
 
   const id = formData.get("id") as string;
   if (id === admin.id) return { error: "Cannot delete yourself" };
@@ -257,7 +300,33 @@ export async function deleteUser(_prev: unknown, formData: FormData) {
   const user = await db.user.findUnique({ where: { id } });
   if (!user) return { error: "User not found" };
 
-  await db.user.delete({ where: { id } });
+  // Hard delete fails when the user is referenced by a record we don't
+  // cascade-delete from (Comment.author, ActivityLog.user, SandboxPage
+  // .createdBy, CustomWidget.createdBy, plus countless audit references).
+  // Surface a clean message so the admin can deactivate instead of
+  // hard-deleting, rather than crashing to a 500 page with a Prisma
+  // "Foreign key constraint failed" stack.
+  try {
+    await db.user.delete({ where: { id } });
+  } catch (err) {
+    // Prisma marks FK violations with code P2003. Anything else
+    // bubbles as a real failure since we can't translate it.
+    if (
+      err &&
+      typeof err === "object" &&
+      "code" in err &&
+      (err as { code: string }).code === "P2003"
+    ) {
+      return {
+        error:
+          "This user has comments, activity history, or other authored records that block deletion. Deactivate the user instead (toggle 'Has login access' off and set inactive) — that preserves history while disabling sign-in.",
+      };
+    }
+    log.error("admin.user.delete", "deleteUser failed", err);
+    return {
+      error: "Could not delete user. Check server logs for details.",
+    };
+  }
   await logActivity("deleted", "user", id, admin.id, user.name);
   revalidateUser(id, { managerId: user.managerId });
   return { success: true };
@@ -267,7 +336,7 @@ export async function resetUserPassword(_prev: unknown, formData: FormData) {
   const admin = await requireAuth();
   // Restricted to ADMIN — managers can edit profile fields but not reset
   // login credentials for other users.
-  if (admin.role !== "ADMIN") throw new Error("Admin access required");
+  if (admin.role !== "ADMIN") return { error: "Admin access required" };
 
   const id = formData.get("id") as string;
   const newPassword = (formData.get("newPassword") as string)?.trim() ?? "";
@@ -292,7 +361,8 @@ export async function resetUserPassword(_prev: unknown, formData: FormData) {
 
 export async function toggleUserActive(_prev: unknown, formData: FormData) {
   const admin = await requireAuth();
-  requireAdminOrManager(admin.role);
+  const gate = requireAdminOrManager(admin.role);
+  if (gate) return gate;
 
   const id = formData.get("id") as string;
   const user = await db.user.findUnique({ where: { id } });
@@ -307,10 +377,13 @@ export async function toggleUserActive(_prev: unknown, formData: FormData) {
   return { success: true };
 }
 
-// Module Permissions
+// Module Permissions — ADMIN ONLY. Letting a MANAGER call this would
+// let them self-grant canManage on every module (effectively a private
+// admin promotion).
 export async function saveModulePermissions(_prev: unknown, formData: FormData) {
   const admin = await requireAuth();
-  requireAdminOrManager(admin.role);
+  const gate = requireAdmin(admin.role);
+  if (gate) return gate;
 
   const userId = formData.get("userId") as string;
 
@@ -350,10 +423,13 @@ export async function saveModulePermissions(_prev: unknown, formData: FormData) 
   return { success: true };
 }
 
-// Entity Permissions
+// Entity Permissions — ADMIN ONLY for the same reason as
+// saveModulePermissions: lets the actor grant canManage on any
+// specific project/client/etc.
 export async function saveEntityPermission(_prev: unknown, formData: FormData) {
   const admin = await requireAuth();
-  requireAdminOrManager(admin.role);
+  const gate = requireAdmin(admin.role);
+  if (gate) return gate;
 
   const userId = formData.get("userId") as string;
   const entityType = formData.get("entityType") as string;
@@ -384,9 +460,12 @@ export async function saveEntityPermission(_prev: unknown, formData: FormData) {
   return { success: true };
 }
 
+// ADMIN ONLY — same reasoning as the save actions above; revoking a
+// permission row is editing the permissions matrix.
 export async function deleteEntityPermission(_prev: unknown, formData: FormData) {
   const admin = await requireAuth();
-  requireAdminOrManager(admin.role);
+  const gate = requireAdmin(admin.role);
+  if (gate) return gate;
 
   const id = formData.get("id") as string;
   const perm = await db.entityPermission.findUnique({ where: { id }, select: { userId: true } });

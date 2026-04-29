@@ -29,6 +29,7 @@
 
 import { randomUUID } from "crypto";
 import { db } from "@/lib/db";
+import { log } from "@/lib/log";
 import { getActiveDriver, getDriverByName } from "./drivers";
 import type { StorageDriver } from "./types";
 
@@ -36,8 +37,60 @@ import type { StorageDriver } from "./types";
 export type { StorageDriver, StoragePutInput, StoragePutResult } from "./types";
 
 /**
+ * Per-user soft cap on total stored bytes. Default 1 GiB; override
+ * with USER_STORAGE_QUOTA_BYTES. The cap is informational at the API
+ * level — the actual enforcement happens before the driver writes
+ * bytes so an over-quota user doesn't run up storage cost on a
+ * rejected upload.
+ *
+ * "system" uploadedById (used by the workflow portal for CUSTOM
+ * subjects) bypasses the quota — the system isn't a user, and the
+ * portal upload route already gates traffic with its own rate limit.
+ */
+const DEFAULT_USER_QUOTA_BYTES = 1024 * 1024 * 1024; // 1 GiB
+
+function getUserQuotaBytes(): number {
+  const raw = process.env.USER_STORAGE_QUOTA_BYTES;
+  if (!raw) return DEFAULT_USER_QUOTA_BYTES;
+  const n = Number.parseInt(raw, 10);
+  return Number.isFinite(n) && n > 0 ? n : DEFAULT_USER_QUOTA_BYTES;
+}
+
+export class StorageQuotaExceededError extends Error {
+  readonly used: number;
+  readonly quota: number;
+  readonly attempted: number;
+  constructor(used: number, quota: number, attempted: number) {
+    super(
+      `Storage quota exceeded: ${used} + ${attempted} > ${quota} bytes for this user`
+    );
+    this.name = "StorageQuotaExceededError";
+    this.used = used;
+    this.quota = quota;
+    this.attempted = attempted;
+  }
+}
+
+/**
+ * Sum the bytes currently attributed to a user's uploads. Excludes
+ * already-deleted (soft or hard) rows by definition since we delete
+ * the File row on `deleteFile`.
+ */
+async function sumUserBytes(uploadedById: string): Promise<number> {
+  const r = await db.file.aggregate({
+    where: { uploadedById },
+    _sum: { size: true },
+  });
+  return r._sum.size ?? 0;
+}
+
+/**
  * Upload a file and create the corresponding File row. Returns the full
  * File record with its serving URL populated.
+ *
+ * Throws `StorageQuotaExceededError` when the upload would put the
+ * user over the configured per-user quota — caller should catch and
+ * surface a friendly 413/quota-exceeded response.
  */
 export async function uploadFile(params: {
   /** Raw file contents */
@@ -67,6 +120,19 @@ export async function uploadFile(params: {
   category?: string;
 }) {
   const driver = getActiveDriver();
+
+  // Per-user quota check. Skip for the "system" pseudo-user used by
+  // the portal upload path (CUSTOM subject type) — the portal route
+  // gates that traffic with its own per-token rate limit. Skip when
+  // the env knob is set to 0 (disabled).
+  const quota = getUserQuotaBytes();
+  if (quota > 0 && params.uploadedById !== "system") {
+    const used = await sumUserBytes(params.uploadedById);
+    const attempted = params.content.byteLength;
+    if (used + attempted > quota) {
+      throw new StorageQuotaExceededError(used, quota, attempted);
+    }
+  }
 
   // Generate a unique storage key. Includes the driver name prefix so
   // mixed-driver deployments don't collide, plus a UUID for uniqueness,
@@ -137,10 +203,10 @@ export async function getFileForServing(fileId: string): Promise<{
 
   const driver = getDriverByName(file.storageDriver);
   if (!driver) {
-    // eslint-disable-next-line no-console
-    console.error(
-      `[storage] File ${fileId} was stored with driver "${file.storageDriver}" which is not registered`
-    );
+    log.error("storage.read", "File stored with unregistered driver", {
+      fileId,
+      storageDriver: file.storageDriver,
+    });
     return null;
   }
 
@@ -178,8 +244,7 @@ export async function readFile(fileId: string): Promise<{
       visibility: meta.visibility,
     };
   } catch (err) {
-    // eslint-disable-next-line no-console
-    console.error(`[storage] Failed to read file ${fileId}:`, err);
+    log.error("storage.read", "Failed to read file", err, { fileId });
     return null;
   }
 }
@@ -201,8 +266,7 @@ export async function deleteFile(fileId: string): Promise<void> {
       try {
         await driver.delete(file.storageKey);
       } catch (err) {
-        // eslint-disable-next-line no-console
-        console.error(`[storage] Failed to delete bytes for file ${fileId}:`, err);
+        log.error("storage.delete", "Failed to delete bytes", err, { fileId });
       }
     }
   }

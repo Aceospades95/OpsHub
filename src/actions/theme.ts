@@ -12,11 +12,13 @@ const VALID_KEYS = Object.keys(DEFAULT_THEME);
 const HEX_COLOR_RE = /^#[0-9a-fA-F]{6}$/;
 const CUSTOM_PRESET_PREFIX = "_custom_preset_";
 
-function requireAdmin(role: string) {
-  if (role !== "ADMIN") throw new Error("Admin access required");
+function requireAdmin(role: string): { error: string } | null {
+  if (role !== "ADMIN") return { error: "Admin access required" };
+  return null;
 }
 
 export async function getThemeSettings(): Promise<Record<string, string>> {
+  await requireAuth();
   try {
     const rows = await db.themeSetting.findMany({
       where: { key: { not: { startsWith: CUSTOM_PRESET_PREFIX } } },
@@ -33,7 +35,8 @@ export async function getThemeSettings(): Promise<Record<string, string>> {
 
 export async function saveThemeSettings(_prev: unknown, formData: FormData) {
   const user = await requireAuth();
-  requireAdmin(user.role);
+  const gate = requireAdmin(user.role);
+  if (gate) return gate;
 
   const entries: { key: string; value: string }[] = [];
 
@@ -67,7 +70,8 @@ export async function saveThemeSettings(_prev: unknown, formData: FormData) {
 
 export async function resetThemeToDefaults(_prev: unknown) {
   const user = await requireAuth();
-  requireAdmin(user.role);
+  const gate = requireAdmin(user.role);
+  if (gate) return gate;
 
   await db.themeSetting.deleteMany({
     where: { key: { not: { startsWith: CUSTOM_PRESET_PREFIX } } },
@@ -80,7 +84,8 @@ export async function resetThemeToDefaults(_prev: unknown) {
 
 export async function applyPresetTheme(colors: Record<string, string>) {
   const user = await requireAuth();
-  requireAdmin(user.role);
+  const gate = requireAdmin(user.role);
+  if (gate) return gate;
 
   const entries: { key: string; value: string }[] = [];
   for (const key of VALID_KEYS) {
@@ -104,6 +109,7 @@ export async function applyPresetTheme(colors: Record<string, string>) {
 }
 
 export async function getCustomPresets(): Promise<ThemePreset[]> {
+  await requireAuth();
   try {
     const rows = await db.themeSetting.findMany({
       where: { key: { startsWith: CUSTOM_PRESET_PREFIX } },
@@ -132,7 +138,8 @@ export async function getCustomPresets(): Promise<ThemePreset[]> {
 
 export async function saveCustomPreset(name: string, mode: "light" | "dark", colors: Record<string, string>) {
   const user = await requireAuth();
-  requireAdmin(user.role);
+  const gate = requireAdmin(user.role);
+  if (gate) return gate;
 
   const id = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
   const key = `${CUSTOM_PRESET_PREFIX}${id}`;
@@ -155,7 +162,8 @@ export async function saveCustomPreset(name: string, mode: "light" | "dark", col
 
 export async function deleteCustomPreset(presetId: string) {
   const user = await requireAuth();
-  requireAdmin(user.role);
+  const gate = requireAdmin(user.role);
+  if (gate) return gate;
 
   const key = `${CUSTOM_PRESET_PREFIX}${presetId}`;
   await db.themeSetting.deleteMany({ where: { key } });

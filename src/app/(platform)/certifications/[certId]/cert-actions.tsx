@@ -72,7 +72,7 @@ export function CertActions({ cert, clients, users }: CertActionsProps) {
   const router = useRouter();
 
   useEffect(() => {
-    if (editState?.success) {
+    if (editState && "success" in editState && editState.success) {
       setEditOpen(false);
       router.refresh();
     }
@@ -429,7 +429,7 @@ export function CertActions({ cert, clients, users }: CertActionsProps) {
                 </div>
               </div>
 
-              {editState?.error && (
+              {editState && "error" in editState && (
                 <p className="text-sm text-destructive">{editState.error}</p>
               )}
 

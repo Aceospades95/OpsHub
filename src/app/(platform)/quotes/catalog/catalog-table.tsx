@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useTransition, useActionState } from "react";
+import { useState, useTransition } from "react";
+import { useFormState } from "react-dom";
 import { useRouter } from "next/navigation";
 import { Plus, Pencil, Archive } from "lucide-react";
 
@@ -180,7 +181,10 @@ interface CatalogFormProps {
 function CatalogFormDialog({ mode, item, onClose }: CatalogFormProps) {
   const router = useRouter();
   const action = mode === "create" ? createCatalogItem : updateCatalogItem;
-  const [state, formAction] = useActionState(action, undefined);
+  // useFormState from react-dom (not useActionState from "react") — the
+  // latter is a React 19 hook and is undefined at runtime on React 18.3,
+  // which crashes this dialog the moment an admin opens it.
+  const [state, formAction] = useFormState(action, null);
   const [pending, setPending] = useState(false);
 
   const submitted =

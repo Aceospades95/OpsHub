@@ -123,7 +123,7 @@ export function ProjectStaffingSection({
     if (roleDefId === "__new__") {
       if (!addRoleForm.newRoleName.trim()) return;
       const result = await createRoleDefinition(addRoleForm.newRoleName.trim());
-      if (result.id) roleDefId = result.id;
+      if ("id" in result && result.id) roleDefId = result.id;
       else return;
     }
     if (!roleDefId) return;

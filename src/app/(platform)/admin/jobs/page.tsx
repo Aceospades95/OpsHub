@@ -17,6 +17,7 @@ import { formatDistanceToNow, format } from "date-fns";
 import { listJobs } from "@/lib/jobs";
 import { JobRunButton } from "./job-run-button";
 import { JobToggleButton } from "./job-toggle-button";
+import { JobCadenceSelect } from "./job-cadence-select";
 
 export default async function AdminJobsPage() {
   const session = await auth();
@@ -49,6 +50,7 @@ export default async function AdminJobsPage() {
   ]);
 
   const enabledByKey = new Map(configs.map((c) => [c.jobKey, c.isEnabled]));
+  const cadenceByKey = new Map(configs.map((c) => [c.jobKey, c.cadence ?? ""]));
 
   // Build a map of job key → most recent run
   const lastRunByKey = new Map<string, (typeof recentRunsByJob)[number]>();
@@ -207,6 +209,7 @@ export default async function AdminJobsPage() {
             {jobs.map((job) => {
               const lastRun = lastRunByKey.get(job.key);
               const isEnabled = enabledByKey.get(job.key) ?? true;
+              const cadenceOverride = cadenceByKey.get(job.key) ?? "";
               return (
                 <div
                   key={job.key}
@@ -230,6 +233,11 @@ export default async function AdminJobsPage() {
                       <Badge variant="outline" className="text-[10px]">
                         {job.schedule}
                       </Badge>
+                      {cadenceOverride && (
+                        <Badge variant="default" className="text-[10px]">
+                          override: {cadenceOverride.toLowerCase()}
+                        </Badge>
+                      )}
                       {!isEnabled && (
                         <Badge variant="secondary" className="text-[10px]">
                           paused
@@ -264,6 +272,7 @@ export default async function AdminJobsPage() {
                     )}
                   </Link>
                   <div className="flex items-center gap-2 shrink-0">
+                    <JobCadenceSelect jobKey={job.key} current={cadenceOverride} />
                     <JobToggleButton jobKey={job.key} isEnabled={isEnabled} />
                     <JobRunButton jobKey={job.key} />
                     <Link

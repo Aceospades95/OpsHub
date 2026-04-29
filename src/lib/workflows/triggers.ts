@@ -92,6 +92,23 @@ export async function fireEntityCreateTriggers(
       continue;
     }
 
+    // Idempotency: skip if a non-cancelled instance of this template
+    // already exists for the subject. Without this, an admin who
+    // re-triggers the create event (e.g. via a webhook retry, or by
+    // toggling some other unrelated field that happens to re-run the
+    // creation path) gets duplicate onboarding instances. SCHEDULED_DATE
+    // and PROJECT_ASSIGNMENT both already have this guard.
+    const existing = await db.workflowInstance.findFirst({
+      where: {
+        workflowTemplateId: t.workflowTemplateId,
+        subjectType,
+        subjectId: event.entityId,
+        status: { in: ["PENDING", "IN_PROGRESS", "PAUSED", "COMPLETED"] },
+      },
+      select: { id: true },
+    });
+    if (existing) continue;
+
     try {
       const r = await createInstance({
         templateId: t.workflowTemplateId,

@@ -7,6 +7,7 @@
  */
 
 import { db } from "@/lib/db";
+import { log } from "@/lib/log";
 import type { JobContext, JobResult } from "./types";
 import { getJob, listJobs } from "./registry";
 
@@ -51,6 +52,31 @@ export async function runJob(
   // Concurrency check — don't double-run
   if (!options.force) {
     const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+
+    // Reap abandoned "running" rows older than an hour. The previous
+    // worker crashed mid-job (OOM / container kill / hard deploy) and
+    // never updated the row to "failed". The 1h window is wide enough
+    // to never collide with a still-live worker but tight enough that
+    // the admin Jobs page reflects reality within an hour of any crash.
+    const reaped = await db.jobLog.updateMany({
+      where: {
+        jobKey,
+        status: "running",
+        startedAt: { lt: oneHourAgo },
+      },
+      data: {
+        status: "failed",
+        finishedAt: new Date(),
+        error: "Abandoned: worker did not finish within 1h, presumed crashed",
+      },
+    });
+    if (reaped.count > 0) {
+      log.warn("jobs.runner", "Reaped abandoned running rows", {
+        jobKey,
+        count: reaped.count,
+      });
+    }
+
     const inProgress = await db.jobLog.findFirst({
       where: {
         jobKey,
@@ -120,8 +146,7 @@ export async function runJob(
         error: errorMessage,
       },
     });
-    // eslint-disable-next-line no-console
-    console.error(`[jobs] ${jobKey} failed:`, err);
+    log.error("jobs.runner", "Job handler threw", err, { jobKey });
     return {
       status: "failed",
       error: errorMessage,

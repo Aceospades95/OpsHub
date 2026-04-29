@@ -3,6 +3,7 @@
 import { requireAuth } from "@/lib/permissions";
 import { notify } from "@/lib/notifications";
 import { db } from "@/lib/db";
+import { getPermissionedModules } from "@/lib/modules";
 import { revalidatePath } from "next/cache";
 
 interface RequestAccessParams {
@@ -13,15 +14,60 @@ interface RequestAccessParams {
   entityLabel?: string;
 }
 
+// Hard cap on user-controlled string fields that get rendered into
+// admin notifications. Defense against an authenticated user passing
+// a 100KB entityLabel and DoSing the notification body / admin UI.
+const MAX_LABEL_LENGTH = 200;
+
+// Allowlist of entity types the request flow recognizes. Anything else
+// is dropped silently (the request still succeeds at the module level
+// but doesn't carry the unrecognized entity context). Keeps the
+// notification body free of attacker-supplied entityType strings.
+const VALID_ENTITY_TYPES = new Set([
+  "client",
+  "project",
+  "contract",
+  "tool",
+  "certification",
+  "supplier",
+]);
+
+function clamp(value: string | undefined, max: number): string | null {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  return trimmed.length > max ? trimmed.slice(0, max) : trimmed;
+}
+
 export async function requestAccess(params: RequestAccessParams) {
   const user = await requireAuth();
+
+  // Validate `module` against the registry so an attacker can't seed
+  // arbitrary strings into AccessRequest.module (which the admin UI
+  // renders verbatim). Cast to string[] because getPermissionedModules
+  // returns the typed ModuleKey enum and we're comparing against an
+  // arbitrary user-supplied string.
+  const validModules = getPermissionedModules().map((m) => m.key as string);
+  if (!validModules.includes(params.module)) {
+    return { error: "Unknown module" } as const;
+  }
+
+  // Sanitize the optional fields. entityType must be on the allowlist
+  // or it's dropped (turning the request into a module-only ask).
+  const entityType =
+    params.entityType && VALID_ENTITY_TYPES.has(params.entityType)
+      ? params.entityType
+      : null;
+  const entityId = entityType ? clamp(params.entityId, 64) : null;
+  const entityLabel = entityType ? clamp(params.entityLabel, MAX_LABEL_LENGTH) : null;
+  const moduleLabel = clamp(params.moduleLabel, MAX_LABEL_LENGTH) || params.module;
 
   const existing = await db.accessRequest.findFirst({
     where: {
       requesterId: user.id,
       module: params.module,
-      entityType: params.entityType || null,
-      entityId: params.entityId || null,
+      entityType,
+      entityId,
       status: "PENDING",
     },
   });
@@ -31,9 +77,9 @@ export async function requestAccess(params: RequestAccessParams) {
     data: {
       requesterId: user.id,
       module: params.module,
-      entityType: params.entityType || null,
-      entityId: params.entityId || null,
-      entityLabel: params.entityLabel || null,
+      entityType,
+      entityId,
+      entityLabel,
     },
   });
 
@@ -43,13 +89,11 @@ export async function requestAccess(params: RequestAccessParams) {
   });
 
   if (admins.length > 0) {
-    const entityDesc = params.entityLabel
-      ? ` — ${params.entityType}: "${params.entityLabel}"`
-      : "";
+    const entityDesc = entityLabel ? ` — ${entityType}: "${entityLabel}"` : "";
     await notify({
       recipientId: admins.map((a) => a.id),
       type: "system",
-      title: `Access request: ${params.moduleLabel}${entityDesc}`,
+      title: `Access request: ${moduleLabel}${entityDesc}`,
       body: `${user.name || user.email} is requesting access.`,
       href: `/admin/access-requests`,
       actorId: user.id,
@@ -61,13 +105,18 @@ export async function requestAccess(params: RequestAccessParams) {
 
 export async function approveAccessRequest(requestId: string) {
   const admin = await requireAuth();
-  if (admin.role !== "ADMIN") throw new Error("Unauthorized");
+  if (admin.role !== "ADMIN") {
+    return { error: "Admin access required" } as const;
+  }
 
   const request = await db.accessRequest.findUnique({
     where: { id: requestId },
     include: { requester: { select: { id: true, name: true, email: true } } },
   });
-  if (!request || request.status !== "PENDING") return { success: false };
+  if (!request) return { error: "Request not found" } as const;
+  if (request.status !== "PENDING") {
+    return { error: "Request is not pending" } as const;
+  }
 
   await db.accessRequest.update({
     where: { id: requestId },
@@ -132,13 +181,18 @@ export async function approveAccessRequest(requestId: string) {
 
 export async function denyAccessRequest(requestId: string) {
   const admin = await requireAuth();
-  if (admin.role !== "ADMIN") throw new Error("Unauthorized");
+  if (admin.role !== "ADMIN") {
+    return { error: "Admin access required" } as const;
+  }
 
   const request = await db.accessRequest.findUnique({
     where: { id: requestId },
     include: { requester: { select: { id: true, name: true } } },
   });
-  if (!request || request.status !== "PENDING") return { success: false };
+  if (!request) return { error: "Request not found" } as const;
+  if (request.status !== "PENDING") {
+    return { error: "Request is not pending" } as const;
+  }
 
   await db.accessRequest.update({
     where: { id: requestId },

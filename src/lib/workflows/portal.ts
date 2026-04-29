@@ -32,6 +32,15 @@ export interface PortalSubjectResolution {
  * doesn't exist, has expired, or points at a vanished entity. Updates
  * `lastUsedAt` as a side effect so admins can see which links are
  * actively in use from /admin/jobs or future portal-analytics views.
+ *
+ * Inactive employees: ordinarily we lock them out (deactivated user =
+ * no portal access). The exception is offboarding — the portal is
+ * specifically how a departing employee submits exit paperwork after
+ * their account is disabled. We allow access when at least one of
+ * their workflow instances is an OFFBOARDING template that hasn't
+ * reached a terminal state. The 404 vs 200 differential is fine here:
+ * the token itself is the secret, so anyone holding a valid token
+ * already knows the subject exists.
  */
 export async function getPortalSubject(
   token: string
@@ -46,7 +55,18 @@ export async function getPortalSubject(
       where: { id: row.subjectId },
       select: { name: true, isActive: true },
     });
-    if (!user || !user.isActive) return null;
+    if (!user) return null;
+    if (!user.isActive) {
+      const offboardingOpen = await db.workflowInstance.count({
+        where: {
+          subjectType: "EMPLOYEE",
+          subjectId: row.subjectId,
+          status: { in: ["IN_PROGRESS", "PAUSED"] },
+          workflowTemplate: { type: "OFFBOARDING" },
+        },
+      });
+      if (offboardingOpen === 0) return null;
+    }
     displayName = user.name || "(no name)";
   } else {
     displayName = `Subject ${row.subjectId.slice(0, 8)}`;
@@ -130,7 +150,10 @@ export async function buildPortalView(
     where: {
       subjectType: subject.subjectType,
       subjectId: subject.subjectId,
-      status: { in: ["IN_PROGRESS", "PAUSED", "COMPLETED"] },
+      // Only show actively-running instances. Completed and cancelled
+      // instances are sealed — exposing them on the portal lets a
+      // subject re-trigger writes against terminal-state steps.
+      status: { in: ["IN_PROGRESS", "PAUSED"] },
     },
     include: {
       workflowTemplate: { select: { name: true } },
@@ -236,6 +259,22 @@ export async function loadPortalStep(
   if (
     step.workflowInstance.subjectType !== subject.subjectType ||
     step.workflowInstance.subjectId !== subject.subjectId
+  ) {
+    return null;
+  }
+  // Reject any write against a terminal-state step. Without this guard
+  // a subject could re-submit a signature, document, or form against a
+  // step that already completed, producing duplicate WorkflowSignature
+  // / WorkflowDocument rows and re-firing completeStep events.
+  if (step.status === "COMPLETED" || step.status === "SKIPPED") {
+    return null;
+  }
+  // Reject writes when the parent instance has been sealed. A
+  // cancelled or completed instance shouldn't accept further input
+  // even if a stray PENDING/SCHEDULED step lingers on it.
+  if (
+    step.workflowInstance.status === "COMPLETED" ||
+    step.workflowInstance.status === "CANCELLED"
   ) {
     return null;
   }

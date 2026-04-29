@@ -14,10 +14,11 @@ import type {
 
 // Scheduled tasks are admin-only — they email outside the org and run
 // arbitrary registered reports. Gate every action on Role=ADMIN.
-function requireAdmin(role: Role): void {
+function requireAdmin(role: Role): { error: string } | null {
   if (role !== "ADMIN") {
-    throw new Error("Admin access required");
+    return { error: "Admin access required" };
   }
+  return null;
 }
 
 const taskTypeSchema = z.enum(["EMAIL_REPORT", "EMAIL_MESSAGE"]);
@@ -39,7 +40,8 @@ export type ScheduledTaskUpsertInput = z.infer<typeof upsertSchema>;
 
 export async function createScheduledTask(input: ScheduledTaskUpsertInput) {
   const user = await requireAuth();
-  requireAdmin(user.role);
+  const gate = requireAdmin(user.role);
+  if (gate) return gate;
 
   const parsed = upsertSchema.safeParse(input);
   if (!parsed.success) {
@@ -73,7 +75,8 @@ export async function updateScheduledTask(
   input: { id: string } & ScheduledTaskUpsertInput
 ) {
   const user = await requireAuth();
-  requireAdmin(user.role);
+  const gate = requireAdmin(user.role);
+  if (gate) return gate;
 
   const parsed = upsertSchema.safeParse(input);
   if (!parsed.success) {
@@ -105,7 +108,8 @@ export async function updateScheduledTask(
 
 export async function deleteScheduledTask(id: string) {
   const user = await requireAuth();
-  requireAdmin(user.role);
+  const gate = requireAdmin(user.role);
+  if (gate) return gate;
 
   const existing = await db.scheduledTask.findUnique({
     where: { id },
@@ -124,7 +128,8 @@ export async function deleteScheduledTask(id: string) {
  *  task row and surfaced in the action response. */
 export async function runScheduledTaskNow(id: string) {
   const user = await requireAuth();
-  requireAdmin(user.role);
+  const gate = requireAdmin(user.role);
+  if (gate) return gate;
 
   const result = await runOne(id);
   await logActivity("ran", "scheduled-task", id, user.id, result.success ? "success" : "failed");
@@ -137,7 +142,8 @@ export async function runScheduledTaskNow(id: string) {
 
 export async function toggleScheduledTaskActive(id: string, isActive: boolean) {
   const user = await requireAuth();
-  requireAdmin(user.role);
+  const gate = requireAdmin(user.role);
+  if (gate) return gate;
 
   await db.scheduledTask.update({
     where: { id },

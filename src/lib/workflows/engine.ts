@@ -38,6 +38,7 @@
  */
 
 import { db } from "@/lib/db";
+import { log } from "@/lib/log";
 import { resolveScheduledFor } from "./timing";
 import { randomBytes } from "crypto";
 import { buildInstanceContext, type WorkflowContext } from "./context";
@@ -112,11 +113,17 @@ export async function createInstance(
   let portalToken = existingToken?.token ?? null;
   if (!portalToken) {
     const tokenValue = generatePortalToken();
+    // 90-day default expiry — long enough for a multi-session
+    // onboarding/offboarding flow but not "forever". The token can
+    // outlive an instance; if a subject needs continued access an
+    // admin can issue a fresh one through the workflow detail page.
+    const expiresAt = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000);
     await db.portalToken.create({
       data: {
         subjectType: input.subjectType,
         subjectId: input.subjectId,
         token: tokenValue,
+        expiresAt,
       },
     });
     portalToken = tokenValue;
@@ -218,6 +225,75 @@ export async function startInstance(instanceId: string): Promise<void> {
 }
 
 /**
+ * Step types whose handler returns synchronously ("completed" or
+ * "skipped"). They should never legitimately sit in IN_PROGRESS for
+ * more than the duration of the handler call (seconds, not minutes).
+ *
+ * The "waiting" types (ASSIGN_TASK_*, APPROVAL, REQUEST_*) intentionally
+ * stay IN_PROGRESS for days/weeks until something external completes
+ * them via a server action or the portal — they must not be reverted.
+ */
+const SYNCHRONOUS_STEP_TYPES = [
+  "SEND_EMAIL",
+  "SEND_REMINDER",
+  "WAIT",
+  "CONDITIONAL_BRANCH",
+  "PROVISION_ACCESS",
+  "DEPROVISION_ACCESS",
+  "SCHEDULE_MEETING",
+] as const;
+
+/**
+ * How long a synchronous step is allowed to sit in IN_PROGRESS before
+ * the watchdog reclaims it. Picked at 15 minutes — long enough to
+ * cover a slow SMTP send, short enough that a stalled instance heals
+ * within a few cron ticks of the original crash.
+ */
+const STUCK_STEP_THRESHOLD_MS = 15 * 60 * 1000;
+
+/**
+ * Reclaim synchronous steps that got stuck in IN_PROGRESS — typically
+ * because a worker crashed mid-handler (OOM, container kill, hard
+ * deploy). Without this, every such crash leaves the instance silently
+ * stalled: the step never reverts to SCHEDULED, and tick() only ever
+ * looks at SCHEDULED rows.
+ *
+ * Reverts step.status IN_PROGRESS → SCHEDULED. The next tick's
+ * optimistic claim re-runs the handler. SEND_EMAIL is the main
+ * concern: a re-run sends a duplicate email, but that's safer than
+ * never sending the email at all and leaving the instance permanently
+ * paused. (Email idempotency is something to layer on later if it
+ * becomes a problem in practice.)
+ */
+async function revertStuckSyncSteps(now: Date, instanceId?: string): Promise<number> {
+  const cutoff = new Date(now.getTime() - STUCK_STEP_THRESHOLD_MS);
+  const result = await db.workflowInstanceStep.updateMany({
+    where: {
+      status: "IN_PROGRESS",
+      startedAt: { lt: cutoff },
+      workflowStep: { stepType: { in: [...SYNCHRONOUS_STEP_TYPES] } },
+      workflowInstance: instanceId
+        ? { id: instanceId, status: "IN_PROGRESS" }
+        : { status: "IN_PROGRESS" },
+    },
+    data: {
+      status: "SCHEDULED",
+      // Schedule the revival immediately. The next tick picks them up.
+      scheduledFor: now,
+      startedAt: null,
+    },
+  });
+  if (result.count > 0) {
+    log.warn("workflows.engine.tick", "Revived stuck IN_PROGRESS steps", {
+      count: result.count,
+      thresholdMinutes: STUCK_STEP_THRESHOLD_MS / 60000,
+      instanceId: instanceId ?? null,
+    });
+  }
+  return result.count;
+}
+
+/**
  * Process due steps for an instance (or all active instances).
  *
  * Returns the number of steps the tick fired. Callers — the cron job
@@ -229,6 +305,11 @@ export async function tick(instanceId?: string): Promise<{
   completed: number;
 }> {
   const now = new Date();
+
+  // Watchdog pass first: revive any synchronous steps stranded in
+  // IN_PROGRESS by a previous worker crash. Done before the SCHEDULED
+  // query so revived rows can fire in the same tick.
+  await revertStuckSyncSteps(now, instanceId);
 
   // Fetch SCHEDULED steps whose time has come, scoped to one instance
   // when an id was supplied. Joining the parent instance lets us skip
@@ -302,10 +383,14 @@ export async function tick(instanceId?: string): Promise<{
   }
 
   // After processing each batch, check whether any instance has finished
-  // (all required steps in a terminal state) and seal it.
-  for (const id of Array.from(touchedInstanceIds)) {
-    await maybeCompleteInstance(id);
-  }
+  // (all required steps in a terminal state) and seal it. Each call is
+  // independent — different instance ids — so we parallelize. Without
+  // Promise.all this loop was N sequential roundtrips for a tick that
+  // touched N distinct instances; in tests the workflows-tick cron's
+  // worst-case latency on a busy box was dominated by it.
+  await Promise.all(
+    Array.from(touchedInstanceIds).map((id) => maybeCompleteInstance(id))
+  );
 
   return { fired, failed, completed };
 }

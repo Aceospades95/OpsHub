@@ -11,7 +11,7 @@ vi.mock("@/lib/db", () => ({
       update: vi.fn(),
     },
     user: { findUnique: vi.fn() },
-    workflowInstance: { findMany: vi.fn() },
+    workflowInstance: { findMany: vi.fn(), count: vi.fn() },
     workflowInstanceStep: { findUnique: vi.fn() },
   },
 }));
@@ -31,6 +31,7 @@ const portalToken = db.portalToken as unknown as {
 const userMock = db.user as unknown as { findUnique: ReturnType<typeof vi.fn> };
 const wfInstanceMock = db.workflowInstance as unknown as {
   findMany: ReturnType<typeof vi.fn>;
+  count: ReturnType<typeof vi.fn>;
 };
 const wfStepMock = db.workflowInstanceStep as unknown as {
   findUnique: ReturnType<typeof vi.fn>;
@@ -74,7 +75,7 @@ describe("getPortalSubject", () => {
     expect(r).toBeNull();
   });
 
-  it("returns null when the subject employee is missing or inactive", async () => {
+  it("returns null when the subject employee row has been deleted", async () => {
     portalToken.findUnique.mockResolvedValue({
       id: "tk1",
       subjectType: "EMPLOYEE",
@@ -84,7 +85,9 @@ describe("getPortalSubject", () => {
     });
     userMock.findUnique.mockResolvedValueOnce(null);
     expect(await getPortalSubject("abc")).toBeNull();
+  });
 
+  it("returns null for an inactive employee without an open offboarding workflow", async () => {
     portalToken.findUnique.mockResolvedValue({
       id: "tk1",
       subjectType: "EMPLOYEE",
@@ -96,7 +99,25 @@ describe("getPortalSubject", () => {
       name: "Alex",
       isActive: false,
     });
+    wfInstanceMock.count.mockResolvedValueOnce(0);
     expect(await getPortalSubject("abc")).toBeNull();
+  });
+
+  it("resolves an inactive employee when at least one OFFBOARDING workflow is open", async () => {
+    portalToken.findUnique.mockResolvedValue({
+      id: "tk1",
+      subjectType: "EMPLOYEE",
+      subjectId: "u1",
+      token: "abc",
+      expiresAt: null,
+    });
+    userMock.findUnique.mockResolvedValueOnce({
+      name: "Alex",
+      isActive: false,
+    });
+    wfInstanceMock.count.mockResolvedValueOnce(1);
+    const r = await getPortalSubject("abc");
+    expect(r).toMatchObject({ subjectType: "EMPLOYEE", subjectId: "u1" });
   });
 
   it("resolves to subject for an active EMPLOYEE token", async () => {
@@ -316,8 +337,10 @@ describe("loadPortalStep", () => {
     });
     wfStepMock.findUnique.mockResolvedValue({
       id: "step1",
+      status: "PENDING",
       workflowStep: { stepType: "REQUEST_DOCUMENT" },
       workflowInstance: {
+        status: "IN_PROGRESS",
         subjectType: "EMPLOYEE",
         subjectId: "u1",
       },
@@ -325,5 +348,93 @@ describe("loadPortalStep", () => {
     const r = await loadPortalStep("abc", "step1");
     expect(r).not.toBeNull();
     expect(r?.subject.subjectId).toBe("u1");
+  });
+
+  it("returns null when the step is already COMPLETED", async () => {
+    portalToken.findUnique.mockResolvedValue({
+      id: "tk1",
+      subjectType: "EMPLOYEE",
+      subjectId: "u1",
+      token: "abc",
+      expiresAt: null,
+    });
+    userMock.findUnique.mockResolvedValue({ name: "Alex", isActive: true });
+    wfStepMock.findUnique.mockResolvedValue({
+      id: "step1",
+      status: "COMPLETED",
+      workflowStep: { stepType: "REQUEST_DOCUMENT" },
+      workflowInstance: {
+        status: "IN_PROGRESS",
+        subjectType: "EMPLOYEE",
+        subjectId: "u1",
+      },
+    });
+    expect(await loadPortalStep("abc", "step1")).toBeNull();
+  });
+
+  it("returns null when the step is SKIPPED", async () => {
+    portalToken.findUnique.mockResolvedValue({
+      id: "tk1",
+      subjectType: "EMPLOYEE",
+      subjectId: "u1",
+      token: "abc",
+      expiresAt: null,
+    });
+    userMock.findUnique.mockResolvedValue({ name: "Alex", isActive: true });
+    wfStepMock.findUnique.mockResolvedValue({
+      id: "step1",
+      status: "SKIPPED",
+      workflowStep: { stepType: "REQUEST_DOCUMENT" },
+      workflowInstance: {
+        status: "IN_PROGRESS",
+        subjectType: "EMPLOYEE",
+        subjectId: "u1",
+      },
+    });
+    expect(await loadPortalStep("abc", "step1")).toBeNull();
+  });
+
+  it("returns null when the parent instance is COMPLETED", async () => {
+    portalToken.findUnique.mockResolvedValue({
+      id: "tk1",
+      subjectType: "EMPLOYEE",
+      subjectId: "u1",
+      token: "abc",
+      expiresAt: null,
+    });
+    userMock.findUnique.mockResolvedValue({ name: "Alex", isActive: true });
+    wfStepMock.findUnique.mockResolvedValue({
+      id: "step1",
+      status: "PENDING",
+      workflowStep: { stepType: "REQUEST_DOCUMENT" },
+      workflowInstance: {
+        status: "COMPLETED",
+        subjectType: "EMPLOYEE",
+        subjectId: "u1",
+      },
+    });
+    expect(await loadPortalStep("abc", "step1")).toBeNull();
+  });
+
+  it("returns null when the parent instance is CANCELLED", async () => {
+    portalToken.findUnique.mockResolvedValue({
+      id: "tk1",
+      subjectType: "EMPLOYEE",
+      subjectId: "u1",
+      token: "abc",
+      expiresAt: null,
+    });
+    userMock.findUnique.mockResolvedValue({ name: "Alex", isActive: true });
+    wfStepMock.findUnique.mockResolvedValue({
+      id: "step1",
+      status: "PENDING",
+      workflowStep: { stepType: "REQUEST_DOCUMENT" },
+      workflowInstance: {
+        status: "CANCELLED",
+        subjectType: "EMPLOYEE",
+        subjectId: "u1",
+      },
+    });
+    expect(await loadPortalStep("abc", "step1")).toBeNull();
   });
 });

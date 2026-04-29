@@ -15,7 +15,13 @@ export function EmailLogActions() {
     setResult(null);
     startTransition(async () => {
       const r = await sendTestEmail();
-      setResult(r);
+      // Normalize the gate error shape into the same {success, error}
+      // shape the email driver returns, so the UI doesn't have to fork.
+      if ("error" in r && !("success" in r)) {
+        setResult({ success: false, error: r.error });
+      } else {
+        setResult(r as { success: boolean; error?: string });
+      }
       router.refresh();
       // Clear the toast after a few seconds
       setTimeout(() => setResult(null), 4000);

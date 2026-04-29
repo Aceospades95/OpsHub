@@ -9,22 +9,29 @@ import { MapPin } from "lucide-react";
 import Link from "next/link";
 import { UserCreateButton } from "./user-create-button";
 import { ToggleActiveButton } from "./toggle-active-button";
+import { ADMIN_SETTING_KEYS, getBooleanAdminSetting } from "@/lib/admin-settings";
 
 export default async function AdminUsersPage() {
   const session = await auth();
   if (!session?.user) redirect("/login");
   if (session.user.role !== "ADMIN") redirect("/dashboard");
 
-  const [activeUsers, inactiveUsers, allUsers, workflowTemplates] = await Promise.all([
+  const [activeUsers, inactiveUsers, allUsers, workflowTemplates, defaultSendWelcomeEmail] = await Promise.all([
     db.user.findMany({
       where: { isActive: true },
       orderBy: { name: "asc" },
-      include: { manager: { select: { name: true } } },
+      include: {
+        manager: { select: { name: true } },
+        accounts: { select: { provider: true } },
+      },
     }),
     db.user.findMany({
       where: { isActive: false },
       orderBy: { name: "asc" },
-      include: { manager: { select: { name: true } } },
+      include: {
+        manager: { select: { name: true } },
+        accounts: { select: { provider: true } },
+      },
     }),
     db.user.findMany({
       select: { id: true, name: true },
@@ -35,6 +42,7 @@ export default async function AdminUsersPage() {
       select: { id: true, name: true, type: true },
       orderBy: [{ isSeed: "desc" }, { name: "asc" }],
     }),
+    getBooleanAdminSetting(ADMIN_SETTING_KEYS.sendWelcomeEmailDefault, true),
   ]);
 
   function renderUserTable(users: typeof activeUsers, dimmed = false) {
@@ -80,6 +88,13 @@ export default async function AdminUsersPage() {
                   {!user.hasLoginAccess && (
                     <Badge variant="outline" className="text-[10px]">No Login</Badge>
                   )}
+                  {user.accounts.some((a) => a.provider === "google") && (
+                    <span title="Linked to a Google account for SSO">
+                      <Badge variant="outline" className="text-[10px]">
+                        Google
+                      </Badge>
+                    </span>
+                  )}
                 </div>
               </td>
               <td className="p-4">
@@ -99,7 +114,7 @@ export default async function AdminUsersPage() {
       <PageHeader
         title="User Management"
         description="Manage users, roles, and permissions"
-        actions={<UserCreateButton allUsers={allUsers} workflowTemplates={workflowTemplates} />}
+        actions={<UserCreateButton allUsers={allUsers} workflowTemplates={workflowTemplates} defaultSendWelcomeEmail={defaultSendWelcomeEmail} />}
       />
 
       <Card className="mb-6">

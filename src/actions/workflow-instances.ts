@@ -1,6 +1,7 @@
 "use server";
 
 import { db } from "@/lib/db";
+import { log } from "@/lib/log";
 import { requireAuth, resolveModulePerms } from "@/lib/permissions";
 import { logActivity } from "@/lib/activity";
 import { revalidateWorkflowInstance } from "@/lib/revalidate-entity";
@@ -89,8 +90,16 @@ export async function createWorkflowInstance(
     });
     return { success: true, instanceId: result.instanceId } as const;
   } catch (err) {
+    // Engine-thrown errors with friendly messages ("template not found",
+    // "template archived") flow through to the user. Anything that
+    // isn't an Error subclass we treat as an unknown internal failure
+    // and don't echo to the client.
+    log.error("workflow-instances.create", "createInstance failed", err);
+    if (err instanceof Error && /^Workflow template /.test(err.message)) {
+      return { error: err.message } as const;
+    }
     return {
-      error: err instanceof Error ? err.message : "Could not start workflow",
+      error: "Could not start workflow. Check server logs for details.",
     } as const;
   }
 }

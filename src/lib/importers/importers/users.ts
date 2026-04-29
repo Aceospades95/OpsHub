@@ -1,22 +1,33 @@
 /**
- * Users importer — bulk-create employee records from a CSV.
+ * Users importer — bulk-create or update employee records from a CSV.
  *
  * Required: name, email
  * Optional: role, department, jobTitle, location, phone, managerEmail,
- *           hasLoginAccess
+ *           hasLoginAccess, isActive, avatar, terminationDate
  *
  * Behavior:
- *   - Skips rows with duplicate email (already exists in DB or already
- *     created earlier in this import)
- *   - Resolves managerEmail to a manager id by looking up active users
- *     after the batch is created so managers and reports can be in the
- *     same import file
- *   - hasLoginAccess defaults to true; set to "false" / "no" / "0" to
- *     create a tracked-only employee
- *   - Login users without a password get a placeholder hash so they
- *     can't sign in until an admin sets one — this matches the existing
- *     createUser pattern for security
- *   - All rows that succeed get a logActivity entry
+ *   - Email is the de-dup key, case-insensitive. If a row's email
+ *     matches an existing User, the importer UPDATES that User row
+ *     instead of failing. This makes the file safe to re-run after
+ *     fixes to a few rows. authProvider and hashedPassword are NEVER
+ *     touched on update — only the auth flow manages those.
+ *   - role defaults to CONTRIBUTOR (was VIEWER) so a typical
+ *     pre-provisioning of "the next 10 hires" lands them ready to
+ *     contribute as soon as they're assigned to a project. VIEWER /
+ *     ADMIN / etc. can still be specified explicitly.
+ *   - hasLoginAccess defaults to true so admins can pre-provision
+ *     blocked accounts intentionally by setting it to false in the CSV
+ *     for the (rare) tracked-only employee.
+ *   - On INSERT only: a placeholder bcrypt hash is written to
+ *     hashedPassword so the row exists but can't sign in via
+ *     credentials until an admin runs Reset Password. UPDATE rows
+ *     leave any existing hashedPassword alone.
+ *   - terminationDate accepts an ISO date (YYYY-MM-DD or full ISO
+ *     timestamp). Invalid date strings are dropped silently with the
+ *     row still importing — bad date shouldn't block a roster sync.
+ *   - Resolves managerEmail to a manager id in a second pass so
+ *     managers and reports can appear in the same file.
+ *   - All rows that succeed get a logActivity entry.
  *
  * Validation:
  *   - Email format checked
@@ -43,11 +54,19 @@ function parseBool(value: string | undefined, defaultValue: boolean): boolean {
   return defaultValue;
 }
 
+function parseDate(value: string | undefined): Date | null {
+  if (!value) return null;
+  const v = value.trim();
+  if (!v) return null;
+  const d = new Date(v);
+  return Number.isFinite(d.getTime()) ? d : null;
+}
+
 export const usersImporter: ImporterDefinition = {
   key: "users",
   name: "Employees",
   description:
-    "Bulk-create user accounts from a CSV. Required columns: name, email. Optional: role, department, jobTitle, location, phone, managerEmail, hasLoginAccess.",
+    "Bulk-create or update user accounts from a CSV. Required columns: name, email. Email is the match key — re-running the same file with edits updates existing rows. Optional: role, department, jobTitle, location, phone, managerEmail, hasLoginAccess, isActive, avatar, terminationDate.",
   module: "team",
 
   fields: [
@@ -67,7 +86,7 @@ export const usersImporter: ImporterDefinition = {
       key: "role",
       label: "System role",
       required: false,
-      description: "VIEWER, CONTRIBUTOR, DEVELOPER, MANAGER, or ADMIN. Defaults to VIEWER.",
+      description: "VIEWER, CONTRIBUTOR, DEVELOPER, MANAGER, or ADMIN. Defaults to CONTRIBUTOR.",
       aliases: ["user role", "permission role"],
     },
     {
@@ -122,6 +141,13 @@ export const usersImporter: ImporterDefinition = {
       description: "Optional URL to a profile photo. Leave blank to use initials.",
       aliases: ["photo", "picture", "avatar url"],
     },
+    {
+      key: "terminationDate",
+      label: "Termination date",
+      required: false,
+      description: "ISO date (YYYY-MM-DD). Used by the offboarding workflow trigger; null means active employee.",
+      aliases: ["termination date", "end date", "last day"],
+    },
   ],
 
   async sampleRows() {
@@ -146,6 +172,36 @@ export const usersImporter: ImporterDefinition = {
       hasLoginAccess: u.hasLoginAccess ? "true" : "false",
       isActive: u.isActive ? "true" : "false",
       avatar: u.avatar || "",
+      terminationDate: u.terminationDate
+        ? u.terminationDate.toISOString().slice(0, 10)
+        : "",
+    }));
+  },
+
+  async exportRows() {
+    // Full export — everything in the User table, in the same column
+    // shape commit() expects. Re-uploading this CSV is a no-op on rows
+    // that haven't changed (the upsert path matches by lowercased
+    // email and the comparison is value-by-value on the rest).
+    const users = await db.user.findMany({
+      orderBy: [{ isActive: "desc" }, { name: "asc" }],
+      include: { manager: { select: { email: true } } },
+    });
+    return users.map((u) => ({
+      name: u.name,
+      email: u.email,
+      role: u.role,
+      department: u.department || "",
+      jobTitle: u.jobTitle || "",
+      location: u.location || "",
+      phone: u.phone || "",
+      managerEmail: u.manager?.email || "",
+      hasLoginAccess: u.hasLoginAccess ? "true" : "false",
+      isActive: u.isActive ? "true" : "false",
+      avatar: u.avatar || "",
+      terminationDate: u.terminationDate
+        ? u.terminationDate.toISOString().slice(0, 10)
+        : "",
     }));
   },
 
@@ -155,17 +211,20 @@ export const usersImporter: ImporterDefinition = {
     let skipped = 0;
     let failed = 0;
 
-    // Pre-fetch existing emails for duplicate detection
-    const existingEmails = new Set(
+    // Pre-fetch existing users keyed by lowercased email so duplicate
+    // detection AND update routing share one read. We pull the id so
+    // we can update without a second findUnique per row.
+    const existingByEmail = new Map<string, { id: string }>(
       (
-        await db.user.findMany({ select: { email: true } })
-      ).map((u) => u.email.toLowerCase())
+        await db.user.findMany({ select: { id: true, email: true } })
+      ).map((u) => [u.email.toLowerCase(), { id: u.id }])
     );
 
-    // Track emails created in this import so duplicates within the file
-    // are also caught
-    const createdInBatch = new Map<string, string>(); // email → user id
-    /** Rows that need a manager resolved after the first pass */
+    /** Track emails seen earlier in this same file so we don't process
+     *  the same email twice (the first occurrence wins; subsequent
+     *  rows are skipped with a "duplicate row in file" message). */
+    const seenInBatch = new Set<string>();
+    /** Rows that need a manager resolved after the first pass. */
     const pendingManagerLinks: { userId: string; managerEmail: string }[] = [];
 
     for (let i = 0; i < rows.length; i++) {
@@ -192,20 +251,20 @@ export const usersImporter: ImporterDefinition = {
         results.push({ row: rowNumber, status: "failed", message: `Invalid email: ${emailRaw}` });
         continue;
       }
-
-      // Duplicate detection
-      if (existingEmails.has(email) || createdInBatch.has(email)) {
+      if (seenInBatch.has(email)) {
         skipped++;
         results.push({
           row: rowNumber,
           status: "skipped",
-          message: `Email already exists: ${emailRaw}`,
+          message: `Duplicate row in file: ${emailRaw}`,
         });
         continue;
       }
+      seenInBatch.add(email);
 
-      // Optional field parsing
-      const roleRaw = (raw.role || "VIEWER").trim().toUpperCase();
+      // Optional field parsing — note role default flipped from VIEWER
+      // to CONTRIBUTOR per the pre-provisioning workflow.
+      const roleRaw = (raw.role || "CONTRIBUTOR").trim().toUpperCase();
       const role = VALID_ROLES.includes(roleRaw as Role) ? (roleRaw as Role) : null;
       if (!role) {
         failed++;
@@ -220,42 +279,86 @@ export const usersImporter: ImporterDefinition = {
       const hasLoginAccess = parseBool(raw.hasLoginAccess, true);
       const isActive = parseBool(raw.isActive, true);
       const avatar = raw.avatar?.trim() || null;
+      const terminationDate = parseDate(raw.terminationDate);
+      const department = raw.department?.trim() || null;
+      const jobTitle = raw.jobTitle?.trim() || null;
+      const location = raw.location?.trim() || null;
+      const phone = raw.phone?.trim() || null;
 
-      // Login users get a placeholder hash they can't actually sign in with
-      // until an admin sets a real password. Matches the no-login pattern in
-      // src/actions/admin.ts createUser.
-      const placeholder = `import-placeholder-${Date.now()}-${rowNumber}`;
-      const hashedPassword = await hash(placeholder, 12);
+      const existing = existingByEmail.get(email);
 
       try {
-        const newUser = await db.user.create({
-          data: {
-            name,
-            email: emailRaw, // preserve original casing
-            hashedPassword,
-            role,
-            hasLoginAccess,
-            isActive,
-            avatar,
-            department: raw.department?.trim() || null,
-            jobTitle: raw.jobTitle?.trim() || null,
-            location: raw.location?.trim() || null,
-            phone: raw.phone?.trim() || null,
-          },
-        });
+        let userId: string;
+        let actionLabel: "imported" | "updated";
+        let displayName: string;
 
-        createdInBatch.set(email, newUser.id);
-        existingEmails.add(email);
-        imported++;
-        results.push({ row: rowNumber, status: "imported" });
-
-        // Defer manager resolution until everyone is created
-        const managerEmail = (raw.managerEmail || "").trim().toLowerCase();
-        if (managerEmail) {
-          pendingManagerLinks.push({ userId: newUser.id, managerEmail });
+        if (existing) {
+          // UPDATE path — never touch hashedPassword or authProvider
+          // (those are owned by the auth flow, not the importer).
+          // Email casing is preserved by NOT writing email here.
+          const updated = await db.user.update({
+            where: { id: existing.id },
+            data: {
+              name,
+              role,
+              hasLoginAccess,
+              isActive,
+              avatar,
+              department,
+              jobTitle,
+              location,
+              phone,
+              terminationDate,
+            },
+            select: { id: true, name: true },
+          });
+          userId = updated.id;
+          actionLabel = "updated";
+          displayName = updated.name;
+        } else {
+          // INSERT path — placeholder hashedPassword so the row exists
+          // but can't sign in via credentials until an admin runs Reset
+          // Password. authProvider stays at its default ("credentials")
+          // because we leave it unset.
+          const placeholder = `import-placeholder-${Date.now()}-${rowNumber}`;
+          const hashedPassword = await hash(placeholder, 12);
+          const created = await db.user.create({
+            data: {
+              name,
+              email: emailRaw, // preserve original casing on insert
+              hashedPassword,
+              role,
+              hasLoginAccess,
+              isActive,
+              avatar,
+              department,
+              jobTitle,
+              location,
+              phone,
+              terminationDate,
+            },
+            select: { id: true, name: true },
+          });
+          userId = created.id;
+          actionLabel = "imported";
+          displayName = created.name;
+          existingByEmail.set(email, { id: userId });
         }
 
-        await logActivity("imported", "user", newUser.id, ctx.triggeredBy, newUser.name);
+        imported++;
+        results.push({
+          row: rowNumber,
+          status: "imported",
+          message: actionLabel === "updated" ? "Updated existing user" : undefined,
+        });
+
+        // Defer manager resolution until everyone is created/updated
+        const managerEmail = (raw.managerEmail || "").trim().toLowerCase();
+        if (managerEmail) {
+          pendingManagerLinks.push({ userId, managerEmail });
+        }
+
+        await logActivity(actionLabel, "user", userId, ctx.triggeredBy, displayName);
       } catch (err) {
         failed++;
         results.push({
@@ -268,7 +371,7 @@ export const usersImporter: ImporterDefinition = {
 
     // Second pass: resolve managers. Look up by email against everyone
     // (existing + just-created). Silently skip unresolvable managers
-    // rather than failing the row — the user was still created.
+    // rather than failing the row — the user was still created/updated.
     if (pendingManagerLinks.length > 0) {
       const managerEmails = Array.from(
         new Set(pendingManagerLinks.map((p) => p.managerEmail))

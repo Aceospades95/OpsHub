@@ -35,6 +35,7 @@
  */
 
 import { db } from "@/lib/db";
+import { log } from "@/lib/log";
 import { revalidatePath } from "next/cache";
 import type { Notification } from "@prisma/client";
 import { sendFromTemplate, type TemplateDataMap, type TemplateKey } from "@/lib/email";
@@ -141,8 +142,7 @@ export async function notify<K extends TemplateKey = TemplateKey>(
         );
       }
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error("[notifications] email delivery failed:", err);
+      log.error("notifications.email", "Email delivery failed", err);
     }
   }
 

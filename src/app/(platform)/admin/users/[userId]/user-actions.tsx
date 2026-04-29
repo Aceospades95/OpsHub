@@ -28,7 +28,7 @@ export function UserActions({ user, allUsers }: Props) {
     const fd = new FormData();
     fd.set("id", user.id);
     const result = await deleteUser(null, fd);
-    if (result.success) router.push("/team");
+    if ("success" in result && result.success) router.push("/team");
   }
 
   return (
