@@ -1,11 +1,13 @@
 /**
  * Structural test for "this FormData entry is a file the browser uploaded".
  *
- * We do NOT use `instanceof File` because `File` isn't a global in Node
- * 18 (it's on `node:buffer` from 18.13 but not exposed on globalThis),
- * and the production Dockerfile pins `node:18-slim`. `instanceof File`
- * therefore throws a `ReferenceError` before any of our error handling
- * runs. Structural duck-typing covers Node 18 and Node 20+ identically.
+ * Node 20 exposes `globalThis.File` so `value instanceof File` would now
+ * work too. We keep the duck-type check because it's strictly more
+ * portable: it succeeds on any future test runner / edge runtime that
+ * supplies a Blob-shaped object even if the prototype chain doesn't
+ * line up. There's no functional gap between this and `instanceof File`
+ * in either direction; the structural check is just defensively
+ * forward-compatible.
  *
  * The other shape `formData.get(...)` can return is `string` (or `null`
  * when the key is missing), so eliminating those is enough.

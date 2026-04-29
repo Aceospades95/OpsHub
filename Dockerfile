@@ -1,4 +1,11 @@
-FROM node:18-slim AS base
+FROM node:20-slim AS base
+# Pinned to Node 20 LTS. Node 18 hit maintenance EOL April 2025; the
+# AWS SDK v3, NextAuth, and Prisma all drop 18 support in their next
+# majors, and Node 20 exposes globalThis.File / Blob without the
+# node:buffer import dance the legacy upload helpers had to work
+# around. Stay on -slim (Debian) rather than -alpine because Prisma's
+# query engine needs glibc.
+#
 # openssl: prisma's query engine needs it.
 # curl: HEALTHCHECK probes /api/health.
 # tini: optional but small init that reaps zombies; keeps SIGTERM behavior
