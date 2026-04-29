@@ -60,6 +60,15 @@ COPY --from=deps --chown=nextjs:nodejs /app/node_modules ./node_modules
 COPY --from=builder --chown=nextjs:nodejs /app/start.sh ./start.sh
 COPY --from=builder --chown=nextjs:nodejs /app/scripts ./scripts
 
+# Pre-create the local-storage directory and hand it to nextjs:nodejs.
+# Without this the first upload fails with `EACCES: permission denied,
+# mkdir '/app/.storage'` because /app itself is owned by root from the
+# WORKDIR step — the container user can write into chowned subdirs but
+# can't create a new top-level child of /app. Set STORAGE_LOCAL_DIR to
+# point at a host bind-mount in production single-node deploys (Unraid,
+# self-hosted) so the bytes survive container restarts.
+RUN mkdir -p /app/.storage/files && chown -R nextjs:nodejs /app/.storage
+
 USER nextjs
 EXPOSE 3000
 ENV PORT=3000
