@@ -11,6 +11,7 @@
  */
 
 import { db } from "@/lib/db";
+import { log } from "@/lib/log";
 import { sendFromTemplate } from "@/lib/email";
 import { absoluteUrl } from "@/lib/url";
 import { findStuckSteps } from "@/lib/workflows/analytics";
@@ -106,11 +107,9 @@ export const workflowReminderDigest: JobDefinition = {
       } catch (err) {
         // Per-recipient failure shouldn't block the rest. Errors land
         // in EmailLog via the email layer — check there if needed.
-        // eslint-disable-next-line no-console
-        console.error(
-          `[workflow-digest] failed for ${admin.email}:`,
-          err instanceof Error ? err.message : err
-        );
+        log.error("jobs.workflowDigest", "Per-recipient failure", err, {
+          adminEmail: admin.email,
+        });
       }
     }
 

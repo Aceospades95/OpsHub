@@ -7,6 +7,7 @@
  */
 
 import { db } from "@/lib/db";
+import { log } from "@/lib/log";
 import type { JobContext, JobResult } from "./types";
 import { getJob, listJobs } from "./registry";
 
@@ -70,10 +71,10 @@ export async function runJob(
       },
     });
     if (reaped.count > 0) {
-      // eslint-disable-next-line no-console
-      console.warn(
-        `[jobs] reaped ${reaped.count} abandoned "running" row(s) for ${jobKey}`
-      );
+      log.warn("jobs.runner", "Reaped abandoned running rows", {
+        jobKey,
+        count: reaped.count,
+      });
     }
 
     const inProgress = await db.jobLog.findFirst({
@@ -145,8 +146,7 @@ export async function runJob(
         error: errorMessage,
       },
     });
-    // eslint-disable-next-line no-console
-    console.error(`[jobs] ${jobKey} failed:`, err);
+    log.error("jobs.runner", "Job handler threw", err, { jobKey });
     return {
       status: "failed",
       error: errorMessage,

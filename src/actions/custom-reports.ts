@@ -1,6 +1,7 @@
 "use server";
 
 import { db } from "@/lib/db";
+import { log } from "@/lib/log";
 import { requireAuth } from "@/lib/permissions";
 import { logActivity } from "@/lib/activity";
 import { revalidatePath } from "next/cache";
@@ -226,8 +227,7 @@ export async function previewCustomReport(input: CustomReportUpsertInput) {
     // Don't surface the raw error message — it can include Prisma SQL,
     // table names, and constraint details. Log server-side so an admin
     // can debug, return a generic message to the client.
-    // eslint-disable-next-line no-console
-    console.error("[custom-reports] previewCustomReport failed:", err);
+    log.error("custom-reports.preview", "Preview failed", err);
     return {
       error:
         "Preview failed. Check server logs for details, or simplify the filters and try again.",

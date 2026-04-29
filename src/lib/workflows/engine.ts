@@ -38,6 +38,7 @@
  */
 
 import { db } from "@/lib/db";
+import { log } from "@/lib/log";
 import { resolveScheduledFor } from "./timing";
 import { randomBytes } from "crypto";
 import { buildInstanceContext, type WorkflowContext } from "./context";
@@ -283,10 +284,11 @@ async function revertStuckSyncSteps(now: Date, instanceId?: string): Promise<num
     },
   });
   if (result.count > 0) {
-    // eslint-disable-next-line no-console
-    console.warn(
-      `[workflows] revived ${result.count} stuck IN_PROGRESS step(s) past the ${STUCK_STEP_THRESHOLD_MS / 60000}min threshold`
-    );
+    log.warn("workflows.engine.tick", "Revived stuck IN_PROGRESS steps", {
+      count: result.count,
+      thresholdMinutes: STUCK_STEP_THRESHOLD_MS / 60000,
+      instanceId: instanceId ?? null,
+    });
   }
   return result.count;
 }

@@ -25,6 +25,7 @@
 
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { log } from "@/lib/log";
 
 // Always run this fresh on each call — caching a health check defeats
 // the point.
@@ -40,8 +41,7 @@ async function checkDatabase(): Promise<ServiceCheck> {
     await db.$queryRaw`SELECT 1`;
     return { ok: true };
   } catch (err) {
-    // eslint-disable-next-line no-console
-    console.error("[health] database check failed:", err);
+    log.error("health.db", "Database check failed", err);
     return { ok: false, reason: "database unavailable" };
   }
 }

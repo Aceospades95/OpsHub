@@ -29,6 +29,7 @@
 
 import { randomUUID } from "crypto";
 import { db } from "@/lib/db";
+import { log } from "@/lib/log";
 import { getActiveDriver, getDriverByName } from "./drivers";
 import type { StorageDriver } from "./types";
 
@@ -137,10 +138,10 @@ export async function getFileForServing(fileId: string): Promise<{
 
   const driver = getDriverByName(file.storageDriver);
   if (!driver) {
-    // eslint-disable-next-line no-console
-    console.error(
-      `[storage] File ${fileId} was stored with driver "${file.storageDriver}" which is not registered`
-    );
+    log.error("storage.read", "File stored with unregistered driver", {
+      fileId,
+      storageDriver: file.storageDriver,
+    });
     return null;
   }
 
@@ -178,8 +179,7 @@ export async function readFile(fileId: string): Promise<{
       visibility: meta.visibility,
     };
   } catch (err) {
-    // eslint-disable-next-line no-console
-    console.error(`[storage] Failed to read file ${fileId}:`, err);
+    log.error("storage.read", "Failed to read file", err, { fileId });
     return null;
   }
 }
@@ -201,8 +201,7 @@ export async function deleteFile(fileId: string): Promise<void> {
       try {
         await driver.delete(file.storageKey);
       } catch (err) {
-        // eslint-disable-next-line no-console
-        console.error(`[storage] Failed to delete bytes for file ${fileId}:`, err);
+        log.error("storage.delete", "Failed to delete bytes", err, { fileId });
       }
     }
   }

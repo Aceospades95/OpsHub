@@ -10,6 +10,7 @@
  * points to a non-existent driver, we log instead of crashing the app.
  */
 
+import { log } from "@/lib/log";
 import type { EmailDriver } from "./types";
 import { logDriver } from "./log-driver";
 import { sesDriver } from "./ses-driver";
@@ -52,10 +53,9 @@ export function getActiveDriver(): EmailDriver {
           `Valid drivers: ${Object.keys(DRIVERS).join(", ")}. Set EMAIL_DRIVER explicitly, or opt in to log fallback with ALLOW_LOG_DRIVER_IN_PROD=true.`
       );
     }
-    // eslint-disable-next-line no-console
-    console.warn(
-      `[email] EMAIL_DRIVER="${name}" is not registered. Falling back to log driver.`
-    );
+    log.warn("email.drivers", "EMAIL_DRIVER not registered; falling back to log", {
+      requested: name,
+    });
     return logDriver;
   }
 

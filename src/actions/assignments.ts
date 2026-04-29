@@ -1,6 +1,7 @@
 "use server";
 
 import { db } from "@/lib/db";
+import { log } from "@/lib/log";
 import { requireAuth, canManageProjectAssignments } from "@/lib/permissions";
 import { hasOrgWideManage } from "@/lib/scope";
 import { maybePromoteUserRole, maybeDemoteUserRole } from "@/lib/auto-role";
@@ -82,8 +83,7 @@ async function notifyAssignmentChange(opts: {
           : undefined,
     });
   } catch (err) {
-    // eslint-disable-next-line no-console
-    console.error("[assignments] notify failed:", err);
+    log.error("assignments.notify", "Notify failed", err);
   }
 }
 
@@ -222,8 +222,7 @@ export async function createAssignment(_prev: unknown, formData: FormData) {
         createdById: user.id,
       });
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error("[assignments] project-assignment trigger failed:", err);
+      log.error("assignments.triggers", "project-assignment trigger failed", err);
     }
   }
 
@@ -413,8 +412,7 @@ export async function quickAssign(data: {
         createdById: user.id,
       });
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error("[assignments] project-assignment trigger failed:", err);
+      log.error("assignments.triggers", "project-assignment trigger failed", err);
     }
   }
 

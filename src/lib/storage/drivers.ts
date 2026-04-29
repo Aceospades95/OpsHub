@@ -10,6 +10,7 @@
  * points to a non-existent driver, we use local so the app keeps working.
  */
 
+import { log } from "@/lib/log";
 import type { StorageDriver } from "./types";
 import { localDriver } from "./local-driver";
 import { s3Driver } from "./s3-driver";
@@ -29,10 +30,9 @@ export function getActiveDriver(): StorageDriver {
   const name = process.env.STORAGE_DRIVER?.toLowerCase() || "local";
   const driver = DRIVERS[name];
   if (!driver) {
-    // eslint-disable-next-line no-console
-    console.warn(
-      `[storage] STORAGE_DRIVER="${name}" is not registered. Falling back to local driver.`
-    );
+    log.warn("storage.drivers", "STORAGE_DRIVER not registered; falling back to local", {
+      requested: name,
+    });
     return localDriver;
   }
   return driver;

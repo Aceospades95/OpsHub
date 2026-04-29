@@ -2,6 +2,7 @@
 
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
+import { log } from "@/lib/log";
 import { revalidateTask } from "@/lib/revalidate-entity";
 import { notify } from "@/lib/notifications";
 import { absoluteUrl } from "@/lib/url";
@@ -121,8 +122,7 @@ async function notifyTaskAssigned(opts: {
       },
     });
   } catch (err) {
-    // eslint-disable-next-line no-console
-    console.error("[tasks] notify failed:", err);
+    log.error("tasks.notify", "Notify failed", err);
   }
 }
 

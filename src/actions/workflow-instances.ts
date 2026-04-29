@@ -1,6 +1,7 @@
 "use server";
 
 import { db } from "@/lib/db";
+import { log } from "@/lib/log";
 import { requireAuth, resolveModulePerms } from "@/lib/permissions";
 import { logActivity } from "@/lib/activity";
 import { revalidateWorkflowInstance } from "@/lib/revalidate-entity";
@@ -93,8 +94,7 @@ export async function createWorkflowInstance(
     // "template archived") flow through to the user. Anything that
     // isn't an Error subclass we treat as an unknown internal failure
     // and don't echo to the client.
-    // eslint-disable-next-line no-console
-    console.error("[workflow-instances] createInstance failed:", err);
+    log.error("workflow-instances.create", "createInstance failed", err);
     if (err instanceof Error && /^Workflow template /.test(err.message)) {
       return { error: err.message } as const;
     }

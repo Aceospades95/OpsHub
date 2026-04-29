@@ -12,6 +12,7 @@
  */
 
 import { db } from "@/lib/db";
+import { log } from "@/lib/log";
 import { notify } from "@/lib/notifications";
 import { absoluteUrl } from "@/lib/url";
 import { shouldRunDaily } from "../gating";
@@ -88,11 +89,9 @@ export const contractExpiryCheck: JobDefinition = {
         });
         notifiedCount++;
       } catch (err) {
-        // eslint-disable-next-line no-console
-        console.error(
-          `[contract-expiry-check] failed to notify for ${contract.id}:`,
-          err
-        );
+        log.error("jobs.contractExpiry", "Notify failed", err, {
+          contractId: contract.id,
+        });
       }
     }
 

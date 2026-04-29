@@ -1,6 +1,7 @@
 "use server";
 
 import { db } from "@/lib/db";
+import { log } from "@/lib/log";
 import { requireAuth, resolveModulePerms, canManageProjectAssignments } from "@/lib/permissions";
 import { maybePromoteUserRole, maybeDemoteUserRole } from "@/lib/auto-role";
 import { logActivity } from "@/lib/activity";
@@ -292,8 +293,7 @@ export async function addProjectMember(_prev: unknown, formData: FormData) {
         });
       }
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error("[projects] addProjectMember notify failed:", err);
+      log.error("projects.notify", "addProjectMember notify failed", err);
     }
   }
 
@@ -316,8 +316,7 @@ export async function addProjectMember(_prev: unknown, formData: FormData) {
       createdById: user.id,
     });
   } catch (err) {
-    // eslint-disable-next-line no-console
-    console.error("[projects] project-assignment trigger failed:", err);
+    log.error("projects.triggers", "project-assignment trigger failed", err);
   }
 
   return { success: true };
@@ -455,8 +454,7 @@ export async function addMilestoneAssignee(_prev: unknown, formData: FormData) {
         entityId: milestoneId,
       });
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error("[projects] addMilestoneAssignee notify failed:", err);
+      log.error("projects.notify", "addMilestoneAssignee notify failed", err);
     }
   }
 

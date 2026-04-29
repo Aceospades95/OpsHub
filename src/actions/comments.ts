@@ -1,6 +1,7 @@
 "use server";
 
 import { db } from "@/lib/db";
+import { log } from "@/lib/log";
 import { requireAuth, resolveModulePerms } from "@/lib/permissions";
 import { logActivity } from "@/lib/activity";
 import { deriveActivityScope } from "@/lib/activity-scope";
@@ -153,8 +154,7 @@ async function notifyMentions(opts: {
       },
     });
   } catch (err) {
-    // eslint-disable-next-line no-console
-    console.error("[comments] mention notify failed:", err);
+    log.error("comments.notify", "Mention notify failed", err);
   }
 }
 

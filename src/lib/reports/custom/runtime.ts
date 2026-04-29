@@ -10,6 +10,7 @@
  */
 
 import { db } from "@/lib/db";
+import { log } from "@/lib/log";
 import type { ReportOutput, ReportColumn } from "../types";
 import {
   getEntityDef,
@@ -175,17 +176,17 @@ function buildWhere(
   for (const clause of config.filters) {
     const filterDef = filterByKey.get(clause.field);
     if (!filterDef) {
-      // eslint-disable-next-line no-console
-      console.warn(
-        `[custom-reports] dropping filter on unknown field "${clause.field}"`
-      );
+      log.warn("custom-reports.where", "Dropped filter on unknown field", {
+        field: clause.field,
+      });
       continue;
     }
     if (!filterDef.operators.includes(clause.op)) {
-      // eslint-disable-next-line no-console
-      console.warn(
-        `[custom-reports] dropping unsupported "${clause.op}" on "${clause.field}" (allowed: ${filterDef.operators.join(", ")})`
-      );
+      log.warn("custom-reports.where", "Dropped unsupported operator", {
+        field: clause.field,
+        op: clause.op,
+        allowed: filterDef.operators,
+      });
       continue;
     }
     const subClause = applyOp(clause.op, clause.value, filterDef);

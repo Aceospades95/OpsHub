@@ -28,6 +28,7 @@
  */
 
 import { db } from "@/lib/db";
+import { log } from "@/lib/log";
 import { getActiveDriver, getDefaultFrom } from "./drivers";
 import type { EmailAuditContext, EmailMessage, EmailSendResult } from "./types";
 import { TEMPLATES, type TemplateDataMap, type TemplateKey } from "./templates";
@@ -101,8 +102,7 @@ export async function sendEmail(
       },
     });
   } catch (err) {
-    // eslint-disable-next-line no-console
-    console.error("[email] Failed to write EmailLog entry", err);
+    log.error("email.audit", "Failed to write EmailLog entry", err);
   }
 
   return result;

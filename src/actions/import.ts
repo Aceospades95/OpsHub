@@ -1,6 +1,7 @@
 "use server";
 
 import { db } from "@/lib/db";
+import { log } from "@/lib/log";
 import { requireAuth } from "@/lib/permissions";
 import {
   parseCsv,
@@ -119,8 +120,7 @@ export async function previewImport(
   } catch (err) {
     // Top-level safety net. Don't surface raw err.message — it can be
     // a Prisma / NextAuth / FS error with stack-trace-quality detail.
-    // eslint-disable-next-line no-console
-    console.error("[import] previewImport threw:", err);
+    log.error("import.preview", "Top-level catch", err);
     return {
       success: false,
       error:
@@ -227,8 +227,7 @@ export async function commitImport(
       // Importer-thrown errors can include row-level Prisma details
       // (foreign-key constraint violations, table names). Log them
       // server-side and return a generic message.
-      // eslint-disable-next-line no-console
-      console.error(`[import] importer "${importerKey}" commit threw:`, err);
+      log.error("import.commit", "Importer threw", err, { importerKey });
       return {
         success: false,
         error: "Importer commit failed. Check server logs for details.",
@@ -262,8 +261,7 @@ export async function commitImport(
       });
       logId = log.id;
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error("[import] Failed to write ImportLog row:", err);
+      log.error("import.commit", "Failed to write ImportLog row", err);
     }
 
     // Same defensive wrapper around revalidate — known to throw in
@@ -272,8 +270,7 @@ export async function commitImport(
       revalidatePath("/admin/import");
       revalidatePath("/", "layout");
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error("[import] revalidatePath threw post-import:", err);
+      log.error("import.commit", "revalidatePath threw post-import", err);
     }
 
     return {
@@ -285,8 +282,7 @@ export async function commitImport(
       logId,
     };
   } catch (err) {
-    // eslint-disable-next-line no-console
-    console.error("[import] commitImport threw:", err);
+    log.error("import.commit", "Top-level catch", err);
     return {
       success: false,
       error:

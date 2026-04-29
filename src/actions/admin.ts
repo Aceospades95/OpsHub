@@ -1,6 +1,7 @@
 "use server";
 
 import { db } from "@/lib/db";
+import { log } from "@/lib/log";
 import { requireAuth } from "@/lib/permissions";
 import { logActivity } from "@/lib/activity";
 import { revalidatePath } from "next/cache";
@@ -115,8 +116,7 @@ export async function createUser(_prev: unknown, formData: FormData) {
     } catch (err) {
       // Don't fail user creation if the welcome email errors out — the
       // failure is logged in EmailLog and visible at /admin/emails
-      // eslint-disable-next-line no-console
-      console.error("[admin] welcome email failed:", err);
+      log.error("admin.user.welcomeEmail", "Welcome email failed", err);
     }
   }
 
@@ -132,8 +132,7 @@ export async function createUser(_prev: unknown, formData: FormData) {
       createdById: admin.id,
     });
   } catch (err) {
-    // eslint-disable-next-line no-console
-    console.error("[admin] workflow auto-trigger failed:", err);
+    log.error("admin.user.triggers", "Workflow auto-trigger failed", err);
   }
 
   // Manually-selected workflow templates from the create dialog. The
@@ -173,8 +172,7 @@ export async function createUser(_prev: unknown, formData: FormData) {
           });
         }
       } catch (err) {
-        // eslint-disable-next-line no-console
-        console.error("[admin] manual workflow start failed:", err);
+        log.error("admin.user.manualWorkflow", "Manual workflow start failed", err);
       }
     }
   }
@@ -300,8 +298,7 @@ export async function deleteUser(_prev: unknown, formData: FormData) {
           "This user has comments, activity history, or other authored records that block deletion. Deactivate the user instead (toggle 'Has login access' off and set inactive) — that preserves history while disabling sign-in.",
       };
     }
-    // eslint-disable-next-line no-console
-    console.error("[admin] deleteUser failed:", err);
+    log.error("admin.user.delete", "deleteUser failed", err);
     return {
       error: "Could not delete user. Check server logs for details.",
     };

@@ -22,6 +22,7 @@ import { runCustomReportFromRow } from "@/lib/reports/custom/runtime";
 import { sendFromTemplate } from "@/lib/email";
 import { absoluteUrl } from "@/lib/url";
 import { db } from "@/lib/db";
+import { log } from "@/lib/log";
 
 function requireAdmin(role: string): { error: string } | null {
   if (role !== "ADMIN") {
@@ -52,8 +53,7 @@ export async function runReportAction(key: string) {
   } catch (err) {
     // Log the raw cause server-side; return a generic message so we
     // don't leak Prisma table names / SQL fragments to the client.
-    // eslint-disable-next-line no-console
-    console.error(`[reports] runReportAction(${key}) failed:`, err);
+    log.error("reports.runReport", "Failed to run report", err, { key });
     return {
       success: false as const,
       error: "Failed to run report. Check server logs for details.",
@@ -195,8 +195,7 @@ export async function emailReportAction(
     if (!result.success) {
       // Driver error messages can include SMTP server details and
       // host paths — log them but don't surface them to the admin UI.
-      // eslint-disable-next-line no-console
-      console.error(`[reports] emailReportAction(${key}) driver error:`, result.error);
+      log.error("reports.emailReport", "Driver error", result.error, { key });
     }
     return {
       success: true as const,
@@ -208,8 +207,7 @@ export async function emailReportAction(
         : "Email driver returned an error — see server logs.",
     };
   } catch (err) {
-    // eslint-disable-next-line no-console
-    console.error(`[reports] emailReportAction(${key}) failed:`, err);
+    log.error("reports.emailReport", "Failed to email report", err, { key });
     return {
       success: false as const,
       error: "Failed to email report. Check server logs for details.",
