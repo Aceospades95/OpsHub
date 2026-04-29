@@ -2,7 +2,7 @@
 
 import { db } from "@/lib/db";
 import { requireAuth } from "@/lib/permissions";
-import { uploadFile, deleteFile, blobToBuffer } from "@/lib/storage";
+import { uploadFile, deleteFile, blobToBuffer, StorageQuotaExceededError } from "@/lib/storage";
 import { asUploadedFile } from "@/lib/uploaded-file";
 import { revalidatePath } from "next/cache";
 
@@ -43,13 +43,24 @@ export async function uploadFileFromForm(
 
   const buffer = await blobToBuffer(blob as unknown as Blob);
 
-  const file = await uploadFile({
-    content: buffer,
-    filename: blob.name,
-    contentType: blob.type || "application/octet-stream",
-    uploadedById: user.id,
-    visibility,
-  });
+  let file;
+  try {
+    file = await uploadFile({
+      content: buffer,
+      filename: blob.name,
+      contentType: blob.type || "application/octet-stream",
+      uploadedById: user.id,
+      visibility,
+    });
+  } catch (err) {
+    if (err instanceof StorageQuotaExceededError) {
+      return {
+        success: false,
+        error: `Storage quota reached (${(err.quota / 1024 / 1024 / 1024).toFixed(1)} GB). Delete older files or contact an administrator.`,
+      };
+    }
+    throw err;
+  }
 
   revalidatePath("/admin/files");
   return { success: true, fileId: file.id };

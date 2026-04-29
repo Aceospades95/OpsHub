@@ -383,10 +383,14 @@ export async function tick(instanceId?: string): Promise<{
   }
 
   // After processing each batch, check whether any instance has finished
-  // (all required steps in a terminal state) and seal it.
-  for (const id of Array.from(touchedInstanceIds)) {
-    await maybeCompleteInstance(id);
-  }
+  // (all required steps in a terminal state) and seal it. Each call is
+  // independent — different instance ids — so we parallelize. Without
+  // Promise.all this loop was N sequential roundtrips for a tick that
+  // touched N distinct instances; in tests the workflows-tick cron's
+  // worst-case latency on a busy box was dominated by it.
+  await Promise.all(
+    Array.from(touchedInstanceIds).map((id) => maybeCompleteInstance(id))
+  );
 
   return { fired, failed, completed };
 }

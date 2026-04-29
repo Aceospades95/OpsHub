@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { uploadFile } from "@/lib/storage";
+import { uploadFile, StorageQuotaExceededError } from "@/lib/storage";
 import { asUploadedFile } from "@/lib/uploaded-file";
 import { getPortalSubject, loadPortalStep } from "@/lib/workflows/portal";
 import { consume, clientIpFromRequest } from "@/lib/rate-limit";
@@ -131,17 +131,28 @@ export async function POST(
   // Read the file bytes once and hand to the storage layer.
   const buffer = Buffer.from(await file.arrayBuffer());
 
-  const stored = await uploadFile({
-    content: buffer,
-    filename: file.name,
-    contentType: file.type || "application/octet-stream",
-    uploadedById: subject.subjectType === "EMPLOYEE" ? subject.subjectId : "system",
-    visibility: "private",
-    // Tag with the subject user id when EMPLOYEE so the file shows up
-    // on the employee profile's Files tab as well.
-    userId: subject.subjectType === "EMPLOYEE" ? subject.subjectId : undefined,
-    category: "workflow",
-  });
+  let stored;
+  try {
+    stored = await uploadFile({
+      content: buffer,
+      filename: file.name,
+      contentType: file.type || "application/octet-stream",
+      uploadedById: subject.subjectType === "EMPLOYEE" ? subject.subjectId : "system",
+      visibility: "private",
+      // Tag with the subject user id when EMPLOYEE so the file shows up
+      // on the employee profile's Files tab as well.
+      userId: subject.subjectType === "EMPLOYEE" ? subject.subjectId : undefined,
+      category: "workflow",
+    });
+  } catch (err) {
+    if (err instanceof StorageQuotaExceededError) {
+      return NextResponse.json(
+        { error: "Storage quota reached for this account. Contact support." },
+        { status: 413 }
+      );
+    }
+    throw err;
+  }
 
   return NextResponse.json({
     success: true,
