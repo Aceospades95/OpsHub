@@ -10,6 +10,7 @@ import {
   type BrandingKey,
 } from "@/lib/branding";
 import { revalidatePath } from "next/cache";
+import { log } from "@/lib/log";
 
 function requireAdmin(role: string): { error: string } | null {
   if (role !== "ADMIN") return { error: "Admin access required" };
@@ -31,74 +32,114 @@ export async function uploadBrandingImage(
   _prev: unknown,
   formData: FormData
 ): Promise<{ success: boolean; error?: string; fileId?: string }> {
-  const user = await requireAuth();
-  const gate = requireAdmin(user.role);
-  if (gate) return { success: false, error: gate.error };
-
-  const target = formData.get("target") as BrandingKey | null;
-  if (target !== "companyLogoFileId" && target !== "backgroundImageFileId") {
-    return { success: false, error: "Invalid target" };
-  }
-
-  const blob = asUploadedFile(formData.get("file"));
-  if (!blob) {
-    return { success: false, error: "No file provided" };
-  }
-  if (blob.size === 0) {
-    return { success: false, error: "File is empty" };
-  }
-  if (blob.size > MAX_BRANDING_BYTES) {
-    return {
-      success: false,
-      error: `File exceeds ${MAX_BRANDING_BYTES / 1024 / 1024}MB limit`,
-    };
-  }
-  if (!blob.type.startsWith("image/")) {
-    return { success: false, error: "File must be an image" };
-  }
-
-  // Upload the new file first so we have a valid replacement before
-  // deleting the old one (no broken state if upload fails)
-  const buffer = await blobToBuffer(blob as unknown as Blob);
-  let file;
+  // Top-level safety net. Branding uploads pass through the storage
+  // driver (S3 SDK or filesystem), the ThemeSetting table, and a
+  // post-upload revalidatePath — any of those can throw with details
+  // we don't want crashing the form into the "Application error"
+  // page that useFormState surfaces on uncaught throws. Catch
+  // everything, log server-side, and surface a friendly inline
+  // message to the admin.
   try {
-    file = await uploadFile({
-      content: buffer,
-      filename: blob.name,
-      contentType: blob.type,
-      uploadedById: user.id,
-      visibility: "public",
-    });
-  } catch (err) {
-    if (err instanceof StorageQuotaExceededError) {
+    const user = await requireAuth();
+    const gate = requireAdmin(user.role);
+    if (gate) return { success: false, error: gate.error };
+
+    const target = formData.get("target") as BrandingKey | null;
+    if (target !== "companyLogoFileId" && target !== "backgroundImageFileId") {
+      return { success: false, error: "Invalid target" };
+    }
+
+    const blob = asUploadedFile(formData.get("file"));
+    if (!blob) {
+      return { success: false, error: "No file provided" };
+    }
+    if (blob.size === 0) {
+      return { success: false, error: "File is empty" };
+    }
+    if (blob.size > MAX_BRANDING_BYTES) {
       return {
         success: false,
-        error: "Your account is at its storage quota. Delete older files first.",
+        error: `File exceeds ${MAX_BRANDING_BYTES / 1024 / 1024}MB limit`,
       };
     }
-    throw err;
-  }
-
-  // Find any existing file under this key and clean it up
-  const previous = await getBranding();
-  const previousFileId =
-    target === "companyLogoFileId"
-      ? previous.companyLogoFileId
-      : previous.backgroundImageFileId;
-
-  await setBrandingValue(BRANDING_KEYS[target], file.id);
-
-  if (previousFileId && previousFileId !== file.id) {
-    try {
-      await deleteFile(previousFileId);
-    } catch {
-      // Best-effort cleanup — failure here doesn't break the upload
+    if (!blob.type.startsWith("image/")) {
+      return { success: false, error: "File must be an image" };
     }
-  }
 
-  // Branding shows up in the layout, so we have to revalidate everything
-  revalidatePath("/", "layout");
-  return { success: true, fileId: file.id };
+    // Upload the new file first so we have a valid replacement before
+    // deleting the old one (no broken state if upload fails)
+    const buffer = await blobToBuffer(blob as unknown as Blob);
+    let file;
+    try {
+      file = await uploadFile({
+        content: buffer,
+        filename: blob.name,
+        contentType: blob.type,
+        uploadedById: user.id,
+        visibility: "public",
+      });
+    } catch (err) {
+      if (err instanceof StorageQuotaExceededError) {
+        return {
+          success: false,
+          error: "Your account is at its storage quota. Delete older files first.",
+        };
+      }
+      // Driver errors (S3 missing creds, disk permission, etc.) flow
+      // through here. Surface a hint that points the admin at the
+      // server logs without leaking the underlying error message.
+      log.error("branding.upload", "Storage driver failed", err, {
+        target,
+        driver: process.env.STORAGE_DRIVER || "local",
+      });
+      return {
+        success: false,
+        error:
+          "Storage layer rejected the upload. Check STORAGE_DRIVER config and server logs for the underlying error.",
+      };
+    }
+
+    // Find any existing file under this key and clean it up
+    const previous = await getBranding();
+    const previousFileId =
+      target === "companyLogoFileId"
+        ? previous.companyLogoFileId
+        : previous.backgroundImageFileId;
+
+    await setBrandingValue(BRANDING_KEYS[target], file.id);
+
+    if (previousFileId && previousFileId !== file.id) {
+      try {
+        await deleteFile(previousFileId);
+      } catch (err) {
+        // Best-effort cleanup — failure here doesn't break the upload
+        log.warn("branding.upload", "Failed to delete previous file", {
+          previousFileId,
+          err: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+
+    // Branding shows up in the layout, so we have to revalidate everything.
+    // Wrap separately because revalidatePath has been observed to throw
+    // under specific Next.js dynamic-route configurations and we don't
+    // want to surface "upload succeeded but page didn't refresh" as a
+    // crash.
+    try {
+      revalidatePath("/", "layout");
+    } catch (err) {
+      log.warn("branding.upload", "revalidatePath threw post-upload", {
+        err: err instanceof Error ? err.message : String(err),
+      });
+    }
+    return { success: true, fileId: file.id };
+  } catch (err) {
+    log.error("branding.upload", "Top-level catch", err);
+    return {
+      success: false,
+      error: "Could not upload the image. Check server logs for details.",
+    };
+  }
 }
 
 /**
@@ -106,41 +147,71 @@ export async function uploadBrandingImage(
  * removes the ThemeSetting key so the layout falls back to the default.
  */
 export async function clearBrandingImage(target: BrandingKey) {
-  const user = await requireAuth();
-  const gate = requireAdmin(user.role);
-  if (gate) return gate;
+  try {
+    const user = await requireAuth();
+    const gate = requireAdmin(user.role);
+    if (gate) return gate;
 
-  if (target !== "companyLogoFileId" && target !== "backgroundImageFileId") {
-    throw new Error("Invalid target");
-  }
-
-  const branding = await getBranding();
-  const fileId =
-    target === "companyLogoFileId"
-      ? branding.companyLogoFileId
-      : branding.backgroundImageFileId;
-
-  if (fileId) {
-    try {
-      await deleteFile(fileId);
-    } catch {
-      // Best-effort
+    if (target !== "companyLogoFileId" && target !== "backgroundImageFileId") {
+      return { error: "Invalid target" } as const;
     }
-  }
 
-  await setBrandingValue(BRANDING_KEYS[target], null);
-  revalidatePath("/", "layout");
-  return { success: true };
+    const branding = await getBranding();
+    const fileId =
+      target === "companyLogoFileId"
+        ? branding.companyLogoFileId
+        : branding.backgroundImageFileId;
+
+    if (fileId) {
+      try {
+        await deleteFile(fileId);
+      } catch (err) {
+        // Best-effort — orphan bytes are recoverable, surface as warn.
+        log.warn("branding.clear", "Failed to delete file bytes", {
+          fileId,
+          err: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+
+    await setBrandingValue(BRANDING_KEYS[target], null);
+    try {
+      revalidatePath("/", "layout");
+    } catch (err) {
+      log.warn("branding.clear", "revalidatePath threw post-clear", {
+        err: err instanceof Error ? err.message : String(err),
+      });
+    }
+    return { success: true } as const;
+  } catch (err) {
+    log.error("branding.clear", "Top-level catch", err);
+    return {
+      error: "Could not clear the branding image. Check server logs for details.",
+    } as const;
+  }
 }
 
 /** Update or clear the displayed company name. */
 export async function setCompanyName(name: string) {
-  const user = await requireAuth();
-  const gate = requireAdmin(user.role);
-  if (gate) return gate;
+  try {
+    const user = await requireAuth();
+    const gate = requireAdmin(user.role);
+    if (gate) return gate;
 
-  const trimmed = name.trim();
-  await setBrandingValue(BRANDING_KEYS.companyName, trimmed || null);
-  revalidatePath("/", "layout");
-  return { success: true };
+    const trimmed = name.trim();
+    await setBrandingValue(BRANDING_KEYS.companyName, trimmed || null);
+    try {
+      revalidatePath("/", "layout");
+    } catch (err) {
+      log.warn("branding.setName", "revalidatePath threw post-save", {
+        err: err instanceof Error ? err.message : String(err),
+      });
+    }
+    return { success: true } as const;
+  } catch (err) {
+    log.error("branding.setName", "Top-level catch", err);
+    return {
+      error: "Could not save the company name. Check server logs for details.",
+    } as const;
+  }
 }
