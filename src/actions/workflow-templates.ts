@@ -109,14 +109,69 @@ export async function deleteWorkflowTemplate(id: string) {
     // they're system defaults the spec ships with, so we treat them as
     // immutable in identity if not in content.
     return {
-      error: "System templates can't be deleted. Set them inactive instead.",
+      error: "System templates can't be deleted. Archive them instead.",
     } as const;
   }
 
-  // Phase 3 doesn't have running instances yet. Phase 4 will need to
-  // refuse delete when instances exist, but right now there are none.
+  // Refuse hard delete when any instance still references the template.
+  // A delete would cascade through the FK relation onto WorkflowInstance
+  // rows, taking the audit history with them. Archive (isActive=false)
+  // is the safe path — it stops new instances from spawning while
+  // preserving the timeline of past runs.
+  const instanceCount = await db.workflowInstance.count({
+    where: { workflowTemplateId: id },
+  });
+  if (instanceCount > 0) {
+    return {
+      error: `This template has ${instanceCount} workflow instance${
+        instanceCount === 1 ? "" : "s"
+      } attached. Archive it instead — deleting would erase that history.`,
+    } as const;
+  }
+
   await db.workflowTemplate.delete({ where: { id } });
   await logActivity("deleted", "workflow-template", id, user.id, tpl.name);
+  revalidateWorkflowTemplate(id);
+  return { success: true } as const;
+}
+
+/**
+ * Toggle a template between active and archived. Archived templates
+ * stop firing on triggers and stop appearing in pickers, but their
+ * existing instance history is preserved. Use this instead of delete
+ * for any template that has run before — delete refuses when
+ * instances exist precisely so this path is the obvious one.
+ */
+export async function setWorkflowTemplateActive(
+  id: string,
+  isActive: boolean
+) {
+  const user = await requireAuth();
+  const perms = await resolveModulePerms(user.id, user.role, "workflows");
+  if (!perms.canEdit) return { error: "Permission denied" } as const;
+
+  const tpl = await db.workflowTemplate.findUnique({
+    where: { id },
+    select: { id: true, name: true, isActive: true },
+  });
+  if (!tpl) return { error: "Template not found" } as const;
+  if (tpl.isActive === isActive) {
+    // No-op: already in the requested state. Returning success keeps the
+    // call idempotent so a double-click doesn't surface as an error.
+    return { success: true, alreadySet: true } as const;
+  }
+
+  await db.workflowTemplate.update({
+    where: { id },
+    data: { isActive },
+  });
+  await logActivity(
+    isActive ? "restored" : "archived",
+    "workflow-template",
+    id,
+    user.id,
+    tpl.name
+  );
   revalidateWorkflowTemplate(id);
   return { success: true } as const;
 }

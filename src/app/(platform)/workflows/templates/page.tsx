@@ -11,6 +11,7 @@ import { FileText } from "lucide-react";
 import { format } from "date-fns";
 
 import { WorkflowTemplateCreateButton } from "./template-create-button";
+import { WorkflowTemplateRowActions } from "./template-row-actions";
 
 const TYPE_LABEL: Record<string, string> = {
   ONBOARDING: "Onboarding",
@@ -147,6 +148,7 @@ export default async function WorkflowTemplatesPage({
                     <th className="px-4 py-3 text-right font-medium">Steps</th>
                     <th className="px-4 py-3 text-right font-medium">Running</th>
                     <th className="px-4 py-3 text-left font-medium">Updated</th>
+                    <th className="px-4 py-3 text-right font-medium">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -194,6 +196,15 @@ export default async function WorkflowTemplatesPage({
                       </td>
                       <td className="px-4 py-3 text-xs text-muted-foreground">
                         {format(t.updatedAt, "MMM d, yyyy")}
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <WorkflowTemplateRowActions
+                          templateId={t.id}
+                          isActive={t.isActive}
+                          isSeed={t.isSeed}
+                          canEdit={perms.canEdit}
+                          canDelete={perms.canDelete}
+                        />
                       </td>
                     </tr>
                   ))}
