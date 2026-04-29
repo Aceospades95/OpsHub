@@ -30,6 +30,19 @@ import { db } from "@/lib/db";
 const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
 
+/**
+ * Cadence labels admins can pick from in /admin/jobs. The string set
+ * matches what's stored in JobConfig.cadence.
+ */
+export const CADENCE_OVERRIDES = [
+  "HOURLY",
+  "DAILY",
+  "WEEKLY",
+  "MONTHLY",
+  "DISABLED",
+] as const;
+export type CadenceOverride = (typeof CADENCE_OVERRIDES)[number];
+
 async function lastCompletedAt(jobKey: string): Promise<Date | null> {
   const row = await db.jobLog.findFirst({
     where: { jobKey, status: "completed" },
@@ -40,31 +53,94 @@ async function lastCompletedAt(jobKey: string): Promise<Date | null> {
 }
 
 /**
- * True when the job has not completed in the last 23 hours, so a
- * daily-cadence job called this tick should run.
+ * Resolve the active cadence for a job. Returns the override from
+ * JobConfig when set; otherwise the caller-supplied default (the
+ * code-defined cadence baked into the handler).
  */
-export async function shouldRunDaily(jobKey: string): Promise<boolean> {
-  const last = await lastCompletedAt(jobKey);
-  if (!last) return true;
-  return Date.now() - last.getTime() >= 23 * HOUR_MS;
+async function resolveCadence(
+  jobKey: string,
+  fallback: CadenceOverride
+): Promise<CadenceOverride> {
+  try {
+    const row = await db.jobConfig.findUnique({
+      where: { jobKey },
+      select: { cadence: true },
+    });
+    const override = row?.cadence as CadenceOverride | null | undefined;
+    if (override && (CADENCE_OVERRIDES as readonly string[]).includes(override)) {
+      return override;
+    }
+  } catch {
+    // Fall through — JobConfig fetch failure shouldn't lock out the
+    // gate. The fallback is the same value we'd have used pre-override.
+  }
+  return fallback;
+}
+
+function windowMsFor(cadence: CadenceOverride): number | null {
+  // Slightly under the nominal cadence so a job that runs at 06:00 on
+  // Monday also runs at 06:00 on Tuesday even if the second invocation
+  // arrives a few seconds early. Mirrors the original constants.
+  if (cadence === "HOURLY") return 55 * 60 * 1000; // 55 min
+  if (cadence === "DAILY") return 23 * HOUR_MS;
+  if (cadence === "WEEKLY") return 6 * DAY_MS;
+  if (cadence === "MONTHLY") return 28 * DAY_MS;
+  return null; // DISABLED
 }
 
 /**
- * True when the job has not completed in the last 6 days.
+ * Generic gate driven by the resolved cadence. Returns false when the
+ * cadence is DISABLED, or when a completed run lands inside the
+ * cadence window. Used by the named helpers below; can also be called
+ * directly when the cadence is dynamic (e.g. a job that picks its
+ * cadence at runtime).
  */
-export async function shouldRunWeekly(jobKey: string): Promise<boolean> {
+async function shouldRunCadence(
+  jobKey: string,
+  fallback: CadenceOverride
+): Promise<boolean> {
+  const cadence = await resolveCadence(jobKey, fallback);
+  if (cadence === "DISABLED") return false;
+  const windowMs = windowMsFor(cadence);
+  if (windowMs == null) return false;
   const last = await lastCompletedAt(jobKey);
   if (!last) return true;
-  return Date.now() - last.getTime() >= 6 * DAY_MS;
+  return Date.now() - last.getTime() >= windowMs;
+}
+
+/**
+ * True when the job has not completed in the last 23 hours, so a
+ * daily-cadence job called this tick should run. Honors a JobConfig
+ * cadence override.
+ */
+export async function shouldRunDaily(jobKey: string): Promise<boolean> {
+  return shouldRunCadence(jobKey, "DAILY");
+}
+
+/**
+ * True when the job has not completed in the last 6 days. Honors a
+ * JobConfig cadence override.
+ */
+export async function shouldRunWeekly(jobKey: string): Promise<boolean> {
+  return shouldRunCadence(jobKey, "WEEKLY");
 }
 
 /**
  * True when the job has not completed in the last 28 days. 28 (not 30)
  * keeps the cadence stable for monthly jobs that anchor to a specific
  * day-of-month — see ScheduledTask.dayOfMonth for the same reasoning.
+ * Honors a JobConfig cadence override.
  */
 export async function shouldRunMonthly(jobKey: string): Promise<boolean> {
-  const last = await lastCompletedAt(jobKey);
-  if (!last) return true;
-  return Date.now() - last.getTime() >= 28 * DAY_MS;
+  return shouldRunCadence(jobKey, "MONTHLY");
+}
+
+/**
+ * Hourly gate. Most jobs that want hourly cadence don't bother with a
+ * gate (the cron driver fires hourly and they run every tick), but a
+ * daily/weekly job whose admin tightened it to HOURLY via the override
+ * routes through here.
+ */
+export async function shouldRunHourly(jobKey: string): Promise<boolean> {
+  return shouldRunCadence(jobKey, "HOURLY");
 }

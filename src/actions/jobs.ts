@@ -74,3 +74,45 @@ export async function toggleJobEnabled(jobKey: string, isEnabled: boolean) {
   revalidatePath(`/admin/jobs/${jobKey}`);
   return { success: true } as const;
 }
+
+/**
+ * Set or clear the cadence override for a job. Passing `null` unsets
+ * the override and lets the code-defined cadence apply again.
+ *
+ * Validates the value against the gating allowlist so a typo /
+ * crafted POST can't park a job in a bogus state — the gating layer
+ * also re-validates, but two layers is cheap and the friendlier
+ * error here saves an admin from reading server logs.
+ */
+export async function setJobCadence(jobKey: string, cadence: string | null) {
+  const user = await requireAuth();
+  const gate = requireAdmin(user.role);
+  if (gate) return gate;
+
+  if (!getJob(jobKey)) {
+    return { error: `No job registered with key "${jobKey}"` } as const;
+  }
+
+  const { CADENCE_OVERRIDES } = await import("@/lib/jobs/gating");
+  if (cadence !== null && !(CADENCE_OVERRIDES as readonly string[]).includes(cadence)) {
+    return {
+      error: `Cadence must be one of: ${CADENCE_OVERRIDES.join(", ")}, or empty to clear the override.`,
+    } as const;
+  }
+
+  await db.jobConfig.upsert({
+    where: { jobKey },
+    update: { cadence },
+    create: { jobKey, isEnabled: true, cadence },
+  });
+  await logActivity(
+    "updated",
+    "job",
+    jobKey,
+    user.id,
+    cadence ? `cadence → ${cadence}` : "cadence override cleared"
+  );
+  revalidatePath("/admin/jobs");
+  revalidatePath(`/admin/jobs/${jobKey}`);
+  return { success: true } as const;
+}

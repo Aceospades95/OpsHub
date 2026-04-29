@@ -42,17 +42,25 @@ export default async function WorkflowTemplatesPage({
     : undefined;
   const showArchived = searchParams.archived === "1";
 
-  const templates = await db.workflowTemplate.findMany({
-    where: {
-      ...(typeFilter ? { type: typeFilter } : {}),
-      ...(showArchived ? {} : { isActive: true }),
-    },
-    orderBy: [{ isSeed: "desc" }, { updatedAt: "desc" }],
-    include: {
-      createdBy: { select: { id: true, name: true } },
-      _count: { select: { steps: true, instances: true } },
-    },
-  });
+  const [templates, archivedCount] = await Promise.all([
+    db.workflowTemplate.findMany({
+      where: {
+        ...(typeFilter ? { type: typeFilter } : {}),
+        ...(showArchived ? {} : { isActive: true }),
+      },
+      orderBy: [{ isSeed: "desc" }, { updatedAt: "desc" }],
+      include: {
+        createdBy: { select: { id: true, name: true } },
+        _count: { select: { steps: true, instances: true } },
+      },
+    }),
+    db.workflowTemplate.count({
+      where: {
+        isActive: false,
+        ...(typeFilter ? { type: typeFilter } : {}),
+      },
+    }),
+  ]);
 
   return (
     <div>
@@ -99,9 +107,24 @@ export default async function WorkflowTemplatesPage({
           href={
             showArchived ? "/workflows/templates" : "/workflows/templates?archived=1"
           }
-          className="text-xs text-primary hover:underline"
+          className={
+            showArchived
+              ? "inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium bg-primary text-primary-foreground hover:opacity-90"
+              : "inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium border border-border hover:bg-muted/60"
+          }
         >
           {showArchived ? "Hide archived" : "Show archived"}
+          {archivedCount > 0 && (
+            <span
+              className={
+                showArchived
+                  ? "rounded-full bg-primary-foreground/20 px-1.5 py-0.5 text-[10px]"
+                  : "rounded-full bg-muted px-1.5 py-0.5 text-[10px]"
+              }
+            >
+              {archivedCount}
+            </span>
+          )}
         </Link>
       </div>
 

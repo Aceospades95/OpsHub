@@ -21,11 +21,16 @@ interface Props {
    *  to fire against the new user (in addition to any auto-trigger
    *  templates that always fire on user create). */
   workflowTemplates: WorkflowTemplate[];
+  /** Org-wide default for the "Send welcome email" checkbox.
+   *  Configured at /admin/settings; the create dialog still lets the
+   *  admin opt out for an individual user even when the default is on. */
+  defaultSendWelcomeEmail: boolean;
 }
 
-export function UserCreateButton({ allUsers, workflowTemplates }: Props) {
+export function UserCreateButton({ allUsers, workflowTemplates, defaultSendWelcomeEmail }: Props) {
   const [open, setOpen] = useState(false);
   const [hasLogin, setHasLogin] = useState(true);
+  const [sendWelcomeEmail, setSendWelcomeEmail] = useState(defaultSendWelcomeEmail);
   const [selectedTemplateIds, setSelectedTemplateIds] = useState<string[]>([]);
   const [state, action] = useFormState(createUser, null);
   const router = useRouter();
@@ -34,10 +39,11 @@ export function UserCreateButton({ allUsers, workflowTemplates }: Props) {
     if (state && "success" in state && state.success) {
       setOpen(false);
       setHasLogin(true);
+      setSendWelcomeEmail(defaultSendWelcomeEmail);
       setSelectedTemplateIds([]);
       router.refresh();
     }
-  }, [state, router]);
+  }, [state, router, defaultSendWelcomeEmail]);
 
   function toggleTemplate(id: string) {
     setSelectedTemplateIds((prev) =>
@@ -80,6 +86,24 @@ export function UserCreateButton({ allUsers, workflowTemplates }: Props) {
                     <label className="text-sm font-medium">Password *</label>
                     <input name="password" type="password" minLength={6} className="w-full mt-1 px-3 py-2 text-sm border border-input rounded-md bg-background" />
                   </div>
+                </div>
+              )}
+
+              {hasLogin && (
+                <div className="flex items-center gap-2 p-3 rounded-md bg-muted">
+                  <input type="hidden" name="sendWelcomeEmail" value={sendWelcomeEmail ? "true" : "false"} />
+                  <label className="flex items-center gap-2 text-sm cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={sendWelcomeEmail}
+                      onChange={(e) => setSendWelcomeEmail(e.target.checked)}
+                      className="accent-primary"
+                    />
+                    Send welcome email
+                  </label>
+                  <span className="text-xs text-muted-foreground">
+                    Sends a one-line &ldquo;your account is ready&rdquo; email with a sign-in link
+                  </span>
                 </div>
               )}
 

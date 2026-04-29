@@ -24,20 +24,31 @@ export default async function WorkflowsLandingPage() {
     );
   }
 
-  const [templateCount, emailTemplateCount, instanceCount] = await Promise.all([
+  const [templateCount, archivedTemplateCount, emailTemplateCount, instanceCount] = await Promise.all([
     db.workflowTemplate.count({ where: { isActive: true } }),
+    db.workflowTemplate.count({ where: { isActive: false } }),
     db.workflowEmailTemplate.count(),
     db.workflowInstance.count({
       where: { status: { in: ["PENDING", "IN_PROGRESS", "PAUSED"] } },
     }),
   ]);
 
+  // Surface the archived count alongside the active one. Without this,
+  // an admin who archives every template sees a `0` on the Templates
+  // tile and reasonably concludes nothing is configured — even though
+  // the archived rows still exist (and could be unarchived). Hidden
+  // state shouldn't be invisible state.
+  const templateDescription =
+    archivedTemplateCount > 0
+      ? `Design the steps once, run them many times. ${archivedTemplateCount} archived.`
+      : "Design the steps once, run them many times";
+
   const tiles: { href: string; icon: typeof FileText; label: string; description: string; count: number | null }[] = [
     {
       href: "/workflows/templates",
       icon: FileText,
       label: "Templates",
-      description: "Design the steps once, run them many times",
+      description: templateDescription,
       count: templateCount,
     },
     {

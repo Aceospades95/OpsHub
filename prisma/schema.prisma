@@ -1129,6 +1129,16 @@ model JobLog {
 model JobConfig {
   jobKey    String   @id
   isEnabled Boolean  @default(true)
+  /// Optional cadence override. When null the job uses its code-defined
+  /// cadence (the gate in lib/jobs/gating.ts checks shouldRunDaily /
+  /// shouldRunWeekly / shouldRunMonthly directly). When set, the same
+  /// gate honors this value instead. Lets an admin tighten or relax a
+  /// job's cadence without a code deploy.
+  ///
+  /// "DISABLED" lets an admin permanently skip the cadence gate while
+  /// keeping isEnabled=true (useful when paired with manual "Run now"
+  /// triggers from /admin/jobs).
+  cadence   String?
   updatedAt DateTime @updatedAt
 }
 

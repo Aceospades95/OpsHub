@@ -4,6 +4,10 @@ import { db } from "@/lib/db";
 import { log } from "@/lib/log";
 import { requireAuth } from "@/lib/permissions";
 import { logActivity } from "@/lib/activity";
+import {
+  ADMIN_SETTING_KEYS,
+  getBooleanAdminSetting,
+} from "@/lib/admin-settings";
 import { revalidatePath } from "next/cache";
 import { revalidateUser } from "@/lib/revalidate-entity";
 import { getPermissionedModules, ALL_PERMISSION_FLAGS } from "@/lib/modules";
@@ -95,11 +99,31 @@ export async function createUser(_prev: unknown, formData: FormData) {
   await logActivity("created", "user", user.id, admin.id, user.name);
   revalidateUser(user.id, { managerId: user.managerId });
 
-  // Send a welcome email to login-enabled users so they know their account
-  // exists and where to sign in. No-login placeholder users (e.g., tracked
-  // employees who don't actually use the system) skip this since their
-  // email column is a fake placeholder.
+  // Welcome email — opt-out per-user via the create-user dialog, with
+  // a configurable org-wide default at /admin/settings. Originally this
+  // fired unconditionally on every login-enabled user create, which
+  // surprised admins who'd archived their welcome workflow expecting
+  // the email to stop. The send is now driven by an explicit form
+  // field with the org default as fallback so the action is always
+  // visible to whoever's creating the user.
+  //
+  // The send is skipped for no-login placeholder users (tracked-only
+  // employees) since their email column is a fake placeholder.
+  let shouldSendWelcome = false;
   if (hasLogin && parsed.data.email) {
+    const fieldValue = formData.get("sendWelcomeEmail");
+    if (fieldValue === "true") shouldSendWelcome = true;
+    else if (fieldValue === "false") shouldSendWelcome = false;
+    else {
+      // No field at all (legacy client / script POST) — fall back to
+      // the org-wide default so existing automation keeps working.
+      shouldSendWelcome = await getBooleanAdminSetting(
+        ADMIN_SETTING_KEYS.sendWelcomeEmailDefault,
+        true
+      );
+    }
+  }
+  if (shouldSendWelcome) {
     try {
       await sendFromTemplate(
         "welcome",
