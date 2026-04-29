@@ -21,6 +21,8 @@ export type ModuleKey =
   | "contracts"
   | "certifications"
   | "suppliers"
+  | "subcontractors"
+  | "partnerships"
   | "tools"
   | "intranet"
   | "quotes"
@@ -172,6 +174,24 @@ export const MODULES: ModuleDefinition[] = [
     icon: "Truck",
     description: "Vendor and supplier management",
     section: "resources",
+    permissioned: true,
+  },
+  {
+    key: "subcontractors",
+    label: "Subcontractors",
+    href: "/subcontractors",
+    icon: "HardHat",
+    description: "External project labor — 1099 contractors, sub firms, and staffing agencies",
+    section: "delivery",
+    permissioned: true,
+  },
+  {
+    key: "partnerships",
+    label: "Partnerships",
+    href: "/partnerships",
+    icon: "Handshake",
+    description: "Strategic relationships — referrers, resellers, technology, channel, and joint-venture partners",
+    section: "delivery",
     permissioned: true,
   },
   {

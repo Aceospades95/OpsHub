@@ -69,6 +69,10 @@ export function revalidateProject(
   revalidatePath("/team", "layout"); // staffing matrix
   revalidatePath("/tasks");
   revalidatePath("/dashboard");
+  // Subcontractor and partnership detail pages list a project's name —
+  // revalidate so a renamed project shows everywhere it appears.
+  revalidatePath("/subcontractors", "layout");
+  revalidatePath("/partnerships", "layout");
 
   if (opts?.clientId) {
     revalidatePath(`/clients/${opts.clientId}`);
@@ -197,6 +201,37 @@ export function revalidateWorkflowInstance(
   }
 }
 
+// ─── SUBCONTRACTOR ────────────────────────────────────────────
+//
+// A subcontractor appears on: subcontractors list, subcontractor detail,
+// project detail (subcontractor card on each linked project), and the
+// dashboard (compliance / utilization widgets).
+
+export function revalidateSubcontractor(
+  subcontractorId: string,
+  opts?: { projectId?: string | null }
+) {
+  revalidatePath(`/subcontractors/${subcontractorId}`);
+  revalidatePath("/subcontractors", "layout");
+  revalidatePath("/dashboard");
+  if (opts?.projectId) revalidatePath(`/projects/${opts.projectId}`);
+}
+
+// ─── PARTNERSHIP ──────────────────────────────────────────────
+//
+// A partnership appears on: partnerships list, partnership detail, project
+// detail (partner-on-project card), dashboard.
+
+export function revalidatePartnership(
+  partnershipId: string,
+  opts?: { projectId?: string | null }
+) {
+  revalidatePath(`/partnerships/${partnershipId}`);
+  revalidatePath("/partnerships", "layout");
+  revalidatePath("/dashboard");
+  if (opts?.projectId) revalidatePath(`/projects/${opts.projectId}`);
+}
+
 // ─── COMMENT ──────────────────────────────────────────────────
 //
 // Comments are attached to a parent entity (project, client, task, etc.). A
@@ -204,7 +239,7 @@ export function revalidateWorkflowInstance(
 // activity" if we show that.
 
 export function revalidateComment(opts: {
-  entityType: "project" | "client" | "task" | "contract" | "document";
+  entityType: "project" | "client" | "task" | "contract" | "document" | "subcontractor" | "partnership";
   entityId: string;
   authorId?: string | null;
 }) {
@@ -214,6 +249,8 @@ export function revalidateComment(opts: {
     task: "/tasks",
     contract: `/contracts/${opts.entityId}`,
     document: `/documents/${opts.entityId}`,
+    subcontractor: `/subcontractors/${opts.entityId}`,
+    partnership: `/partnerships/${opts.entityId}`,
   } as const;
   revalidatePath(pathMap[opts.entityType]);
   revalidatePath("/dashboard"); // activity feeds

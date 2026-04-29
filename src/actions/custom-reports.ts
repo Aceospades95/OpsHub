@@ -27,6 +27,8 @@ const entitySchema = z.enum([
   "CONTRACT",
   "CERTIFICATION",
   "ASSIGNMENT",
+  "SUBCONTRACTOR",
+  "PARTNERSHIP",
 ]);
 
 const filterSchema = z.object({

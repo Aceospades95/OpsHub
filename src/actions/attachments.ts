@@ -12,6 +12,8 @@ const entityModuleMap: Record<string, string> = {
   intranet: "intranet",
   tool: "tools",
   document: "projects",
+  subcontractor: "subcontractors",
+  partnership: "partnerships",
 };
 
 function getFkField(entityType: string): string {
@@ -67,7 +69,17 @@ export async function deleteExternalLink(_prev: unknown, formData: FormData) {
   const link = await db.externalLink.findUnique({ where: { id } });
   if (!link) return { error: "Not found" };
 
-  const entityType = link.projectId ? "project" : link.contractId ? "contract" : link.supplierId ? "supplier" : "intranet";
+  const entityType = link.projectId
+    ? "project"
+    : link.contractId
+      ? "contract"
+      : link.supplierId
+        ? "supplier"
+        : link.subcontractorId
+          ? "subcontractor"
+          : link.partnershipId
+            ? "partnership"
+            : "intranet";
   const moduleName = entityModuleMap[entityType];
   const perms = await resolveModulePerms(user.id, user.role, moduleName);
   if (!perms.canDelete) return { error: "Permission denied" };

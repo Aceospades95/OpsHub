@@ -853,6 +853,177 @@ const ASSIGNMENT: EntityDef = {
   },
 };
 
+// ─── Subcontractor entity ───────────────────────────────────────────────
+
+const SUBCONTRACTOR: EntityDef = {
+  label: "Subcontractors",
+  description: "External project labor — 1099s, sub firms, and staffing agencies",
+  defaultColumns: ["name", "type", "status", "complianceStatus", "insuranceExpiresAt", "accountManager.name"],
+  defaultSort: "name",
+  defaultLimit: 500,
+  columns: [
+    { key: "name", label: "Name", type: "string" },
+    { key: "legalName", label: "Legal name", type: "string" },
+    { key: "type", label: "Type", type: "enum" },
+    { key: "status", label: "Status", type: "enum" },
+    { key: "complianceStatus", label: "Compliance", type: "enum" },
+    { key: "insuranceExpiresAt", label: "Insurance expires", type: "date", format: fmtDate },
+    { key: "msaSignedAt", label: "MSA signed", type: "date", format: fmtDate },
+    { key: "ndaSignedAt", label: "NDA signed", type: "date", format: fmtDate },
+    { key: "w9OnFile", label: "W-9 on file", type: "boolean", format: fmtBoolean },
+    { key: "isPreferred", label: "Preferred", type: "boolean", format: fmtBoolean },
+    { key: "rating", label: "Rating", type: "number" },
+    { key: "defaultRate", label: "Default rate", type: "number", format: fmtCurrency },
+    { key: "rateUnit", label: "Rate unit", type: "string" },
+    { key: "paymentTerms", label: "Payment terms", type: "string" },
+    { key: "primaryContactName", label: "Primary contact", type: "string" },
+    { key: "primaryContactEmail", label: "Contact email", type: "string" },
+    { key: "primaryContactPhone", label: "Contact phone", type: "string" },
+    { key: "website", label: "Website", type: "string" },
+    {
+      key: "accountManager.name",
+      label: "Account manager",
+      type: "string",
+      requiresRelation: "accountManager",
+    },
+    { key: "createdAt", label: "Created", type: "date", format: fmtDate },
+    { key: "updatedAt", label: "Updated", type: "date", format: fmtDate },
+  ],
+  filters: [
+    {
+      key: "status",
+      label: "Status",
+      type: "enum",
+      operators: ["equals", "in"],
+      enumValues: ["ACTIVE", "INACTIVE", "ONBOARDING", "SUSPENDED", "ARCHIVED"],
+    },
+    {
+      key: "type",
+      label: "Type",
+      type: "enum",
+      operators: ["equals", "in"],
+      enumValues: ["INDIVIDUAL", "COMPANY", "AGENCY"],
+    },
+    {
+      key: "complianceStatus",
+      label: "Compliance",
+      type: "enum",
+      operators: ["equals", "in"],
+      enumValues: ["COMPLIANT", "PENDING", "EXPIRED", "NON_COMPLIANT"],
+    },
+    { key: "name", label: "Name", type: "string", operators: ["equals", "contains"] },
+    { key: "isPreferred", label: "Preferred", type: "boolean", operators: ["equals"] },
+    { key: "w9OnFile", label: "W-9 on file", type: "boolean", operators: ["equals"] },
+    { key: "insuranceExpiresAt", label: "Insurance expires", type: "date", operators: ["gte", "lte", "isNull", "isNotNull"] },
+    { key: "msaSignedAt", label: "MSA signed", type: "date", operators: ["isNull", "isNotNull"] },
+    { key: "rating", label: "Rating", type: "number", operators: ["gte", "lte"] },
+    {
+      key: "accountManager.name",
+      label: "Account manager",
+      type: "string",
+      operators: ["equals", "contains"],
+      relation: "accountManager",
+    },
+    { key: "createdAt", label: "Created", type: "date", operators: ["gte", "lte"] },
+  ],
+  async fetch({ where, orderBy, take, includes }) {
+    const include: Record<string, unknown> = {};
+    if (includes.has("accountManager")) {
+      include.accountManager = { select: { id: true, name: true, email: true } };
+    }
+    const rows = await db.subcontractor.findMany({
+      where,
+      orderBy,
+      take,
+      include: Object.keys(include).length > 0 ? include : undefined,
+    });
+    return rows as Record<string, unknown>[];
+  },
+};
+
+// ─── Partnership entity ─────────────────────────────────────────────────
+
+const PARTNERSHIP: EntityDef = {
+  label: "Partnerships",
+  description: "Strategic relationships with external organizations",
+  defaultColumns: ["name", "type", "status", "tier", "relationshipOwner.name", "agreementExpiresAt"],
+  defaultSort: "name",
+  defaultLimit: 500,
+  columns: [
+    { key: "name", label: "Name", type: "string" },
+    { key: "legalName", label: "Legal name", type: "string" },
+    { key: "type", label: "Type", type: "enum" },
+    { key: "status", label: "Status", type: "enum" },
+    { key: "tier", label: "Tier", type: "enum" },
+    { key: "industry", label: "Industry", type: "string" },
+    { key: "partnerSinceDate", label: "Partner since", type: "date", format: fmtDate },
+    { key: "agreementSignedAt", label: "Agreement signed", type: "date", format: fmtDate },
+    { key: "agreementExpiresAt", label: "Agreement expires", type: "date", format: fmtDate },
+    { key: "autoRenew", label: "Auto-renew", type: "boolean", format: fmtBoolean },
+    { key: "referralFeeBps", label: "Referral fee (bps)", type: "number" },
+    { key: "jointMarketing", label: "Joint marketing", type: "boolean", format: fmtBoolean },
+    { key: "primaryContactName", label: "Primary contact", type: "string" },
+    { key: "primaryContactEmail", label: "Contact email", type: "string" },
+    {
+      key: "relationshipOwner.name",
+      label: "Owner",
+      type: "string",
+      requiresRelation: "relationshipOwner",
+    },
+    { key: "createdAt", label: "Created", type: "date", format: fmtDate },
+    { key: "updatedAt", label: "Updated", type: "date", format: fmtDate },
+  ],
+  filters: [
+    {
+      key: "status",
+      label: "Status",
+      type: "enum",
+      operators: ["equals", "in"],
+      enumValues: ["ACTIVE", "PROSPECT", "INACTIVE", "PAUSED", "ARCHIVED"],
+    },
+    {
+      key: "type",
+      label: "Type",
+      type: "enum",
+      operators: ["equals", "in"],
+      enumValues: ["STRATEGIC", "REFERRAL", "RESELLER", "TECHNOLOGY", "CHANNEL", "JOINT_VENTURE", "AFFILIATE", "OTHER"],
+    },
+    {
+      key: "tier",
+      label: "Tier",
+      type: "enum",
+      operators: ["equals", "in", "isNull", "isNotNull"],
+      enumValues: ["PLATINUM", "GOLD", "SILVER", "BRONZE", "STANDARD"],
+    },
+    { key: "name", label: "Name", type: "string", operators: ["equals", "contains"] },
+    { key: "industry", label: "Industry", type: "string", operators: ["equals", "contains", "isNull", "isNotNull"] },
+    { key: "agreementExpiresAt", label: "Agreement expires", type: "date", operators: ["gte", "lte", "isNull", "isNotNull"] },
+    { key: "autoRenew", label: "Auto-renew", type: "boolean", operators: ["equals"] },
+    { key: "jointMarketing", label: "Joint marketing", type: "boolean", operators: ["equals"] },
+    {
+      key: "relationshipOwner.name",
+      label: "Owner",
+      type: "string",
+      operators: ["equals", "contains"],
+      relation: "relationshipOwner",
+    },
+    { key: "createdAt", label: "Created", type: "date", operators: ["gte", "lte"] },
+  ],
+  async fetch({ where, orderBy, take, includes }) {
+    const include: Record<string, unknown> = {};
+    if (includes.has("relationshipOwner")) {
+      include.relationshipOwner = { select: { id: true, name: true, email: true } };
+    }
+    const rows = await db.partnership.findMany({
+      where,
+      orderBy,
+      take,
+      include: Object.keys(include).length > 0 ? include : undefined,
+    });
+    return rows as Record<string, unknown>[];
+  },
+};
+
 // ─── Registry ──────────────────────────────────────────────────────────
 
 export const ENTITY_REGISTRY: Record<CustomReportEntity, EntityDef> = {
@@ -864,6 +1035,8 @@ export const ENTITY_REGISTRY: Record<CustomReportEntity, EntityDef> = {
   CONTRACT,
   CERTIFICATION,
   ASSIGNMENT,
+  SUBCONTRACTOR,
+  PARTNERSHIP,
 };
 
 export function getEntityDef(entity: CustomReportEntity): EntityDef {
