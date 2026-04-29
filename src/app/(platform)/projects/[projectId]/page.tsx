@@ -23,6 +23,8 @@ import { TeamHierarchy } from "./team-hierarchy";
 import { PageLayout } from "@/components/shared/page-layout";
 import { TaskCheckbox } from "@/app/(platform)/tasks/task-checkbox";
 import { QuotesCard } from "@/components/quotes/quotes-card";
+import { ProjectSubcontractorsCard } from "./project-subcontractors-card";
+import { ProjectPartnershipsCard } from "./project-partnerships-card";
 
 interface Props {
   params: Promise<{ projectId: string }>;
@@ -48,6 +50,10 @@ export default async function ProjectDetailPage({ params }: Props) {
 
   // Quotes module visibility is independent of projects.
   const quotePerms = await resolveModulePerms(user.id, user.role, "quotes");
+  // Subcontractor and Partnership modules are independent — projects show
+  // their cards only when the user has at least canView on those modules.
+  const subPerms = await resolveModulePerms(user.id, user.role, "subcontractors");
+  const partnerPerms = await resolveModulePerms(user.id, user.role, "partnerships");
 
   const project = await db.project.findUnique({
     where: { id: projectId },
@@ -99,6 +105,18 @@ export default async function ProjectDetailPage({ params }: Props) {
         include: { author: { select: { id: true, name: true } } },
         orderBy: { createdAt: "desc" },
       },
+      subcontractors: {
+        include: {
+          subcontractor: { select: { id: true, name: true, isPreferred: true } },
+        },
+        orderBy: { createdAt: "desc" },
+      },
+      partnerships: {
+        include: {
+          partnership: { select: { id: true, name: true, type: true, tier: true } },
+        },
+        orderBy: { createdAt: "desc" },
+      },
     },
   });
 
@@ -115,7 +133,16 @@ export default async function ProjectDetailPage({ params }: Props) {
     orderBy: { name: "asc" },
   });
 
-  const [allUsers, projectTasks, allTools, allProjects, serviceOfferings, roleDefinitions] = await Promise.all([
+  const [
+    allUsers,
+    projectTasks,
+    allTools,
+    allProjects,
+    serviceOfferings,
+    roleDefinitions,
+    allSubcontractors,
+    allPartnerships,
+  ] = await Promise.all([
     db.user.findMany({
       where: { isActive: true },
       select: { id: true, name: true, email: true, jobTitle: true, location: true },
@@ -146,6 +173,20 @@ export default async function ProjectDetailPage({ params }: Props) {
       select: { id: true, name: true },
       orderBy: { name: "asc" },
     }),
+    subPerms.canView
+      ? db.subcontractor.findMany({
+          where: { status: { not: "ARCHIVED" } },
+          select: { id: true, name: true },
+          orderBy: { name: "asc" },
+        })
+      : Promise.resolve([] as { id: string; name: string }[]),
+    partnerPerms.canView
+      ? db.partnership.findMany({
+          where: { status: { not: "ARCHIVED" } },
+          select: { id: true, name: true },
+          orderBy: { name: "asc" },
+        })
+      : Promise.resolve([] as { id: string; name: string }[]),
   ]);
 
   const treeNodes = buildTree(project.childProjects as Parameters<typeof buildTree>[0]);
@@ -413,6 +454,61 @@ export default async function ProjectDetailPage({ params }: Props) {
     ),
     quotes: quotePerms.canView ? (
       <QuotesCard projectId={project.id} canCreate={quotePerms.canCreate} />
+    ) : null,
+    subcontractors: subPerms.canView ? (
+      <Card className="h-full">
+        <CardHeader>
+          <CardTitle>Subcontractors ({project.subcontractors.length})</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <ProjectSubcontractorsCard
+            projectId={project.id}
+            links={project.subcontractors.map((sp) => ({
+              id: sp.id,
+              subcontractorId: sp.subcontractorId,
+              subcontractorName: sp.subcontractor?.name || "",
+              subcontractorPreferred: sp.subcontractor?.isPreferred ?? false,
+              scope: sp.scope,
+              role: sp.role,
+              status: sp.status,
+              startDate: sp.startDate,
+              endDate: sp.endDate,
+              contractValue: sp.contractValue,
+              currency: sp.currency,
+              rate: sp.rate,
+              rateUnit: sp.rateUnit,
+              notes: sp.notes,
+            }))}
+            allSubcontractors={allSubcontractors}
+            canEdit={subPerms.canEdit}
+          />
+        </CardContent>
+      </Card>
+    ) : null,
+    partnerships: partnerPerms.canView ? (
+      <Card className="h-full">
+        <CardHeader>
+          <CardTitle>Partners ({project.partnerships.length})</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <ProjectPartnershipsCard
+            projectId={project.id}
+            links={project.partnerships.map((pp) => ({
+              id: pp.id,
+              partnershipId: pp.partnershipId,
+              partnershipName: pp.partnership?.name || "",
+              partnershipType: pp.partnership?.type || "OTHER",
+              partnershipTier: pp.partnership?.tier || null,
+              role: pp.role,
+              notes: pp.notes,
+              referralValue: pp.referralValue,
+              currency: pp.currency,
+            }))}
+            allPartnerships={allPartnerships}
+            canEdit={partnerPerms.canEdit}
+          />
+        </CardContent>
+      </Card>
     ) : null,
   };
 

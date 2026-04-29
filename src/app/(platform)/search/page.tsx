@@ -4,7 +4,7 @@ import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent } from "@/components/ui/card";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { Badge } from "@/components/ui/badge";
-import { Search, BookOpen, Users } from "lucide-react";
+import { Search, BookOpen, Users, HardHat, Handshake } from "lucide-react";
 import Link from "next/link";
 
 interface Props {
@@ -24,7 +24,7 @@ export default async function SearchPage({ searchParams }: Props) {
         <PageHeader title="Search" description="Search across all modules" />
         <div className="flex flex-col items-center py-12 text-muted-foreground">
           <Search className="h-12 w-12 mb-4" />
-          <p>Search clients, projects, contracts, suppliers, tasks, team members, and intranet resources</p>
+          <p>Search clients, projects, contracts, suppliers, subcontractors, partnerships, tasks, team members, and intranet resources</p>
         </div>
       </div>
     );
@@ -34,11 +34,13 @@ export default async function SearchPage({ searchParams }: Props) {
   const projectPerms = await resolveModulePerms(userId, role, "projects");
   const contractPerms = await resolveModulePerms(userId, role, "contracts");
   const supplierPerms = await resolveModulePerms(userId, role, "suppliers");
+  const subcontractorPerms = await resolveModulePerms(userId, role, "subcontractors");
+  const partnershipPerms = await resolveModulePerms(userId, role, "partnerships");
   const intranetPerms = await resolveModulePerms(userId, role, "intranet");
 
   const contains = { contains: query, mode: "insensitive" as const };
 
-  const [clients, projects, contracts, suppliers, tasks, intranetResources, users] = await Promise.all([
+  const [clients, projects, contracts, suppliers, subcontractors, partnerships, tasks, intranetResources, users] = await Promise.all([
     clientPerms.canView
       ? db.client.findMany({
           where: { OR: [{ name: contains }, { description: contains }] },
@@ -62,6 +64,35 @@ export default async function SearchPage({ searchParams }: Props) {
     supplierPerms.canView
       ? db.supplier.findMany({
           where: { OR: [{ name: contains }, { notes: contains }] },
+          take: 10,
+        })
+      : [],
+    subcontractorPerms.canView
+      ? db.subcontractor.findMany({
+          where: {
+            OR: [
+              { name: contains },
+              { legalName: contains },
+              { description: contains },
+              { primaryContactName: contains },
+              { primaryContactEmail: contains },
+            ],
+          },
+          take: 10,
+        })
+      : [],
+    partnershipPerms.canView
+      ? db.partnership.findMany({
+          where: {
+            OR: [
+              { name: contains },
+              { legalName: contains },
+              { description: contains },
+              { industry: contains },
+              { primaryContactName: contains },
+              { primaryContactEmail: contains },
+            ],
+          },
           take: 10,
         })
       : [],
@@ -102,7 +133,16 @@ export default async function SearchPage({ searchParams }: Props) {
     }),
   ]);
 
-  const totalResults = clients.length + projects.length + contracts.length + suppliers.length + tasks.length + intranetResources.length + users.length;
+  const totalResults =
+    clients.length +
+    projects.length +
+    contracts.length +
+    suppliers.length +
+    subcontractors.length +
+    partnerships.length +
+    tasks.length +
+    intranetResources.length +
+    users.length;
 
   return (
     <div>
@@ -188,6 +228,59 @@ export default async function SearchPage({ searchParams }: Props) {
                         <Badge variant="outline">{supplier.category}</Badge>
                       </div>
                       <StatusBadge status={supplier.status} />
+                    </CardContent>
+                  </Card>
+                </Link>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {subcontractors.length > 0 && (
+          <div>
+            <h2 className="text-lg font-semibold mb-3 flex items-center gap-2">
+              <HardHat className="h-4 w-4" />
+              Subcontractors ({subcontractors.length})
+            </h2>
+            <div className="space-y-2">
+              {subcontractors.map((sub) => (
+                <Link key={sub.id} href={`/subcontractors/${sub.id}`}>
+                  <Card className="hover:shadow-md transition-shadow">
+                    <CardContent className="p-4 flex items-center justify-between">
+                      <div>
+                        <p className="font-medium">{sub.name}</p>
+                        {sub.primaryContactName && (
+                          <p className="text-sm text-muted-foreground">{sub.primaryContactName}</p>
+                        )}
+                      </div>
+                      <StatusBadge status={sub.status} />
+                    </CardContent>
+                  </Card>
+                </Link>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {partnerships.length > 0 && (
+          <div>
+            <h2 className="text-lg font-semibold mb-3 flex items-center gap-2">
+              <Handshake className="h-4 w-4" />
+              Partnerships ({partnerships.length})
+            </h2>
+            <div className="space-y-2">
+              {partnerships.map((p) => (
+                <Link key={p.id} href={`/partnerships/${p.id}`}>
+                  <Card className="hover:shadow-md transition-shadow">
+                    <CardContent className="p-4 flex items-center justify-between">
+                      <div>
+                        <p className="font-medium">{p.name}</p>
+                        <p className="text-sm text-muted-foreground">
+                          {p.type.replace("_", " ").toLowerCase()}
+                          {p.industry ? ` · ${p.industry}` : ""}
+                        </p>
+                      </div>
+                      <StatusBadge status={p.status} />
                     </CardContent>
                   </Card>
                 </Link>

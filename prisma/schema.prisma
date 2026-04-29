@@ -125,6 +125,72 @@ enum SupplierStatus {
   ARCHIVED
 }
 
+enum SubcontractorStatus {
+  ACTIVE
+  INACTIVE
+  ONBOARDING
+  SUSPENDED
+  ARCHIVED
+}
+
+enum SubcontractorType {
+  INDIVIDUAL
+  COMPANY
+  AGENCY
+}
+
+enum ComplianceStatus {
+  COMPLIANT
+  PENDING
+  EXPIRED
+  NON_COMPLIANT
+}
+
+enum SubcontractorAssignmentStatus {
+  ACTIVE
+  PLANNED
+  COMPLETED
+  ON_HOLD
+  TERMINATED
+}
+
+enum PartnershipStatus {
+  ACTIVE
+  PROSPECT
+  INACTIVE
+  PAUSED
+  ARCHIVED
+}
+
+enum PartnershipType {
+  STRATEGIC
+  REFERRAL
+  RESELLER
+  TECHNOLOGY
+  CHANNEL
+  JOINT_VENTURE
+  AFFILIATE
+  OTHER
+}
+
+enum PartnershipTier {
+  PLATINUM
+  GOLD
+  SILVER
+  BRONZE
+  STANDARD
+}
+
+enum PartnershipProjectRole {
+  REFERRER
+  CO_DELIVERY
+  JOINT_OWNERSHIP
+  RESELLER
+  INTEGRATION
+  SUBCONTRACTED
+  OTHER
+}
+
 enum IntranetCategory {
   EXPENSE_REPORT
   TIME_OFF
@@ -239,66 +305,68 @@ enum WorkflowTriggerType {
 // ─── USERS ───────────────────────────────────────────────
 
 model User {
-  id             String   @id @default(cuid())
-  name           String
-  email          String   @unique
-  hashedPassword String?
-  authProvider   String   @default("credentials") // "credentials" | "google"
-  role           Role     @default(VIEWER)
+  id               String    @id @default(cuid())
+  name             String
+  email            String    @unique
+  hashedPassword   String?
+  authProvider     String    @default("credentials") // "credentials" | "google"
+  role             Role      @default(VIEWER)
   /// Non-null when the user's role was auto-promoted by being assigned to a
   /// project. Stores the role they had before promotion so they can be
   /// reverted if they lose all their assignments.
   promotedFromRole Role?
-  avatar         String?
-  isActive       Boolean  @default(true)
-  hasLoginAccess Boolean  @default(true)
-  department     String?
-  jobTitle       String?
-  location       String?
-  phone          String?
-  managerId      String?
+  avatar           String?
+  isActive         Boolean   @default(true)
+  hasLoginAccess   Boolean   @default(true)
+  department       String?
+  jobTitle         String?
+  location         String?
+  phone            String?
+  managerId        String?
   /// Last day of employment. Null for active employees. Read by the
   /// SCHEDULED_DATE trigger evaluator to fire offboarding workflows
   /// at the right offset (e.g. 7 days before terminationDate).
-  terminationDate DateTime?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  terminationDate  DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
-  manager        User?    @relation("UserManager", fields: [managerId], references: [id])
-  directReports  User[]   @relation("UserManager")
+  manager       User?  @relation("UserManager", fields: [managerId], references: [id])
+  directReports User[] @relation("UserManager")
 
-  projectMembers       ProjectMember[]
-  milestoneAssignments MilestoneAssignee[]
-  comments             Comment[]
-  activityLogs         ActivityLog[]
-  uploadedFiles        File[]             @relation("FileUploader")
-  profileFiles         File[]             @relation("FileOwner")
-  modulePermissions    ModulePermission[]
-  entityPermissions    EntityPermission[]
-  assignedTasks        Task[]             @relation("TaskAssignee")
-  createdTasks         Task[]             @relation("TaskCreator")
-  sandboxPages         SandboxPage[]
-  managedClients       Client[]           @relation("ClientAccountManager")
-  customWidgets        CustomWidget[]
-  assignedCerts        Certification[]    @relation("CertificationAssignee")
-  pocCerts             Certification[]    @relation("CertificationPointOfContact")
-  signedOffCerts       Certification[]    @relation("CertificationSignedOffBy")
-  certChecklistCompletions CertificationRenewalChecklistItem[] @relation("ChecklistItemCompletedBy")
-  certRenewalHistorySignoffs CertificationRenewalHistory[]     @relation("RenewalHistorySignedOffBy")
-  assignments          Assignment[]
-  notificationsReceived Notification[]    @relation("NotificationRecipient")
-  notificationsSent     Notification[]    @relation("NotificationActor")
-  accessRequestsMade    AccessRequest[]   @relation("AccessRequestRequester")
-  accessRequestsReviewed AccessRequest[]  @relation("AccessRequestReviewer")
-  createdQuotes         Quote[]           @relation("QuoteCreator")
-  assignedQuotes        Quote[]           @relation("QuoteAssignee")
-  createdQuoteTemplates QuoteTemplate[]   @relation("QuoteTemplateCreator")
-  createdWorkflowTemplates       WorkflowTemplate[]      @relation("WorkflowTemplateCreator")
-  createdWorkflowInstances       WorkflowInstance[]      @relation("WorkflowInstanceCreator")
-  completedWorkflowInstanceSteps WorkflowInstanceStep[]  @relation("WorkflowInstanceStepCompletedBy")
-  createdWorkflowEmailTemplates  WorkflowEmailTemplate[] @relation("WorkflowEmailTemplateCreator")
-  createdScheduledTasks          ScheduledTask[]         @relation("ScheduledTaskCreator")
-  createdCustomReports           CustomReport[]          @relation("CustomReportCreator")
+  projectMembers                 ProjectMember[]
+  milestoneAssignments           MilestoneAssignee[]
+  comments                       Comment[]
+  activityLogs                   ActivityLog[]
+  uploadedFiles                  File[]                              @relation("FileUploader")
+  profileFiles                   File[]                              @relation("FileOwner")
+  modulePermissions              ModulePermission[]
+  entityPermissions              EntityPermission[]
+  assignedTasks                  Task[]                              @relation("TaskAssignee")
+  createdTasks                   Task[]                              @relation("TaskCreator")
+  sandboxPages                   SandboxPage[]
+  managedClients                 Client[]                            @relation("ClientAccountManager")
+  managedSubcontractors          Subcontractor[]                     @relation("SubcontractorAccountManager")
+  ownedPartnerships              Partnership[]                       @relation("PartnershipOwner")
+  customWidgets                  CustomWidget[]
+  assignedCerts                  Certification[]                     @relation("CertificationAssignee")
+  pocCerts                       Certification[]                     @relation("CertificationPointOfContact")
+  signedOffCerts                 Certification[]                     @relation("CertificationSignedOffBy")
+  certChecklistCompletions       CertificationRenewalChecklistItem[] @relation("ChecklistItemCompletedBy")
+  certRenewalHistorySignoffs     CertificationRenewalHistory[]       @relation("RenewalHistorySignedOffBy")
+  assignments                    Assignment[]
+  notificationsReceived          Notification[]                      @relation("NotificationRecipient")
+  notificationsSent              Notification[]                      @relation("NotificationActor")
+  accessRequestsMade             AccessRequest[]                     @relation("AccessRequestRequester")
+  accessRequestsReviewed         AccessRequest[]                     @relation("AccessRequestReviewer")
+  createdQuotes                  Quote[]                             @relation("QuoteCreator")
+  assignedQuotes                 Quote[]                             @relation("QuoteAssignee")
+  createdQuoteTemplates          QuoteTemplate[]                     @relation("QuoteTemplateCreator")
+  createdWorkflowTemplates       WorkflowTemplate[]                  @relation("WorkflowTemplateCreator")
+  createdWorkflowInstances       WorkflowInstance[]                  @relation("WorkflowInstanceCreator")
+  completedWorkflowInstanceSteps WorkflowInstanceStep[]              @relation("WorkflowInstanceStepCompletedBy")
+  createdWorkflowEmailTemplates  WorkflowEmailTemplate[]             @relation("WorkflowEmailTemplateCreator")
+  createdScheduledTasks          ScheduledTask[]                     @relation("ScheduledTaskCreator")
+  createdCustomReports           CustomReport[]                      @relation("CustomReportCreator")
   accounts                       Account[]
 }
 
@@ -317,17 +385,17 @@ model User {
 // because sessions are JWT-only.
 
 model Account {
-  id                String  @id @default(cuid())
+  id                String   @id @default(cuid())
   userId            String
-  type              String  // "oauth" | "credentials" — currently always "oauth"
-  provider          String  // "google", etc.
+  type              String // "oauth" | "credentials" — currently always "oauth"
+  provider          String // "google", etc.
   providerAccountId String
-  refresh_token     String? @db.Text
-  access_token      String? @db.Text
+  refresh_token     String?  @db.Text
+  access_token      String?  @db.Text
   expires_at        Int?
   token_type        String?
   scope             String?
-  id_token          String? @db.Text
+  id_token          String?  @db.Text
   session_state     String?
   createdAt         DateTime @default(now())
 
@@ -340,7 +408,7 @@ model Account {
 model ModulePermission {
   id         String  @id @default(cuid())
   userId     String
-  module     String  // clients, projects, contracts, suppliers, tools, intranet, admin
+  module     String // clients, projects, contracts, suppliers, tools, intranet, admin
   canView    Boolean @default(false)
   canEdit    Boolean @default(false)
   canCreate  Boolean @default(false)
@@ -357,7 +425,7 @@ model ModulePermission {
 model EntityPermission {
   id         String  @id @default(cuid())
   userId     String
-  entityType String  // client, project
+  entityType String // client, project
   entityId   String
   canView    Boolean @default(false)
   canEdit    Boolean @default(false)
@@ -420,7 +488,7 @@ model Client {
   createdAt        DateTime     @default(now())
   updatedAt        DateTime     @updatedAt
 
-  accountManager User?          @relation("ClientAccountManager", fields: [accountManagerId], references: [id], onDelete: SetNull)
+  accountManager User?           @relation("ClientAccountManager", fields: [accountManagerId], references: [id], onDelete: SetNull)
   projects       Project[]
   contracts      Contract[]
   certifications Certification[]
@@ -468,24 +536,26 @@ model Project {
   childProjects   Project[]        @relation("ProjectHierarchy")
   serviceOffering ServiceOffering? @relation(fields: [serviceOfferingId], references: [id], onDelete: SetNull)
 
-  contracts  Contract[]
-  documents  Document[]
-  files      File[]
-  comments   Comment[]
-  members    ProjectMember[]
-  milestones Milestone[]
-  links      ExternalLink[]
-  embeds     Embed[]
-  tools      ProjectTool[]
+  contracts    Contract[]
+  documents    Document[]
+  files        File[]
+  comments     Comment[]
+  members      ProjectMember[]
+  milestones   Milestone[]
+  links        ExternalLink[]
+  embeds       Embed[]
+  tools        ProjectTool[]
   tasks        Task[]
   sandboxPages SandboxPage[]
 
-  relations        ProjectRelation[] @relation("ProjectRelations")
-  relatedRelations ProjectRelation[] @relation("RelatedProjectRelations")
+  relations        ProjectRelation[]      @relation("ProjectRelations")
+  relatedRelations ProjectRelation[]      @relation("RelatedProjectRelations")
   assignments      Assignment[]
   projectRoles     ProjectRole[]
   activityLogs     ActivityLog[]
   quotes           Quote[]
+  subcontractors   SubcontractorProject[]
+  partnerships     PartnershipProject[]
 
   @@index([serviceOfferingId])
 }
@@ -560,7 +630,7 @@ model Contract {
   autoRenew           Boolean        @default(false)
   summary             String?        @db.Text
   externalDocumentUrl String?
-  documentSourceType  String?        // upload, google_drive, external_url, other
+  documentSourceType  String? // upload, google_drive, external_url, other
   documentSourceLabel String?
   parentContractId    String?
   clientId            String
@@ -666,7 +736,7 @@ model Tool {
   id           String   @id @default(cuid())
   name         String
   description  String?  @db.Text
-  category     String?  // form, calculator, tracker, report, automation, other
+  category     String? // form, calculator, tracker, report, automation, other
   toolUrl      String?
   toolType     String   @default("internal") // internal, external, embedded
   isGlobal     Boolean  @default(true)
@@ -696,16 +766,16 @@ model ProjectTool {
 // ─── INTRANET ────────────────────────────────────────────
 
 model IntranetResource {
-  id        String           @id @default(cuid())
-  title     String
-  description String?        @db.Text
-  content   String?          @db.Text
-  category  IntranetCategory @default(OTHER)
-  published Boolean          @default(false)
-  pinned    Boolean          @default(false)
-  sortOrder Int              @default(0)
-  createdAt DateTime         @default(now())
-  updatedAt DateTime         @updatedAt
+  id          String           @id @default(cuid())
+  title       String
+  description String?          @db.Text
+  content     String?          @db.Text
+  category    IntranetCategory @default(OTHER)
+  published   Boolean          @default(false)
+  pinned      Boolean          @default(false)
+  sortOrder   Int              @default(0)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
 
   files  File[]
   links  ExternalLink[]
@@ -724,7 +794,7 @@ model File {
   // Storage-layer fields. When set, this file was uploaded through
   // src/lib/storage/ and can be served via /api/files/{id}. Legacy rows
   // have these fields null and store an external url directly.
-  storageDriver      String?  // "local", "s3", etc
+  storageDriver      String? // "local", "s3", etc
   storageKey         String?  @unique
   visibility         String   @default("private") // "public" | "private"
   uploadedById       String
@@ -735,12 +805,14 @@ model File {
   intranetResourceId String?
   createdAt          DateTime @default(now())
 
-  certificationId  String?
-  userId           String?
+  certificationId String?
+  userId          String?
+  subcontractorId String?
+  partnershipId   String?
   // Optional freeform tag used by the employee files UI (resume, id,
   // certification, training, other). Null for files attached to other
   // entities.
-  category         String?
+  category        String?
 
   uploadedBy       User              @relation("FileUploader", fields: [uploadedById], references: [id])
   project          Project?          @relation(fields: [projectId], references: [id])
@@ -750,6 +822,8 @@ model File {
   intranetResource IntranetResource? @relation(fields: [intranetResourceId], references: [id])
   certification    Certification?    @relation(fields: [certificationId], references: [id])
   user             User?             @relation("FileOwner", fields: [userId], references: [id], onDelete: SetNull)
+  subcontractor    Subcontractor?    @relation(fields: [subcontractorId], references: [id], onDelete: Cascade)
+  partnership      Partnership?      @relation(fields: [partnershipId], references: [id], onDelete: Cascade)
 
   quotes            Quote[]            @relation("QuotePdf")
   workflowDocuments WorkflowDocument[]
@@ -769,15 +843,19 @@ model ExternalLink {
   contractId         String?
   supplierId         String?
   intranetResourceId String?
+  subcontractorId    String?
+  partnershipId      String?
   createdAt          DateTime @default(now())
 
-  certificationId  String?
+  certificationId String?
 
   project          Project?          @relation(fields: [projectId], references: [id])
   contract         Contract?         @relation(fields: [contractId], references: [id])
   supplier         Supplier?         @relation(fields: [supplierId], references: [id])
   intranetResource IntranetResource? @relation(fields: [intranetResourceId], references: [id])
   certification    Certification?    @relation(fields: [certificationId], references: [id])
+  subcontractor    Subcontractor?    @relation(fields: [subcontractorId], references: [id], onDelete: Cascade)
+  partnership      Partnership?      @relation(fields: [partnershipId], references: [id], onDelete: Cascade)
 }
 
 model Embed {
@@ -796,10 +874,10 @@ model Embed {
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
 
-  project          Project?          @relation(fields: [projectId], references: [id])
-  contract         Contract?         @relation(fields: [contractId], references: [id])
-  document         Document?         @relation(fields: [documentId], references: [id])
-  certificationId  String?
+  project         Project?  @relation(fields: [projectId], references: [id])
+  contract        Contract? @relation(fields: [contractId], references: [id])
+  document        Document? @relation(fields: [documentId], references: [id])
+  certificationId String?
 
   tool             Tool?             @relation(fields: [toolId], references: [id])
   intranetResource IntranetResource? @relation(fields: [intranetResourceId], references: [id])
@@ -816,6 +894,8 @@ model Comment {
   documentId      String?
   supplierId      String?
   certificationId String?
+  subcontractorId String?
+  partnershipId   String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
@@ -826,11 +906,13 @@ model Comment {
   document      Document?      @relation(fields: [documentId], references: [id])
   supplier      Supplier?      @relation(fields: [supplierId], references: [id])
   certification Certification? @relation(fields: [certificationId], references: [id])
+  subcontractor Subcontractor? @relation(fields: [subcontractorId], references: [id], onDelete: Cascade)
+  partnership   Partnership?   @relation(fields: [partnershipId], references: [id], onDelete: Cascade)
 }
 
 model ActivityLog {
   id         String   @id @default(cuid())
-  action     String   // created, updated, deleted, commented
+  action     String // created, updated, deleted, commented
   entityType String
   entityId   String
   details    String?  @db.Text
@@ -873,8 +955,10 @@ model SandboxPage {
   description String?  @db.Text
   content     String?  @db.Text
   layout      String   @default("default") // default, wide, full
-  /** Lucide icon name (e.g., "FileText", "BookOpen"). Resolved at render
-      time via the icon picker's IconMap. Null = use the default. */
+  /**
+   * Lucide icon name (e.g., "FileText", "BookOpen"). Resolved at render
+   * time via the icon picker's IconMap. Null = use the default.
+   */
   icon        String?
   published   Boolean  @default(false)
   createdById String
@@ -891,69 +975,69 @@ model SandboxPage {
 // ─── CERTIFICATIONS ────────────────────────────────────
 
 model Certification {
-  id                  String              @id @default(cuid())
-  name                String
-  description         String?             @db.Text
-  plainEnglishSummary String?             @db.Text // Layman explanation of what this cert is
-  certNumber          String?
-  status              CertificationStatus @default(PENDING)
-  type                CertificationType   @default(OTHER)
-  engagementType      CertEngagementType  @default(CERTIFICATION)
-  jurisdictionLevel   JurisdictionLevel   @default(OTHER)
-  jurisdictionName    String?             // e.g. "Illinois", "Cook County"
-  issuingBody         String?             // Who issued it (e.g., "ISO", "OSHA")
-  agencyWebsiteUrl    String?             // Link to the issuing body's website
-  agencyContactName   String?
-  agencyContactEmail  String?
-  agencyContactPhone  String?
-  issuedDate          DateTime?
-  submittedDate       DateTime?           // When the application was submitted
-  expirationDate      DateTime?
-  renewalDate         DateTime?           // When to start renewal process
-  renewalLeadDays     Int?                @default(90) // Legacy single lead — kept for back-compat
-  reminderOffsetsDays Int[]               @default([90, 30, 7]) // Multi-tier reminder offsets
-  firedReminderOffsets Int[]              @default([]) // Offsets already fired for the current cycle
-  autoRenew           Boolean             @default(false)
-  renewalCost         Float?
-  currency            String?             @default("USD")
-  renewalRequirements String?             @db.Text // What's needed for renewal
-  renewalNotes        String?             @db.Text
-  documentUrl         String?             // Link to cert document (legacy)
-  completedCertUrl    String?             // Link to the finished/issued certificate
-  clientId            String?
-  assigneeId          String?             // Person currently owning the renewal task
-  pointOfContactId    String?             // Long-term internal owner (separate from assignee)
-  signedOffAt         DateTime?
-  signedOffById       String?
-  signOffNotes        String?             @db.Text
-  createdAt           DateTime            @default(now())
-  updatedAt           DateTime            @updatedAt
+  id                   String              @id @default(cuid())
+  name                 String
+  description          String?             @db.Text
+  plainEnglishSummary  String?             @db.Text // Layman explanation of what this cert is
+  certNumber           String?
+  status               CertificationStatus @default(PENDING)
+  type                 CertificationType   @default(OTHER)
+  engagementType       CertEngagementType  @default(CERTIFICATION)
+  jurisdictionLevel    JurisdictionLevel   @default(OTHER)
+  jurisdictionName     String? // e.g. "Illinois", "Cook County"
+  issuingBody          String? // Who issued it (e.g., "ISO", "OSHA")
+  agencyWebsiteUrl     String? // Link to the issuing body's website
+  agencyContactName    String?
+  agencyContactEmail   String?
+  agencyContactPhone   String?
+  issuedDate           DateTime?
+  submittedDate        DateTime? // When the application was submitted
+  expirationDate       DateTime?
+  renewalDate          DateTime? // When to start renewal process
+  renewalLeadDays      Int?                @default(90) // Legacy single lead — kept for back-compat
+  reminderOffsetsDays  Int[]               @default([90, 30, 7]) // Multi-tier reminder offsets
+  firedReminderOffsets Int[]               @default([]) // Offsets already fired for the current cycle
+  autoRenew            Boolean             @default(false)
+  renewalCost          Float?
+  currency             String?             @default("USD")
+  renewalRequirements  String?             @db.Text // What's needed for renewal
+  renewalNotes         String?             @db.Text
+  documentUrl          String? // Link to cert document (legacy)
+  completedCertUrl     String? // Link to the finished/issued certificate
+  clientId             String?
+  assigneeId           String? // Person currently owning the renewal task
+  pointOfContactId     String? // Long-term internal owner (separate from assignee)
+  signedOffAt          DateTime?
+  signedOffById        String?
+  signOffNotes         String?             @db.Text
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
 
   client         Client? @relation(fields: [clientId], references: [id], onDelete: SetNull)
   assignee       User?   @relation("CertificationAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
   pointOfContact User?   @relation("CertificationPointOfContact", fields: [pointOfContactId], references: [id], onDelete: SetNull)
   signedOffBy    User?   @relation("CertificationSignedOffBy", fields: [signedOffById], references: [id], onDelete: SetNull)
 
-  files           File[]
-  comments        Comment[]
-  links           ExternalLink[]
-  embeds          Embed[]
-  checklistItems  CertificationRenewalChecklistItem[]
-  renewalHistory  CertificationRenewalHistory[]
+  files          File[]
+  comments       Comment[]
+  links          ExternalLink[]
+  embeds         Embed[]
+  checklistItems CertificationRenewalChecklistItem[]
+  renewalHistory CertificationRenewalHistory[]
 }
 
 model CertificationRenewalChecklistItem {
-  id              String   @id @default(cuid())
+  id              String    @id @default(cuid())
   certificationId String
   label           String
-  required        Boolean  @default(false)
-  completed       Boolean  @default(false)
+  required        Boolean   @default(false)
+  completed       Boolean   @default(false)
   completedAt     DateTime?
   completedById   String?
-  sortOrder       Int      @default(0)
-  notes           String?  @db.Text
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  sortOrder       Int       @default(0)
+  notes           String?   @db.Text
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   certification Certification @relation(fields: [certificationId], references: [id], onDelete: Cascade)
   completedBy   User?         @relation("ChecklistItemCompletedBy", fields: [completedById], references: [id], onDelete: SetNull)
@@ -1044,8 +1128,8 @@ model Assignment {
   serviceOfferingId String?
   projectRoleId     String?
   roleDefinitionId  String?
-  function          String?          // work type / functional area
-  role              String?          // legacy freeform role — prefer roleDefinition
+  function          String? // work type / functional area
+  role              String? // legacy freeform role — prefer roleDefinition
   allocationFte     Float            @default(0)
   status            AssignmentStatus @default(ACTIVE)
   startDate         DateTime?
@@ -1054,12 +1138,12 @@ model Assignment {
   createdAt         DateTime         @default(now())
   updatedAt         DateTime         @updatedAt
 
-  employee        User              @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  project         Project?          @relation(fields: [projectId], references: [id], onDelete: SetNull)
-  client          Client?           @relation(fields: [clientId], references: [id], onDelete: SetNull)
-  serviceOffering ServiceOffering?  @relation(fields: [serviceOfferingId], references: [id], onDelete: SetNull)
-  projectRole     ProjectRole?      @relation(fields: [projectRoleId], references: [id], onDelete: SetNull)
-  roleDefinition  RoleDefinition?   @relation(fields: [roleDefinitionId], references: [id], onDelete: SetNull)
+  employee        User             @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  project         Project?         @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  client          Client?          @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  serviceOffering ServiceOffering? @relation(fields: [serviceOfferingId], references: [id], onDelete: SetNull)
+  projectRole     ProjectRole?     @relation(fields: [projectRoleId], references: [id], onDelete: SetNull)
+  roleDefinition  RoleDefinition?  @relation(fields: [roleDefinitionId], references: [id], onDelete: SetNull)
 
   @@index([employeeId])
   @@index([projectId])
@@ -1078,14 +1162,16 @@ model Assignment {
 
 model ImportLog {
   id          String   @id @default(cuid())
-  importerKey String   // matches a key in the importer registry
+  importerKey String // matches a key in the importer registry
   filename    String
-  rowCount    Int      // total parsed rows
-  imported    Int      // successfully created
-  skipped     Int      // skipped (duplicates, dry-run, etc.)
-  /** JSON array of { row, message } error entries */
+  rowCount    Int // total parsed rows
+  imported    Int // successfully created
+  skipped     Int // skipped (duplicates, dry-run, etc.)
+  /**
+   * JSON array of { row, message } error entries
+   */
   errors      String?  @db.Text
-  triggeredBy String   // user id
+  triggeredBy String // user id
   createdAt   DateTime @default(now())
 
   @@index([importerKey, createdAt])
@@ -1101,18 +1187,26 @@ model ImportLog {
 
 model JobLog {
   id          String    @id @default(cuid())
-  jobKey      String    // matches a key in the job registry
-  status      String    // "running" | "completed" | "failed"
+  jobKey      String // matches a key in the job registry
+  status      String // "running" | "completed" | "failed"
   startedAt   DateTime  @default(now())
   finishedAt  DateTime?
   durationMs  Int?
-  /** Free-form summary string the job handler returns */
+  /**
+   * Free-form summary string the job handler returns
+   */
   output      String?   @db.Text
-  /** Stack/message when status = "failed" */
+  /**
+   * Stack/message when status = "failed"
+   */
   error       String?   @db.Text
-  /** Number of items the job processed (for at-a-glance metrics) */
+  /**
+   * Number of items the job processed (for at-a-glance metrics)
+   */
   processed   Int?
-  /** "cron" for scheduled runs, or a user id for manual runs */
+  /**
+   * "cron" for scheduled runs, or a user id for manual runs
+   */
   triggeredBy String
 
   @@index([jobKey, startedAt])
@@ -1151,18 +1245,28 @@ model JobConfig {
 model Notification {
   id          String    @id @default(cuid())
   recipientId String
-  /** Free-form type key for filtering/grouping — see NotificationType in code */
+  /**
+   * Free-form type key for filtering/grouping — see NotificationType in code
+   */
   type        String
   title       String
   body        String?   @db.Text
-  /** Where clicking the notification should navigate */
+  /**
+   * Where clicking the notification should navigate
+   */
   href        String?
-  /** Optional entity this notification is about, for context and routing */
+  /**
+   * Optional entity this notification is about, for context and routing
+   */
   entityType  String?
   entityId    String?
-  /** Who triggered this (null for system notifications) */
+  /**
+   * Who triggered this (null for system notifications)
+   */
   actorId     String?
-  /** Read timestamp — null means unread */
+  /**
+   * Read timestamp — null means unread
+   */
   readAt      DateTime?
   createdAt   DateTime  @default(now())
 
@@ -1182,23 +1286,23 @@ model Notification {
 // doesn't actually send, so it's safe to test templates without spamming.
 
 model EmailLog {
-  id          String   @id @default(cuid())
-  toAddresses String   // comma-separated recipient list
-  ccAddresses String?  // comma-separated CC recipients
+  id           String   @id @default(cuid())
+  toAddresses  String // comma-separated recipient list
+  ccAddresses  String? // comma-separated CC recipients
   bccAddresses String? // comma-separated BCC recipients
-  replyTo     String?
-  fromAddress String
-  subject     String
-  bodyHtml    String   @db.Text
-  bodyText    String?  @db.Text
-  driver      String   // which driver handled send: "log", "resend", etc
-  status      String   // "sent" | "failed" | "queued"
-  messageId   String?  // provider's message ID when available
-  error       String?  @db.Text
-  templateKey String?  // which template was used
-  entityType  String?  // optional audit: entity this email is about
-  entityId    String?
-  sentAt      DateTime @default(now())
+  replyTo      String?
+  fromAddress  String
+  subject      String
+  bodyHtml     String   @db.Text
+  bodyText     String?  @db.Text
+  driver       String // which driver handled send: "log", "resend", etc
+  status       String // "sent" | "failed" | "queued"
+  messageId    String? // provider's message ID when available
+  error        String?  @db.Text
+  templateKey  String? // which template was used
+  entityType   String? // optional audit: entity this email is about
+  entityId     String?
+  sentAt       DateTime @default(now())
 
   @@index([sentAt])
   @@index([status])
@@ -1212,7 +1316,7 @@ model CustomWidget {
   id          String   @id @default(cuid())
   name        String
   description String?  @db.Text
-  config      String   @db.Text             // JSON WidgetConfig
+  config      String   @db.Text // JSON WidgetConfig
   icon        String?  @default("BarChart3")
   category    String   @default("data")
   isPublished Boolean  @default(false)
@@ -1239,16 +1343,16 @@ model AllowedDomain {
 // ─── ACCESS REQUESTS ─────────────────────────────────────
 
 model AccessRequest {
-  id           String   @id @default(cuid())
-  requesterId  String
-  module       String?
-  entityType   String?
-  entityId     String?
-  entityLabel  String?
-  status       String   @default("PENDING") // PENDING, APPROVED, DENIED
-  reviewerId   String?
-  reviewedAt   DateTime?
-  createdAt    DateTime @default(now())
+  id          String    @id @default(cuid())
+  requesterId String
+  module      String?
+  entityType  String?
+  entityId    String?
+  entityLabel String?
+  status      String    @default("PENDING") // PENDING, APPROVED, DENIED
+  reviewerId  String?
+  reviewedAt  DateTime?
+  createdAt   DateTime  @default(now())
 
   requester User  @relation("AccessRequestRequester", fields: [requesterId], references: [id], onDelete: Cascade)
   reviewer  User? @relation("AccessRequestReviewer", fields: [reviewerId], references: [id], onDelete: SetNull)
@@ -1268,69 +1372,69 @@ model AccessRequest {
 // Phases 2+ wire up sending, public token view, accept/reject, e-sig, PDF.
 
 model Quote {
-  id                    String      @id @default(cuid())
+  id                    String            @id @default(cuid())
   /// Human-readable identifier auto-generated on create (e.g. "Q-2026-0001").
   /// Unique across the org. Format is fixed; renumbering would invalidate
   /// the URL the client received in their email.
-  quoteNumber           String      @unique
+  quoteNumber           String            @unique
   clientId              String
   projectId             String?
-  status                QuoteStatus @default(DRAFT)
+  status                QuoteStatus       @default(DRAFT)
   title                 String
   /// Markdown-friendly intro text rendered above the line items on the
   /// public view. Optional.
-  introText             String?     @db.Text
+  introText             String?           @db.Text
   /// Project assumptions / scope clarifications rendered between the
   /// line items and the totals on the public view. Lets the author
   /// list out "this quote assumes X, Y, Z" so the client knows what's
   /// been factored in. Optional.
-  assumptionsText       String?     @db.Text
+  assumptionsText       String?           @db.Text
   /// Footer / terms & conditions text rendered below the totals on the
   /// public view. Optional.
-  termsText             String?     @db.Text
-  currency              String      @default("USD")
+  termsText             String?           @db.Text
+  currency              String            @default("USD")
   /// Cached subtotal of all line items (after per-line discounts, before
   /// quote-level discount and tax). Recomputed on every save.
-  subtotal              Float       @default(0)
+  subtotal              Float             @default(0)
   discountType          QuoteDiscountType @default(NONE)
-  discountValue         Float       @default(0)
+  discountValue         Float             @default(0)
   /// Tax rate as a percentage. Nullable so tax-exempt quotes can render
   /// cleanly without a 0% line on the public view.
   taxRate               Float?
-  taxAmount             Float       @default(0)
-  total                 Float       @default(0)
+  taxAmount             Float             @default(0)
+  total                 Float             @default(0)
   validUntil            DateTime?
   acceptedAt            DateTime?
   rejectedAt            DateTime?
   sentAt                DateTime?
   firstViewedAt         DateTime?
   acceptedSignatureName String?
-  acceptedSignatureData String?     @db.Text
+  acceptedSignatureData String?           @db.Text
   acceptedIp            String?
-  rejectionReason       String?     @db.Text
+  rejectionReason       String?           @db.Text
   /// Links a revision to the prior version. The parent transitions to
   /// REVISED when a child is created.
   parentQuoteId         String?
   createdById           String
   assignedToId          String?
   /// Owner-only notes — never rendered on the client-facing public view.
-  internalNotes         String?     @db.Text
+  internalNotes         String?           @db.Text
   /// Cryptographically random token used in the public share URL `/q/:token`.
   /// Set when the quote is first sent. Nullable on drafts.
-  publicToken           String?     @unique
+  publicToken           String?           @unique
   /// File reference to the most recently generated PDF. Regenerated on
   /// edit so consumers can rely on `pdfFile.url` being current.
   pdfFileId             String?
-  createdAt             DateTime    @default(now())
-  updatedAt             DateTime    @updatedAt
+  createdAt             DateTime          @default(now())
+  updatedAt             DateTime          @updatedAt
 
-  client       Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  project      Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
-  parentQuote  Quote?   @relation("QuoteRevisions", fields: [parentQuoteId], references: [id])
-  revisions    Quote[]  @relation("QuoteRevisions")
-  createdBy    User     @relation("QuoteCreator", fields: [createdById], references: [id])
-  assignedTo   User?    @relation("QuoteAssignee", fields: [assignedToId], references: [id], onDelete: SetNull)
-  pdfFile      File?    @relation("QuotePdf", fields: [pdfFileId], references: [id], onDelete: SetNull)
+  client      Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  project     Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  parentQuote Quote?   @relation("QuoteRevisions", fields: [parentQuoteId], references: [id])
+  revisions   Quote[]  @relation("QuoteRevisions")
+  createdBy   User     @relation("QuoteCreator", fields: [createdById], references: [id])
+  assignedTo  User?    @relation("QuoteAssignee", fields: [assignedToId], references: [id], onDelete: SetNull)
+  pdfFile     File?    @relation("QuotePdf", fields: [pdfFileId], references: [id], onDelete: SetNull)
 
   lineItems QuoteLineItem[]
   events    QuoteEvent[]
@@ -1475,22 +1579,22 @@ model QuoteEvent {
 // upload documents, and sign agreements.
 
 model WorkflowTemplate {
-  id                 String              @id @default(cuid())
-  name               String
-  description        String?             @db.Text
-  type               WorkflowType        @default(CUSTOM)
+  id                String              @id @default(cuid())
+  name              String
+  description       String?             @db.Text
+  type              WorkflowType        @default(CUSTOM)
   /// What kind of subject this workflow operates on. Drives which
   /// trigger options are available and which variable paths the
   /// template editor offers in the autocomplete.
-  subjectEntityType  WorkflowSubjectType @default(EMPLOYEE)
-  isActive           Boolean             @default(true)
+  subjectEntityType WorkflowSubjectType @default(EMPLOYEE)
+  isActive          Boolean             @default(true)
   /// True for the seeded defaults (Onboarding/Offboarding/Candidate)
   /// the migration ships with. The UI hides delete on these so users
   /// don't accidentally drop a system template.
-  isSeed             Boolean             @default(false)
-  createdById        String
-  createdAt          DateTime            @default(now())
-  updatedAt          DateTime            @updatedAt
+  isSeed            Boolean             @default(false)
+  createdById       String
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
 
   createdBy User               @relation("WorkflowTemplateCreator", fields: [createdById], references: [id])
   steps     WorkflowStep[]
@@ -1794,37 +1898,260 @@ enum CustomReportEntity {
   CONTRACT
   CERTIFICATION
   ASSIGNMENT
+  SUBCONTRACTOR
+  PARTNERSHIP
 }
 
 model CustomReport {
-  id           String              @id @default(cuid())
-  name         String
-  description  String?             @db.Text
+  id          String             @id @default(cuid())
+  name        String
+  description String?            @db.Text
   /// Free-form grouping label rendered on /admin/reports. Lets admins
   /// organize custom reports the same way system reports group by
   /// module. Null = "Uncategorized" bucket.
-  category     String?
-  entityType   CustomReportEntity
+  category    String?
+  entityType  CustomReportEntity
   /// JSON array of column keys from the entity's registry. Order is
   /// the order they appear in the rendered table + CSV.
-  columns      String              @db.Text
+  columns     String             @db.Text
   /// JSON array of { field, op, value } filter clauses. AND-combined.
-  filters      String              @db.Text
+  filters     String             @db.Text
   /// Column key to sort by, prefixed with "-" for descending.
   /// E.g. "name", "-createdAt".
-  sortBy       String?
+  sortBy      String?
   /// Hard cap on rows returned. Null = use the registry default
   /// (typically 500). Useful for emailed digests where you only want
   /// the top N.
-  limit        Int?
-  isActive     Boolean             @default(true)
-  createdById  String
-  createdAt    DateTime            @default(now())
-  updatedAt    DateTime            @updatedAt
+  limit       Int?
+  isActive    Boolean            @default(true)
+  createdById String
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
 
   createdBy User @relation("CustomReportCreator", fields: [createdById], references: [id])
 
   @@index([entityType])
   @@index([isActive])
   @@index([category])
+}
+
+// ─── SUBCONTRACTORS ────────────────────────────────────────
+//
+// External parties (1099 individuals, sub firms, staffing agencies) that
+// perform billable project work on our behalf. Distinct from Supplier
+// (vendor selling goods/services TO the company) and from User (internal
+// employee). Subcontractors don't get login access; they're tracked
+// purely for engagement, compliance, and reporting.
+//
+// Compliance fields (insuranceExpiresAt, w9OnFile, msaSignedAt,
+// ndaSignedAt, complianceStatus) drive a future scheduled report that
+// surfaces lapsing insurance / missing W-9s before they block billing.
+
+model Subcontractor {
+  id          String              @id @default(cuid())
+  name        String
+  /// Legal entity name as it appears on contracts. Often differs from the
+  /// public-facing `name` (e.g. dba). Null when the same as `name`.
+  legalName   String?
+  type        SubcontractorType   @default(COMPANY)
+  status      SubcontractorStatus @default(ACTIVE)
+  description String?             @db.Text
+  summary     String?             @db.Text
+  /// Free-form skill/service tags used for matching subs to project
+  /// needs. Indexed by hand at the UI layer (no GIN index here yet).
+  specialties String[]            @default([])
+
+  primaryContactName  String?
+  primaryContactEmail String?
+  primaryContactPhone String?
+  website             String?
+  address             String? @db.Text
+
+  /// Tax identifier (EIN or SSN). Stored as plain text intentionally —
+  /// matches the existing pattern for Client / Supplier data; encrypt at
+  /// a later phase across all PII columns rather than ad-hoc here.
+  taxId           String?
+  businessLicense String?
+
+  /// Default rate when assigned to a project. Per-project overrides live
+  /// on `SubcontractorProject.rate`.
+  defaultRate  Float?
+  rateUnit     String? // "hour" | "day" | "project" | "fixed"
+  currency     String? @default("USD")
+  paymentTerms String? // "Net 30" etc.
+
+  insuranceExpiresAt DateTime?
+  w9OnFile           Boolean          @default(false)
+  msaSignedAt        DateTime?
+  ndaSignedAt        DateTime?
+  complianceStatus   ComplianceStatus @default(PENDING)
+  complianceNotes    String?          @db.Text
+
+  rating      Float? // 1-5
+  isPreferred Boolean @default(false)
+
+  accountManagerId String? // internal owner
+  notes            String?  @db.Text
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  accountManager User?                  @relation("SubcontractorAccountManager", fields: [accountManagerId], references: [id], onDelete: SetNull)
+  contacts       SubcontractorContact[]
+  projects       SubcontractorProject[]
+  files          File[]
+  links          ExternalLink[]
+  comments       Comment[]
+
+  @@index([status])
+  @@index([type])
+  @@index([accountManagerId])
+  @@index([isPreferred])
+  @@index([complianceStatus])
+  @@index([insuranceExpiresAt])
+}
+
+model SubcontractorContact {
+  id              String   @id @default(cuid())
+  subcontractorId String
+  name            String
+  title           String?
+  email           String?
+  phone           String?
+  isPrimary       Boolean  @default(false)
+  notes           String?  @db.Text
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  subcontractor Subcontractor @relation(fields: [subcontractorId], references: [id], onDelete: Cascade)
+
+  @@index([subcontractorId])
+}
+
+/// Engagement of a Subcontractor on a Project — captures the commercial
+/// terms (scope, value, dates, status) so the project page rolls up
+/// subcontractor cost and the subcontractor page lists active engagements.
+/// Independent of the staffing matrix (`Assignment`) which only tracks
+/// internal employees by FTE.
+model SubcontractorProject {
+  id              String                        @id @default(cuid())
+  subcontractorId String
+  projectId       String
+  scope           String?                       @db.Text // SOW summary
+  role            String? // "Lead Developer", "QA Lead"
+  status          SubcontractorAssignmentStatus @default(ACTIVE)
+  startDate       DateTime?
+  endDate         DateTime?
+  contractValue   Float?
+  currency        String?                       @default("USD")
+  rate            Float?
+  rateUnit        String?
+  notes           String?                       @db.Text
+  createdAt       DateTime                      @default(now())
+  updatedAt       DateTime                      @updatedAt
+
+  subcontractor Subcontractor @relation(fields: [subcontractorId], references: [id], onDelete: Cascade)
+  project       Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([subcontractorId, projectId])
+  @@index([projectId])
+  @@index([status])
+}
+
+// ─── PARTNERSHIPS ──────────────────────────────────────────
+//
+// Strategic relationships with other organizations — referrers,
+// resellers, technology partners, channel partners, joint ventures.
+// Distinct from Client (paying customer), Supplier (vendor), and
+// Subcontractor (project labor). A partnership can also tag projects
+// to record co-delivery or joint ownership.
+
+model Partnership {
+  id          String            @id @default(cuid())
+  name        String
+  legalName   String?
+  type        PartnershipType   @default(STRATEGIC)
+  status      PartnershipStatus @default(ACTIVE)
+  tier        PartnershipTier?
+  description String?           @db.Text
+  summary     String?           @db.Text
+
+  primaryContactName  String?
+  primaryContactEmail String?
+  primaryContactPhone String?
+  website             String?
+  address             String? @db.Text
+  industry            String?
+
+  partnerSinceDate   DateTime?
+  agreementSignedAt  DateTime?
+  agreementExpiresAt DateTime?
+  autoRenew          Boolean   @default(false)
+
+  /// Plain-English description of the commercial terms (e.g. "20% on
+  /// referred deals through year 1"). The structured `referralFeeBps`
+  /// is provided as a separate optional field for reporting.
+  revenueShareTerms String? @db.Text
+  /// Referral fee in basis points (1/100 of a percent). 2000 = 20%.
+  referralFeeBps    Int?
+  jointMarketing    Boolean @default(false)
+
+  relationshipOwnerId String?
+  notes               String?  @db.Text
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  relationshipOwner User? @relation("PartnershipOwner", fields: [relationshipOwnerId], references: [id], onDelete: SetNull)
+
+  contacts PartnershipContact[]
+  projects PartnershipProject[]
+  files    File[]
+  links    ExternalLink[]
+  comments Comment[]
+
+  @@index([status])
+  @@index([type])
+  @@index([tier])
+  @@index([relationshipOwnerId])
+  @@index([agreementExpiresAt])
+}
+
+model PartnershipContact {
+  id            String   @id @default(cuid())
+  partnershipId String
+  name          String
+  title         String?
+  email         String?
+  phone         String?
+  isPrimary     Boolean  @default(false)
+  notes         String?  @db.Text
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  partnership Partnership @relation(fields: [partnershipId], references: [id], onDelete: Cascade)
+
+  @@index([partnershipId])
+}
+
+/// Tag-style link from a Partnership to a Project. The `role` field
+/// tells the project page how the partner is involved (referred us
+/// the deal, co-delivering with us, joint ownership of the engagement,
+/// etc.) and powers the Partnership ROI report.
+model PartnershipProject {
+  id            String                 @id @default(cuid())
+  partnershipId String
+  projectId     String
+  role          PartnershipProjectRole @default(OTHER)
+  notes         String?                @db.Text
+  /// When role = REFERRER, the deal value attributed to the partner.
+  /// Drives the "referral revenue YTD" headline on the partner page.
+  referralValue Float?
+  currency      String?                @default("USD")
+  createdAt     DateTime               @default(now())
+
+  partnership Partnership @relation(fields: [partnershipId], references: [id], onDelete: Cascade)
+  project     Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([partnershipId, projectId])
+  @@index([projectId])
+  @@index([role])
 }

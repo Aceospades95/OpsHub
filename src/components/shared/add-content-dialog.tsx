@@ -13,7 +13,7 @@ import { addExternalLink, addEmbed } from "@/actions/attachments";
 interface AddContentDialogProps {
   open: boolean;
   onClose: () => void;
-  entityType: "client" | "project" | "contract" | "supplier" | "intranet" | "tool" | "document";
+  entityType: "client" | "project" | "contract" | "supplier" | "intranet" | "tool" | "document" | "subcontractor" | "partnership";
   entityId: string;
 }
 

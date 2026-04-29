@@ -21,6 +21,8 @@ const entityModuleMap: Record<string, string> = {
   document: "projects",
   supplier: "suppliers",
   certification: "certifications",
+  subcontractor: "subcontractors",
+  partnership: "partnerships",
 };
 
 /**
@@ -34,6 +36,8 @@ const entityLabel: Record<string, string> = {
   document: "document",
   supplier: "supplier",
   certification: "certification",
+  subcontractor: "subcontractor",
+  partnership: "partnership",
 };
 
 type CommentEntityType =
@@ -42,10 +46,21 @@ type CommentEntityType =
   | "contract"
   | "document"
   | "supplier"
-  | "certification";
+  | "certification"
+  | "subcontractor"
+  | "partnership";
 
 const addCommentSchema = z.object({
-  entityType: z.enum(["client", "project", "contract", "document", "supplier", "certification"]),
+  entityType: z.enum([
+    "client",
+    "project",
+    "contract",
+    "document",
+    "supplier",
+    "certification",
+    "subcontractor",
+    "partnership",
+  ]),
   entityId: z.string().min(1),
   content: z.string().min(1, "Comment cannot be empty"),
 });
@@ -91,6 +106,20 @@ async function resolveCommentEntity(
         select: { name: true },
       });
       return c ? { name: c.name, href: `/certifications/${entityId}` } : null;
+    }
+    case "subcontractor": {
+      const s = await db.subcontractor.findUnique({
+        where: { id: entityId },
+        select: { name: true },
+      });
+      return s ? { name: s.name, href: `/subcontractors/${entityId}` } : null;
+    }
+    case "partnership": {
+      const p = await db.partnership.findUnique({
+        where: { id: entityId },
+        select: { name: true },
+      });
+      return p ? { name: p.name, href: `/partnerships/${entityId}` } : null;
     }
   }
 }
@@ -270,7 +299,11 @@ export async function deleteComment(_prev: unknown, formData: FormData) {
             ? "document"
             : comment.certificationId
               ? "certification"
-              : "supplier";
+              : comment.subcontractorId
+                ? "subcontractor"
+                : comment.partnershipId
+                  ? "partnership"
+                  : "supplier";
     const moduleName = entityModuleMap[entityType];
     const perms = await resolveModulePerms(user.id, user.role, moduleName);
     if (!perms.canDelete) {
