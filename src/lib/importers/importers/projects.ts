@@ -29,8 +29,11 @@ export const projectsImporter: ImporterDefinition = {
   key: "projects",
   name: "Projects",
   description:
-    "Bulk-create projects. Required: name, clientName. Optional: status, dates, service offering.",
+    "Bulk-create or update projects. Required: name, clientName. Optional: status, dates, service offering.",
   module: "projects",
+  supportsUpsert: true,
+  upsertKeyDescription:
+    "Matched by (client + project name). Two projects on the same client with the same name are treated as the same row on re-upload.",
 
   fields: [
     { key: "name", label: "Project name", required: true, aliases: ["project", "project name", "title"] },
@@ -73,7 +76,8 @@ export const projectsImporter: ImporterDefinition = {
 
   async commit(rows, ctx) {
     const results: ImportRowResult[] = [];
-    let imported = 0, skipped = 0, failed = 0;
+    let imported = 0, updated = 0, skipped = 0, failed = 0;
+    const upsert = ctx.mode === "upsert";
 
     const clients = await db.client.findMany({ select: { id: true, name: true } });
     const clientByName = new Map(clients.map((c) => [c.name.toLowerCase(), c.id]));
@@ -128,39 +132,77 @@ export const projectsImporter: ImporterDefinition = {
           null;
       }
 
-      try {
-        const project = await db.project.create({
-          data: {
-            name,
-            clientId,
-            status,
-            description: raw.description?.trim() || null,
-            startDate: parseDate(raw.startDate),
-            endDate: parseDate(raw.endDate),
-            serviceOfferingId,
-            parentProjectId,
-          },
-        });
-        imported++; results.push({ row: rowNumber, status: "imported" });
-        await logActivity("imported", "project", project.id, ctx.triggeredBy, name, {
-          projectId: project.id,
-          clientId: project.clientId,
-        });
+      // Match existing by (client + lowercased name). This is the
+      // natural key for projects — same client + same name means the
+      // same project, even if the user re-uploaded the file.
+      const matchKey = `${name.toLowerCase()}|${clientId}`;
+      const existingId = projectsByNameAndClient.get(matchKey) || null;
 
-        // Newly imported project becomes a candidate parent for later rows
-        // in the same batch.
-        projectsByNameAndClient.set(`${name.toLowerCase()}|${project.clientId}`, project.id);
-        const ukey = name.toLowerCase();
-        if (!projectsByNameUnique.has(ukey)) {
-          projectsByNameUnique.set(ukey, project.id);
+      const data = {
+        name,
+        clientId,
+        status,
+        description: raw.description?.trim() || null,
+        startDate: parseDate(raw.startDate),
+        endDate: parseDate(raw.endDate),
+        serviceOfferingId,
+        parentProjectId,
+      };
+
+      try {
+        if (existingId && upsert) {
+          const project = await db.project.update({ where: { id: existingId }, data });
+          updated++; results.push({ row: rowNumber, status: "updated" });
+          await logActivity("imported", "project", project.id, ctx.triggeredBy, `${name} (updated)`, {
+            projectId: project.id, clientId: project.clientId,
+          });
+        } else if (existingId && !upsert) {
+          results.push({
+            row: rowNumber,
+            status: "skipped",
+            message: `Already exists for client "${clientNameRaw}". Re-run with "Update existing rows" enabled to update it.`,
+          });
         } else {
-          projectsByNameUnique.set(ukey, null);
+          const project = await db.project.create({ data });
+          imported++; results.push({ row: rowNumber, status: "imported" });
+          await logActivity("imported", "project", project.id, ctx.triggeredBy, name, {
+            projectId: project.id, clientId: project.clientId,
+          });
+          projectsByNameAndClient.set(matchKey, project.id);
+          const ukey = name.toLowerCase();
+          if (!projectsByNameUnique.has(ukey)) {
+            projectsByNameUnique.set(ukey, project.id);
+          } else {
+            projectsByNameUnique.set(ukey, null);
+          }
         }
       } catch (err) {
         failed++; results.push({ row: rowNumber, status: "failed", message: err instanceof Error ? err.message : "DB error" });
       }
     }
 
-    return { imported, skipped, failed, rows: results };
+    const skippedTotal = results.filter((r) => r.status === "skipped").length;
+    return { imported, updated, skipped: skipped + skippedTotal, failed, rows: results };
+  },
+
+  async exportRows() {
+    const projects = await db.project.findMany({
+      orderBy: { updatedAt: "desc" },
+      include: {
+        client: { select: { name: true } },
+        serviceOffering: { select: { name: true } },
+        parentProject: { select: { name: true } },
+      },
+    });
+    return projects.map((p) => ({
+      name: p.name,
+      clientName: p.client.name,
+      status: p.status,
+      description: p.description || "",
+      startDate: formatDate(p.startDate),
+      endDate: formatDate(p.endDate),
+      serviceOfferingName: p.serviceOffering?.name || "",
+      parentProjectName: p.parentProject?.name || "",
+    }));
   },
 };

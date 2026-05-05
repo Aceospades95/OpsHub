@@ -37,6 +37,8 @@ export default async function ImporterDetailPage({ params }: Props) {
       <ImportWizard
         importerKey={importer.key}
         supportsExport={typeof importer.exportRows === "function"}
+        supportsUpsert={!!importer.supportsUpsert}
+        upsertKeyDescription={importer.upsertKeyDescription}
         fields={importer.fields.map((f) => ({
           key: f.key,
           label: f.label,

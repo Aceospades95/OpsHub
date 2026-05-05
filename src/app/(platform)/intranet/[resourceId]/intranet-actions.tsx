@@ -1,13 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select } from "@/components/ui/select";
 import { FormDialog } from "@/components/shared/form-dialog";
-import { Dialog } from "@/components/ui/dialog";
+import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { updateIntranetResource, deleteIntranetResource } from "@/actions/intranet";
 import { Pencil, Trash2 } from "lucide-react";
 
@@ -23,13 +22,11 @@ interface Props {
 export function IntranetActions({ resource, canEdit, canDelete }: Props) {
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
-  const router = useRouter();
 
-  async function handleDelete() {
+  async function runDelete() {
     const fd = new FormData();
     fd.set("id", resource.id);
-    const result = await deleteIntranetResource(null, fd);
-    if (result.success) router.push("/intranet");
+    return deleteIntranetResource(null, fd);
   }
 
   return (
@@ -66,13 +63,15 @@ export function IntranetActions({ resource, canEdit, canDelete }: Props) {
       {canDelete && (
         <>
           <Button variant="destructive" size="sm" onClick={() => setDeleteOpen(true)}><Trash2 className="h-4 w-4 mr-1" /> Delete</Button>
-          <Dialog open={deleteOpen} onClose={() => setDeleteOpen(false)} title="Delete Resource">
-            <p className="text-sm text-muted-foreground mb-4">Delete <strong>{resource.title}</strong>?</p>
-            <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setDeleteOpen(false)}>Cancel</Button>
-              <Button variant="destructive" onClick={handleDelete}>Delete</Button>
-            </div>
-          </Dialog>
+          <ConfirmDialog
+            open={deleteOpen}
+            onClose={() => setDeleteOpen(false)}
+            title="Delete Resource"
+            message={<>Delete <strong>{resource.title}</strong>?</>}
+            onConfirm={runDelete}
+            navigateTo="/intranet"
+            confirmLabel="Delete"
+          />
         </>
       )}
     </div>

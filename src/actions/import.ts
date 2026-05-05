@@ -133,6 +133,8 @@ interface CommitResponse {
   success: boolean;
   error?: string;
   imported?: number;
+  /** Existing rows updated when running in upsert mode. */
+  updated?: number;
   skipped?: number;
   failed?: number;
   rowOutcomes?: { row: number; status: string; message?: string }[];
@@ -220,9 +222,16 @@ export async function commitImport(
 
     const mappedRows = applyMapping(parsed, mapping);
 
+    // Mode toggle from the wizard. The default is "create" — silent
+    // skips on duplicate match, no row updates. Users opt into
+    // "upsert" via the "Update existing rows on match" checkbox when
+    // they're re-uploading a corrected file or downloaded export.
+    // Importers that don't set supportsUpsert ignore the mode.
+    const mode = formData.get("mode") === "upsert" ? "upsert" : "create";
+
     let result;
     try {
-      result = await importer.commit(mappedRows, { triggeredBy: user.id });
+      result = await importer.commit(mappedRows, { triggeredBy: user.id, mode });
     } catch (err) {
       // Importer-thrown errors can include row-level Prisma details
       // (foreign-key constraint violations, table names). Log them
@@ -247,6 +256,7 @@ export async function commitImport(
           filename: blob.name,
           rowCount: parsed.rowCount,
           imported: result.imported,
+          updated: result.updated,
           skipped: result.skipped,
           errors:
             result.failed > 0 || result.rows.some((r) => r.status !== "imported")
@@ -276,6 +286,7 @@ export async function commitImport(
     return {
       success: true,
       imported: result.imported,
+      updated: result.updated,
       skipped: result.skipped,
       failed: result.failed,
       rowOutcomes: result.rows.slice(0, 100), // cap response size

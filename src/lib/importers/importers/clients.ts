@@ -44,6 +44,9 @@ export const clientsImporter: ImporterDefinition = {
   description:
     "Bulk-create or update client accounts from a CSV. Name is the match key — re-running the file with edits updates existing rows. Required: name. Optional: industry, website, status, accountManagerEmail, description, summary.",
   module: "clients",
+  supportsUpsert: true,
+  upsertKeyDescription:
+    "Always matched by client name (case-insensitive). Existing rows are updated when name matches; new names create new clients. Renaming a client must be done from the UI, not the importer.",
 
   fields: [
     {
@@ -131,6 +134,7 @@ export const clientsImporter: ImporterDefinition = {
   async commit(rows, ctx) {
     const results: ImportRowResult[] = [];
     let imported = 0;
+    let updated = 0;
     let skipped = 0;
     let failed = 0;
 
@@ -211,12 +215,13 @@ export const clientsImporter: ImporterDefinition = {
           existingByName.set(nameKey, { id: clientId });
         }
 
-        imported++;
-        results.push({
-          row: rowNumber,
-          status: "imported",
-          message: action === "updated" ? "Updated existing client" : undefined,
-        });
+        if (action === "updated") {
+          updated++;
+          results.push({ row: rowNumber, status: "updated" });
+        } else {
+          imported++;
+          results.push({ row: rowNumber, status: "imported" });
+        }
 
         const managerEmail = (raw.accountManagerEmail || "").trim().toLowerCase();
         if (managerEmail) {
@@ -258,6 +263,6 @@ export const clientsImporter: ImporterDefinition = {
       }
     }
 
-    return { imported, skipped, failed, rows: results };
+    return { imported, updated, skipped, failed, rows: results };
   },
 };

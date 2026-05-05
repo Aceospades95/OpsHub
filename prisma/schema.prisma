@@ -1165,7 +1165,11 @@ model ImportLog {
   importerKey String // matches a key in the importer registry
   filename    String
   rowCount    Int // total parsed rows
-  imported    Int // successfully created
+  imported    Int // successfully created (new rows only)
+  /// Rows that matched an existing record and were updated in place
+  /// when the import ran in upsert mode. Defaults to 0 for legacy rows
+  /// and for create-only imports.
+  updated     Int      @default(0)
   skipped     Int // skipped (duplicates, dry-run, etc.)
   /**
    * JSON array of { row, message } error entries

@@ -9,6 +9,7 @@ import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { FormDialog } from "@/components/shared/form-dialog";
+import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import Link from "next/link";
@@ -150,11 +151,10 @@ export function EmployeeDetailClient({
     { key: "activity", label: "Activity", icon: FileText },
   ];
 
-  async function handleDelete() {
+  async function runDelete() {
     const fd = new FormData();
     fd.set("id", employee.id);
-    const result = await deleteUser(null, fd);
-    if ("success" in result && result.success) router.push("/team");
+    return deleteUser(null, fd);
   }
 
   // Map user data for the assignment dialog
@@ -320,13 +320,15 @@ export function EmployeeDetailClient({
 
       {/* Delete Dialog */}
       {isAdmin && (
-        <Dialog open={deleteOpen} onClose={() => setDeleteOpen(false)} title="Delete Employee">
-          <p className="text-sm text-muted-foreground mb-4">Delete <strong>{employee.name}</strong>? This is irreversible.</p>
-          <div className="flex justify-end gap-2">
-            <Button variant="outline" onClick={() => setDeleteOpen(false)}>Cancel</Button>
-            <Button variant="destructive" onClick={handleDelete}>Delete</Button>
-          </div>
-        </Dialog>
+        <ConfirmDialog
+          open={deleteOpen}
+          onClose={() => setDeleteOpen(false)}
+          title="Delete Employee"
+          message={<>Delete <strong>{employee.name}</strong>? This is irreversible.</>}
+          onConfirm={runDelete}
+          navigateTo="/team"
+          confirmLabel="Delete"
+        />
       )}
 
       {/* Reset Password Dialog (admin, credentials accounts only) */}

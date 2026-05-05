@@ -380,6 +380,6 @@ export const certificationsImporter: ImporterDefinition = {
       }
     }
 
-    return { imported, skipped, failed, rows: results };
+    return { imported, updated: 0, skipped, failed, rows: results };
   },
 };

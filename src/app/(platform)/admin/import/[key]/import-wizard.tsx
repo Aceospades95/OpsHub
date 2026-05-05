@@ -31,6 +31,7 @@ interface PreviewState {
 
 interface CommitOutcome {
   imported: number;
+  updated: number;
   skipped: number;
   failed: number;
   rowOutcomes: { row: number; status: string; message?: string }[];
@@ -43,6 +44,13 @@ interface Props {
    *  blank template. Driven by whether the importer's exportRows() is
    *  defined. */
   supportsExport: boolean;
+  /** When true, the wizard surfaces the "Update existing rows on match"
+   *  toggle. Driven by whether the importer's commit() honors
+   *  ctx.mode === "upsert". */
+  supportsUpsert: boolean;
+  /** Human-readable description of the natural-key match shown next to
+   *  the toggle. Required when supportsUpsert is true. */
+  upsertKeyDescription?: string;
 }
 
 /**
@@ -51,7 +59,13 @@ interface Props {
  *   2. Preview + map — show first 20 rows + mapping form
  *   3. Result — show how many rows imported / skipped / failed
  */
-export function ImportWizard({ importerKey, fields, supportsExport }: Props) {
+export function ImportWizard({
+  importerKey,
+  fields,
+  supportsExport,
+  supportsUpsert,
+  upsertKeyDescription,
+}: Props) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -59,6 +73,10 @@ export function ImportWizard({ importerKey, fields, supportsExport }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<PreviewState | null>(null);
   const [outcome, setOutcome] = useState<CommitOutcome | null>(null);
+  // Default ON when the importer supports upsert. Re-uploading a CSV
+  // (intentional or after a partial failure) almost always means
+  // "update what's there" rather than "create duplicates."
+  const [upsertMode, setUpsertMode] = useState<boolean>(supportsUpsert);
 
   // ── STEP 1 → 2: Upload + parse + auto-map ─────────
   const handleUpload = () => {
@@ -104,6 +122,7 @@ export function ImportWizard({ importerKey, fields, supportsExport }: Props) {
     formData.set("importerKey", importerKey);
     formData.set("file", pickedFile);
     formData.set("mapping", JSON.stringify(preview.mapping));
+    formData.set("mode", supportsUpsert && upsertMode ? "upsert" : "create");
 
     startTransition(async () => {
       const result = await commitImport(null, formData);
@@ -113,6 +132,7 @@ export function ImportWizard({ importerKey, fields, supportsExport }: Props) {
       }
       setOutcome({
         imported: result.imported || 0,
+        updated: result.updated || 0,
         skipped: result.skipped || 0,
         failed: result.failed || 0,
         rowOutcomes: result.rowOutcomes || [],
@@ -148,10 +168,14 @@ export function ImportWizard({ importerKey, fields, supportsExport }: Props) {
           <CardTitle>Import complete</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
             <div className="rounded border border-border p-4 text-center">
               <p className="text-3xl font-bold text-emerald-600">{outcome.imported}</p>
-              <p className="text-xs text-muted-foreground mt-1">Imported</p>
+              <p className="text-xs text-muted-foreground mt-1">Created</p>
+            </div>
+            <div className="rounded border border-border p-4 text-center">
+              <p className="text-3xl font-bold text-blue-600">{outcome.updated}</p>
+              <p className="text-xs text-muted-foreground mt-1">Updated</p>
             </div>
             <div className="rounded border border-border p-4 text-center">
               <p className="text-3xl font-bold text-amber-600">{outcome.skipped}</p>
@@ -270,6 +294,30 @@ export function ImportWizard({ importerKey, fields, supportsExport }: Props) {
               </table>
             </div>
           </div>
+
+          {supportsUpsert && (
+            <div className="rounded border border-border bg-muted/30 p-3">
+              <label className="flex items-start gap-2 text-sm cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={upsertMode}
+                  onChange={(e) => setUpsertMode(e.target.checked)}
+                  className="mt-0.5 rounded"
+                />
+                <div className="space-y-1">
+                  <p className="font-medium">Update existing rows on match</p>
+                  <p className="text-xs text-muted-foreground">
+                    {upsertKeyDescription || "Match existing rows by their natural key and update them in place."}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {upsertMode
+                      ? "Rows that match existing records will be UPDATED. New rows will be created."
+                      : "Rows that match existing records will be SKIPPED. Only new rows will be created."}
+                  </p>
+                </div>
+              </label>
+            </div>
+          )}
 
           {error && (
             <div className="rounded bg-destructive/10 p-3 text-sm text-destructive flex items-center gap-2">

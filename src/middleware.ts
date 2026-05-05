@@ -11,6 +11,11 @@ export default auth((req) => {
   // /api/jobs/ is also public because the cron runner authenticates
   // itself via the x-cron-secret header — middleware would otherwise
   // 307 the unauthenticated POST from cron providers to /login.
+  // /api/files/ is public at the middleware layer because the route
+  // itself enforces visibility (public files served to anyone, private
+  // files require a session). Without this entry, the login page's
+  // <img src="/api/files/{logoId}"> fetch gets 307'd to /login and
+  // the logo renders broken until the user signs in.
   //
   // /register is deliberately NOT in this list — self-registration is
   // disabled (see src/actions/auth.ts:registerAction). Anyone hitting
@@ -20,6 +25,7 @@ export default auth((req) => {
     "/api/auth",
     "/api/health",
     "/api/jobs/",
+    "/api/files/",
     "/portal/",
     "/api/public/",
   ];

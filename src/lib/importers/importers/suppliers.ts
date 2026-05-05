@@ -25,8 +25,11 @@ export const suppliersImporter: ImporterDefinition = {
   key: "suppliers",
   name: "Suppliers",
   description:
-    "Bulk-create supplier records. Required: name, category. Optional: contact info, status, preferred flag.",
+    "Bulk-create or update supplier records. Required: name, category. Optional: contact info, status, preferred flag.",
   module: "suppliers",
+  supportsUpsert: true,
+  upsertKeyDescription:
+    "Matched by supplier name (case-insensitive). Re-uploading the same name updates the existing row.",
 
   fields: [
     { key: "name", label: "Supplier name", required: true, aliases: ["vendor", "company name", "supplier"] },
@@ -60,14 +63,32 @@ export const suppliersImporter: ImporterDefinition = {
     }));
   },
 
+  async exportRows() {
+    const suppliers = await db.supplier.findMany({ orderBy: { name: "asc" } });
+    return suppliers.map((s) => ({
+      name: s.name,
+      category: s.category,
+      status: s.status,
+      contactName: s.contactName || "",
+      contactEmail: s.contactEmail || "",
+      contactPhone: s.contactPhone || "",
+      address: s.address || "",
+      website: s.website || "",
+      notes: s.notes || "",
+      isPreferred: s.isPreferred ? "true" : "false",
+    }));
+  },
+
   async commit(rows, ctx) {
     const results: ImportRowResult[] = [];
-    let imported = 0, skipped = 0, failed = 0;
+    let imported = 0, updated = 0, skipped = 0, failed = 0;
+    const upsert = ctx.mode === "upsert";
 
-    // Duplicate detection by name
-    const existing = new Set(
-      (await db.supplier.findMany({ select: { name: true } }))
-        .map((s) => s.name.toLowerCase())
+    // Match by lowercased supplier name. Used for both dedupe and the
+    // upsert update path.
+    const byName = new Map(
+      (await db.supplier.findMany({ select: { id: true, name: true } }))
+        .map((s) => [s.name.toLowerCase(), s.id])
     );
 
     for (let i = 0; i < rows.length; i++) {
@@ -79,38 +100,48 @@ export const suppliersImporter: ImporterDefinition = {
       if (!name) { failed++; results.push({ row: rowNumber, status: "failed", message: "Missing name" }); continue; }
       if (!category) { failed++; results.push({ row: rowNumber, status: "failed", message: "Missing category" }); continue; }
 
-      if (existing.has(name.toLowerCase())) {
-        skipped++; results.push({ row: rowNumber, status: "skipped", message: `Supplier already exists: "${name}"` });
-        continue;
-      }
-
       const statusRaw = (raw.status || "ACTIVE").trim().toUpperCase();
       const status = VALID_STATUSES.includes(statusRaw as SupplierStatus) ? (statusRaw as SupplierStatus) : null;
       if (!status) { failed++; results.push({ row: rowNumber, status: "failed", message: `Invalid status "${raw.status}"` }); continue; }
 
+      const data = {
+        name,
+        category,
+        status,
+        contactName: raw.contactName?.trim() || null,
+        contactEmail: raw.contactEmail?.trim() || null,
+        contactPhone: raw.contactPhone?.trim() || null,
+        address: raw.address?.trim() || null,
+        website: raw.website?.trim() || null,
+        notes: raw.notes?.trim() || null,
+        isPreferred: parseBool(raw.isPreferred, false),
+      };
+
+      const existingId = byName.get(name.toLowerCase()) || null;
+
       try {
-        const supplier = await db.supplier.create({
-          data: {
-            name,
-            category,
-            status,
-            contactName: raw.contactName?.trim() || null,
-            contactEmail: raw.contactEmail?.trim() || null,
-            contactPhone: raw.contactPhone?.trim() || null,
-            address: raw.address?.trim() || null,
-            website: raw.website?.trim() || null,
-            notes: raw.notes?.trim() || null,
-            isPreferred: parseBool(raw.isPreferred, false),
-          },
-        });
-        existing.add(name.toLowerCase());
-        imported++; results.push({ row: rowNumber, status: "imported" });
-        await logActivity("imported", "supplier", supplier.id, ctx.triggeredBy, name);
+        if (existingId && upsert) {
+          const supplier = await db.supplier.update({ where: { id: existingId }, data });
+          updated++; results.push({ row: rowNumber, status: "updated" });
+          await logActivity("imported", "supplier", supplier.id, ctx.triggeredBy, `${name} (updated)`);
+        } else if (existingId && !upsert) {
+          skipped++;
+          results.push({
+            row: rowNumber,
+            status: "skipped",
+            message: `Supplier already exists: "${name}". Re-run with "Update existing rows" enabled to update it.`,
+          });
+        } else {
+          const supplier = await db.supplier.create({ data });
+          byName.set(name.toLowerCase(), supplier.id);
+          imported++; results.push({ row: rowNumber, status: "imported" });
+          await logActivity("imported", "supplier", supplier.id, ctx.triggeredBy, name);
+        }
       } catch (err) {
         failed++; results.push({ row: rowNumber, status: "failed", message: err instanceof Error ? err.message : "DB error" });
       }
     }
 
-    return { imported, skipped, failed, rows: results };
+    return { imported, updated, skipped, failed, rows: results };
   },
 };

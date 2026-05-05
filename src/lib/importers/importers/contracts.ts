@@ -44,6 +44,9 @@ export const contractsImporter: ImporterDefinition = {
   description:
     "Bulk-create contracts. Required: title, clientName. Optional: status, type, value, dates, renewal info, Google Drive link, parent contract, project link.",
   module: "contracts",
+  supportsUpsert: true,
+  upsertKeyDescription:
+    "Matched by contract number when present; otherwise by (client + title). Rows without a contract number that share both client and title with an existing contract will be updated.",
 
   fields: [
     { key: "title", label: "Contract title", required: true, aliases: ["name", "contract name", "contract title"] },
@@ -136,8 +139,10 @@ export const contractsImporter: ImporterDefinition = {
   async commit(rows, ctx) {
     const results: ImportRowResult[] = [];
     let imported = 0;
+    let updated = 0;
     const skipped = 0;
     let failed = 0;
+    const upsert = ctx.mode === "upsert";
 
     const clients = await db.client.findMany({ select: { id: true, name: true } });
     const clientByName = new Map(clients.map((c) => [c.name.toLowerCase(), c.id]));
@@ -156,6 +161,22 @@ export const contractsImporter: ImporterDefinition = {
     );
     const projects = await db.project.findMany({ select: { id: true, name: true } });
     const projectByName = new Map(projects.map((p) => [p.name.toLowerCase(), p.id]));
+
+    // Pre-fetch every existing contract once so we can match by
+    // contractNumber (preferred) or (clientId + title) (fallback) without
+    // hitting the DB per row. Cheap because contract counts are typically
+    // in the low thousands; if this grows we can shard by clientId.
+    const existing = await db.contract.findMany({
+      select: { id: true, title: true, clientId: true, contractNumber: true },
+    });
+    const byNumber = new Map(
+      existing
+        .filter((c): c is { id: string; title: string; clientId: string; contractNumber: string } => Boolean(c.contractNumber))
+        .map((c) => [c.contractNumber.toLowerCase(), c.id])
+    );
+    const byClientTitle = new Map(
+      existing.map((c) => [`${c.clientId}::${c.title.toLowerCase()}`, c.id])
+    );
 
     for (let i = 0; i < rows.length; i++) {
       const rowNumber = i + 1;
@@ -202,46 +223,112 @@ export const contractsImporter: ImporterDefinition = {
         ? "external_url"
         : null;
 
-      try {
-        const contract = await db.contract.create({
-          data: {
-            title,
-            clientId,
-            status,
-            contractType,
-            contractNumber: raw.contractNumber?.trim() || null,
-            value: raw.value ? parseFloat(raw.value) || null : null,
-            currency: raw.currency?.trim() || "USD",
-            startDate: parseDate(raw.startDate),
-            endDate: parseDate(raw.endDate),
-            renewalDate: parseDate(raw.renewalDate),
-            noticePeriodDays: raw.noticePeriodDays ? parseInt(raw.noticePeriodDays, 10) || null : null,
-            autoRenew: parseBool(raw.autoRenew, false),
-            description: raw.description?.trim() || null,
-            summary: raw.summary?.trim() || null,
-            externalDocumentUrl,
-            documentSourceType,
-            documentSourceLabel: raw.documentSourceLabel?.trim() || null,
-            parentContractId,
-            projectId,
-          },
-        });
-        imported++; results.push({ row: rowNumber, status: "imported" });
-        await logActivity("imported", "contract", contract.id, ctx.triggeredBy, title, {
-          clientId: contract.clientId,
-          projectId: contract.projectId,
-        });
+      const contractNumberRaw = raw.contractNumber?.trim() || null;
+      const data = {
+        title,
+        clientId,
+        status,
+        contractType,
+        contractNumber: contractNumberRaw,
+        value: raw.value ? parseFloat(raw.value) || null : null,
+        currency: raw.currency?.trim() || "USD",
+        startDate: parseDate(raw.startDate),
+        endDate: parseDate(raw.endDate),
+        renewalDate: parseDate(raw.renewalDate),
+        noticePeriodDays: raw.noticePeriodDays ? parseInt(raw.noticePeriodDays, 10) || null : null,
+        autoRenew: parseBool(raw.autoRenew, false),
+        description: raw.description?.trim() || null,
+        summary: raw.summary?.trim() || null,
+        externalDocumentUrl,
+        documentSourceType,
+        documentSourceLabel: raw.documentSourceLabel?.trim() || null,
+        parentContractId,
+        projectId,
+      };
 
-        // If this contract just claimed a contractNumber, future rows in the
-        // same batch can resolve it as a parent.
-        if (contract.contractNumber) {
-          parentByNumber.set(contract.contractNumber.toLowerCase(), contract.id);
+      // Resolve the natural key. Contract number first (highest signal),
+      // then (clientId + title) as a fallback so contracts without a
+      // number still match on re-upload.
+      const existingId =
+        (contractNumberRaw && byNumber.get(contractNumberRaw.toLowerCase())) ||
+        byClientTitle.get(`${clientId}::${title.toLowerCase()}`) ||
+        null;
+
+      try {
+        if (existingId && upsert) {
+          const contract = await db.contract.update({ where: { id: existingId }, data });
+          updated++; results.push({ row: rowNumber, status: "updated" });
+          await logActivity("imported", "contract", contract.id, ctx.triggeredBy, `${title} (updated)`, {
+            clientId: contract.clientId,
+            projectId: contract.projectId,
+          });
+          if (contract.contractNumber) {
+            parentByNumber.set(contract.contractNumber.toLowerCase(), contract.id);
+          }
+        } else if (existingId && !upsert) {
+          // Create-only mode: don't duplicate. Skip with a clear message
+          // pointing the user at the upsert toggle.
+          results.push({
+            row: rowNumber,
+            status: "skipped",
+            message: `Already exists (matched by ${contractNumberRaw ? "contract number" : "client + title"}). Re-run with "Update existing rows" enabled to update it.`,
+          });
+        } else {
+          const contract = await db.contract.create({ data });
+          imported++; results.push({ row: rowNumber, status: "imported" });
+          await logActivity("imported", "contract", contract.id, ctx.triggeredBy, title, {
+            clientId: contract.clientId,
+            projectId: contract.projectId,
+          });
+          if (contract.contractNumber) {
+            parentByNumber.set(contract.contractNumber.toLowerCase(), contract.id);
+            byNumber.set(contract.contractNumber.toLowerCase(), contract.id);
+          }
+          byClientTitle.set(`${contract.clientId}::${contract.title.toLowerCase()}`, contract.id);
         }
       } catch (err) {
         failed++; results.push({ row: rowNumber, status: "failed", message: err instanceof Error ? err.message : "DB error" });
       }
     }
 
-    return { imported, skipped, failed, rows: results };
+    // skipped is incremented in the !upsert branch via results.push but
+    // the local var stays 0 because we counted via results length below.
+    const skippedTotal = results.filter((r) => r.status === "skipped").length;
+    return { imported, updated, skipped: skipped + skippedTotal, failed, rows: results };
+  },
+
+  async exportRows() {
+    const contracts = await db.contract.findMany({
+      orderBy: { updatedAt: "desc" },
+      include: {
+        client: { select: { name: true } },
+        project: { select: { name: true } },
+        parentContract: { select: { contractNumber: true } },
+      },
+    });
+    return contracts.map((c) => ({
+      title: c.title,
+      clientName: c.client.name,
+      status: c.status,
+      contractType: c.contractType || "",
+      contractNumber: c.contractNumber || "",
+      value: c.value !== null && c.value !== undefined ? String(c.value) : "",
+      currency: c.currency || "",
+      startDate: formatDate(c.startDate),
+      endDate: formatDate(c.endDate),
+      renewalDate: formatDate(c.renewalDate),
+      noticePeriodDays:
+        c.noticePeriodDays !== null && c.noticePeriodDays !== undefined
+          ? String(c.noticePeriodDays)
+          : "",
+      autoRenew: c.autoRenew ? "true" : "false",
+      description: c.description || "",
+      summary: c.summary || "",
+      externalDocumentUrl: c.externalDocumentUrl || "",
+      documentSourceType: c.documentSourceType || "",
+      documentSourceLabel: c.documentSourceLabel || "",
+      parentContractNumber: c.parentContract?.contractNumber || "",
+      projectName: c.project?.name || "",
+    }));
   },
 };
