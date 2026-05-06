@@ -11,10 +11,11 @@ import { notify } from "@/lib/notifications";
 import { absoluteUrl } from "@/lib/url";
 import { z } from "zod";
 import { isValidCalendarRange } from "@/lib/dates";
+import { nameField } from "@/lib/validation";
 
 const projectSchema = z
   .object({
-    name: z.string().min(1, "Name is required"),
+    name: nameField({ label: "Name" }),
     description: z.string().optional(),
     status: z.enum(["PLANNING", "ACTIVE", "ON_HOLD", "COMPLETED", "ARCHIVED"]).optional(),
     startDate: z.string().optional(),
@@ -177,6 +178,43 @@ export async function updateProject(_prev: unknown, formData: FormData) {
       serviceOfferingId: parsed.data.serviceOfferingId || null,
     },
   });
+
+  // Sync related-project links. The Edit dialog (mirroring the Create
+  // dialog's parity per the QA report) posts the full set of
+  // relatedProjectIds it wants the project to have. We replace the
+  // current set: drop any link that's no longer present and create the
+  // missing ones. Self-references and the existing parentProjectId are
+  // filtered out so the form can't accidentally create a cycle.
+  const desiredRelated = (formData.getAll("relatedProjectIds") as string[])
+    .filter((rid) => rid && rid !== id && rid !== parsed.data.parentProjectId);
+
+  const existingRelated = await db.projectRelation.findMany({
+    where: { projectId: id },
+    select: { id: true, relatedProjectId: true },
+  });
+  const existingByRelatedId = new Map(
+    existingRelated.map((r) => [r.relatedProjectId, r.id])
+  );
+  const desiredSet = new Set(desiredRelated);
+
+  // Drop links that aren't in the new set.
+  const toDelete = existingRelated
+    .filter((r) => !desiredSet.has(r.relatedProjectId))
+    .map((r) => r.id);
+  if (toDelete.length > 0) {
+    await db.projectRelation.deleteMany({ where: { id: { in: toDelete } } });
+  }
+
+  // Create the new ones, skipping any that already exist.
+  const toCreate = desiredRelated
+    .filter((rid) => !existingByRelatedId.has(rid))
+    .map((rid) => ({ projectId: id, relatedProjectId: rid }));
+  if (toCreate.length > 0) {
+    await db.projectRelation.createMany({
+      data: toCreate,
+      skipDuplicates: true,
+    });
+  }
 
   await logActivity("updated", "project", id, user.id, parsed.data.name, {
     projectId: id,

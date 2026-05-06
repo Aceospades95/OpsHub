@@ -20,22 +20,42 @@ interface Props {
     endDate: Date | null;
     clientId: string;
     serviceOfferingId: string | null;
+    parentProjectId: string | null;
+    /** Currently-linked related projects (id only, used to seed checkboxes). */
+    relatedProjectIds: string[];
   };
   clients: { id: string; name: string }[];
   serviceOfferings: { id: string; name: string }[];
+  /** Every project the user could possibly link as parent / related,
+   *  excluding the project itself. */
+  allProjects: { id: string; name: string }[];
   canEdit: boolean;
   canDelete: boolean;
 }
 
-export function ProjectActions({ project, clients, serviceOfferings, canEdit, canDelete }: Props) {
+export function ProjectActions({ project, clients, serviceOfferings, allProjects, canEdit, canDelete }: Props) {
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [creatingNewOffering, setCreatingNewOffering] = useState(false);
+  // The Edit dialog gains parity with the Create dialog: parent project
+  // and related projects are now editable here too. Seed from the
+  // current state; reset on close so a cancelled edit doesn't leak the
+  // pending selection into the next open.
+  const [selectedRelated, setSelectedRelated] = useState<string[]>(
+    project.relatedProjectIds
+  );
 
-  // Reset the "new offering" toggle when the edit dialog closes
+  const toggleRelated = (id: string) => {
+    setSelectedRelated((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+  };
+
+  // Reset transient form state when the edit dialog closes
   function handleCloseEdit() {
     setEditOpen(false);
     setCreatingNewOffering(false);
+    setSelectedRelated(project.relatedProjectIds);
   }
 
   async function runDelete() {
@@ -130,6 +150,52 @@ export function ProjectActions({ project, clients, serviceOfferings, canEdit, ca
                     error={fieldErrors?.endDate?.[0]}
                   />
                 </div>
+
+                {/* Hidden inputs for related project IDs — submitted as
+                 *  multiple `relatedProjectIds` form values, the server
+                 *  action diffs them against the current set. */}
+                {selectedRelated.map((id) => (
+                  <input key={id} type="hidden" name="relatedProjectIds" value={id} />
+                ))}
+
+                {allProjects.length > 0 && (
+                  <Select
+                    name="parentProjectId"
+                    label="Parent Project"
+                    defaultValue={project.parentProjectId || ""}
+                    options={allProjects.map((p) => ({ label: p.name, value: p.id }))}
+                    placeholder="None (top-level project)"
+                  />
+                )}
+
+                {allProjects.length > 0 && (
+                  <div className="space-y-1">
+                    <label className="block text-sm font-medium text-foreground">
+                      Related Projects
+                    </label>
+                    <div className="max-h-36 overflow-y-auto rounded border border-input p-2 space-y-1">
+                      {allProjects.map((p) => (
+                        <label
+                          key={p.id}
+                          className="flex items-center gap-2 text-sm rounded px-1.5 py-1 hover:bg-muted cursor-pointer"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={selectedRelated.includes(p.id)}
+                            onChange={() => toggleRelated(p.id)}
+                            className="rounded border-input"
+                          />
+                          <span className="truncate">{p.name}</span>
+                        </label>
+                      ))}
+                    </div>
+                    {selectedRelated.length > 0 && (
+                      <p className="text-xs text-muted-foreground">
+                        {selectedRelated.length} related {selectedRelated.length === 1 ? "project" : "projects"} selected
+                      </p>
+                    )}
+                  </div>
+                )}
               </>
             )}
           </FormDialog>

@@ -7,10 +7,11 @@ import { revalidatePartnership } from "@/lib/revalidate-entity";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { isValidCalendarRange } from "@/lib/dates";
+import { nameField } from "@/lib/validation";
 
 const partnershipSchema = z
   .object({
-    name: z.string().min(1, "Name is required"),
+    name: nameField({ label: "Name" }),
     legalName: z.string().optional(),
     type: z.enum([
       "STRATEGIC",

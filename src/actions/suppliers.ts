@@ -5,9 +5,10 @@ import { requireAuth, resolveModulePerms } from "@/lib/permissions";
 import { logActivity } from "@/lib/activity";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { nameField } from "@/lib/validation";
 
 const supplierSchema = z.object({
-  name: z.string().min(1, "Name is required"),
+  name: nameField({ label: "Name" }),
   category: z.string().min(1, "Category is required"),
   contactName: z.string().optional(),
   contactEmail: z.string().optional(),

@@ -81,7 +81,12 @@ export default function OrgChartCanvas({
       .nodeHeight(() => 96)
       .childrenMargin(() => 50)
       .siblingsMargin(() => 16)
-      .neighbourMargin(() => 16)
+      // Bumped from 16 → 40 so the leftmost (and rightmost) cards in
+      // compact mode don't sit flush against the SVG viewport edge.
+      // The QA stress test repro: with Compact ON + Fit-to-view, a
+      // card on the left edge had its right side trimmed because the
+      // chart's natural extent reached the viewport boundary.
+      .neighbourMargin(() => 40)
       .compactMarginBetween(() => 16)
       .compactMarginPair(() => 64)
       .compact(compact)
@@ -147,6 +152,7 @@ export default function OrgChartCanvas({
           type="button"
           onClick={() => chartRef.current?.expandAll().fit()}
           className="rounded border border-border px-2 py-1 hover:bg-muted/40 transition-colors"
+          title="Expand every node and re-fit to the viewport. If everything is already expanded the tree just re-centers."
         >
           Expand all
         </button>
@@ -154,6 +160,7 @@ export default function OrgChartCanvas({
           type="button"
           onClick={() => chartRef.current?.collapseAll().fit()}
           className="rounded border border-border px-2 py-1 hover:bg-muted/40 transition-colors"
+          title="Collapse every node down to the roots."
         >
           Collapse all
         </button>
@@ -161,6 +168,7 @@ export default function OrgChartCanvas({
           type="button"
           onClick={() => chartRef.current?.fit()}
           className="rounded border border-border px-2 py-1 hover:bg-muted/40 transition-colors"
+          title="Re-center and zoom so the whole tree fits in view."
         >
           Fit to view
         </button>

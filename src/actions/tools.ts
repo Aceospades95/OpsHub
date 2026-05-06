@@ -5,9 +5,10 @@ import { requireAuth, resolveModulePerms } from "@/lib/permissions";
 import { logActivity } from "@/lib/activity";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { nameField } from "@/lib/validation";
 
 const toolSchema = z.object({
-  name: z.string().min(1, "Name is required"),
+  name: nameField({ label: "Name" }),
   description: z.string().optional(),
   category: z.string().optional(),
   toolUrl: z.string().optional(),

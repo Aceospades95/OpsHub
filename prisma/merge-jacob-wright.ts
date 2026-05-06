@@ -44,7 +44,7 @@
  */
 
 import { PrismaClient } from "@prisma/client";
-import { executeMerge } from "./lib/merge-users-fk";
+import { executeMerge } from "../src/lib/merge-users-fk";
 
 const db = new PrismaClient();
 

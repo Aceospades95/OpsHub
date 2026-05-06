@@ -9,6 +9,7 @@ import { absoluteUrl } from "@/lib/url";
 import { resolveModulePerms } from "@/lib/permissions";
 import type { Role } from "@prisma/client";
 import { z } from "zod";
+import { nameField } from "@/lib/validation";
 
 /**
  * Verify the actor is allowed to mutate this specific task. Without
@@ -127,7 +128,7 @@ async function notifyTaskAssigned(opts: {
 }
 
 const taskSchema = z.object({
-  title: z.string().min(1, "Title is required"),
+  title: nameField({ label: "Title", max: 500 }),
   description: z.string().optional(),
   priority: z.enum(["HIGH", "MEDIUM", "LOW"]).default("MEDIUM"),
   status: z.enum(["TODO", "IN_PROGRESS", "DONE", "CANCELLED"]).default("TODO"),
@@ -154,7 +155,10 @@ export async function createTask(_prevState: unknown, formData: FormData) {
 
   const parsed = taskSchema.safeParse(raw);
   if (!parsed.success) {
-    return { error: parsed.error.errors[0].message };
+    return {
+      error: parsed.error.errors[0].message,
+      fieldErrors: parsed.error.flatten().fieldErrors,
+    };
   }
 
   const data = parsed.data;
@@ -253,7 +257,10 @@ export async function updateTask(_prevState: unknown, formData: FormData) {
 
   const parsed = taskSchema.safeParse(raw);
   if (!parsed.success) {
-    return { error: parsed.error.errors[0].message };
+    return {
+      error: parsed.error.errors[0].message,
+      fieldErrors: parsed.error.flatten().fieldErrors,
+    };
   }
 
   const data = parsed.data;

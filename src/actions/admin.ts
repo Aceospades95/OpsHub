@@ -15,6 +15,7 @@ import { sendFromTemplate } from "@/lib/email";
 import { absoluteUrl } from "@/lib/url";
 import { hash } from "bcryptjs";
 import { z } from "zod";
+import { nameField } from "@/lib/validation";
 
 function requireAdminOrManager(role: string): { error: string } | null {
   if (role !== "ADMIN" && role !== "MANAGER") {
@@ -39,7 +40,7 @@ function requireAdmin(role: string): { error: string } | null {
 }
 
 const createUserSchema = z.object({
-  name: z.string().min(2, "Name required"),
+  name: nameField({ label: "Name", min: 2 }),
   email: z.string().email("Invalid email").optional(),
   password: z.string().min(6, "Min 6 chars").optional(),
   role: z.enum(["ADMIN", "MANAGER", "DEVELOPER", "CONTRIBUTOR", "VIEWER", "GUEST"]),

@@ -6,9 +6,10 @@ import { logActivity } from "@/lib/activity";
 import { revalidateClient } from "@/lib/revalidate-entity";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { nameField } from "@/lib/validation";
 
 const clientSchema = z.object({
-  name: z.string().min(1, "Name is required"),
+  name: nameField({ label: "Name" }),
   description: z.string().optional(),
   summary: z.string().optional(),
   industry: z.string().optional(),
@@ -86,7 +87,7 @@ export async function deleteClient(_prev: unknown, formData: FormData) {
 
 // Client Contacts
 const contactSchema = z.object({
-  name: z.string().min(1, "Name is required"),
+  name: nameField({ label: "Name" }),
   title: z.string().optional(),
   email: z.string().email().optional().or(z.literal("")),
   phone: z.string().optional(),

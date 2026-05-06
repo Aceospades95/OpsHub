@@ -9,6 +9,7 @@ import { nextQuoteNumber } from "@/lib/quotes/numbering";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import type { Prisma } from "@prisma/client";
+import { rejectHtmlChars, HTML_CHARS_MESSAGE } from "@/lib/validation";
 
 // ─── Validation ──────────────────────────────────────────────────────────
 
@@ -46,7 +47,15 @@ const MAX_LINE_ITEMS = 500;
 const quoteUpsertSchema = z.object({
   clientId: z.string().min(1, "Client is required"),
   projectId: z.string().nullish(),
-  title: z.string().min(1, "Title is required"),
+  title: z
+    .string()
+    .trim()
+    .min(1, "Title is required")
+    .max(200, "Title must be at most 200 characters")
+    .refine((v) => v !== "Untitled Quote", {
+      message: "Give the quote a meaningful title before saving",
+    })
+    .refine(rejectHtmlChars, { message: HTML_CHARS_MESSAGE }),
   introText: z.string().nullish(),
   assumptionsText: z.string().nullish(),
   termsText: z.string().nullish(),
@@ -303,6 +312,21 @@ export async function createQuote(opts: CreateQuoteOptions = {}) {
         })
       )?.name ?? null
     : null;
+
+  // Promote the empty-seed placeholder title to something meaningful.
+  // The QA stress test flagged that every quote in the system was
+  // titled "Untitled Quote" because users hit Save in the editor
+  // without retitling — the placeholder shipped untouched. A default
+  // that includes client + (optional) project + ISO date makes the
+  // saved row useful even if the user never edits the field. Templates
+  // and duplicate flows already supplied their own title above; only
+  // the bare-create path lands here.
+  if (seedTitle === "Untitled Quote") {
+    const today = new Date().toISOString().slice(0, 10);
+    seedTitle = seedProjectName
+      ? `${seedClient.name} — ${seedProjectName} — ${today}`
+      : `${seedClient.name} — ${today}`;
+  }
 
   // Retry the create if quoteNumber collides — concurrent creates in the
   // same year can race. After two retries, surface the error.

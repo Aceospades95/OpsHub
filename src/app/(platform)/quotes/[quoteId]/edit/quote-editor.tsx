@@ -455,7 +455,7 @@ export function QuoteEditor({ initial, clients, projects, users, catalog, brandi
 
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Assumptions, terms &amp; notes</CardTitle>
+              <CardTitle className="text-base">Assumptions, terms & notes</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <Textarea

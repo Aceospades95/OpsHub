@@ -53,7 +53,7 @@
  */
 
 import { PrismaClient } from "@prisma/client";
-import { REASSIGNMENTS, executeMerge } from "./lib/merge-users-fk";
+import { REASSIGNMENTS, executeMerge } from "../src/lib/merge-users-fk";
 
 const db = new PrismaClient();
 

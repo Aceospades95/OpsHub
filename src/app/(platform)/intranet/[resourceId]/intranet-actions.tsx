@@ -67,7 +67,13 @@ export function IntranetActions({ resource, canEdit, canDelete }: Props) {
             open={deleteOpen}
             onClose={() => setDeleteOpen(false)}
             title="Delete Resource"
-            message={<>Delete <strong>{resource.title}</strong>?</>}
+            message={
+              <>
+                Are you sure you want to delete <strong>{resource.title}</strong>?
+                Attachments and links on this resource will be removed and the
+                page will no longer appear in /intranet. This cannot be undone.
+              </>
+            }
             onConfirm={runDelete}
             navigateTo="/intranet"
             confirmLabel="Delete"

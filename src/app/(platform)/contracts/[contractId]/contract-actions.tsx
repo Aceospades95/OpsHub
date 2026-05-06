@@ -106,7 +106,14 @@ export function ContractActions({ contract, clients, projects, allContracts, can
             open={deleteOpen}
             onClose={() => setDeleteOpen(false)}
             title="Delete Contract"
-            message={<>Delete <strong>{contract.title}</strong>?</>}
+            message={
+              <>
+                Are you sure you want to delete <strong>{contract.title}</strong>?
+                Contract terms, attachments, and comments will be removed.
+                The linked client and project keep their other contracts.
+                This cannot be undone.
+              </>
+            }
             onConfirm={runDelete}
             navigateTo="/contracts"
             confirmLabel="Delete"

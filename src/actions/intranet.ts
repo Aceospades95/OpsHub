@@ -5,9 +5,10 @@ import { requireAuth, resolveModulePerms } from "@/lib/permissions";
 import { logActivity } from "@/lib/activity";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { nameField } from "@/lib/validation";
 
 const resourceSchema = z.object({
-  title: z.string().min(1, "Title is required"),
+  title: nameField({ label: "Title" }),
   description: z.string().optional(),
   content: z.string().optional(),
   category: z.enum(["EXPENSE_REPORT", "TIME_OFF", "ORG_CHART", "ANNOUNCEMENT", "HR_POLICY", "SOP", "GENERAL_RESOURCE", "FORM", "OTHER"]).optional(),

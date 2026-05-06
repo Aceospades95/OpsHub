@@ -18,6 +18,8 @@
     "merge:duplicate-users": "npx tsx prisma/merge-duplicate-users.ts",
     "merge:users-by-id": "npx tsx prisma/merge-users-by-id.ts",
     "merge:jacob-wright": "npx tsx prisma/merge-jacob-wright.ts",
+    "backfill:quote-numbers": "npx tsx prisma/backfill-quote-numbers.ts",
+    "dedupe:intranet-org-chart": "npx tsx prisma/dedupe-intranet-org-chart.ts",
     "db:studio": "prisma studio",
     "test": "vitest run",
     "test:watch": "vitest"

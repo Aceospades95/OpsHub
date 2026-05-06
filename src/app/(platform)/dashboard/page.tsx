@@ -244,7 +244,7 @@ export default async function DashboardPage() {
                       <DashboardTaskCheckbox taskId={task.id} status={task.status} />
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
-                          <span className="text-sm font-medium truncate">{task.title}</span>
+                          <span className="text-sm font-medium truncate" title={task.title}>{task.title}</span>
                           <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${priorityColors[task.priority]}`}>
                             {task.priority}
                           </span>
@@ -283,7 +283,7 @@ export default async function DashboardPage() {
                     <div key={task.id} className="flex items-center gap-3 py-0.5 opacity-70">
                       <DashboardTaskCheckbox taskId={task.id} status={task.status} />
                       <div className="flex-1 min-w-0">
-                        <span className="text-sm line-through truncate block">{task.title}</span>
+                        <span className="text-sm line-through truncate block" title={task.title}>{task.title}</span>
                         <div className="flex items-center gap-2 text-xs text-muted-foreground">
                           {task.project && (
                             <Link href={`/projects/${task.project.id}`} className="hover:text-primary hover:underline">
@@ -366,8 +366,8 @@ export default async function DashboardPage() {
               {activeProjects.map((p: { id: string; name: string; status: string; client: { name: string } | null; _count: { tasks: number } }) => (
                 <Link key={p.id} href={`/projects/${p.id}`} className="flex items-center gap-3 rounded border border-border bg-muted p-3 hover:border-primary hover:bg-muted transition-colors">
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate">{p.name}</p>
-                    <p className="text-xs text-muted-foreground truncate">{p.client?.name || "No client"}</p>
+                    <p className="text-sm font-medium truncate" title={p.name}>{p.name}</p>
+                    <p className="text-xs text-muted-foreground truncate" title={p.client?.name || "No client"}>{p.client?.name || "No client"}</p>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
                     {p._count.tasks > 0 && (
@@ -402,8 +402,8 @@ export default async function DashboardPage() {
                 <Link key={m.id} href={`/team/${m.id}`} className="flex items-center gap-3 rounded border border-border bg-muted p-3 hover:border-primary hover:bg-muted transition-colors">
                   <Avatar name={m.name} size="xs" />
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate">{m.name}</p>
-                    <p className="text-xs text-muted-foreground truncate">{m.jobTitle || m.department || "Team member"}</p>
+                    <p className="text-sm font-medium truncate" title={m.name}>{m.name}</p>
+                    <p className="text-xs text-muted-foreground truncate" title={m.jobTitle || m.department || "Team member"}>{m.jobTitle || m.department || "Team member"}</p>
                   </div>
                   <span className="text-xs text-muted-foreground shrink-0">{m._count.assignments} active</span>
                 </Link>

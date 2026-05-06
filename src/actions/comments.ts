@@ -13,6 +13,7 @@ import {
 import { absoluteUrl } from "@/lib/url";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { rejectHtmlChars, HTML_CHARS_MESSAGE } from "@/lib/validation";
 
 const entityModuleMap: Record<string, string> = {
   client: "clients",
@@ -62,7 +63,11 @@ const addCommentSchema = z.object({
     "partnership",
   ]),
   entityId: z.string().min(1),
-  content: z.string().min(1, "Comment cannot be empty"),
+  content: z
+    .string()
+    .min(1, "Comment cannot be empty")
+    .max(10000, "Comment is too long")
+    .refine(rejectHtmlChars, { message: HTML_CHARS_MESSAGE }),
 });
 
 /**

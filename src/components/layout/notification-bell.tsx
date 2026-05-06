@@ -125,9 +125,24 @@ export function NotificationBell({ initialUnreadCount, initialNotifications }: P
       >
         <Bell className="h-5 w-5" />
         {unreadCount > 0 && (
-          <span className="absolute -top-0.5 -right-0.5 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold text-destructive-foreground">
-            {unreadCount > 99 ? "99+" : unreadCount}
-          </span>
+          <>
+            {/* Bigger badge so the QA-flagged "looked empty" case is
+                impossible: the red pill sits on top of the bell with a
+                ring matching the header background and a subtle pulse
+                so it pulls the eye on first render. aria-live="polite"
+                announces count changes to screen readers without
+                interrupting other speech. */}
+            <span
+              aria-live="polite"
+              className="absolute -top-1 -right-1 flex h-5 min-w-[20px] items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold text-destructive-foreground ring-2 ring-background shadow-sm"
+            >
+              {unreadCount > 99 ? "99+" : unreadCount}
+            </span>
+            <span
+              aria-hidden
+              className="absolute -top-1 -right-1 inline-flex h-5 w-5 animate-ping rounded-full bg-destructive opacity-40"
+            />
+          </>
         )}
       </button>
 

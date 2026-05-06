@@ -11,6 +11,7 @@ import { CheckSquare } from "lucide-react";
 import { TaskCreateButton } from "./task-create-button";
 import { TaskCheckbox } from "./task-checkbox";
 import { TaskFilters } from "./task-filters";
+import { TasksListClient } from "./tasks-list-client";
 import { Suspense } from "react";
 import { formatCalendarDate } from "@/lib/dates";
 import Link from "next/link";
@@ -91,6 +92,8 @@ export default async function TasksPage({
     db.task.findMany({
       where,
       orderBy: [{ status: "asc" }, { priority: "asc" }, { dueDate: "asc" }],
+      // `description` is included so the TaskDrawer can display + edit
+      // it without a second round-trip when a row is opened.
       include: {
         project: { select: { id: true, name: true } },
         client: { select: { id: true, name: true } },
@@ -204,103 +207,13 @@ export default async function TasksPage({
       ) : groupBy === "project" ? (
         <ProjectGroupedTasks tasks={tasks} />
       ) : (
-        <div className="space-y-8">
-          {activeTasks.length > 0 && (
-            <div>
-              <h2 className="text-lg font-semibold text-foreground mb-4">
-                Active ({activeTasks.length})
-              </h2>
-              <div className="space-y-2">
-                {activeTasks.map((task) => (
-                  <Card key={task.id} className="hover:shadow-sm transition-shadow">
-                    <CardContent className="p-4">
-                      <div className="flex items-center gap-4">
-                        <TaskCheckbox taskId={task.id} status={task.status} />
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="font-medium text-foreground">{task.title}</span>
-                            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${priorityColors[task.priority]}`}>
-                              {task.priority}
-                            </span>
-                            {task.status === "IN_PROGRESS" && (
-                              <Badge variant="default" className="text-xs">In Progress</Badge>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
-                            {task.project && (
-                              <Link href={`/projects/${task.project.id}`} className="hover:text-primary">
-                                {task.project.name}
-                              </Link>
-                            )}
-                            {task.client && (
-                              <Link href={`/clients/${task.client.id}`} className="hover:text-primary">
-                                {task.client.name}
-                              </Link>
-                            )}
-                            {task.dueDate && (
-                              <span className={new Date(task.dueDate) < new Date() ? "text-destructive font-medium" : ""}>
-                                Due {formatCalendarDate(task.dueDate, "MMM d, yyyy")}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                        {task.assignee && (
-                          <Link
-                            href={`/team/${task.assignee.id}`}
-                            className="flex items-center gap-1.5 shrink-0 hover:text-primary"
-                          >
-                            <Avatar name={task.assignee.name} size="xs" />
-                            <span className="text-xs text-muted-foreground hover:text-primary hidden sm:inline">{task.assignee.name}</span>
-                          </Link>
-                        )}
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {completedTasks.length > 0 && (
-            <div>
-              <h2 className="text-lg font-semibold text-muted-foreground mb-4">
-                Completed ({completedTasks.length})
-              </h2>
-              <div className="space-y-2 opacity-60">
-                {completedTasks.map((task) => (
-                  <Card key={task.id}>
-                    <CardContent className="p-4">
-                      <div className="flex items-center gap-4">
-                        <TaskCheckbox taskId={task.id} status={task.status} />
-                        <div className="flex-1 min-w-0">
-                          <span className="font-medium text-foreground line-through">{task.title}</span>
-                          <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
-                            {task.project && (
-                              <Link href={`/projects/${task.project.id}`} className="hover:text-primary hover:underline">
-                                {task.project.name}
-                              </Link>
-                            )}
-                            {task.client && (
-                              <Link href={`/clients/${task.client.id}`} className="hover:text-primary hover:underline">
-                                {task.client.name}
-                              </Link>
-                            )}
-                            {task.assignee && (
-                              <Link href={`/team/${task.assignee.id}`} className="hover:text-primary hover:underline">
-                                {task.assignee.name}
-                              </Link>
-                            )}
-                            <span>{statusLabels[task.status]}</span>
-                          </div>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
+        <TasksListClient
+          activeTasks={activeTasks}
+          completedTasks={completedTasks}
+          projects={projects}
+          clients={clients}
+          users={users}
+        />
       )}
     </div>
   );

@@ -7,6 +7,7 @@ import { getUnreadCount, getUserNotifications } from "@/lib/notifications";
 import { getBranding } from "@/lib/branding";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Header } from "@/components/layout/header";
+import { CommandPalette } from "@/components/layout/command-palette";
 
 export default async function PlatformLayout({
   children,
@@ -71,6 +72,10 @@ export default async function PlatformLayout({
           </div>
         </main>
       </div>
+      {/* Cmd-K palette — mounted once at the platform layout. The
+       *  header's search trigger and the global ⌘K / Ctrl-K shortcut
+       *  both surface this. */}
+      <CommandPalette />
     </div>
   );
 }

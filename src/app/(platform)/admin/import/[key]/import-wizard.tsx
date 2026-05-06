@@ -225,7 +225,7 @@ export function ImportWizard({
     return (
       <Card>
         <CardHeader>
-          <CardTitle>Map columns &amp; preview</CardTitle>
+          <CardTitle>Map columns & preview</CardTitle>
           <p className="text-sm text-muted-foreground">
             {preview.totalRows} row{preview.totalRows === 1 ? "" : "s"} parsed.
             Map each importer field to a CSV column. Required fields are marked
@@ -432,7 +432,7 @@ export function ImportWizard({
         <div className="flex justify-end">
           <Button onClick={handleUpload} disabled={isPending || !pickedFile}>
             <Upload className="h-4 w-4 mr-1.5" />
-            {isPending ? "Parsing..." : "Upload &amp; preview"}
+            {isPending ? "Parsing..." : "Upload & preview"}
           </Button>
         </div>
       </CardContent>
