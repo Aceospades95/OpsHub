@@ -20,6 +20,10 @@ export function AddEmployeeButton({
   const [open, setOpen] = useState(false);
   const [hasLogin, setHasLogin] = useState(true);
   const [sendWelcomeEmail, setSendWelcomeEmail] = useState(defaultSendWelcomeEmail);
+  // After the server returns a duplicate-name warning, the admin can
+  // resubmit with this flag true to override the guard and create the
+  // second account anyway.
+  const [confirmDuplicateName, setConfirmDuplicateName] = useState(false);
   const [state, action] = useFormState(createUser, null);
   const router = useRouter();
 
@@ -28,9 +32,23 @@ export function AddEmployeeButton({
       setOpen(false);
       setHasLogin(true);
       setSendWelcomeEmail(defaultSendWelcomeEmail);
+      setConfirmDuplicateName(false);
       router.refresh();
     }
   }, [state, router, defaultSendWelcomeEmail]);
+
+  // Reset the override whenever the dialog reopens or the form gets
+  // back a non-duplicate response — otherwise a stale toggle could
+  // suppress the next legitimate dupe warning.
+  useEffect(() => {
+    if (!state) return;
+    if (!("duplicateName" in state)) setConfirmDuplicateName(false);
+  }, [state]);
+
+  const duplicateWarning =
+    state && "duplicateName" in state && state.duplicateName
+      ? state.duplicateName
+      : null;
 
   return (
     <>
@@ -128,11 +146,53 @@ export function AddEmployeeButton({
                 </div>
               </div>
 
-              {state?.error && <p className="text-sm text-destructive">{state.error}</p>}
+              {duplicateWarning && (
+                <div className="rounded border border-warning/40 bg-warning/10 p-3 text-sm space-y-2">
+                  <p className="font-medium">
+                    Possible duplicate employee
+                  </p>
+                  <p className="text-muted-foreground">
+                    There&rsquo;s already an active employee named{" "}
+                    <strong>{duplicateWarning.name}</strong>
+                    {duplicateWarning.jobTitle ? ` (${duplicateWarning.jobTitle})` : ""}
+                    {duplicateWarning.department ? ` in ${duplicateWarning.department}` : ""}.
+                    If this is the same person, edit their record instead of creating
+                    a second one.
+                  </p>
+                  <label className="flex items-start gap-2 text-xs cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={confirmDuplicateName}
+                      onChange={(e) => setConfirmDuplicateName(e.target.checked)}
+                      className="mt-0.5 accent-primary"
+                    />
+                    <span>
+                      Yes, this is a different person — create another &ldquo;
+                      {duplicateWarning.name}&rdquo; anyway.
+                    </span>
+                  </label>
+                </div>
+              )}
+              <input
+                type="hidden"
+                name="confirmDuplicateName"
+                value={confirmDuplicateName ? "true" : "false"}
+              />
+
+              {state?.error && !duplicateWarning && (
+                <p className="text-sm text-destructive">{state.error}</p>
+              )}
 
               <div className="flex justify-end gap-2">
                 <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-                <Button type="submit">Create Employee</Button>
+                <Button
+                  type="submit"
+                  disabled={!!duplicateWarning && !confirmDuplicateName}
+                >
+                  {duplicateWarning && confirmDuplicateName
+                    ? "Create anyway"
+                    : "Create Employee"}
+                </Button>
               </div>
             </form>
           </div>

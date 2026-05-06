@@ -86,6 +86,40 @@ export async function createUser(_prev: unknown, formData: FormData) {
   const existing = await db.user.findUnique({ where: { email } });
   if (existing) return { error: "Email already exists" };
 
+  // Same-name duplicate guard. Two of the QA stress-test bugs traced
+  // back to a previous import / seed creating a synthetic-email
+  // placeholder for someone who already had a real account, leaving
+  // two "Jacob Wright" rows in the Employees table. Block silent
+  // recurrences: if any active user already has this name (case-
+  // insensitive), require the admin to confirm explicitly. The Add
+  // Employee dialog re-submits with confirmDuplicateName=true after
+  // the operator clicks through the warning.
+  const confirmDuplicate =
+    formData.get("confirmDuplicateName") === "true";
+  if (!confirmDuplicate) {
+    const namedClash = await db.user.findFirst({
+      where: {
+        name: { equals: parsed.data.name, mode: "insensitive" },
+        isActive: true,
+      },
+      select: { id: true, name: true, email: true, jobTitle: true, department: true },
+    });
+    if (namedClash) {
+      return {
+        error: `An active employee named "${namedClash.name}" already exists${
+          namedClash.jobTitle ? ` (${namedClash.jobTitle})` : ""
+        }. Confirm to create a second one.`,
+        duplicateName: {
+          id: namedClash.id,
+          name: namedClash.name,
+          email: namedClash.email,
+          jobTitle: namedClash.jobTitle,
+          department: namedClash.department,
+        },
+      };
+    }
+  }
+
   const hashedPassword = parsed.data.password
     ? await hash(parsed.data.password, 12)
     : await hash(`noaccess-${Date.now()}`, 12);

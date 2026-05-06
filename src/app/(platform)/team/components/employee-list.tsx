@@ -12,6 +12,7 @@ import {
   UserData,
   getAllocationStatus, getAllocationBadge, computeEmployeeFte, formatFte,
 } from "./team-types";
+import { isSyntheticEmail } from "@/lib/synthetic-email";
 
 interface EmployeeListProps {
   users: UserData[];
@@ -143,7 +144,19 @@ export function EmployeeList({ users, inactiveUsers, search }: EmployeeListProps
                 {user.jobTitle && (
                   <p className="text-xs text-primary/80 font-medium truncate">{user.jobTitle}</p>
                 )}
-                <p className="text-[10px] text-muted-foreground truncate">{user.email}</p>
+                {isSyntheticEmail(user.email) ? (
+                  <p
+                    className="text-[10px] text-muted-foreground truncate flex items-center gap-1"
+                    title="Placeholder email assigned by the system because this employee was created without login access."
+                  >
+                    <span className="rounded-sm bg-muted px-1 py-px text-[9px] font-medium uppercase tracking-wide text-muted-foreground/80">
+                      placeholder
+                    </span>
+                    <span className="truncate">{user.email}</span>
+                  </p>
+                ) : (
+                  <p className="text-[10px] text-muted-foreground truncate">{user.email}</p>
+                )}
               </div>
             </div>
           </td>

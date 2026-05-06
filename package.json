@@ -16,6 +16,8 @@
     "promote:admin": "npx tsx prisma/promote-admin.ts",
     "seed:workflows": "npx tsx prisma/seed-workflow-defaults.ts",
     "merge:duplicate-users": "npx tsx prisma/merge-duplicate-users.ts",
+    "merge:users-by-id": "npx tsx prisma/merge-users-by-id.ts",
+    "merge:jacob-wright": "npx tsx prisma/merge-jacob-wright.ts",
     "db:studio": "prisma studio",
     "test": "vitest run",
     "test:watch": "vitest"

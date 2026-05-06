@@ -53,58 +53,9 @@
  */
 
 import { PrismaClient } from "@prisma/client";
+import { REASSIGNMENTS, executeMerge } from "./lib/merge-users-fk";
 
 const db = new PrismaClient();
-
-// Per-table reassignment recipe. Each entry is one Prisma updateMany
-// call; the script issues `where: { [column]: dup.id }` and `data:
-// { [column]: keeper.id }`. Tables with composite uniques that can
-// collide are handled separately below — they are NOT in this list.
-const REASSIGNMENTS: { model: string; column: string }[] = [
-  { model: "task", column: "assigneeId" },
-  { model: "task", column: "createdById" },
-  { model: "comment", column: "authorId" },
-  { model: "activityLog", column: "userId" },
-  { model: "file", column: "uploadedById" },
-  { model: "file", column: "userId" },
-  { model: "quote", column: "createdById" },
-  { model: "quote", column: "assignedToId" },
-  { model: "quoteTemplate", column: "createdById" },
-  { model: "workflowTemplate", column: "createdById" },
-  { model: "workflowInstance", column: "createdById" },
-  { model: "workflowInstanceStep", column: "completedByUserId" },
-  { model: "workflowEmailTemplate", column: "createdById" },
-  { model: "scheduledTask", column: "createdById" },
-  { model: "customReport", column: "createdById" },
-  { model: "accessRequest", column: "requesterId" },
-  { model: "accessRequest", column: "reviewerId" },
-  { model: "notification", column: "recipientId" },
-  { model: "notification", column: "actorId" },
-  { model: "account", column: "userId" }, // critical: re-points the SSO linkage
-  { model: "modulePermission", column: "userId" }, // composite unique: handled below
-  { model: "entityPermission", column: "userId" }, // composite unique: handled below
-  { model: "assignment", column: "employeeId" },
-  { model: "certification", column: "assigneeId" },
-  { model: "certification", column: "pointOfContactId" },
-  { model: "certification", column: "signedOffById" },
-  { model: "certificationRenewalChecklistItem", column: "completedById" },
-  { model: "certificationRenewalHistory", column: "signedOffById" },
-  { model: "client", column: "accountManagerId" },
-  { model: "sandboxPage", column: "createdById" },
-  { model: "customWidget", column: "createdById" },
-];
-
-// Tables with composite-unique constraints that collide if both the
-// duplicate and the keeper already have a row for the same scope.
-// Handled in code: for each duplicate row, if a keeper row already
-// exists for the same scope, delete the duplicate's row; otherwise
-// re-point it to the keeper.
-const COMPOSITE_UNIQUE_TABLES = new Set([
-  "modulePermission", // (userId, module)
-  "entityPermission", // (userId, entityType, entityId)
-  "projectMember", // (userId, projectId)
-  "milestoneAssignee", // (milestoneId, userId)
-]);
 
 const DRY_RUN = (process.env.DRY_RUN ?? "true").toLowerCase() !== "false";
 
@@ -158,91 +109,7 @@ function planMerge(set: DuplicateSet): MergePlan {
 
 async function execute(plan: MergePlan): Promise<void> {
   for (const dup of plan.duplicates) {
-    // Composite-unique tables first — they need per-row handling.
-    await reassignWithCompositeUnique(
-      "modulePermission",
-      "userId",
-      ["userId", "module"],
-      dup.id,
-      plan.keeper.id
-    );
-    await reassignWithCompositeUnique(
-      "entityPermission",
-      "userId",
-      ["userId", "entityType", "entityId"],
-      dup.id,
-      plan.keeper.id
-    );
-    await reassignWithCompositeUnique(
-      "projectMember",
-      "userId",
-      ["userId", "projectId"],
-      dup.id,
-      plan.keeper.id
-    );
-    await reassignWithCompositeUnique(
-      "milestoneAssignee",
-      "userId",
-      ["milestoneId", "userId"],
-      dup.id,
-      plan.keeper.id
-    );
-
-    // Bulk reassignments for everything else.
-    for (const { model, column } of REASSIGNMENTS) {
-      if (COMPOSITE_UNIQUE_TABLES.has(model)) continue; // already handled
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const delegate = (db as any)[model];
-      if (!delegate?.updateMany) {
-        console.warn(`  [skip] ${model}.updateMany not found on PrismaClient`);
-        continue;
-      }
-      await delegate.updateMany({
-        where: { [column]: dup.id },
-        data: { [column]: plan.keeper.id },
-      });
-    }
-
-    // Finally, delete the duplicate User row. All FKs have been
-    // re-pointed by now; if anything was missed, this raises a FK
-    // violation rather than silently leaving an orphan.
-    await db.user.delete({ where: { id: dup.id } });
-  }
-}
-
-/**
- * Re-point a table where the FK column is part of a composite unique.
- * Each duplicate row is moved to the keeper UNLESS the keeper already
- * has a row covering the same scope, in which case the duplicate's
- * row is deleted (the keeper's row wins).
- */
-async function reassignWithCompositeUnique(
-  model: string,
-  fkColumn: string,
-  scope: string[],
-  fromUserId: string,
-  toUserId: string
-): Promise<void> {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const delegate = (db as any)[model];
-  if (!delegate?.findMany) return;
-  const dupRows: Record<string, unknown>[] = await delegate.findMany({
-    where: { [fkColumn]: fromUserId },
-  });
-  for (const row of dupRows) {
-    const scopeMatch = scope.reduce<Record<string, unknown>>((acc, k) => {
-      acc[k] = k === fkColumn ? toUserId : row[k];
-      return acc;
-    }, {});
-    const conflict = await delegate.findFirst({ where: scopeMatch });
-    if (conflict) {
-      await delegate.delete({ where: { id: row.id } });
-    } else {
-      await delegate.update({
-        where: { id: row.id },
-        data: { [fkColumn]: toUserId },
-      });
-    }
+    await executeMerge(db, dup.id, plan.keeper.id);
   }
 }
 
