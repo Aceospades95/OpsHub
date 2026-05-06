@@ -115,8 +115,20 @@ export function ProjectActions({ project, clients, serviceOfferings, canEdit, ca
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
-                  <Input name="startDate" label="Start Date" type="date" defaultValue={project.startDate?.toISOString().split("T")[0] || ""} />
-                  <Input name="endDate" label="End Date" type="date" defaultValue={project.endDate?.toISOString().split("T")[0] || ""} />
+                  <Input
+                    name="startDate"
+                    label="Start Date"
+                    type="date"
+                    defaultValue={project.startDate?.toISOString().split("T")[0] || ""}
+                    error={fieldErrors?.startDate?.[0]}
+                  />
+                  <Input
+                    name="endDate"
+                    label="End Date"
+                    type="date"
+                    defaultValue={project.endDate?.toISOString().split("T")[0] || ""}
+                    error={fieldErrors?.endDate?.[0]}
+                  />
                 </div>
               </>
             )}

@@ -10,17 +10,23 @@ import { revalidateProject, revalidateUser } from "@/lib/revalidate-entity";
 import { notify } from "@/lib/notifications";
 import { absoluteUrl } from "@/lib/url";
 import { z } from "zod";
+import { isValidCalendarRange } from "@/lib/dates";
 
-const projectSchema = z.object({
-  name: z.string().min(1, "Name is required"),
-  description: z.string().optional(),
-  status: z.enum(["PLANNING", "ACTIVE", "ON_HOLD", "COMPLETED", "ARCHIVED"]).optional(),
-  startDate: z.string().optional(),
-  endDate: z.string().optional(),
-  clientId: z.string().min(1, "Client is required"),
-  parentProjectId: z.string().optional(),
-  serviceOfferingId: z.string().optional(),
-});
+const projectSchema = z
+  .object({
+    name: z.string().min(1, "Name is required"),
+    description: z.string().optional(),
+    status: z.enum(["PLANNING", "ACTIVE", "ON_HOLD", "COMPLETED", "ARCHIVED"]).optional(),
+    startDate: z.string().optional(),
+    endDate: z.string().optional(),
+    clientId: z.string().min(1, "Client is required"),
+    parentProjectId: z.string().optional(),
+    serviceOfferingId: z.string().optional(),
+  })
+  .refine((d) => isValidCalendarRange(d.startDate, d.endDate), {
+    message: "End date must be on or after start date",
+    path: ["endDate"],
+  });
 
 export async function createProject(_prev: unknown, formData: FormData) {
   const user = await requireAuth();

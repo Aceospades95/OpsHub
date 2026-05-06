@@ -18,7 +18,7 @@ import {
   removeMilestoneAssignee,
 } from "@/actions/projects";
 import { Plus, Trash2, CheckCircle2, Circle, UserPlus, X } from "lucide-react";
-import { format } from "date-fns";
+import { formatCalendarDate } from "@/lib/dates";
 
 interface Assignee {
   id: string;
@@ -106,7 +106,7 @@ export function MilestoneSection({ milestones, projectId, allUsers, canEdit, can
               <div className="flex items-center gap-3 mt-2">
                 {ms.dueDate && (
                   <span className="text-xs text-muted-foreground">
-                    Due {format(ms.dueDate, "MMM d, yyyy")}
+                    Due {formatCalendarDate(ms.dueDate, "MMM d, yyyy")}
                   </span>
                 )}
                 <div className="flex items-center gap-1">

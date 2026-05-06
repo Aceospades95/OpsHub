@@ -1,7 +1,7 @@
 import { db } from "@/lib/db";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { CheckSquare, Clock } from "lucide-react";
-import { format } from "date-fns";
+import { formatCalendarDate } from "@/lib/dates";
 import Link from "next/link";
 
 export async function WidgetMyTasks({ userId }: { userId: string }) {
@@ -53,7 +53,7 @@ export async function WidgetMyTasks({ userId }: { userId: string }) {
                     )}
                     {task.dueDate && (
                       <span className={`flex items-center gap-1 ${new Date(task.dueDate) < new Date() ? "text-destructive" : ""}`}>
-                        <Clock className="h-3 w-3" /> {format(new Date(task.dueDate), "MMM d")}
+                        <Clock className="h-3 w-3" /> {formatCalendarDate(task.dueDate, "MMM d")}
                       </span>
                     )}
                   </div>

@@ -12,7 +12,7 @@ import { TaskCreateButton } from "./task-create-button";
 import { TaskCheckbox } from "./task-checkbox";
 import { TaskFilters } from "./task-filters";
 import { Suspense } from "react";
-import { format } from "date-fns";
+import { formatCalendarDate } from "@/lib/dates";
 import Link from "next/link";
 import type { Prisma } from "@prisma/client";
 
@@ -239,7 +239,7 @@ export default async function TasksPage({
                             )}
                             {task.dueDate && (
                               <span className={new Date(task.dueDate) < new Date() ? "text-destructive font-medium" : ""}>
-                                Due {format(new Date(task.dueDate), "MMM d, yyyy")}
+                                Due {formatCalendarDate(task.dueDate, "MMM d, yyyy")}
                               </span>
                             )}
                           </div>
@@ -411,7 +411,7 @@ function ProjectGroupedTasks({ tasks }: { tasks: TaskRow[] }) {
                           )}
                           {task.dueDate && (
                             <span className={!isDone && new Date(task.dueDate) < new Date() ? "text-destructive font-medium" : ""}>
-                              Due {format(new Date(task.dueDate), "MMM d, yyyy")}
+                              Due {formatCalendarDate(task.dueDate, "MMM d, yyyy")}
                             </span>
                           )}
                         </div>

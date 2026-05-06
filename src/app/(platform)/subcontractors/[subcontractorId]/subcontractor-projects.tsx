@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { format } from "date-fns";
+import { formatCalendarDate } from "@/lib/dates";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
@@ -115,8 +115,8 @@ export function SubcontractorProjects({ subcontractorId, links, allProjects, can
                 )}
                 {(l.startDate || l.endDate) && (
                   <span>
-                    {l.startDate ? format(l.startDate, "MMM d, yyyy") : "—"}
-                    {l.endDate ? ` to ${format(l.endDate, "MMM d, yyyy")}` : ""}
+                    {l.startDate ? formatCalendarDate(l.startDate, "MMM d, yyyy") : "—"}
+                    {l.endDate ? ` to ${formatCalendarDate(l.endDate, "MMM d, yyyy")}` : ""}
                   </span>
                 )}
               </div>

@@ -1,7 +1,8 @@
 import { db } from "@/lib/db";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { AlertTriangle } from "lucide-react";
-import { format, differenceInDays } from "date-fns";
+import { differenceInDays } from "date-fns";
+import { formatCalendarDate } from "@/lib/dates";
 import Link from "next/link";
 
 export async function WidgetContractAlerts({ userId: _userId }: { userId: string }) {
@@ -45,7 +46,7 @@ export async function WidgetContractAlerts({ userId: _userId }: { userId: string
                     <p className="text-sm font-medium truncate group-hover:text-primary">{c.title}</p>
                     <p className="text-xs text-muted-foreground">
                       {c.client.name}
-                      {c.endDate && ` · Ends ${format(c.endDate, "MMM d")}`}
+                      {c.endDate && ` · Ends ${formatCalendarDate(c.endDate, "MMM d")}`}
                     </p>
                   </div>
                   {daysLeft !== null && (

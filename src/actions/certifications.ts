@@ -5,6 +5,7 @@ import { requireAuth } from "@/lib/permissions";
 import { logActivity } from "@/lib/activity";
 import { deriveActivityScope } from "@/lib/activity-scope";
 import { revalidatePath } from "next/cache";
+import { isValidCalendarRange } from "@/lib/dates";
 import type {
   CertificationStatus,
   CertificationType,
@@ -92,6 +93,39 @@ function requireCertAdmin(role: string): { error: string } | null {
   return null;
 }
 
+/**
+ * Validate the cert's calendar-date pairs. A cert can't expire before
+ * it was issued, and renewal can't be earlier than issuance either.
+ * Returns an `{ error }` shape that mirrors the rest of the action's
+ * return contract; null when the dates are coherent.
+ */
+function validateCertDates(
+  formData: FormData
+): { error: string; fieldErrors?: Record<string, string[]> } | null {
+  const issuedDate = (formData.get("issuedDate") as string | null) || null;
+  const expirationDate =
+    (formData.get("expirationDate") as string | null) || null;
+  const renewalDate = (formData.get("renewalDate") as string | null) || null;
+
+  if (!isValidCalendarRange(issuedDate, expirationDate)) {
+    return {
+      error: "Expiration date must be on or after the issued date",
+      fieldErrors: {
+        expirationDate: ["Expiration date must be on or after the issued date"],
+      },
+    };
+  }
+  if (!isValidCalendarRange(issuedDate, renewalDate)) {
+    return {
+      error: "Renewal date must be on or after the issued date",
+      fieldErrors: {
+        renewalDate: ["Renewal date must be on or after the issued date"],
+      },
+    };
+  }
+  return null;
+}
+
 export async function createCertification(_prev: unknown, formData: FormData) {
   const user = await requireAuth();
   const gate = requireCertAdmin(user.role);
@@ -99,6 +133,9 @@ export async function createCertification(_prev: unknown, formData: FormData) {
 
   const name = (formData.get("name") as string | null)?.trim();
   if (!name) return { error: "Name is required" };
+
+  const dateError = validateCertDates(formData);
+  if (dateError) return dateError;
 
   const cert = await db.certification.create({
     data: { name, ...extractCertData(formData) },
@@ -121,6 +158,9 @@ export async function updateCertification(_prev: unknown, formData: FormData) {
 
   const name = (formData.get("name") as string | null)?.trim();
   if (!name) return { error: "Name is required" };
+
+  const dateError = validateCertDates(formData);
+  if (dateError) return dateError;
 
   const updated = await db.certification.update({
     where: { id },

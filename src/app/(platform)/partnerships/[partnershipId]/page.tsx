@@ -10,7 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
 import { Mail, Phone, MapPin, Globe, AlertTriangle } from "lucide-react";
 import Link from "next/link";
-import { format } from "date-fns";
+import { formatCalendarDate } from "@/lib/dates";
 import { PartnershipActions } from "./partnership-actions";
 import { PartnershipContacts } from "./partnership-contacts";
 import { PartnershipProjects } from "./partnership-projects";
@@ -271,20 +271,20 @@ export default async function PartnershipDetailPage({ params }: Props) {
                 {partnership.partnerSinceDate && (
                   <p>
                     <span className="text-muted-foreground">Partner since:</span>{" "}
-                    <span className="font-medium">{format(partnership.partnerSinceDate, "MMM d, yyyy")}</span>
+                    <span className="font-medium">{formatCalendarDate(partnership.partnerSinceDate, "MMM d, yyyy")}</span>
                   </p>
                 )}
                 {partnership.agreementSignedAt && (
                   <p>
                     <span className="text-muted-foreground">Signed:</span>{" "}
-                    <span className="font-medium">{format(partnership.agreementSignedAt, "MMM d, yyyy")}</span>
+                    <span className="font-medium">{formatCalendarDate(partnership.agreementSignedAt, "MMM d, yyyy")}</span>
                   </p>
                 )}
                 {partnership.agreementExpiresAt && (
                   <p>
                     <span className="text-muted-foreground">Expires:</span>{" "}
                     <span className={`font-medium ${agreementExpired ? "text-destructive" : agreementLapsing ? "text-warning" : ""}`}>
-                      {format(partnership.agreementExpiresAt, "MMM d, yyyy")}
+                      {formatCalendarDate(partnership.agreementExpiresAt, "MMM d, yyyy")}
                     </span>
                   </p>
                 )}

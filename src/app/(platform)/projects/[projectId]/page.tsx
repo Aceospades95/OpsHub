@@ -9,7 +9,7 @@ import { StatusBadge } from "@/components/shared/status-badge";
 import { CommentSection } from "@/components/shared/comment-section";
 import { TreeView, type TreeNode } from "@/components/shared/tree-view";
 import { Badge } from "@/components/ui/badge";
-import { format } from "date-fns";
+import { formatCalendarDate } from "@/lib/dates";
 import { CheckSquare, Clock } from "lucide-react";
 import Link from "next/link";
 import { ProjectActions } from "./project-actions";
@@ -385,7 +385,7 @@ export default async function ProjectDetailPage({ params }: Props) {
                         {task.dueDate && (
                           <span className={`flex items-center gap-1 ${new Date(task.dueDate) < new Date() ? "text-destructive" : ""}`}>
                             <Clock className="h-3 w-3" />
-                            {format(new Date(task.dueDate), "MMM d")}
+                            {formatCalendarDate(task.dueDate, "MMM d")}
                           </span>
                         )}
                       </div>
@@ -549,8 +549,8 @@ export default async function ProjectDetailPage({ params }: Props) {
         )}
         {project.startDate && (
           <span className="text-sm text-muted-foreground">
-            {format(project.startDate, "MMM d, yyyy")}
-            {project.endDate && ` — ${format(project.endDate, "MMM d, yyyy")}`}
+            {formatCalendarDate(project.startDate, "MMM d, yyyy")}
+            {project.endDate && ` — ${formatCalendarDate(project.endDate, "MMM d, yyyy")}`}
           </span>
         )}
       </div>

@@ -26,6 +26,7 @@ import {
   History,
 } from "lucide-react";
 import { format, differenceInDays } from "date-fns";
+import { formatCalendarDate } from "@/lib/dates";
 import Link from "next/link";
 import { PageLayout } from "@/components/shared/page-layout";
 import { CertActions } from "./cert-actions";
@@ -284,13 +285,13 @@ export default async function CertificationDetailPage({ params }: Props) {
             {cert.submittedDate && (
               <div>
                 <span className="text-muted-foreground">Submitted</span>
-                <p className="font-medium mt-1">{format(cert.submittedDate, "MMM d, yyyy")}</p>
+                <p className="font-medium mt-1">{formatCalendarDate(cert.submittedDate, "MMM d, yyyy")}</p>
               </div>
             )}
             {cert.issuedDate && (
               <div>
                 <span className="text-muted-foreground">Issued</span>
-                <p className="font-medium mt-1">{format(cert.issuedDate, "MMM d, yyyy")}</p>
+                <p className="font-medium mt-1">{formatCalendarDate(cert.issuedDate, "MMM d, yyyy")}</p>
               </div>
             )}
             {cert.expirationDate && (
@@ -301,7 +302,7 @@ export default async function CertificationDetailPage({ params }: Props) {
                     isExpired ? "text-destructive" : isExpiring ? "text-warning" : ""
                   }`}
                 >
-                  {format(cert.expirationDate, "MMM d, yyyy")}
+                  {formatCalendarDate(cert.expirationDate, "MMM d, yyyy")}
                   {daysUntilExpiry !== null && (
                     <span className="text-xs ml-1">
                       (
@@ -317,7 +318,7 @@ export default async function CertificationDetailPage({ params }: Props) {
             {cert.renewalDate && (
               <div>
                 <span className="text-muted-foreground">Renewal starts</span>
-                <p className="font-medium mt-1">{format(cert.renewalDate, "MMM d, yyyy")}</p>
+                <p className="font-medium mt-1">{formatCalendarDate(cert.renewalDate, "MMM d, yyyy")}</p>
               </div>
             )}
           </div>

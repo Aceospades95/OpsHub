@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { format } from "date-fns";
+import { formatCalendarDate } from "@/lib/dates";
 
 import { db } from "@/lib/db";
 import { requireAuth, resolveModulePerms } from "@/lib/permissions";
@@ -117,7 +117,7 @@ export default async function QuoteDetailPage({ params }: Props) {
                   </dt>
                   <dd className="mt-1">
                     {quote.validUntil
-                      ? format(quote.validUntil, "MMMM d, yyyy")
+                      ? formatCalendarDate(quote.validUntil, "MMMM d, yyyy")
                       : <span className="text-muted-foreground">—</span>}
                   </dd>
                 </div>

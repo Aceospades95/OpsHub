@@ -149,8 +149,18 @@ export function ProjectCreateButton({ clients, projects, serviceOfferings, defau
             </div>
 
             <div className="grid grid-cols-2 gap-4">
-              <Input name="startDate" label="Start Date" type="date" />
-              <Input name="endDate" label="End Date" type="date" />
+              <Input
+                name="startDate"
+                label="Start Date"
+                type="date"
+                error={fieldErrors?.startDate?.[0]}
+              />
+              <Input
+                name="endDate"
+                label="End Date"
+                type="date"
+                error={fieldErrors?.endDate?.[0]}
+              />
             </div>
 
             {/* Parent Project selector (only when not already creating a sub-project) */}

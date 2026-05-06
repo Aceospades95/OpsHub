@@ -6,40 +6,49 @@ import { logActivity } from "@/lib/activity";
 import { revalidatePartnership } from "@/lib/revalidate-entity";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { isValidCalendarRange } from "@/lib/dates";
 
-const partnershipSchema = z.object({
-  name: z.string().min(1, "Name is required"),
-  legalName: z.string().optional(),
-  type: z.enum([
-    "STRATEGIC",
-    "REFERRAL",
-    "RESELLER",
-    "TECHNOLOGY",
-    "CHANNEL",
-    "JOINT_VENTURE",
-    "AFFILIATE",
-    "OTHER",
-  ]).optional(),
-  status: z.enum(["ACTIVE", "PROSPECT", "INACTIVE", "PAUSED", "ARCHIVED"]).optional(),
-  tier: z.enum(["PLATINUM", "GOLD", "SILVER", "BRONZE", "STANDARD"]).optional().or(z.literal("")),
-  description: z.string().optional(),
-  summary: z.string().optional(),
-  primaryContactName: z.string().optional(),
-  primaryContactEmail: z.string().email().optional().or(z.literal("")),
-  primaryContactPhone: z.string().optional(),
-  website: z.string().optional(),
-  address: z.string().optional(),
-  industry: z.string().optional(),
-  partnerSinceDate: z.string().optional(),
-  agreementSignedAt: z.string().optional(),
-  agreementExpiresAt: z.string().optional(),
-  autoRenew: z.boolean().optional(),
-  revenueShareTerms: z.string().optional(),
-  referralFeePercent: z.string().optional(), // collected as percent, stored as bps
-  jointMarketing: z.boolean().optional(),
-  relationshipOwnerId: z.string().optional(),
-  notes: z.string().optional(),
-});
+const partnershipSchema = z
+  .object({
+    name: z.string().min(1, "Name is required"),
+    legalName: z.string().optional(),
+    type: z.enum([
+      "STRATEGIC",
+      "REFERRAL",
+      "RESELLER",
+      "TECHNOLOGY",
+      "CHANNEL",
+      "JOINT_VENTURE",
+      "AFFILIATE",
+      "OTHER",
+    ]).optional(),
+    status: z.enum(["ACTIVE", "PROSPECT", "INACTIVE", "PAUSED", "ARCHIVED"]).optional(),
+    tier: z.enum(["PLATINUM", "GOLD", "SILVER", "BRONZE", "STANDARD"]).optional().or(z.literal("")),
+    description: z.string().optional(),
+    summary: z.string().optional(),
+    primaryContactName: z.string().optional(),
+    primaryContactEmail: z.string().email().optional().or(z.literal("")),
+    primaryContactPhone: z.string().optional(),
+    website: z.string().optional(),
+    address: z.string().optional(),
+    industry: z.string().optional(),
+    partnerSinceDate: z.string().optional(),
+    agreementSignedAt: z.string().optional(),
+    agreementExpiresAt: z.string().optional(),
+    autoRenew: z.boolean().optional(),
+    revenueShareTerms: z.string().optional(),
+    referralFeePercent: z.string().optional(), // collected as percent, stored as bps
+    jointMarketing: z.boolean().optional(),
+    relationshipOwnerId: z.string().optional(),
+    notes: z.string().optional(),
+  })
+  .refine(
+    (d) => isValidCalendarRange(d.agreementSignedAt, d.agreementExpiresAt),
+    {
+      message: "Agreement expiration must be on or after the signed date",
+      path: ["agreementExpiresAt"],
+    }
+  );
 
 function parseFormData(formData: FormData) {
   return partnershipSchema.safeParse({

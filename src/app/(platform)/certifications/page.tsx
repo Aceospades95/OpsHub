@@ -17,7 +17,8 @@ import {
   RotateCcw,
   MapPin,
 } from "lucide-react";
-import { format, differenceInDays } from "date-fns";
+import { differenceInDays } from "date-fns";
+import { formatCalendarDate } from "@/lib/dates";
 import Link from "next/link";
 import type { JurisdictionLevel, CertEngagementType } from "@prisma/client";
 import { CertCreateButton } from "./cert-create-button";
@@ -357,7 +358,7 @@ export default async function CertificationsPage({ searchParams }: PageProps) {
                         <span className="flex items-center gap-1 text-destructive font-medium">
                           <AlertTriangle className="h-3 w-3" /> Expired
                           {cert.expirationDate &&
-                            ` ${format(cert.expirationDate, "MMM d, yyyy")}`}
+                            ` ${formatCalendarDate(cert.expirationDate, "MMM d, yyyy")}`}
                         </span>
                       )}
                       {isExpiring && (
@@ -367,7 +368,7 @@ export default async function CertificationsPage({ searchParams }: PageProps) {
                       )}
                       {!isExpired && !isExpiring && cert.expirationDate && (
                         <span className="text-muted-foreground">
-                          Expires {format(cert.expirationDate, "MMM d, yyyy")}
+                          Expires {formatCalendarDate(cert.expirationDate, "MMM d, yyyy")}
                         </span>
                       )}
                       {!cert.expirationDate && (

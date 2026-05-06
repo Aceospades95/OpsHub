@@ -14,7 +14,8 @@ import {
   CheckSquare,
   Clock,
 } from "lucide-react";
-import { formatDistanceToNow, format } from "date-fns";
+import { formatDistanceToNow } from "date-fns";
+import { formatCalendarDate } from "@/lib/dates";
 import Link from "next/link";
 import { DashboardTaskCheckbox } from "./dashboard-task-checkbox";
 import { PageLayout } from "@/components/shared/page-layout";
@@ -262,7 +263,7 @@ export default async function DashboardPage() {
                           {task.dueDate && (
                             <span className={`flex items-center gap-1 ${new Date(task.dueDate) < new Date() ? "text-destructive" : ""}`}>
                               <Clock className="h-3 w-3" />
-                              {format(new Date(task.dueDate), "MMM d")}
+                              {formatCalendarDate(task.dueDate, "MMM d")}
                             </span>
                           )}
                         </div>

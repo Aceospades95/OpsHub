@@ -2,7 +2,7 @@ import { db } from "@/lib/db";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { FileText } from "lucide-react";
-import { format } from "date-fns";
+import { formatCalendarDate } from "@/lib/dates";
 import Link from "next/link";
 
 export async function WidgetRecentContracts({ userId: _userId }: { userId: string }) {
@@ -33,7 +33,7 @@ export async function WidgetRecentContracts({ userId: _userId }: { userId: strin
                   <p className="text-sm font-medium truncate group-hover:text-primary">{c.title}</p>
                   <p className="text-xs text-muted-foreground">
                     {c.client.name}
-                    {c.endDate && ` · Ends ${format(c.endDate, "MMM d, yyyy")}`}
+                    {c.endDate && ` · Ends ${formatCalendarDate(c.endDate, "MMM d, yyyy")}`}
                   </p>
                 </div>
                 <Badge variant={c.status === "ACTIVE" ? "success" : c.status === "EXPIRED" ? "destructive" : "outline"} className="text-[10px]">

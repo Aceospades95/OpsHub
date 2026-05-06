@@ -10,7 +10,7 @@ import { CommentSection } from "@/components/shared/comment-section";
 import { FileList } from "@/components/shared/file-list";
 import { TreeView, type TreeNode } from "@/components/shared/tree-view";
 import { Badge } from "@/components/ui/badge";
-import { format } from "date-fns";
+import { formatCalendarDate } from "@/lib/dates";
 import Link from "next/link";
 import { ContractActions } from "./contract-actions";
 import { TermSection } from "./term-section";
@@ -84,19 +84,19 @@ export default async function ContractDetailPage({ params }: Props) {
             {contract.startDate && (
               <div>
                 <p className="text-muted-foreground">Start Date</p>
-                <p className="font-medium">{format(contract.startDate, "MMM d, yyyy")}</p>
+                <p className="font-medium">{formatCalendarDate(contract.startDate, "MMM d, yyyy")}</p>
               </div>
             )}
             {contract.endDate && (
               <div>
                 <p className="text-muted-foreground">End Date</p>
-                <p className="font-medium">{format(contract.endDate, "MMM d, yyyy")}</p>
+                <p className="font-medium">{formatCalendarDate(contract.endDate, "MMM d, yyyy")}</p>
               </div>
             )}
             {contract.renewalDate && (
               <div>
                 <p className="text-muted-foreground">Renewal Date</p>
-                <p className="font-medium">{format(contract.renewalDate, "MMM d, yyyy")}</p>
+                <p className="font-medium">{formatCalendarDate(contract.renewalDate, "MMM d, yyyy")}</p>
               </div>
             )}
             {contract.noticePeriodDays && (

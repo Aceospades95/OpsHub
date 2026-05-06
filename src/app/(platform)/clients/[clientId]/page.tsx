@@ -10,7 +10,7 @@ import { CommentSection } from "@/components/shared/comment-section";
 import { Badge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
 import { Globe, Mail, Phone, Star, CheckSquare, Clock, UserCircle } from "lucide-react";
-import { format } from "date-fns";
+import { formatCalendarDate } from "@/lib/dates";
 import Link from "next/link";
 import { ClientActions } from "./client-actions";
 import { ContactSection } from "./contact-section";
@@ -259,7 +259,7 @@ export default async function ClientDetailPage({ params }: Props) {
                       {task.dueDate && (
                         <span className={`flex items-center gap-1 ${new Date(task.dueDate) < new Date() ? "text-destructive" : ""}`}>
                           <Clock className="h-3 w-3" />
-                          {format(new Date(task.dueDate), "MMM d")}
+                          {formatCalendarDate(task.dueDate, "MMM d")}
                         </span>
                       )}
                     </div>
