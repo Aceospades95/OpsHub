@@ -21,6 +21,7 @@
     "backfill:quote-numbers": "npx tsx prisma/backfill-quote-numbers.ts",
     "dedupe:intranet-org-chart": "npx tsx prisma/dedupe-intranet-org-chart.ts",
     "cleanup:demo-employees": "npx tsx prisma/cleanup-demo-employees.ts",
+    "cleanup:demo-data": "npx tsx prisma/cleanup-demo-data.ts",
     "db:studio": "prisma studio",
     "test": "vitest run",
     "test:watch": "vitest"

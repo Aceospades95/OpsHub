@@ -33,11 +33,19 @@ const statusLabels: Record<string, string> = {
 export default async function TasksPage({
   searchParams,
 }: {
-  searchParams: { assignee?: string; project?: string; client?: string; show?: string; view?: string };
+  searchParams: {
+    assignee?: string;
+    project?: string;
+    client?: string;
+    show?: string;
+    view?: string;
+    /** Filter chip: "overdue" or "week". Empty / unknown = no filter. */
+    due?: string;
+  };
 }) {
   const user = await requireAuth();
 
-  const { assignee, project, client, show, view } = searchParams;
+  const { assignee, project, client, show, view, due } = searchParams;
   // Default view is grouped by status. "by-project" groups by project name.
   const groupBy = view === "by-project" ? "project" : "status";
 
@@ -54,7 +62,9 @@ export default async function TasksPage({
     where.assigneeId = assignee;
   }
 
-  if (project) {
+  if (project === "none") {
+    where.projectId = null;
+  } else if (project) {
     where.projectId = project;
   }
 
@@ -68,6 +78,22 @@ export default async function TasksPage({
     where.status = "DONE";
   }
   // default: show all
+
+  // Due-date chips. "overdue" = dueDate < today AND task isn't already
+  // DONE/CANCELLED. "week" = dueDate within the next 7 calendar days
+  // (today inclusive). We treat dates as UTC midnights to match the
+  // calendar-date convention introduced in chunk B.
+  if (due === "overdue") {
+    const startOfToday = new Date();
+    startOfToday.setUTCHours(0, 0, 0, 0);
+    where.dueDate = { lt: startOfToday };
+    where.status = { in: ["TODO", "IN_PROGRESS"] };
+  } else if (due === "week") {
+    const startOfToday = new Date();
+    startOfToday.setUTCHours(0, 0, 0, 0);
+    const weekFromNow = new Date(startOfToday.getTime() + 7 * 24 * 60 * 60 * 1000);
+    where.dueDate = { gte: startOfToday, lt: weekFromNow };
+  }
 
   // Scope: non-org-wide roles only see tasks in projects/clients they can
   // access or tasks where they are the assignee or creator.
@@ -154,6 +180,7 @@ export default async function TasksPage({
           currentProject={project}
           currentClient={client}
           currentShow={show}
+          currentDue={due}
           currentUserId={user.id}
         />
       </Suspense>

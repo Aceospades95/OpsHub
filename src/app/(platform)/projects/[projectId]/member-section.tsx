@@ -17,6 +17,24 @@ interface Member {
   user: { id: string; name: string; email: string };
 }
 
+/**
+ * Per-role hover hints. Project roles are scoped to a single project
+ * — distinct from the user's system-wide role. The QA stress test
+ * flagged that the "ADMIN" pill on the project access list had no
+ * tooltip, which left admins guessing what each role actually grants.
+ */
+const ROLE_TOOLTIPS: Record<string, string> = {
+  VIEWER: "Read-only access to this project's data and comments.",
+  CONTRIBUTOR:
+    "Can comment, upload attachments, and edit their own contributions on this project.",
+  MANAGER:
+    "Can edit project metadata, manage staffing on this project, and add or remove members. Cannot delete the project.",
+  ADMIN:
+    "Full control over this project — edit, staff, manage members, delete. Scoped to this project only; doesn't change the user's system role.",
+  DEVELOPER:
+    "Legacy role grandfathered from earlier versions. Treated as Manager-equivalent for this project.",
+};
+
 interface Props {
   members: Member[];
   projectId: string;
@@ -53,7 +71,11 @@ export function MemberSection({ members, projectId, allUsers, canEdit }: Props) 
           <Link href={`/team/${member.user.id}`} className="flex-1 min-w-0 hover:text-primary hover:underline">
             <p className="text-sm font-medium truncate">{member.user.name}</p>
           </Link>
-          <Badge variant="outline" className="text-xs">{member.role}</Badge>
+          <span title={ROLE_TOOLTIPS[member.role] ?? "Project member"}>
+            <Badge variant="outline" className="text-xs">
+              {member.role}
+            </Badge>
+          </span>
           {canEdit && (
             <button onClick={() => handleRemove(member.id)} className="text-muted-foreground hover:text-destructive">
               <X className="h-3 w-3" />
@@ -80,12 +102,16 @@ export function MemberSection({ members, projectId, allUsers, canEdit }: Props) 
                 name="role"
                 label="Project Role"
                 options={[
-                  { label: "Viewer", value: "VIEWER" },
-                  { label: "Contributor", value: "CONTRIBUTOR" },
-                  { label: "Manager", value: "MANAGER" },
-                  { label: "Admin", value: "ADMIN" },
+                  { label: "Viewer — read-only access", value: "VIEWER" },
+                  { label: "Contributor — comment + edit own", value: "CONTRIBUTOR" },
+                  { label: "Manager — edit project + add others", value: "MANAGER" },
+                  { label: "Admin — full control on this project", value: "ADMIN" },
                 ]}
               />
+              <p className="text-xs text-muted-foreground">
+                Project roles are scoped to this project only — they don&rsquo;t change
+                the user&rsquo;s system-wide role.
+              </p>
               <div className="flex justify-end gap-2">
                 <Button type="button" variant="outline" onClick={() => setAddOpen(false)}>Cancel</Button>
                 <Button type="submit">Add</Button>

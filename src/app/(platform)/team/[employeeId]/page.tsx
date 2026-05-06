@@ -4,6 +4,7 @@ import { requireAuth, resolveModulePerms } from "@/lib/permissions";
 import { PageHeader } from "@/components/layout/page-header";
 import { EmployeeDetailClient } from "./employee-detail-client";
 import { StartWorkflowButton } from "./start-workflow-button";
+import { RecentlyViewedTracker } from "@/components/shared/recently-viewed-tracker";
 
 interface Props {
   params: Promise<{ employeeId: string }>;
@@ -137,6 +138,13 @@ export default async function EmployeeDetailPage({ params }: Props) {
 
   return (
     <div>
+      <RecentlyViewedTracker
+        type="employee"
+        id={employee.id}
+        label={employee.name}
+        sublabel={employee.jobTitle || employee.department || undefined}
+        href={`/team/${employee.id}`}
+      />
       <PageHeader
         title={employee.name}
         description={[employee.jobTitle, employee.department].filter(Boolean).join(" · ") || employee.email}

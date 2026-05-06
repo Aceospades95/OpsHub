@@ -25,6 +25,7 @@ import { TaskCheckbox } from "@/app/(platform)/tasks/task-checkbox";
 import { QuotesCard } from "@/components/quotes/quotes-card";
 import { ProjectSubcontractorsCard } from "./project-subcontractors-card";
 import { ProjectPartnershipsCard } from "./project-partnerships-card";
+import { RecentlyViewedTracker } from "@/components/shared/recently-viewed-tracker";
 
 interface Props {
   params: Promise<{ projectId: string }>;
@@ -523,6 +524,13 @@ export default async function ProjectDetailPage({ params }: Props) {
 
   return (
     <div>
+      <RecentlyViewedTracker
+        type="project"
+        id={project.id}
+        label={project.name}
+        sublabel={project.client.name}
+        href={`/projects/${project.id}`}
+      />
       <PageHeader
         title={project.name}
         description={project.description || undefined}

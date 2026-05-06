@@ -11,6 +11,7 @@ interface TaskFiltersProps {
   currentProject?: string;
   currentClient?: string;
   currentShow?: string;
+  currentDue?: string;
   currentUserId: string;
 }
 
@@ -22,6 +23,7 @@ export function TaskFilters({
   currentProject,
   currentClient,
   currentShow,
+  currentDue,
   currentUserId,
 }: TaskFiltersProps) {
   const router = useRouter();
@@ -44,12 +46,13 @@ export function TaskFilters({
     router.push("/tasks");
   };
 
-  const hasFilters = currentAssignee || currentProject || currentClient || currentShow;
+  const hasFilters =
+    currentAssignee || currentProject || currentClient || currentShow || currentDue;
 
   return (
     <div className="flex flex-wrap items-center gap-3 mb-6">
       {/* Quick filters */}
-      <div className="flex items-center gap-1.5">
+      <div className="flex flex-wrap items-center gap-1.5">
         <QuickButton
           label="My Tasks"
           active={currentAssignee === "me"}
@@ -64,6 +67,31 @@ export function TaskFilters({
           label="Completed"
           active={currentShow === "done"}
           onClick={() => updateFilter("show", currentShow === "done" ? "" : "done")}
+        />
+        <QuickButton
+          label="Past due"
+          active={currentDue === "overdue"}
+          onClick={() => updateFilter("due", currentDue === "overdue" ? "" : "overdue")}
+        />
+        <QuickButton
+          label="Due this week"
+          active={currentDue === "week"}
+          onClick={() => updateFilter("due", currentDue === "week" ? "" : "week")}
+        />
+        <QuickButton
+          label="No assignee"
+          active={currentAssignee === "unassigned"}
+          onClick={() =>
+            updateFilter(
+              "assignee",
+              currentAssignee === "unassigned" ? "" : "unassigned"
+            )
+          }
+        />
+        <QuickButton
+          label="No project"
+          active={currentProject === "none"}
+          onClick={() => updateFilter("project", currentProject === "none" ? "" : "none")}
         />
       </div>
 

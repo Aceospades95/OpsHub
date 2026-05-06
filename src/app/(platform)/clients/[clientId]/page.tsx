@@ -16,6 +16,7 @@ import { ClientActions } from "./client-actions";
 import { ContactSection } from "./contact-section";
 import { PageLayout } from "@/components/shared/page-layout";
 import { TaskCheckbox } from "@/app/(platform)/tasks/task-checkbox";
+import { RecentlyViewedTracker } from "@/components/shared/recently-viewed-tracker";
 import { QuotesCard } from "@/components/quotes/quotes-card";
 
 interface Props {
@@ -275,6 +276,13 @@ export default async function ClientDetailPage({ params }: Props) {
 
   return (
     <div>
+      <RecentlyViewedTracker
+        type="client"
+        id={client.id}
+        label={client.name}
+        sublabel={client.industry || undefined}
+        href={`/clients/${client.id}`}
+      />
       <PageHeader
         title={client.name}
         description={client.description || undefined}

@@ -166,6 +166,15 @@ export const GLOBAL_WIDGETS: WidgetDefinition[] = [
     icon: "Files",
     defaultGrid: { w: 6, h: 8, minW: 4, minH: 4 },
   },
+  {
+    id: "widget-recently-viewed",
+    label: "Recently Viewed",
+    description:
+      "Quick re-entry into projects, clients, and employees you opened recently. Stored per-browser; no DB sync.",
+    category: "data",
+    icon: "History",
+    defaultGrid: { w: 4, h: 8, minW: 3, minH: 4 },
+  },
 
   // --- Status & Monitoring ---
   {
