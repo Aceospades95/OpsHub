@@ -78,6 +78,22 @@ export function ProjectStaffingSection({
   const roleGroups: RoleGroup[] = [];
   const usedAssignmentIds = new Set<string>();
 
+  // Disambiguate same-named ProjectRoles by appending #1 / #2 / #3
+  // when more than one row on this project has the same role
+  // definition name. The QA stress test surfaced "ANOTHER TEST"
+  // appearing as 3 separate sibling groups with no visual indication
+  // they were distinct slots — labeling them numerically makes the
+  // structure explicit (the underlying rows are still independent
+  // ProjectRole records; we don't merge them automatically since
+  // the operator's intent — different slots with the same name vs.
+  // a single role with quantity=N — isn't recoverable from the data).
+  const nameCounts = new Map<string, number>();
+  for (const pr of projectRoles) {
+    const key = pr.roleDefinition.name;
+    nameCounts.set(key, (nameCounts.get(key) ?? 0) + 1);
+  }
+  const seenIndex = new Map<string, number>();
+
   // 1) Groups from defined ProjectRoles
   for (const pr of projectRoles) {
     const matching = assignments.filter((a) =>
@@ -85,9 +101,18 @@ export function ProjectStaffingSection({
       (!a.projectRoleId && a.roleDefinition?.id === pr.roleDefinition.id)
     );
     matching.forEach((a) => usedAssignmentIds.add(a.id));
+
+    const baseName = pr.roleDefinition.name;
+    let displayName = baseName;
+    if ((nameCounts.get(baseName) ?? 0) > 1) {
+      const idx = (seenIndex.get(baseName) ?? 0) + 1;
+      seenIndex.set(baseName, idx);
+      displayName = `${baseName} #${idx}`;
+    }
+
     roleGroups.push({
       projectRoleId: pr.id,
-      roleName: pr.roleDefinition.name,
+      roleName: displayName,
       requiredFte: pr.requiredFte,
       requiredQuantity: pr.quantity,
       assignments: matching,

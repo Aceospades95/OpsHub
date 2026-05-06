@@ -400,23 +400,33 @@ export function ImportWizard({
           )}
         </div>
 
-        {/* Field reference */}
+        {/* Field reference. Each row wraps cleanly instead of cropping
+         *  the description at 40 chars (the QA stress test flagged
+         *  "DefaultValue mid-word truncation" on every importer's
+         *  expected-columns box). The full description fits on a
+         *  multi-line block under the column key + required flag. */}
         <div className="rounded border border-border p-3 bg-muted/20">
           <p className="text-xs font-semibold mb-2">Expected columns</p>
-          <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2 text-xs">
             {fields.map((field) => (
-              <div key={field.key} className="flex items-center gap-1">
-                <span className="font-mono">{field.key}</span>
-                {field.required && <span className="text-destructive">*</span>}
+              <div key={field.key} className="flex flex-col gap-0.5">
+                <div className="flex items-center gap-1">
+                  <span className="font-mono">{field.key}</span>
+                  {field.required && (
+                    <span className="text-destructive" title="Required">
+                      *
+                    </span>
+                  )}
+                </div>
                 {field.description && (
-                  <span className="text-muted-foreground/70 truncate" title={field.description}>
-                    — {field.description.slice(0, 40)}
-                  </span>
+                  <p className="text-[11px] leading-snug text-muted-foreground/80">
+                    {field.description}
+                  </p>
                 )}
               </div>
             ))}
           </div>
-          <p className="text-[10px] text-muted-foreground mt-2">
+          <p className="text-[10px] text-muted-foreground mt-3">
             Column names in your CSV don&rsquo;t need to match exactly — the
             mapping screen lets you wire them up.
           </p>

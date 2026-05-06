@@ -79,7 +79,8 @@ export function GridEditor({ pageType, initialCards, cardLabels }: GridEditorPro
       <button
         onClick={() => setEditing(true)}
         className="fixed bottom-6 right-6 z-30 flex items-center gap-2 rounded-full bg-primary text-primary-foreground px-4 py-3 shadow-lg hover:bg-primary/90 transition-colors"
-        title="Edit page layout"
+        title="Customize this page's layout — show/hide cards and reorder them. Saves to your account so it persists across sessions."
+        aria-label="Customize page layout"
       >
         <Settings2 className="h-5 w-5" />
         <span className="text-sm font-medium hidden sm:inline">Edit Layout</span>
