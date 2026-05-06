@@ -1,13 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select } from "@/components/ui/select";
 import { FormDialog } from "@/components/shared/form-dialog";
-import { Dialog } from "@/components/ui/dialog";
+import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { updateClient, deleteClient } from "@/actions/clients";
 import { Pencil, Trash2 } from "lucide-react";
 
@@ -32,15 +31,11 @@ interface Props {
 export function ClientActions({ client, users, canEdit, canDelete }: Props) {
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
-  const router = useRouter();
 
-  async function handleDelete() {
+  async function runDelete() {
     const fd = new FormData();
     fd.set("id", client.id);
-    const result = await deleteClient(null, fd);
-    if (result.success) {
-      router.push("/clients");
-    }
+    return deleteClient(null, fd);
   }
 
   return (
@@ -95,16 +90,20 @@ export function ClientActions({ client, users, canEdit, canDelete }: Props) {
             <Trash2 className="h-4 w-4 mr-1" />
             Delete
           </Button>
-          <Dialog open={deleteOpen} onClose={() => setDeleteOpen(false)} title="Delete Client">
-            <p className="text-sm text-muted-foreground mb-4">
-              Are you sure you want to delete <strong>{client.name}</strong>? This will also delete all
-              associated projects, contracts, and contacts.
-            </p>
-            <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setDeleteOpen(false)}>Cancel</Button>
-              <Button variant="destructive" onClick={handleDelete}>Delete</Button>
-            </div>
-          </Dialog>
+          <ConfirmDialog
+            open={deleteOpen}
+            onClose={() => setDeleteOpen(false)}
+            title="Delete Client"
+            message={
+              <>
+                Are you sure you want to delete <strong>{client.name}</strong>?
+                This will also delete all associated projects, contracts, and contacts.
+              </>
+            }
+            onConfirm={runDelete}
+            navigateTo="/clients"
+            confirmLabel="Delete"
+          />
         </>
       )}
     </div>

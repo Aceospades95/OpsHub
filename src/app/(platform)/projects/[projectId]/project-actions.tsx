@@ -1,13 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select } from "@/components/ui/select";
 import { FormDialog } from "@/components/shared/form-dialog";
-import { Dialog } from "@/components/ui/dialog";
+import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { updateProject, deleteProject } from "@/actions/projects";
 import { Pencil, Trash2 } from "lucide-react";
 
@@ -32,7 +31,6 @@ export function ProjectActions({ project, clients, serviceOfferings, canEdit, ca
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [creatingNewOffering, setCreatingNewOffering] = useState(false);
-  const router = useRouter();
 
   // Reset the "new offering" toggle when the edit dialog closes
   function handleCloseEdit() {
@@ -40,11 +38,10 @@ export function ProjectActions({ project, clients, serviceOfferings, canEdit, ca
     setCreatingNewOffering(false);
   }
 
-  async function handleDelete() {
+  async function runDelete() {
     const fd = new FormData();
     fd.set("id", project.id);
-    const result = await deleteProject(null, fd);
-    if (result.success) router.push("/projects");
+    return deleteProject(null, fd);
   }
 
   return (
@@ -131,16 +128,21 @@ export function ProjectActions({ project, clients, serviceOfferings, canEdit, ca
           <Button variant="destructive" size="sm" onClick={() => setDeleteOpen(true)}>
             <Trash2 className="h-4 w-4 mr-1" /> Delete
           </Button>
-          <Dialog open={deleteOpen} onClose={() => setDeleteOpen(false)} title="Delete Project">
-            <p className="text-sm text-muted-foreground mb-4">
-              Are you sure you want to delete <strong>{project.name}</strong>?
-              All sub-projects, milestones, and documents will be deleted.
-            </p>
-            <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setDeleteOpen(false)}>Cancel</Button>
-              <Button variant="destructive" onClick={handleDelete}>Delete</Button>
-            </div>
-          </Dialog>
+          <ConfirmDialog
+            open={deleteOpen}
+            onClose={() => setDeleteOpen(false)}
+            title="Delete Project"
+            message={
+              <>
+                Are you sure you want to delete <strong>{project.name}</strong>?
+                Sub-projects, milestones, and project members will be deleted.
+                Linked contracts, files, and tasks will be unassigned.
+              </>
+            }
+            onConfirm={runDelete}
+            navigateTo="/projects"
+            confirmLabel="Delete"
+          />
         </>
       )}
     </div>

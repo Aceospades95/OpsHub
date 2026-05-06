@@ -1,13 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select } from "@/components/ui/select";
 import { FormDialog } from "@/components/shared/form-dialog";
-import { Dialog } from "@/components/ui/dialog";
+import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { updateSubcontractor, deleteSubcontractor } from "@/actions/subcontractors";
 import { Pencil, Trash2 } from "lucide-react";
 
@@ -86,13 +85,11 @@ function isoDate(d: Date | null): string {
 export function SubcontractorActions({ subcontractor, users, canEdit, canDelete }: Props) {
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
-  const router = useRouter();
 
-  async function handleDelete() {
+  async function runDelete() {
     const fd = new FormData();
     fd.set("id", subcontractor.id);
-    const result = await deleteSubcontractor(null, fd);
-    if (result.success) router.push("/subcontractors");
+    return deleteSubcontractor(null, fd);
   }
 
   return (
@@ -203,15 +200,19 @@ export function SubcontractorActions({ subcontractor, users, canEdit, canDelete 
           <Button variant="destructive" size="sm" onClick={() => setDeleteOpen(true)}>
             <Trash2 className="h-4 w-4 mr-1" /> Delete
           </Button>
-          <Dialog open={deleteOpen} onClose={() => setDeleteOpen(false)} title="Delete Subcontractor">
-            <p className="text-sm text-muted-foreground mb-4">
-              Delete <strong>{subcontractor.name}</strong>? Project links, contacts, and attachments will be removed.
-            </p>
-            <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setDeleteOpen(false)}>Cancel</Button>
-              <Button variant="destructive" onClick={handleDelete}>Delete</Button>
-            </div>
-          </Dialog>
+          <ConfirmDialog
+            open={deleteOpen}
+            onClose={() => setDeleteOpen(false)}
+            title="Delete Subcontractor"
+            message={
+              <>
+                Delete <strong>{subcontractor.name}</strong>? Project links, contacts, and attachments will be removed.
+              </>
+            }
+            onConfirm={runDelete}
+            navigateTo="/subcontractors"
+            confirmLabel="Delete"
+          />
         </>
       )}
     </div>

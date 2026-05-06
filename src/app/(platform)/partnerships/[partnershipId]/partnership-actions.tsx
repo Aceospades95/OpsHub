@@ -1,13 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select } from "@/components/ui/select";
 import { FormDialog } from "@/components/shared/form-dialog";
-import { Dialog } from "@/components/ui/dialog";
+import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { updatePartnership, deletePartnership } from "@/actions/partnerships";
 import { Pencil, Trash2 } from "lucide-react";
 
@@ -79,13 +78,11 @@ function isoDate(d: Date | null): string {
 export function PartnershipActions({ partnership, users, canEdit, canDelete }: Props) {
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
-  const router = useRouter();
 
-  async function handleDelete() {
+  async function runDelete() {
     const fd = new FormData();
     fd.set("id", partnership.id);
-    const result = await deletePartnership(null, fd);
-    if (result.success) router.push("/partnerships");
+    return deletePartnership(null, fd);
   }
 
   const referralFeePercent =
@@ -175,15 +172,19 @@ export function PartnershipActions({ partnership, users, canEdit, canDelete }: P
           <Button variant="destructive" size="sm" onClick={() => setDeleteOpen(true)}>
             <Trash2 className="h-4 w-4 mr-1" /> Delete
           </Button>
-          <Dialog open={deleteOpen} onClose={() => setDeleteOpen(false)} title="Delete Partnership">
-            <p className="text-sm text-muted-foreground mb-4">
-              Delete <strong>{partnership.name}</strong>? Project links, contacts, and attachments will be removed.
-            </p>
-            <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setDeleteOpen(false)}>Cancel</Button>
-              <Button variant="destructive" onClick={handleDelete}>Delete</Button>
-            </div>
-          </Dialog>
+          <ConfirmDialog
+            open={deleteOpen}
+            onClose={() => setDeleteOpen(false)}
+            title="Delete Partnership"
+            message={
+              <>
+                Delete <strong>{partnership.name}</strong>? Project links, contacts, and attachments will be removed.
+              </>
+            }
+            onConfirm={runDelete}
+            navigateTo="/partnerships"
+            confirmLabel="Delete"
+          />
         </>
       )}
     </div>

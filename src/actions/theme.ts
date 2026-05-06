@@ -18,7 +18,12 @@ function requireAdmin(role: string): { error: string } | null {
 }
 
 export async function getThemeSettings(): Promise<Record<string, string>> {
-  await requireAuth();
+  // No requireAuth() here — RootLayout calls this on every page
+  // (including /login) so an auth gate produces a redirect loop:
+  //   /login → RootLayout → getThemeSettings → redirect("/login") → …
+  // The returned data is just hex color values (custom presets, which
+  // can carry sensitive project names, are filtered out by the where
+  // clause). Mutators below keep their requireAuth + admin gates.
   try {
     const rows = await db.themeSetting.findMany({
       where: { key: { not: { startsWith: CUSTOM_PRESET_PREFIX } } },

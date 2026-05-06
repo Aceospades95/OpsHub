@@ -1,13 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select } from "@/components/ui/select";
 import { FormDialog } from "@/components/shared/form-dialog";
-import { Dialog } from "@/components/ui/dialog";
+import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { updateSupplier, deleteSupplier } from "@/actions/suppliers";
 import { Pencil, Trash2 } from "lucide-react";
 
@@ -26,13 +25,11 @@ const categories = ["auto_repair","decals","alarm_security","maintenance","it_se
 export function SupplierActions({ supplier, canEdit, canDelete }: Props) {
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
-  const router = useRouter();
 
-  async function handleDelete() {
+  async function runDelete() {
     const fd = new FormData();
     fd.set("id", supplier.id);
-    const result = await deleteSupplier(null, fd);
-    if (result.success) router.push("/suppliers");
+    return deleteSupplier(null, fd);
   }
 
   return (
@@ -65,13 +62,15 @@ export function SupplierActions({ supplier, canEdit, canDelete }: Props) {
       {canDelete && (
         <>
           <Button variant="destructive" size="sm" onClick={() => setDeleteOpen(true)}><Trash2 className="h-4 w-4 mr-1" /> Delete</Button>
-          <Dialog open={deleteOpen} onClose={() => setDeleteOpen(false)} title="Delete Supplier">
-            <p className="text-sm text-muted-foreground mb-4">Delete <strong>{supplier.name}</strong>?</p>
-            <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setDeleteOpen(false)}>Cancel</Button>
-              <Button variant="destructive" onClick={handleDelete}>Delete</Button>
-            </div>
-          </Dialog>
+          <ConfirmDialog
+            open={deleteOpen}
+            onClose={() => setDeleteOpen(false)}
+            title="Delete Supplier"
+            message={<>Delete <strong>{supplier.name}</strong>?</>}
+            onConfirm={runDelete}
+            navigateTo="/suppliers"
+            confirmLabel="Delete"
+          />
         </>
       )}
     </div>

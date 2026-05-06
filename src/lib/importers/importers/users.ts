@@ -68,6 +68,9 @@ export const usersImporter: ImporterDefinition = {
   description:
     "Bulk-create or update user accounts from a CSV. Required columns: name, email. Email is the match key — re-running the same file with edits updates existing rows. Optional: role, department, jobTitle, location, phone, managerEmail, hasLoginAccess, isActive, avatar, terminationDate.",
   module: "team",
+  supportsUpsert: true,
+  upsertKeyDescription:
+    "Always matched by email (case-insensitive). Existing users are updated; new emails create new users. Email cannot be changed via the importer.",
 
   fields: [
     {
@@ -208,6 +211,7 @@ export const usersImporter: ImporterDefinition = {
   async commit(rows, ctx) {
     const results: ImportRowResult[] = [];
     let imported = 0;
+    let updated = 0;
     let skipped = 0;
     let failed = 0;
 
@@ -345,12 +349,13 @@ export const usersImporter: ImporterDefinition = {
           existingByEmail.set(email, { id: userId });
         }
 
-        imported++;
-        results.push({
-          row: rowNumber,
-          status: "imported",
-          message: actionLabel === "updated" ? "Updated existing user" : undefined,
-        });
+        if (actionLabel === "updated") {
+          updated++;
+          results.push({ row: rowNumber, status: "updated" });
+        } else {
+          imported++;
+          results.push({ row: rowNumber, status: "imported" });
+        }
 
         // Defer manager resolution until everyone is created/updated
         const managerEmail = (raw.managerEmail || "").trim().toLowerCase();
@@ -395,6 +400,6 @@ export const usersImporter: ImporterDefinition = {
       }
     }
 
-    return { imported, skipped, failed, rows: results };
+    return { imported, updated, skipped, failed, rows: results };
   },
 };

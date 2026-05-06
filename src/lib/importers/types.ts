@@ -32,14 +32,16 @@ export interface ImportField {
 export interface ImportRowResult {
   /** 1-based row index in the CSV (excluding header) */
   row: number;
-  status: "imported" | "skipped" | "failed";
-  /** Reason for skipped/failed; ignored for imported */
+  status: "imported" | "updated" | "skipped" | "failed";
+  /** Reason for skipped/failed; ignored for imported / updated */
   message?: string;
 }
 
 /** Aggregate result returned by an import run. */
 export interface ImportResult {
   imported: number;
+  /** Existing rows updated in upsert mode. 0 in create-only mode. */
+  updated: number;
   skipped: number;
   failed: number;
   /** Per-row outcomes for the audit log and UI display */
@@ -47,11 +49,21 @@ export interface ImportResult {
 }
 
 /**
+ * Import mode. "create" (default) inserts new rows and reports duplicates
+ * as skipped/failed; "upsert" matches existing rows by the importer's
+ * natural key and updates them in place. The wizard exposes this as the
+ * "Update existing rows on match" toggle.
+ */
+export type ImportMode = "create" | "upsert";
+
+/**
  * Context passed to a commit handler. Lets the handler attribute new
  * rows to the user who triggered the import.
  */
 export interface ImportContext {
   triggeredBy: string;
+  /** Defaults to "create" for backwards compatibility. */
+  mode?: ImportMode;
 }
 
 /**
@@ -72,6 +84,22 @@ export interface ImporterDefinition {
   module: string;
   /** Field schema — drives the mapping UI and validation */
   fields: ImportField[];
+  /**
+   * True when this importer's `commit()` honors `ctx.mode === "upsert"`
+   * by matching rows on a stable natural key (name, contractNumber,
+   * email, etc.) and updating in place. The wizard hides the "Update
+   * existing rows" toggle for importers that don't set this so users
+   * don't get silent no-op behavior. Defaults to false.
+   */
+  supportsUpsert?: boolean;
+  /**
+   * Human-readable description of the natural key used for upsert
+   * matching, shown on the wizard alongside the mode toggle so users
+   * know what's being matched (e.g. "Matched by contract number, then
+   * (client + title) as a fallback"). Required when supportsUpsert is
+   * true. Ignored otherwise.
+   */
+  upsertKeyDescription?: string;
   /**
    * Commit a batch of rows. Each input object is keyed by the field key
    * (post-mapping). The handler is responsible for its own validation,

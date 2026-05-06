@@ -1,13 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select } from "@/components/ui/select";
 import { FormDialog } from "@/components/shared/form-dialog";
-import { Dialog } from "@/components/ui/dialog";
+import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { updateDocument, deleteDocument } from "@/actions/documents";
 import { Pencil, Trash2 } from "lucide-react";
 
@@ -28,13 +27,11 @@ interface Props {
 export function DocumentActions({ document: doc, projectId, canEdit, canDelete }: Props) {
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
-  const router = useRouter();
 
-  async function handleDelete() {
+  async function runDelete() {
     const fd = new FormData();
     fd.set("id", doc.id);
-    const result = await deleteDocument(null, fd);
-    if (result.success) router.push(`/projects/${projectId}`);
+    return deleteDocument(null, fd);
   }
 
   return (
@@ -72,13 +69,15 @@ export function DocumentActions({ document: doc, projectId, canEdit, canDelete }
           <Button variant="destructive" size="sm" onClick={() => setDeleteOpen(true)}>
             <Trash2 className="h-4 w-4 mr-1" /> Delete
           </Button>
-          <Dialog open={deleteOpen} onClose={() => setDeleteOpen(false)} title="Delete Document">
-            <p className="text-sm text-muted-foreground mb-4">Delete <strong>{doc.title}</strong>?</p>
-            <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setDeleteOpen(false)}>Cancel</Button>
-              <Button variant="destructive" onClick={handleDelete}>Delete</Button>
-            </div>
-          </Dialog>
+          <ConfirmDialog
+            open={deleteOpen}
+            onClose={() => setDeleteOpen(false)}
+            title="Delete Document"
+            message={<>Delete <strong>{doc.title}</strong>?</>}
+            onConfirm={runDelete}
+            navigateTo={`/projects/${projectId}`}
+            confirmLabel="Delete"
+          />
         </>
       )}
     </div>
