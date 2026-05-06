@@ -30,12 +30,29 @@ function formatDate(d: Date | null | undefined): string {
   return d ? d.toISOString().slice(0, 10) : "";
 }
 
+/** Build the natural-key string used for upsert matching. (employeeId +
+ *  projectId + roleDefinitionId) — same employee on the same project in
+ *  the same role definition is treated as the same staffing record. The
+ *  ids may be empty strings for unscoped (bench) or freeform-role
+ *  assignments, which collapse all such rows for the employee into a
+ *  single bucket. */
+function assignmentMatchKey(
+  employeeId: string,
+  projectId: string | null,
+  roleDefinitionId: string | null
+): string {
+  return `${employeeId}|${projectId || ""}|${roleDefinitionId || ""}`;
+}
+
 export const assignmentsImporter: ImporterDefinition = {
   key: "assignments",
   name: "Assignments",
   description:
-    "Bulk-create staffing assignments. Required: employeeEmail. Optional: project, client, service offering, role, FTE, dates, status.",
+    "Bulk-create or update staffing assignments. Required: employeeEmail. Optional: project, client, service offering, role, FTE, dates, status.",
   module: "team",
+  supportsUpsert: true,
+  upsertKeyDescription:
+    "Matched by (employee email + project + role definition), all case-insensitive. Re-uploading the same employee on the same project in the same role updates the existing assignment instead of stacking duplicates.",
 
   fields: [
     {
@@ -137,8 +154,10 @@ export const assignmentsImporter: ImporterDefinition = {
   async commit(rows, ctx) {
     const results: ImportRowResult[] = [];
     let imported = 0;
-    const skipped = 0;
+    let updated = 0;
+    let skipped = 0;
     let failed = 0;
+    const upsert = ctx.mode === "upsert";
 
     const users = await db.user.findMany({
       where: { isActive: true },
@@ -165,6 +184,26 @@ export const assignmentsImporter: ImporterDefinition = {
     const projectRoleByProjectAndDef = new Map(
       projectRoles.map((pr) => [`${pr.projectId}|${pr.roleDefinitionId}`, pr.id])
     );
+
+    // Pre-fetch every assignment keyed by (employeeId + projectId +
+    // roleDefinitionId) for upsert matching and in-batch dedupe. Built
+    // here AFTER the FK lookups so the natural key uses the same ids
+    // the per-row code resolves below.
+    const existingAssignments = await db.assignment.findMany({
+      select: {
+        id: true,
+        employeeId: true,
+        projectId: true,
+        roleDefinitionId: true,
+      },
+    });
+    const existingByKey = new Map<string, { id: string }>(
+      existingAssignments.map((a) => [
+        assignmentMatchKey(a.employeeId, a.projectId, a.roleDefinitionId),
+        { id: a.id },
+      ])
+    );
+    const seenInBatch = new Set<string>();
 
     for (let i = 0; i < rows.length; i++) {
       const rowNumber = i + 1;
@@ -225,34 +264,73 @@ export const assignmentsImporter: ImporterDefinition = {
         continue;
       }
 
-      try {
-        const assignment = await db.assignment.create({
-          data: {
-            employeeId,
-            projectId,
-            clientId,
-            serviceOfferingId,
-            roleDefinitionId,
-            projectRoleId,
-            role: raw.role?.trim() || null,
-            function: raw.function?.trim() || null,
-            allocationFte,
-            status,
-            startDate: parseDate(raw.startDate),
-            endDate: parseDate(raw.endDate),
-            notes: raw.notes?.trim() || null,
-          },
+      const key = assignmentMatchKey(employeeId, projectId, roleDefinitionId);
+      if (seenInBatch.has(key)) {
+        skipped++;
+        results.push({
+          row: rowNumber,
+          status: "skipped",
+          message: `Duplicate row in file: ${employeeEmail}${raw.projectName ? ` on ${raw.projectName}` : ""}${raw.roleDefinitionName ? ` as ${raw.roleDefinitionName}` : ""}`,
         });
-        imported++;
-        results.push({ row: rowNumber, status: "imported" });
-        await logActivity(
-          "imported",
-          "assignment",
-          assignment.id,
-          ctx.triggeredBy,
-          `Assignment for ${employeeEmail}`,
-          { projectId: assignment.projectId, clientId: assignment.clientId }
-        );
+        continue;
+      }
+      seenInBatch.add(key);
+
+      const data = {
+        employeeId,
+        projectId,
+        clientId,
+        serviceOfferingId,
+        roleDefinitionId,
+        projectRoleId,
+        role: raw.role?.trim() || null,
+        function: raw.function?.trim() || null,
+        allocationFte,
+        status,
+        startDate: parseDate(raw.startDate),
+        endDate: parseDate(raw.endDate),
+        notes: raw.notes?.trim() || null,
+      };
+
+      const existing = existingByKey.get(key);
+
+      try {
+        if (existing && upsert) {
+          const assignment = await db.assignment.update({
+            where: { id: existing.id },
+            data,
+          });
+          updated++;
+          results.push({ row: rowNumber, status: "updated" });
+          await logActivity(
+            "imported",
+            "assignment",
+            assignment.id,
+            ctx.triggeredBy,
+            `Assignment for ${employeeEmail} (updated)`,
+            { projectId: assignment.projectId, clientId: assignment.clientId }
+          );
+        } else if (existing && !upsert) {
+          skipped++;
+          results.push({
+            row: rowNumber,
+            status: "skipped",
+            message: `Assignment already exists: ${employeeEmail}${raw.projectName ? ` on ${raw.projectName}` : ""}${raw.roleDefinitionName ? ` as ${raw.roleDefinitionName}` : ""}. Re-run with "Update existing rows" enabled to update it.`,
+          });
+        } else {
+          const assignment = await db.assignment.create({ data });
+          existingByKey.set(key, { id: assignment.id });
+          imported++;
+          results.push({ row: rowNumber, status: "imported" });
+          await logActivity(
+            "imported",
+            "assignment",
+            assignment.id,
+            ctx.triggeredBy,
+            `Assignment for ${employeeEmail}`,
+            { projectId: assignment.projectId, clientId: assignment.clientId }
+          );
+        }
       } catch (err) {
         failed++;
         results.push({
@@ -263,6 +341,6 @@ export const assignmentsImporter: ImporterDefinition = {
       }
     }
 
-    return { imported, updated: 0, skipped, failed, rows: results };
+    return { imported, updated, skipped, failed, rows: results };
   },
 };

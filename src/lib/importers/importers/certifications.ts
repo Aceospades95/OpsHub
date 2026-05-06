@@ -74,12 +74,23 @@ function parseOffsets(value: string | undefined): number[] | null {
   return Array.from(new Set(clean)).sort((a, b) => b - a);
 }
 
+/** Build the natural-key string used for upsert matching. (name +
+ *  clientId) lowercased — the same cert name can live under multiple
+ *  clients, but it must be unique within a single client. clientId is
+ *  empty string for unscoped certs so they share a single bucket. */
+function certMatchKey(name: string, clientId: string | null): string {
+  return `${name.trim().toLowerCase()}|${clientId || ""}`;
+}
+
 export const certificationsImporter: ImporterDefinition = {
   key: "certifications",
   name: "Certifications",
   description:
-    "Bulk-create certification records. Required: name. Optional: status, type, jurisdiction, agency info, reminders, assignee, point of contact, and more.",
+    "Bulk-create or update certification records. Required: name. Optional: status, type, jurisdiction, agency info, reminders, assignee, point of contact, and more.",
   module: "certifications",
+  supportsUpsert: true,
+  upsertKeyDescription:
+    "Matched by (name + client), case-insensitive. Re-uploading the same cert under the same client updates the existing row; the same name under a different client (or unscoped) is treated as a separate record.",
 
   fields: [
     { key: "name", label: "Certification name", required: true, aliases: ["cert name", "title"] },
@@ -268,8 +279,10 @@ export const certificationsImporter: ImporterDefinition = {
   async commit(rows, ctx) {
     const results: ImportRowResult[] = [];
     let imported = 0;
-    const skipped = 0;
+    let updated = 0;
+    let skipped = 0;
     let failed = 0;
+    const upsert = ctx.mode === "upsert";
 
     // Pre-fetch lookups
     const users = await db.user.findMany({
@@ -279,6 +292,18 @@ export const certificationsImporter: ImporterDefinition = {
     const userByEmail = new Map(users.map((u) => [u.email.toLowerCase(), u.id]));
     const clients = await db.client.findMany({ select: { id: true, name: true } });
     const clientByName = new Map(clients.map((c) => [c.name.toLowerCase(), c.id]));
+
+    // Pre-fetch every cert keyed by (lowercased name + clientId). Built
+    // here (after the client lookup is no longer required since we use
+    // the cert's own clientId) so the per-row matching uses identical
+    // keys.
+    const existingCerts = await db.certification.findMany({
+      select: { id: true, name: true, clientId: true },
+    });
+    const existingByKey = new Map<string, { id: string }>(
+      existingCerts.map((c) => [certMatchKey(c.name, c.clientId), { id: c.id }])
+    );
+    const seenInBatch = new Set<string>();
 
     for (let i = 0; i < rows.length; i++) {
       const rowNumber = i + 1;
@@ -328,48 +353,82 @@ export const certificationsImporter: ImporterDefinition = {
       const clientId = clientName ? clientByName.get(clientName) || null : null;
       const reminderOffsetsDays = parseOffsets(raw.reminderOffsetsDays);
 
+      const key = certMatchKey(name, clientId);
+      if (seenInBatch.has(key)) {
+        skipped++;
+        results.push({
+          row: rowNumber,
+          status: "skipped",
+          message: `Duplicate row in file: "${name}"${raw.clientName ? ` for ${raw.clientName}` : ""}`,
+        });
+        continue;
+      }
+      seenInBatch.add(key);
+
+      const data = {
+        name,
+        plainEnglishSummary: raw.plainEnglishSummary?.trim() || null,
+        description: raw.description?.trim() || null,
+        status,
+        type,
+        engagementType,
+        jurisdictionLevel,
+        jurisdictionName: raw.jurisdictionName?.trim() || null,
+        issuingBody: raw.issuingBody?.trim() || null,
+        agencyWebsiteUrl: raw.agencyWebsiteUrl?.trim() || null,
+        agencyContactName: raw.agencyContactName?.trim() || null,
+        agencyContactEmail: raw.agencyContactEmail?.trim() || null,
+        agencyContactPhone: raw.agencyContactPhone?.trim() || null,
+        certNumber: raw.certNumber?.trim() || null,
+        submittedDate: parseDate(raw.submittedDate),
+        issuedDate: parseDate(raw.issuedDate),
+        expirationDate: parseDate(raw.expirationDate),
+        renewalDate: parseDate(raw.renewalDate),
+        renewalLeadDays: raw.renewalLeadDays
+          ? parseInt(raw.renewalLeadDays, 10) || 90
+          : 90,
+        ...(reminderOffsetsDays ? { reminderOffsetsDays } : {}),
+        autoRenew: parseBool(raw.autoRenew, false),
+        renewalCost: raw.renewalCost ? parseFloat(raw.renewalCost) || null : null,
+        currency: raw.currency?.trim() || "USD",
+        renewalRequirements: raw.renewalRequirements?.trim() || null,
+        renewalNotes: raw.renewalNotes?.trim() || null,
+        documentUrl: raw.documentUrl?.trim() || null,
+        completedCertUrl: raw.completedCertUrl?.trim() || null,
+        assigneeId,
+        pointOfContactId,
+        clientId,
+      };
+
+      const existing = existingByKey.get(key);
+
       try {
-        const cert = await db.certification.create({
-          data: {
-            name,
-            plainEnglishSummary: raw.plainEnglishSummary?.trim() || null,
-            description: raw.description?.trim() || null,
-            status,
-            type,
-            engagementType,
-            jurisdictionLevel,
-            jurisdictionName: raw.jurisdictionName?.trim() || null,
-            issuingBody: raw.issuingBody?.trim() || null,
-            agencyWebsiteUrl: raw.agencyWebsiteUrl?.trim() || null,
-            agencyContactName: raw.agencyContactName?.trim() || null,
-            agencyContactEmail: raw.agencyContactEmail?.trim() || null,
-            agencyContactPhone: raw.agencyContactPhone?.trim() || null,
-            certNumber: raw.certNumber?.trim() || null,
-            submittedDate: parseDate(raw.submittedDate),
-            issuedDate: parseDate(raw.issuedDate),
-            expirationDate: parseDate(raw.expirationDate),
-            renewalDate: parseDate(raw.renewalDate),
-            renewalLeadDays: raw.renewalLeadDays
-              ? parseInt(raw.renewalLeadDays, 10) || 90
-              : 90,
-            ...(reminderOffsetsDays ? { reminderOffsetsDays } : {}),
-            autoRenew: parseBool(raw.autoRenew, false),
-            renewalCost: raw.renewalCost ? parseFloat(raw.renewalCost) || null : null,
-            currency: raw.currency?.trim() || "USD",
-            renewalRequirements: raw.renewalRequirements?.trim() || null,
-            renewalNotes: raw.renewalNotes?.trim() || null,
-            documentUrl: raw.documentUrl?.trim() || null,
-            completedCertUrl: raw.completedCertUrl?.trim() || null,
-            assigneeId,
-            pointOfContactId,
-            clientId,
-          },
-        });
-        imported++;
-        results.push({ row: rowNumber, status: "imported" });
-        await logActivity("imported", "certification", cert.id, ctx.triggeredBy, name, {
-          clientId: cert.clientId,
-        });
+        if (existing && upsert) {
+          const cert = await db.certification.update({
+            where: { id: existing.id },
+            data,
+          });
+          updated++;
+          results.push({ row: rowNumber, status: "updated" });
+          await logActivity("imported", "certification", cert.id, ctx.triggeredBy, `${name} (updated)`, {
+            clientId: cert.clientId,
+          });
+        } else if (existing && !upsert) {
+          skipped++;
+          results.push({
+            row: rowNumber,
+            status: "skipped",
+            message: `Certification already exists: "${name}"${raw.clientName ? ` for ${raw.clientName}` : ""}. Re-run with "Update existing rows" enabled to update it.`,
+          });
+        } else {
+          const cert = await db.certification.create({ data });
+          existingByKey.set(key, { id: cert.id });
+          imported++;
+          results.push({ row: rowNumber, status: "imported" });
+          await logActivity("imported", "certification", cert.id, ctx.triggeredBy, name, {
+            clientId: cert.clientId,
+          });
+        }
       } catch (err) {
         failed++;
         results.push({
@@ -380,6 +439,6 @@ export const certificationsImporter: ImporterDefinition = {
       }
     }
 
-    return { imported, updated: 0, skipped, failed, rows: results };
+    return { imported, updated, skipped, failed, rows: results };
   },
 };

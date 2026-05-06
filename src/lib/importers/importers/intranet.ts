@@ -1,9 +1,14 @@
 /**
- * Intranet resources importer — bulk-create internal documentation,
- * announcements, HR policies, and other intranet entries from CSV.
+ * Intranet resources importer — bulk-create or update internal
+ * documentation, announcements, HR policies, and other intranet entries
+ * from CSV.
  *
  * Required: title
  * Optional: description, content, category, published, pinned, sortOrder
+ *
+ * Upsert match key: (title + category) lowercased. Two resources with
+ * the same title under the same category are treated as the same row;
+ * the same title under a different category is intentionally NOT merged.
  */
 
 import type { IntranetCategory } from "@prisma/client";
@@ -31,12 +36,19 @@ function parseBool(value: string | undefined, defaultValue: boolean): boolean {
   return defaultValue;
 }
 
+function intranetMatchKey(title: string, category: string): string {
+  return `${title.trim().toLowerCase()}|${category.trim().toLowerCase()}`;
+}
+
 export const intranetImporter: ImporterDefinition = {
   key: "intranet",
   name: "Intranet Resources",
   description:
-    "Bulk-create intranet resources (announcements, HR policies, SOPs, forms, etc.). Required: title. Optional: description, full content, category, published/pinned flags.",
+    "Bulk-create or update intranet resources (announcements, HR policies, SOPs, forms, etc.). Required: title. Optional: description, full content, category, published/pinned flags.",
   module: "intranet",
+  supportsUpsert: true,
+  upsertKeyDescription:
+    "Matched by (title + category), case-insensitive. Re-uploading the same title under the same category updates the existing row; the same title under a different category is treated as a separate resource.",
 
   fields: [
     { key: "title", label: "Title", required: true, aliases: ["name", "resource", "resource title"] },
@@ -98,8 +110,20 @@ export const intranetImporter: ImporterDefinition = {
   async commit(rows, ctx) {
     const results: ImportRowResult[] = [];
     let imported = 0;
-    const skipped = 0;
+    let updated = 0;
+    let skipped = 0;
     let failed = 0;
+    const upsert = ctx.mode === "upsert";
+
+    // Pre-fetch every resource keyed by (lowercased title + category)
+    // for upsert matching and in-batch dedupe.
+    const existingResources = await db.intranetResource.findMany({
+      select: { id: true, title: true, category: true },
+    });
+    const existingByKey = new Map<string, { id: string }>(
+      existingResources.map((r) => [intranetMatchKey(r.title, r.category), { id: r.id }])
+    );
+    const seenInBatch = new Set<string>();
 
     for (let i = 0; i < rows.length; i++) {
       const rowNumber = i + 1;
@@ -119,21 +143,53 @@ export const intranetImporter: ImporterDefinition = {
       const sortOrderRaw = (raw.sortOrder || "").trim();
       const sortOrder = sortOrderRaw ? parseInt(sortOrderRaw, 10) || 0 : 0;
 
-      try {
-        const resource = await db.intranetResource.create({
-          data: {
-            title,
-            description: raw.description?.trim() || null,
-            content: raw.content?.trim() || null,
-            category,
-            published: parseBool(raw.published, false),
-            pinned: parseBool(raw.pinned, false),
-            sortOrder,
-          },
+      const key = intranetMatchKey(title, category);
+      if (seenInBatch.has(key)) {
+        skipped++;
+        results.push({
+          row: rowNumber,
+          status: "skipped",
+          message: `Duplicate row in file: "${title}" (${category})`,
         });
-        imported++;
-        results.push({ row: rowNumber, status: "imported" });
-        await logActivity("imported", "intranetResource", resource.id, ctx.triggeredBy, title);
+        continue;
+      }
+      seenInBatch.add(key);
+
+      const data = {
+        title,
+        description: raw.description?.trim() || null,
+        content: raw.content?.trim() || null,
+        category,
+        published: parseBool(raw.published, false),
+        pinned: parseBool(raw.pinned, false),
+        sortOrder,
+      };
+
+      const existing = existingByKey.get(key);
+
+      try {
+        if (existing && upsert) {
+          const resource = await db.intranetResource.update({
+            where: { id: existing.id },
+            data,
+          });
+          updated++;
+          results.push({ row: rowNumber, status: "updated" });
+          await logActivity("imported", "intranetResource", resource.id, ctx.triggeredBy, `${title} (updated)`);
+        } else if (existing && !upsert) {
+          skipped++;
+          results.push({
+            row: rowNumber,
+            status: "skipped",
+            message: `Resource already exists: "${title}" in ${category}. Re-run with "Update existing rows" enabled to update it.`,
+          });
+        } else {
+          const resource = await db.intranetResource.create({ data });
+          existingByKey.set(key, { id: resource.id });
+          imported++;
+          results.push({ row: rowNumber, status: "imported" });
+          await logActivity("imported", "intranetResource", resource.id, ctx.triggeredBy, title);
+        }
       } catch (err) {
         failed++;
         results.push({
@@ -144,6 +200,6 @@ export const intranetImporter: ImporterDefinition = {
       }
     }
 
-    return { imported, updated: 0, skipped, failed, rows: results };
+    return { imported, updated, skipped, failed, rows: results };
   },
 };

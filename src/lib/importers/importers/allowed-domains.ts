@@ -34,6 +34,9 @@ export const allowedDomainsImporter: ImporterDefinition = {
   description:
     "Bulk-add domains to the SSO allow-list. Required: domain. Values are normalized (lowercased, @ / https:// / leading www. stripped).",
   module: "settings",
+  supportsUpsert: true,
+  upsertKeyDescription:
+    "Matched by normalized domain (case-insensitive, scheme/@/leading www. stripped). The row has no other editable fields, so upsert mode treats existing entries as updated no-ops instead of skipping them.",
 
   fields: [
     {
@@ -56,8 +59,10 @@ export const allowedDomainsImporter: ImporterDefinition = {
   async commit(rows, ctx) {
     const results: ImportRowResult[] = [];
     let imported = 0;
+    let updated = 0;
     let skipped = 0;
     let failed = 0;
+    const upsert = ctx.mode === "upsert";
 
     const existing = new Set(
       (await db.allowedDomain.findMany({ select: { domain: true } })).map((d) =>
@@ -86,13 +91,37 @@ export const allowedDomainsImporter: ImporterDefinition = {
         });
         continue;
       }
-      if (existing.has(domain) || seenInBatch.has(domain)) {
-        skipped++;
-        results.push({
-          row: rowNumber,
-          status: "skipped",
-          message: `Domain already on the allow-list: "${domain}"`,
-        });
+      if (seenInBatch.has(domain)) {
+        if (upsert) {
+          updated++;
+          results.push({ row: rowNumber, status: "updated" });
+        } else {
+          skipped++;
+          results.push({
+            row: rowNumber,
+            status: "skipped",
+            message: `Duplicate row in file: "${domain}"`,
+          });
+        }
+        continue;
+      }
+      if (existing.has(domain)) {
+        seenInBatch.add(domain);
+        if (upsert) {
+          // No editable fields beyond `domain` itself, so the upsert
+          // is an effective no-op against the DB — but we still report
+          // it as updated so admins re-running the same file see a
+          // consistent count rather than mysterious skips.
+          updated++;
+          results.push({ row: rowNumber, status: "updated" });
+        } else {
+          skipped++;
+          results.push({
+            row: rowNumber,
+            status: "skipped",
+            message: `Domain already on the allow-list: "${domain}". Re-run with "Update existing rows" enabled to refresh it.`,
+          });
+        }
         continue;
       }
 
@@ -113,6 +142,6 @@ export const allowedDomainsImporter: ImporterDefinition = {
       }
     }
 
-    return { imported, updated: 0, skipped, failed, rows: results };
+    return { imported, updated, skipped, failed, rows: results };
   },
 };

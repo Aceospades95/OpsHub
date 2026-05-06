@@ -39,12 +39,23 @@ function formatDate(d: Date | null | undefined): string {
   return d ? d.toISOString().slice(0, 10) : "";
 }
 
+/** Build the natural-key string used for upsert matching. (contractId +
+ *  title) lowercased — the same title can live under multiple contracts.
+ *  contractId is already a stable id at the time we build the key, so no
+ *  separator collision concerns. */
+function termMatchKey(contractId: string, title: string): string {
+  return `${contractId}|${title.trim().toLowerCase()}`;
+}
+
 export const contractTermsImporter: ImporterDefinition = {
   key: "contract-terms",
   name: "Contract Terms",
   description:
-    "Bulk-create contract terms (SLAs, obligations, deadlines, deliverables, etc.). Required: title, description, contractNumber. Optional: type, priority, dueDate.",
+    "Bulk-create or update contract terms (SLAs, obligations, deadlines, deliverables, etc.). Required: title, description, contractNumber. Optional: type, priority, dueDate.",
   module: "contracts",
+  supportsUpsert: true,
+  upsertKeyDescription:
+    "Matched by (contract + title), case-insensitive on title. Re-uploading the same title under the same contract updates the existing row instead of creating a duplicate.",
 
   fields: [
     { key: "title", label: "Title", required: true, aliases: ["term", "term title", "name"] },
@@ -92,8 +103,10 @@ export const contractTermsImporter: ImporterDefinition = {
   async commit(rows, ctx) {
     const results: ImportRowResult[] = [];
     let imported = 0;
-    const skipped = 0;
+    let updated = 0;
+    let skipped = 0;
     let failed = 0;
+    const upsert = ctx.mode === "upsert";
 
     const contracts = await db.contract.findMany({
       where: { contractNumber: { not: null } },
@@ -104,6 +117,16 @@ export const contractTermsImporter: ImporterDefinition = {
         .filter((c): c is typeof c & { contractNumber: string } => Boolean(c.contractNumber))
         .map((c) => [c.contractNumber.toLowerCase(), c])
     );
+
+    // Pre-fetch every term keyed by (contractId + lowercased title) for
+    // upsert matching and in-batch dedupe.
+    const existingTerms = await db.contractTerm.findMany({
+      select: { id: true, title: true, contractId: true },
+    });
+    const existingByKey = new Map<string, { id: string }>(
+      existingTerms.map((t) => [termMatchKey(t.contractId, t.title), { id: t.id }])
+    );
+    const seenInBatch = new Set<string>();
 
     for (let i = 0; i < rows.length; i++) {
       const rowNumber = i + 1;
@@ -147,23 +170,58 @@ export const contractTermsImporter: ImporterDefinition = {
         ? (priorityRaw as Priority)
         : "MEDIUM";
 
+      const key = termMatchKey(contract.id, title);
+      if (seenInBatch.has(key)) {
+        skipped++;
+        results.push({
+          row: rowNumber,
+          status: "skipped",
+          message: `Duplicate row in file: "${title}" on ${contractNumberRaw}`,
+        });
+        continue;
+      }
+      seenInBatch.add(key);
+
+      const data = {
+        title,
+        description,
+        type,
+        priority,
+        dueDate: parseDate(raw.dueDate),
+        contractId: contract.id,
+      };
+
+      const existing = existingByKey.get(key);
+
       try {
-        const term = await db.contractTerm.create({
-          data: {
-            title,
-            description,
-            type,
-            priority,
-            dueDate: parseDate(raw.dueDate),
-            contractId: contract.id,
-          },
-        });
-        imported++;
-        results.push({ row: rowNumber, status: "imported" });
-        await logActivity("imported", "contractTerm", term.id, ctx.triggeredBy, title, {
-          clientId: contract.clientId,
-          projectId: contract.projectId,
-        });
+        if (existing && upsert) {
+          const term = await db.contractTerm.update({
+            where: { id: existing.id },
+            data,
+          });
+          updated++;
+          results.push({ row: rowNumber, status: "updated" });
+          await logActivity("imported", "contractTerm", term.id, ctx.triggeredBy, `${title} (updated)`, {
+            clientId: contract.clientId,
+            projectId: contract.projectId,
+          });
+        } else if (existing && !upsert) {
+          skipped++;
+          results.push({
+            row: rowNumber,
+            status: "skipped",
+            message: `Term already exists: "${title}" on ${contractNumberRaw}. Re-run with "Update existing rows" enabled to update it.`,
+          });
+        } else {
+          const term = await db.contractTerm.create({ data });
+          existingByKey.set(key, { id: term.id });
+          imported++;
+          results.push({ row: rowNumber, status: "imported" });
+          await logActivity("imported", "contractTerm", term.id, ctx.triggeredBy, title, {
+            clientId: contract.clientId,
+            projectId: contract.projectId,
+          });
+        }
       } catch (err) {
         failed++;
         results.push({
@@ -174,6 +232,6 @@ export const contractTermsImporter: ImporterDefinition = {
       }
     }
 
-    return { imported, updated: 0, skipped, failed, rows: results };
+    return { imported, updated, skipped, failed, rows: results };
   },
 };

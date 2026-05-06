@@ -41,12 +41,22 @@ function splitList(value: string | undefined): string[] {
     .filter(Boolean);
 }
 
+/** Build the natural-key string used for upsert matching. (projectId +
+ *  title) lowercased — the same milestone title can live under multiple
+ *  projects, but is unique within one. */
+function milestoneMatchKey(projectId: string, title: string): string {
+  return `${projectId}|${title.trim().toLowerCase()}`;
+}
+
 export const milestonesImporter: ImporterDefinition = {
   key: "milestones",
   name: "Milestones",
   description:
-    "Bulk-create project milestones. Required: projectName, title. Optional: description, dueDate, completed flag, completion date, comma- or pipe-separated assignee emails.",
+    "Bulk-create or update project milestones. Required: projectName, title. Optional: description, dueDate, completed flag, completion date, comma- or pipe-separated assignee emails.",
   module: "projects",
+  supportsUpsert: true,
+  upsertKeyDescription:
+    "Matched by (project + title), case-insensitive on title. Re-uploading the same title under the same project updates the existing milestone. In upsert mode the assignee list is replaced (not merged) so the CSV is the source of truth.",
 
   fields: [
     { key: "projectName", label: "Project name", required: true, description: "Must match an existing project by name.", aliases: ["project"] },
@@ -99,8 +109,10 @@ export const milestonesImporter: ImporterDefinition = {
   async commit(rows, ctx) {
     const results: ImportRowResult[] = [];
     let imported = 0;
-    const skipped = 0;
+    let updated = 0;
+    let skipped = 0;
     let failed = 0;
+    const upsert = ctx.mode === "upsert";
 
     const projects = await db.project.findMany({ select: { id: true, name: true, clientId: true } });
     const projectByName = new Map(projects.map((p) => [p.name.toLowerCase(), p]));
@@ -109,6 +121,16 @@ export const milestonesImporter: ImporterDefinition = {
       select: { id: true, email: true },
     });
     const userByEmail = new Map(users.map((u) => [u.email.toLowerCase(), u.id]));
+
+    // Pre-fetch every milestone keyed by (projectId + lowercased title)
+    // for upsert matching and in-batch dedupe.
+    const existingMilestones = await db.milestone.findMany({
+      select: { id: true, title: true, projectId: true },
+    });
+    const existingByKey = new Map<string, { id: string }>(
+      existingMilestones.map((m) => [milestoneMatchKey(m.projectId, m.title), { id: m.id }])
+    );
+    const seenInBatch = new Set<string>();
 
     for (let i = 0; i < rows.length; i++) {
       const rowNumber = i + 1;
@@ -145,38 +167,83 @@ export const milestonesImporter: ImporterDefinition = {
 
       const assigneeEmails = splitList(raw.assigneeEmails).map((e) => e.toLowerCase());
 
-      try {
-        const milestone = await db.milestone.create({
-          data: {
-            projectId: project.id,
-            title,
-            description: raw.description?.trim() || null,
-            dueDate: parseDate(raw.dueDate),
-            completed,
-            completedAt,
-          },
+      const key = milestoneMatchKey(project.id, title);
+      if (seenInBatch.has(key)) {
+        skipped++;
+        results.push({
+          row: rowNumber,
+          status: "skipped",
+          message: `Duplicate row in file: "${title}" in ${projectNameRaw}`,
         });
+        continue;
+      }
+      seenInBatch.add(key);
 
-        if (assigneeEmails.length > 0) {
-          const seen = new Set<string>();
-          for (const email of assigneeEmails) {
-            const userId = userByEmail.get(email);
-            if (!userId || seen.has(userId)) continue;
-            seen.add(userId);
-            // Best-effort: skip duplicates from the unique([milestoneId,userId])
-            // constraint silently rather than failing the row.
-            await db.milestoneAssignee
-              .create({ data: { milestoneId: milestone.id, userId } })
-              .catch(() => {});
-          }
+      const data = {
+        projectId: project.id,
+        title,
+        description: raw.description?.trim() || null,
+        dueDate: parseDate(raw.dueDate),
+        completed,
+        completedAt,
+      };
+
+      const existing = existingByKey.get(key);
+
+      /** Resolve and write the milestone's assignees. Used by both the
+       *  create and upsert branches; the upsert branch wipes the
+       *  existing rows first so the CSV is authoritative. */
+      const writeAssignees = async (milestoneId: string) => {
+        if (assigneeEmails.length === 0) return;
+        const seen = new Set<string>();
+        for (const email of assigneeEmails) {
+          const userId = userByEmail.get(email);
+          if (!userId || seen.has(userId)) continue;
+          seen.add(userId);
+          await db.milestoneAssignee
+            .create({ data: { milestoneId, userId } })
+            .catch(() => {});
         }
+      };
 
-        imported++;
-        results.push({ row: rowNumber, status: "imported" });
-        await logActivity("imported", "milestone", milestone.id, ctx.triggeredBy, title, {
-          projectId: project.id,
-          clientId: project.clientId,
-        });
+      try {
+        if (existing && upsert) {
+          const milestone = await db.milestone.update({
+            where: { id: existing.id },
+            data,
+          });
+          // Replace the assignee set when the CSV row provides one.
+          // Empty cells leave the existing list alone — admins can
+          // explicitly clear assignees by passing a sentinel "-" if we
+          // ever need that, but the current rule is "non-empty wins".
+          if (assigneeEmails.length > 0) {
+            await db.milestoneAssignee.deleteMany({ where: { milestoneId: milestone.id } });
+            await writeAssignees(milestone.id);
+          }
+          updated++;
+          results.push({ row: rowNumber, status: "updated" });
+          await logActivity("imported", "milestone", milestone.id, ctx.triggeredBy, `${title} (updated)`, {
+            projectId: project.id,
+            clientId: project.clientId,
+          });
+        } else if (existing && !upsert) {
+          skipped++;
+          results.push({
+            row: rowNumber,
+            status: "skipped",
+            message: `Milestone already exists: "${title}" in ${projectNameRaw}. Re-run with "Update existing rows" enabled to update it.`,
+          });
+        } else {
+          const milestone = await db.milestone.create({ data });
+          existingByKey.set(key, { id: milestone.id });
+          await writeAssignees(milestone.id);
+          imported++;
+          results.push({ row: rowNumber, status: "imported" });
+          await logActivity("imported", "milestone", milestone.id, ctx.triggeredBy, title, {
+            projectId: project.id,
+            clientId: project.clientId,
+          });
+        }
       } catch (err) {
         failed++;
         results.push({
@@ -187,6 +254,6 @@ export const milestonesImporter: ImporterDefinition = {
       }
     }
 
-    return { imported, updated: 0, skipped, failed, rows: results };
+    return { imported, updated, skipped, failed, rows: results };
   },
 };
