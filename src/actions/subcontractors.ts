@@ -154,7 +154,7 @@ export async function deleteSubcontractor(_prev: unknown, formData: FormData) {
 
   await db.subcontractor.delete({ where: { id } });
   await logActivity("deleted", "subcontractor", id, user.id, sub.name);
-  revalidateSubcontractor(id);
+  revalidateSubcontractor(id, { deleted: true });
   return { success: true };
 }
 

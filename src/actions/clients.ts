@@ -80,7 +80,7 @@ export async function deleteClient(_prev: unknown, formData: FormData) {
 
   await db.client.delete({ where: { id } });
   await logActivity("deleted", "client", id, user.id, client.name, { clientId: id });
-  revalidateClient(id);
+  revalidateClient(id, { deleted: true });
   return { success: true };
 }
 

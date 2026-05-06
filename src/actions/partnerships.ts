@@ -145,7 +145,7 @@ export async function deletePartnership(_prev: unknown, formData: FormData) {
 
   await db.partnership.delete({ where: { id } });
   await logActivity("deleted", "partnership", id, user.id, partnership.name);
-  revalidatePartnership(id);
+  revalidatePartnership(id, { deleted: true });
   return { success: true };
 }
 

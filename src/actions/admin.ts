@@ -328,7 +328,7 @@ export async function deleteUser(_prev: unknown, formData: FormData) {
     };
   }
   await logActivity("deleted", "user", id, admin.id, user.name);
-  revalidateUser(id, { managerId: user.managerId });
+  revalidateUser(id, { managerId: user.managerId, deleted: true });
   return { success: true };
 }
 

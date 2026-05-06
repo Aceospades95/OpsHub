@@ -445,7 +445,11 @@ export async function deleteQuote(id: string) {
     clientId: quote.clientId,
     projectId: quote.projectId,
   });
-  revalidateQuote(id, { clientId: quote.clientId, projectId: quote.projectId });
+  revalidateQuote(id, {
+    clientId: quote.clientId,
+    projectId: quote.projectId,
+    deleted: true,
+  });
   return { success: true } as const;
 }
 

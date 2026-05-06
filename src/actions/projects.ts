@@ -197,7 +197,10 @@ export async function deleteProject(_prev: unknown, formData: FormData) {
     projectId: id,
     clientId: project.clientId,
   });
-  revalidateProject(id, { clientId: project.clientId });
+  // deleted: true skips revalidating /projects/${id} so the [projectId]
+  // RSC tree (which the user is currently on) doesn't auto-refresh
+  // against the now-missing record before the client navigates away.
+  revalidateProject(id, { clientId: project.clientId, deleted: true });
   return { success: true };
 }
 
