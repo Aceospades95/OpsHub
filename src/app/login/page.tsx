@@ -24,7 +24,7 @@ const ERROR_MESSAGES: Record<string, string> = {
 };
 
 interface Props {
-  searchParams: Promise<{ error?: string | string[] }>;
+  searchParams: Promise<{ error?: string | string[]; email?: string | string[] }>;
 }
 
 export default async function LoginPage({ searchParams }: Props) {
@@ -39,6 +39,15 @@ export default async function LoginPage({ searchParams }: Props) {
   const initialError = errorCode
     ? ERROR_MESSAGES[errorCode] ?? "Sign-in failed. Please try again."
     : null;
+
+  // Optional `?email=` query param — we route here from the
+  // /signup/[token] page after a successful password set so the user
+  // doesn't have to re-type their email.
+  const emailParam = Array.isArray(params.email) ? params.email[0] : params.email;
+  const initialEmail =
+    emailParam && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailParam)
+      ? emailParam
+      : undefined;
 
   return (
     <div className="relative flex min-h-screen items-center justify-center bg-muted px-4">
@@ -60,6 +69,7 @@ export default async function LoginPage({ searchParams }: Props) {
         companyLogoUrl={branding.companyLogoUrl}
         googleEnabled={googleEnabled}
         initialError={initialError}
+        initialEmail={initialEmail}
       />
     </div>
   );

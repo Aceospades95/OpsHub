@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useFormState } from "react-dom";
 import { createUser } from "@/actions/admin";
 import { Button } from "@/components/ui/button";
-import { UserPlus } from "lucide-react";
+import { UserPlus, Copy, Check } from "lucide-react";
 
 const ROLES = ["VIEWER", "CONTRIBUTOR", "DEVELOPER", "MANAGER", "ADMIN"];
 
@@ -14,7 +14,7 @@ export function AddEmployeeButton({
   defaultSendWelcomeEmail,
 }: {
   managers: { id: string; name: string }[];
-  /** Org-wide default for the "Send welcome email" checkbox. */
+  /** Org-wide default for the "Send invite email" checkbox. */
   defaultSendWelcomeEmail: boolean;
 }) {
   const [open, setOpen] = useState(false);
@@ -25,17 +25,49 @@ export function AddEmployeeButton({
   // second account anyway.
   const [confirmDuplicateName, setConfirmDuplicateName] = useState(false);
   const [state, action] = useFormState(createUser, null);
+  const [copied, setCopied] = useState(false);
   const router = useRouter();
 
+  // The success path now includes inviteUrl when one was issued. We
+  // hold the dialog open on success so the admin can see + copy the
+  // URL before closing — important when email delivery is unverified
+  // or off, the admin can hand the link off out-of-band.
+  const successInviteUrl =
+    state && "success" in state && state.success && "inviteUrl" in state
+      ? state.inviteUrl ?? null
+      : null;
+
   useEffect(() => {
-    if (state && "success" in state && state.success) {
+    if (state && "success" in state && state.success && !successInviteUrl) {
+      // No invite URL to display — close immediately.
       setOpen(false);
       setHasLogin(true);
       setSendWelcomeEmail(defaultSendWelcomeEmail);
       setConfirmDuplicateName(false);
       router.refresh();
     }
-  }, [state, router, defaultSendWelcomeEmail]);
+  }, [state, router, defaultSendWelcomeEmail, successInviteUrl]);
+
+  // When the admin acknowledges the invite-URL panel, refresh + close.
+  function handleAckSuccess() {
+    setOpen(false);
+    setHasLogin(true);
+    setSendWelcomeEmail(defaultSendWelcomeEmail);
+    setConfirmDuplicateName(false);
+    setCopied(false);
+    router.refresh();
+  }
+
+  async function handleCopy(url: string) {
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // Clipboard API unavailable — user can still select + copy
+      // manually from the rendered URL.
+    }
+  }
 
   // Reset the override whenever the dialog reopens or the form gets
   // back a non-duplicate response — otherwise a stale toggle could
@@ -81,17 +113,20 @@ export function AddEmployeeButton({
                 <span className="text-xs text-muted-foreground">Uncheck for employees who don&apos;t need a system account</span>
               </div>
 
-              {/* Email + Password — only shown for login users */}
+              {/* Email — only shown for login users. Password isn't
+               *  collected here anymore; the invitee picks their own
+               *  via the /signup/[token] flow after we email the link. */}
               {hasLogin && (
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-sm font-medium">Email *</label>
-                    <input name="email" type="email" className="w-full mt-1 px-3 py-2 text-sm border border-input rounded-md bg-background" />
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium">Password *</label>
-                    <input name="password" type="password" minLength={6} className="w-full mt-1 px-3 py-2 text-sm border border-input rounded-md bg-background" />
-                  </div>
+                <div>
+                  <label className="text-sm font-medium">Email *</label>
+                  <input
+                    name="email"
+                    type="email"
+                    className="w-full mt-1 px-3 py-2 text-sm border border-input rounded-md bg-background"
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    The new employee will receive a one-time link to set their own password.
+                  </p>
                 </div>
               )}
 
@@ -105,8 +140,13 @@ export function AddEmployeeButton({
                       onChange={(e) => setSendWelcomeEmail(e.target.checked)}
                       className="accent-primary"
                     />
-                    Send welcome email
+                    Send invite email
                   </label>
+                  <span className="text-xs text-muted-foreground">
+                    {sendWelcomeEmail
+                      ? "Sends a set-password link to the email above."
+                      : "Skip the email; copy the invite link from the next screen."}
+                  </span>
                 </div>
               )}
 
@@ -183,16 +223,52 @@ export function AddEmployeeButton({
                 <p className="text-sm text-destructive">{state.error}</p>
               )}
 
+              {successInviteUrl && (
+                <div className="rounded border border-success/40 bg-success/10 p-3 text-sm space-y-2">
+                  <p className="font-medium">Invite link</p>
+                  <p className="text-xs text-muted-foreground">
+                    {sendWelcomeEmail
+                      ? "Email sent. The link below is the same one — share it manually if the email doesn't arrive."
+                      : "Email skipped. Copy this link and send it to the employee through your preferred channel."}
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <code className="flex-1 truncate rounded border border-border bg-background px-2 py-1.5 text-xs font-mono">
+                      {successInviteUrl}
+                    </code>
+                    <button
+                      type="button"
+                      onClick={() => handleCopy(successInviteUrl)}
+                      className="inline-flex items-center gap-1 rounded border border-border bg-background px-2 py-1.5 text-xs hover:bg-muted/40 transition-colors"
+                    >
+                      {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+                      {copied ? "Copied" : "Copy"}
+                    </button>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground">
+                    Link expires in 24 hours and can only be used once. Re-send from the
+                    user&rsquo;s admin profile if it expires.
+                  </p>
+                </div>
+              )}
+
               <div className="flex justify-end gap-2">
-                <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-                <Button
-                  type="submit"
-                  disabled={!!duplicateWarning && !confirmDuplicateName}
-                >
-                  {duplicateWarning && confirmDuplicateName
-                    ? "Create anyway"
-                    : "Create Employee"}
-                </Button>
+                {successInviteUrl ? (
+                  <Button type="button" onClick={handleAckSuccess}>
+                    Done
+                  </Button>
+                ) : (
+                  <>
+                    <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+                    <Button
+                      type="submit"
+                      disabled={!!duplicateWarning && !confirmDuplicateName}
+                    >
+                      {duplicateWarning && confirmDuplicateName
+                        ? "Create anyway"
+                        : "Create Employee"}
+                    </Button>
+                  </>
+                )}
               </div>
             </form>
           </div>

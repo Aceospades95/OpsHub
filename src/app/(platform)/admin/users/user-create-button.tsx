@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useFormState } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { createUser } from "@/actions/admin";
-import { Plus } from "lucide-react";
+import { Plus, Copy, Check } from "lucide-react";
 
 const ROLES = ["GUEST", "VIEWER", "CONTRIBUTOR", "DEVELOPER", "MANAGER", "ADMIN"];
 
@@ -33,17 +33,45 @@ export function UserCreateButton({ allUsers, workflowTemplates, defaultSendWelco
   const [sendWelcomeEmail, setSendWelcomeEmail] = useState(defaultSendWelcomeEmail);
   const [selectedTemplateIds, setSelectedTemplateIds] = useState<string[]>([]);
   const [state, action] = useFormState(createUser, null);
+  const [copied, setCopied] = useState(false);
   const router = useRouter();
 
+  // Same invite-URL passthrough as the team-page Add Employee dialog.
+  // Hold the dialog open after success when an inviteUrl was issued,
+  // so the admin can copy the link before closing.
+  const successInviteUrl =
+    state && "success" in state && state.success && "inviteUrl" in state
+      ? state.inviteUrl ?? null
+      : null;
+
   useEffect(() => {
-    if (state && "success" in state && state.success) {
+    if (state && "success" in state && state.success && !successInviteUrl) {
       setOpen(false);
       setHasLogin(true);
       setSendWelcomeEmail(defaultSendWelcomeEmail);
       setSelectedTemplateIds([]);
       router.refresh();
     }
-  }, [state, router, defaultSendWelcomeEmail]);
+  }, [state, router, defaultSendWelcomeEmail, successInviteUrl]);
+
+  function handleAckSuccess() {
+    setOpen(false);
+    setHasLogin(true);
+    setSendWelcomeEmail(defaultSendWelcomeEmail);
+    setSelectedTemplateIds([]);
+    setCopied(false);
+    router.refresh();
+  }
+
+  async function handleCopy(url: string) {
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // Clipboard API unavailable — user can still copy by hand.
+    }
+  }
 
   function toggleTemplate(id: string) {
     setSelectedTemplateIds((prev) =>
@@ -77,15 +105,16 @@ export function UserCreateButton({ allUsers, workflowTemplates, defaultSendWelco
               </div>
 
               {hasLogin && (
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-sm font-medium">Email *</label>
-                    <input name="email" type="email" className="w-full mt-1 px-3 py-2 text-sm border border-input rounded-md bg-background" />
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium">Password *</label>
-                    <input name="password" type="password" minLength={6} className="w-full mt-1 px-3 py-2 text-sm border border-input rounded-md bg-background" />
-                  </div>
+                <div>
+                  <label className="text-sm font-medium">Email *</label>
+                  <input
+                    name="email"
+                    type="email"
+                    className="w-full mt-1 px-3 py-2 text-sm border border-input rounded-md bg-background"
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    The new user will receive a one-time link to set their own password.
+                  </p>
                 </div>
               )}
 
@@ -99,10 +128,12 @@ export function UserCreateButton({ allUsers, workflowTemplates, defaultSendWelco
                       onChange={(e) => setSendWelcomeEmail(e.target.checked)}
                       className="accent-primary"
                     />
-                    Send welcome email
+                    Send invite email
                   </label>
                   <span className="text-xs text-muted-foreground">
-                    Sends a one-line &ldquo;your account is ready&rdquo; email with a sign-in link
+                    {sendWelcomeEmail
+                      ? "Emails the set-password link to the address above."
+                      : "Skip the email; copy the invite link from the next screen."}
                   </span>
                 </div>
               )}
@@ -195,17 +226,52 @@ export function UserCreateButton({ allUsers, workflowTemplates, defaultSendWelco
 
               {state?.error && <p className="text-sm text-destructive">{state.error}</p>}
 
+              {successInviteUrl && (
+                <div className="rounded border border-success/40 bg-success/10 p-3 text-sm space-y-2">
+                  <p className="font-medium">Invite link</p>
+                  <p className="text-xs text-muted-foreground">
+                    {sendWelcomeEmail
+                      ? "Email sent. Share the link manually if it doesn't arrive."
+                      : "Email skipped. Copy the link and send it through your preferred channel."}
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <code className="flex-1 truncate rounded border border-border bg-background px-2 py-1.5 text-xs font-mono">
+                      {successInviteUrl}
+                    </code>
+                    <button
+                      type="button"
+                      onClick={() => handleCopy(successInviteUrl)}
+                      className="inline-flex items-center gap-1 rounded border border-border bg-background px-2 py-1.5 text-xs hover:bg-muted/40 transition-colors"
+                    >
+                      {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+                      {copied ? "Copied" : "Copy"}
+                    </button>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground">
+                    Link expires in 24 hours and can only be used once.
+                  </p>
+                </div>
+              )}
+
               <div className="flex justify-end gap-2">
-                <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-                <Button type="submit">
-                  Create User
-                  {selectedTemplateIds.length > 0 && (
-                    <span className="ml-1 text-xs opacity-80">
-                      + run {selectedTemplateIds.length} workflow
-                      {selectedTemplateIds.length === 1 ? "" : "s"}
-                    </span>
-                  )}
-                </Button>
+                {successInviteUrl ? (
+                  <Button type="button" onClick={handleAckSuccess}>
+                    Done
+                  </Button>
+                ) : (
+                  <>
+                    <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+                    <Button type="submit">
+                      Create User
+                      {selectedTemplateIds.length > 0 && (
+                        <span className="ml-1 text-xs opacity-80">
+                          + run {selectedTemplateIds.length} workflow
+                          {selectedTemplateIds.length === 1 ? "" : "s"}
+                        </span>
+                      )}
+                    </Button>
+                  </>
+                )}
               </div>
             </form>
           </div>

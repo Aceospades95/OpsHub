@@ -368,6 +368,46 @@ model User {
   createdScheduledTasks          ScheduledTask[]                     @relation("ScheduledTaskCreator")
   createdCustomReports           CustomReport[]                      @relation("CustomReportCreator")
   accounts                       Account[]
+  signupTokens                   SignupToken[]
+}
+
+// ─── SIGNUP / RESET TOKENS ─────────────────────────
+//
+// One-time tokens that let a newly-invited user (or an existing user
+// who needs a password reset) set their own password. Replaces the
+// legacy "admin types a plaintext password into the Add Employee
+// form" flow surfaced by the QA stress test.
+//
+// We never store the raw token — only its SHA-256 hash. The user
+// receives the raw 32-byte hex token in their /signup/[token] URL
+// (in their email), and we look up by hash on the way back. A leaked
+// database dump can't be used to forge invites.
+//
+// One token per user (userId is unique). Issuing a new token replaces
+// the old one — re-sending an invite invalidates the previous link
+// rather than leaving a pile of stale URLs. `kind` discriminates
+// "invite" (first-time setup) vs "reset" (existing user resetting);
+// the consume + set-password flow is identical, only the email copy
+// differs.
+
+model SignupToken {
+  id        String    @id @default(cuid())
+  userId    String    @unique
+  /// SHA-256 hex of the raw token. Lookup is O(1) on the unique index.
+  tokenHash String    @unique
+  /// "invite" for first-time setup, "reset" for password reset.
+  kind      String    @default("invite")
+  expiresAt DateTime
+  /// Set when the user completes the signup form. Once set, the token
+  /// is dead — re-validation returns "expired" so a stolen URL can't
+  /// be replayed.
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([expiresAt])
+  @@index([usedAt])
 }
 
 // ─── ACCOUNTS ──────────────────────────────────────

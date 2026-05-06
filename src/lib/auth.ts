@@ -4,6 +4,8 @@ import Google from "next-auth/providers/google";
 import { compare } from "bcryptjs";
 import { db } from "@/lib/db";
 import { handleGoogleSignIn } from "@/lib/auth-google-signin";
+import { consume as consumeRateLimit, clientIpFromRequest } from "@/lib/rate-limit";
+import { log } from "@/lib/log";
 import type { Role } from "@prisma/client";
 
 declare module "next-auth" {
@@ -40,19 +42,51 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         email: { label: "Email", type: "email" },
         password: { label: "Password", type: "password" },
       },
-      async authorize(credentials) {
+      async authorize(credentials, request) {
         if (!credentials?.email || !credentials?.password) return null;
+
+        const email = (credentials.email as string).trim().toLowerCase();
+
+        // Rate-limit credential attempts. The bucket is keyed by the
+        // requesting IP + the email being tried, so a single bad
+        // actor can't lock a real user out by hammering their email
+        // from a different IP. Capacity 5 / refill 1 per 30s gives ~5
+        // burst attempts then 2 attempts/min sustained — fast enough
+        // for a typo and slow enough to deter password-spray bots.
+        // The limiter fails open if the storage layer crashes, so a
+        // limiter bug never takes the login form down.
+        const ip = request ? clientIpFromRequest(request as Request) : "unknown";
+        const rl = consumeRateLimit(`auth:${ip}:${email}`, {
+          capacity: 5,
+          refillRatePerSec: 1 / 30,
+        });
+        if (!rl.allowed) {
+          log.warn("auth.rateLimit", "Credentials login rate-limited", {
+            ip,
+            email,
+            retryAfterMs: rl.retryAfterMs,
+          });
+          // Returning null surfaces as "Invalid email or password" on
+          // the login form — same UX as a bad password, by design.
+          // We deliberately don't tell the client they're throttled,
+          // because that's information a brute-force script can use.
+          return null;
+        }
 
         // Email lookup is case-insensitive — users shouldn't fail to log in
         // because they typed "Foo@Bar.com" when the stored value is
         // "foo@bar.com". We use findFirst with insensitive mode instead of
         // findUnique so legacy mixed-case rows still match.
-        const email = (credentials.email as string).trim().toLowerCase();
         const user = await db.user.findFirst({
           where: { email: { equals: email, mode: "insensitive" } },
         });
 
         if (!user || !user.isActive || !user.hashedPassword) return null;
+        // Users without login access (synthetic-email placeholders or
+        // tracked-only employees) should never reach this branch in
+        // practice but we double-check so a future schema edit can't
+        // regress it silently.
+        if (!user.hasLoginAccess) return null;
 
         const isValid = await compare(
           credentials.password as string,
