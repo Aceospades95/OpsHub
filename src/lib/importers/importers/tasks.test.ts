@@ -224,6 +224,48 @@ describe("tasks importer commit()", () => {
     expect(result.rows[1].message).toContain("Duplicate row in file");
   });
 
+  it("re-upload matches by resolved state when CSV project name does NOT resolve (regression: round-4 QA P0-1)", async () => {
+    // Repro: a CSV row carries projectName="Ghost Project" / clientName="Ghost Co"
+    // that don't exist in the DB. First upload creates a task with
+    // projectId=null/clientId=null. Second upload must recognize the
+    // prior row and update (or skip), not create a duplicate.
+    //
+    // Pre-bug: CSV-side key was built from the raw "Ghost Project" /
+    // "Ghost Co" strings while the DB-side key for the inserted row
+    // was built from null/null — the two keys never matched.
+    taskFindMany.mockResolvedValue([
+      {
+        id: "t-existing",
+        title: "Orphan task",
+        projectId: null,
+        clientId: null,
+      },
+    ]);
+    taskUpdate.mockResolvedValue({
+      id: "t-existing",
+      title: "Orphan task",
+      projectId: null,
+      clientId: null,
+    });
+
+    const result = await tasksImporter.commit(
+      [
+        {
+          title: "Orphan task",
+          projectName: "Ghost Project", // not in DB
+          clientName: "Ghost Co", // not in DB
+        },
+      ],
+      { triggeredBy: "u1", mode: "upsert" }
+    );
+
+    expect(result.imported).toBe(0);
+    expect(result.updated).toBe(1);
+    expect(result.skipped).toBe(0);
+    expect(taskCreate).not.toHaveBeenCalled();
+    expect(taskUpdate).toHaveBeenCalledOnce();
+  });
+
   it("re-uploading the same CSV in upsert mode produces 0 created, N updated", async () => {
     // Simulates the QA repro: import 2 rows, then re-upload the exact
     // same CSV. In create mode this would create duplicates; in upsert
