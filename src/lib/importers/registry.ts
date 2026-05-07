@@ -27,6 +27,8 @@ import { projectToolsImporter } from "./importers/project-tools";
 import { milestonesImporter } from "./importers/milestones";
 import { suppliersImporter } from "./importers/suppliers";
 import { supplierProjectsImporter } from "./importers/supplier-projects";
+import { subcontractorsImporter } from "./importers/subcontractors";
+import { partnershipsImporter } from "./importers/partnerships";
 import { tasksImporter } from "./importers/tasks";
 import { intranetImporter } from "./importers/intranet";
 import { toolsImporter } from "./importers/tools";
@@ -47,6 +49,8 @@ export const IMPORTERS: ImporterDefinition[] = [
   contractTermsImporter,
   certificationsImporter,
   suppliersImporter,
+  subcontractorsImporter,
+  partnershipsImporter,
   toolsImporter,
   intranetImporter,
   tasksImporter,

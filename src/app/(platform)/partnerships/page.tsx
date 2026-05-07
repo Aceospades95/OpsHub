@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Handshake, AlertTriangle, Mail } from "lucide-react";
 import Link from "next/link";
 import { PartnershipCreateButton } from "./partnership-create-button";
+import { DownloadCsvButton } from "@/components/shared/download-csv-button";
 import { Prisma } from "@prisma/client";
 import { pluralize } from "@/lib/pluralize";
 
@@ -61,7 +62,12 @@ export default async function PartnershipsPage({ searchParams }: Props) {
       <PageHeader
         title="Partnerships"
         description="Strategic relationships and joint engagements"
-        actions={perms.canCreate ? <PartnershipCreateButton /> : undefined}
+        actions={
+          <div className="flex items-center gap-2">
+            {user.role === "ADMIN" && <DownloadCsvButton importerKey="partnerships" />}
+            {perms.canCreate && <PartnershipCreateButton />}
+          </div>
+        }
       />
 
       {partnerships.length === 0 ? (

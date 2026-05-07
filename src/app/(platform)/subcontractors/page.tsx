@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { HardHat, Star, Mail, Phone, AlertTriangle } from "lucide-react";
 import Link from "next/link";
 import { SubcontractorCreateButton } from "./subcontractor-create-button";
+import { DownloadCsvButton } from "@/components/shared/download-csv-button";
 import { Prisma } from "@prisma/client";
 import { pluralize } from "@/lib/pluralize";
 
@@ -61,7 +62,12 @@ export default async function SubcontractorsPage({ searchParams }: Props) {
       <PageHeader
         title="Subcontractors"
         description="External project labor"
-        actions={perms.canCreate ? <SubcontractorCreateButton /> : undefined}
+        actions={
+          <div className="flex items-center gap-2">
+            {user.role === "ADMIN" && <DownloadCsvButton importerKey="subcontractors" />}
+            {perms.canCreate && <SubcontractorCreateButton />}
+          </div>
+        }
       />
 
       {subcontractors.length === 0 ? (

@@ -88,23 +88,35 @@ export function FormDialog({
     onClose();
   }, [onClose]);
 
+  // Round-6 QA: split the form so action buttons live in the
+  // dialog's sticky footer slot. The body scrolls; Cancel / Save
+  // never clip even when the form is taller than the viewport.
+  // The form element wraps both regions so submit-from-footer
+  // still reaches the body's inputs.
+  const formId = "form-dialog-form";
   return (
-    <Dialog open={open} onClose={handleCancel} title={title}>
+    <Dialog
+      open={open}
+      onClose={handleCancel}
+      title={title}
+      footer={
+        <div className="flex justify-end gap-2">
+          <Button type="button" variant="outline" onClick={handleCancel}>
+            Cancel
+          </Button>
+          <Button type="submit" form={formId}>
+            {submitLabel}
+          </Button>
+        </div>
+      }
+    >
       {state?.error && (
         <div className="mb-4 rounded bg-destructive/10 p-3 text-sm text-destructive">
           {state.error}
         </div>
       )}
-      <form ref={formRef} action={formAction} className="space-y-4">
+      <form id={formId} ref={formRef} action={formAction} className="space-y-4">
         {children({ fieldErrors: state?.fieldErrors })}
-        <div className="flex justify-end gap-2 pt-2">
-          <Button type="button" variant="outline" onClick={handleCancel}>
-            Cancel
-          </Button>
-          <Button type="submit">
-            {submitLabel}
-          </Button>
-        </div>
       </form>
     </Dialog>
   );
