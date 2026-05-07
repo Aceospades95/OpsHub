@@ -5,7 +5,6 @@ import { PageHeader } from "@/components/layout/page-header";
 import { db } from "@/lib/db";
 import { getReport } from "@/lib/reports";
 import { ReportRunner } from "./report-runner";
-import { ArrowLeft } from "lucide-react";
 
 export default async function AdminReportDetailPage({
   params,
@@ -29,13 +28,30 @@ export default async function AdminReportDetailPage({
 
   return (
     <div>
-      <Link
-        href="/admin/reports"
-        className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground mb-4"
+      {/* Round-7 QA: the inline "Back to reports" link was the
+       *  only navigation breadcrumb on this page, so users who
+       *  wanted to jump back to Settings had to hop through the
+       *  Reports list. Render an explicit two-step breadcrumb
+       *  (Settings › Reports › <name>) so both backstops are one
+       *  click away. The layout's SettingsNav still renders above
+       *  this; keeping the breadcrumb makes the hierarchy obvious
+       *  even when SettingsNav is small / easy to miss. */}
+      <nav
+        aria-label="Breadcrumb"
+        className="flex items-center gap-1.5 text-xs text-muted-foreground mb-4"
       >
-        <ArrowLeft className="h-3 w-3" />
-        Back to reports
-      </Link>
+        <Link href="/admin" className="hover:text-foreground">
+          Settings
+        </Link>
+        <span aria-hidden className="opacity-40">›</span>
+        <Link href="/admin/reports" className="hover:text-foreground">
+          Reports
+        </Link>
+        <span aria-hidden className="opacity-40">›</span>
+        <span className="text-foreground" title={report.name}>
+          {report.name.length > 40 ? `${report.name.slice(0, 40)}…` : report.name}
+        </span>
+      </nav>
       <PageHeader title={report.name} description={report.description} />
       <ReportRunner
         reportKey={report.key}

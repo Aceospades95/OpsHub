@@ -250,7 +250,7 @@ export function CommandPalette() {
         >
           {query.trim().length === 0 ? (
             <p className="p-6 text-center text-xs text-muted-foreground">
-              Type to search projects, employees, clients, quotes, contracts, suppliers, tools, and intranet pages.
+              Type to search across the workspace.
             </p>
           ) : pending && hits.length === 0 ? (
             <p className="p-6 text-center text-xs text-muted-foreground">Searching…</p>

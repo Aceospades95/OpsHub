@@ -23,6 +23,141 @@ function shortEntityId(id: string): string {
   return CUID_PATTERN.test(id) ? id.slice(0, 8) : id;
 }
 
+/**
+ * Resolve every (entityType, entityId) pair on this page of activity
+ * log rows to its display name in a small fixed number of queries.
+ * Returns a Map keyed on `${entityType}:${entityId}` → { name,
+ * deleted } so the renderer can show e.g. `task · "Phase 1 Delivery"`
+ * instead of `task · cmotl71c`.
+ *
+ * Round-7 QA: the entityId column previously rendered the raw cuid
+ * (after the round-4 mid-word-truncation fix). Useful for forensics
+ * but unscanable when you're just trying to read the audit trail.
+ * Resolved names land here; the cuid moves to a hover title on
+ * the rendered span so it's still copy-pasteable.
+ *
+ * Soft-deleted rows are still resolved (they have a `deletedAt` but
+ * the row is intact) and flagged so the cell can render a "(deleted)"
+ * note alongside. Hard-deleted rows fall through to the cuid as
+ * before.
+ */
+type EntityLabel = { name: string; deleted: boolean };
+async function resolveEntityLabels(
+  rows: { entityType: string; entityId: string }[]
+): Promise<Map<string, EntityLabel>> {
+  // Bucket ids by entityType so each model is queried at most once.
+  const byType = new Map<string, Set<string>>();
+  for (const r of rows) {
+    if (!CUID_PATTERN.test(r.entityId)) continue; // job keys etc.
+    if (!byType.has(r.entityType)) byType.set(r.entityType, new Set());
+    byType.get(r.entityType)!.add(r.entityId);
+  }
+  if (byType.size === 0) return new Map();
+
+  const out = new Map<string, EntityLabel>();
+  function record(type: string, id: string, name: string, deleted: boolean) {
+    out.set(`${type}:${id}`, { name, deleted });
+  }
+
+  // Each lookup goes parallel; an unknown entityType just produces
+  // no entries (renderer falls back to the cuid prefix).
+  const tasks: Promise<unknown>[] = [];
+
+  const grab = (type: string) => Array.from(byType.get(type) ?? []);
+
+  if (byType.has("project")) {
+    const ids = grab("project");
+    tasks.push(
+      db.project
+        .findMany({ where: { id: { in: ids } }, select: { id: true, name: true, deletedAt: true } })
+        .then((rs) => rs.forEach((r) => record("project", r.id, r.name, r.deletedAt !== null)))
+    );
+  }
+  if (byType.has("client")) {
+    const ids = grab("client");
+    tasks.push(
+      db.client
+        .findMany({ where: { id: { in: ids } }, select: { id: true, name: true, deletedAt: true } })
+        .then((rs) => rs.forEach((r) => record("client", r.id, r.name, r.deletedAt !== null)))
+    );
+  }
+  if (byType.has("task")) {
+    const ids = grab("task");
+    tasks.push(
+      db.task
+        .findMany({ where: { id: { in: ids } }, select: { id: true, title: true, deletedAt: true } })
+        .then((rs) => rs.forEach((r) => record("task", r.id, r.title, r.deletedAt !== null)))
+    );
+  }
+  if (byType.has("supplier")) {
+    const ids = grab("supplier");
+    tasks.push(
+      db.supplier
+        .findMany({ where: { id: { in: ids } }, select: { id: true, name: true, deletedAt: true } })
+        .then((rs) => rs.forEach((r) => record("supplier", r.id, r.name, r.deletedAt !== null)))
+    );
+  }
+  if (byType.has("subcontractor")) {
+    const ids = grab("subcontractor");
+    tasks.push(
+      db.subcontractor
+        .findMany({ where: { id: { in: ids } }, select: { id: true, name: true, deletedAt: true } })
+        .then((rs) => rs.forEach((r) => record("subcontractor", r.id, r.name, r.deletedAt !== null)))
+    );
+  }
+  if (byType.has("partnership")) {
+    const ids = grab("partnership");
+    tasks.push(
+      db.partnership
+        .findMany({ where: { id: { in: ids } }, select: { id: true, name: true, deletedAt: true } })
+        .then((rs) => rs.forEach((r) => record("partnership", r.id, r.name, r.deletedAt !== null)))
+    );
+  }
+  if (byType.has("contract")) {
+    const ids = grab("contract");
+    tasks.push(
+      db.contract
+        .findMany({ where: { id: { in: ids } }, select: { id: true, title: true, deletedAt: true } })
+        .then((rs) => rs.forEach((r) => record("contract", r.id, r.title, r.deletedAt !== null)))
+    );
+  }
+  if (byType.has("certification")) {
+    const ids = grab("certification");
+    tasks.push(
+      db.certification
+        .findMany({ where: { id: { in: ids } }, select: { id: true, name: true, deletedAt: true } })
+        .then((rs) => rs.forEach((r) => record("certification", r.id, r.name, r.deletedAt !== null)))
+    );
+  }
+  if (byType.has("tool")) {
+    const ids = grab("tool");
+    tasks.push(
+      db.tool
+        .findMany({ where: { id: { in: ids } }, select: { id: true, name: true, deletedAt: true } })
+        .then((rs) => rs.forEach((r) => record("tool", r.id, r.name, r.deletedAt !== null)))
+    );
+  }
+  if (byType.has("user")) {
+    const ids = grab("user");
+    tasks.push(
+      db.user
+        .findMany({ where: { id: { in: ids } }, select: { id: true, name: true } })
+        .then((rs) => rs.forEach((r) => record("user", r.id, r.name, false)))
+    );
+  }
+  if (byType.has("quote")) {
+    const ids = grab("quote");
+    tasks.push(
+      db.quote
+        .findMany({ where: { id: { in: ids } }, select: { id: true, title: true, quoteNumber: true, deletedAt: true } })
+        .then((rs) => rs.forEach((r) => record("quote", r.id, r.title || r.quoteNumber, r.deletedAt !== null)))
+    );
+  }
+
+  await Promise.all(tasks);
+  return out;
+}
+
 interface SearchParams {
   actor?: string;
   entityType?: string;
@@ -72,6 +207,9 @@ export default async function AdminActivityPage({
   ]);
 
   const { rows, hasNext, hasPrev } = pageResult;
+  const entityLabels = await resolveEntityLabels(
+    rows.map((r) => ({ entityType: r.entityType, entityId: r.entityId }))
+  );
 
   // Page-position calculation for the "Page X of Y" indicator. Keyset
   // pagination doesn't have a native page number, so we derive it from
@@ -274,7 +412,26 @@ export default async function AdminActivityPage({
                     <td className="px-3 py-2 whitespace-nowrap text-xs">
                       <span className="font-mono text-muted-foreground">{row.entityType}</span>
                       <span className="text-muted-foreground/60"> · </span>
-                      <span className="font-mono text-[11px]">{shortEntityId(row.entityId)}</span>
+                      {(() => {
+                        const label = entityLabels.get(`${row.entityType}:${row.entityId}`);
+                        if (label) {
+                          return (
+                            <span title={row.entityId}>
+                              &ldquo;{label.name}&rdquo;
+                              {label.deleted && (
+                                <span className="ml-1 text-[10px] text-muted-foreground/70">
+                                  (deleted)
+                                </span>
+                              )}
+                            </span>
+                          );
+                        }
+                        return (
+                          <span className="font-mono text-[11px]" title={row.entityId}>
+                            {shortEntityId(row.entityId)}
+                          </span>
+                        );
+                      })()}
                     </td>
                     <td className="px-3 py-2 whitespace-nowrap">
                       {row.project ? (
