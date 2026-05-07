@@ -255,6 +255,24 @@ export function QuoteEditor({ initial, clients, projects, users, catalog, brandi
         })),
       });
       if ("error" in res) {
+        // Round-7 QA: the server returns both a generic top-level
+        // `error` ("Invalid input") AND a structured `fieldErrors`
+        // map keyed on the field name. Surface the first field-
+        // specific message so the user sees "Title contains
+        // disallowed HTML" instead of the generic banner.
+        const fieldErrors = (res as { fieldErrors?: Record<string, string[] | undefined> }).fieldErrors;
+        if (fieldErrors) {
+          const firstField = Object.keys(fieldErrors).find(
+            (k) => (fieldErrors[k]?.length ?? 0) > 0
+          );
+          if (firstField) {
+            const msg = fieldErrors[firstField]![0];
+            const niceField =
+              firstField.charAt(0).toUpperCase() + firstField.slice(1).replace(/([A-Z])/g, " $1").trim().toLowerCase();
+            setError(`${niceField.charAt(0).toUpperCase()}${niceField.slice(1)}: ${msg}`);
+            return;
+          }
+        }
         setError(res.error ?? "Unknown error");
         return;
       }

@@ -45,7 +45,7 @@ export default async function DashboardPage() {
 
   const [
     clientCount,
-    activeClientCount,
+    clientStatusBreakdown,
     projectCount,
     activeProjectCount,
     contractCount,
@@ -59,13 +59,19 @@ export default async function DashboardPage() {
     teamMembers,
   ] = await Promise.all([
     clientPerms.canView ? db.client.count({ where: { deletedAt: null } }) : Promise.resolve(0),
-    // Round-2 QA flagged the Total Clients card was missing a sub-stat
-    // — surface the same active/inactive breakdown we show on Projects
-    // so admins don't have to click in to see how many are actually
-    // engaged. Matches the /clients filter (status === "ACTIVE").
+    // Round-7 QA: the previous "{n} active" sub read as "the
+    // remainder are inactive", but in practice a Client row is one
+    // of ACTIVE / PROSPECT / INACTIVE / ARCHIVED. Pull the full
+    // groupBy so the sub-line can show the actual mix. Round-2's
+    // active-only sub was misleading when a deployment had any
+    // PROSPECT rows.
     clientPerms.canView
-      ? db.client.count({ where: { status: "ACTIVE", deletedAt: null } })
-      : Promise.resolve(0),
+      ? db.client.groupBy({
+          by: ["status"],
+          where: { deletedAt: null },
+          _count: { _all: true },
+        })
+      : Promise.resolve([] as { status: string; _count: { _all: number } }[]),
     projectPerms.canView ? db.project.count({ where: { deletedAt: null } }) : Promise.resolve(0),
     projectPerms.canView
       ? db.project.count({ where: { status: "ACTIVE", deletedAt: null } })
@@ -145,6 +151,22 @@ export default async function DashboardPage() {
     }),
   ]);
 
+  // Build a non-zero-only sub-line from the status breakdown so the
+  // dashboard reads "3 active · 2 prospect" instead of "3 active"
+  // when the remainder isn't in the inactive/archived bucket the
+  // user might assume. Lowercase status labels for sentence-flow.
+  const statusOrder = ["ACTIVE", "PROSPECT", "INACTIVE", "ARCHIVED"] as const;
+  const clientByStatus = new Map<string, number>(
+    Array.isArray(clientStatusBreakdown)
+      ? clientStatusBreakdown.map((b) => [b.status, b._count._all])
+      : []
+  );
+  const clientSubParts = statusOrder
+    .map((s) => ({ status: s, n: clientByStatus.get(s) ?? 0 }))
+    .filter((b) => b.n > 0)
+    .map((b) => `${b.n} ${b.status.toLowerCase()}`);
+  const clientSub = clientSubParts.length > 0 ? clientSubParts.join(" · ") : "";
+
   const stats = [
     {
       label: "Total Clients",
@@ -152,7 +174,7 @@ export default async function DashboardPage() {
       icon: Building2,
       href: "/clients",
       visible: clientPerms.canView,
-      sub: `${activeClientCount} active`,
+      sub: clientSub,
     },
     {
       label: "Projects",
