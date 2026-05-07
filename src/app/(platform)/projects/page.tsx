@@ -10,11 +10,20 @@ import { DownloadCsvButton } from "@/components/shared/download-csv-button";
 import { ProjectsPageClient, type ProjectData, type ClientGroup } from "./projects-page-client";
 import type { Prisma } from "@prisma/client";
 
-export default async function ProjectsPage() {
+export default async function ProjectsPage({
+  searchParams,
+}: {
+  // Honor `?clientId=...` from the "Create the first project →" link
+  // on a client detail page. When present, the list filters to that
+  // client and the "+ New Project" modal pre-selects them.
+  searchParams: { clientId?: string };
+}) {
   const user = await requireAuth();
 
   const perms = await resolveModulePerms(user.id, user.role, "projects");
   if (!perms.canView) return <AccessDenied module="projects" moduleLabel="Projects" moduleDescription="Project portfolio, milestones, staffing, and documents" />;
+
+  const focusClientId = searchParams.clientId?.trim() || undefined;
 
   const scope = await getUserScope(user.id, user.role);
   // When the user isn't org-wide, show only projects in scope. Still include
@@ -24,6 +33,7 @@ export default async function ProjectsPage() {
   const projectWhere: Prisma.ProjectWhereInput = {
     deletedAt: null,
     parentProjectId: null,
+    ...(focusClientId ? { clientId: focusClientId } : {}),
     ...(scopedProjectIds ? { id: { in: scopedProjectIds } } : {}),
   };
   // Client dropdown for "+ New Project" intentionally pulls EVERY non-
@@ -96,7 +106,12 @@ export default async function ProjectsPage() {
           <div className="flex items-center gap-2">
             {user.role === "ADMIN" && <DownloadCsvButton importerKey="projects" />}
             {perms.canCreate && (
-              <ProjectCreateButton clients={clients} projects={allProjects} serviceOfferings={serviceOfferings} />
+              <ProjectCreateButton
+                clients={clients}
+                projects={allProjects}
+                serviceOfferings={serviceOfferings}
+                defaultClientId={focusClientId}
+              />
             )}
           </div>
         }

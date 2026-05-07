@@ -62,11 +62,16 @@ export async function nextQuoteNumber(
  * Keeps it short enough that the full number stays readable.
  */
 function slugify(input: string): string {
-  const cleaned = input
+  // Round-4 QA flagged that the previous "strip non-alphanumerics +
+  // slice 12" rule produced "GLOBALTECHSO" from "GlobalTech Solutions"
+  // — truncating mid-word and looking like a typo. Switch to
+  // first-word-only with a 20-char cap so word boundaries are
+  // respected: "GlobalTech Solutions" → "GLOBALTECH",
+  // "Acme Corp" → "ACME".
+  const words = input
     .toUpperCase()
-    .replace(/[^A-Z0-9]+/g, "")
-    .slice(0, 12);
-  // Fall back to a placeholder if the input has no usable characters
-  // (e.g. a name made entirely of emoji or punctuation).
-  return cleaned || "Q";
+    .split(/[^A-Z0-9]+/)
+    .filter(Boolean);
+  if (words.length === 0) return "Q";
+  return words[0].slice(0, 20);
 }

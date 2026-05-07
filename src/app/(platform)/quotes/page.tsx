@@ -9,6 +9,7 @@ import { AccessDenied } from "@/components/shared/access-denied";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
+import { Badge } from "@/components/ui/badge";
 import { formatCurrency } from "@/lib/quotes/totals";
 
 import { QuoteCreateButton } from "./quote-create-button";
@@ -170,12 +171,28 @@ export default async function QuotesPage({
                         </Link>
                       </td>
                       <td className="px-4 py-3">
-                        <Link
-                          href={`/quotes/${q.id}`}
-                          className="font-medium hover:text-primary hover:underline"
-                        >
-                          {q.title}
-                        </Link>
+                        <div className="flex items-center gap-2">
+                          <Link
+                            href={`/quotes/${q.id}`}
+                            className="font-medium hover:text-primary hover:underline"
+                          >
+                            {/* Legacy quotes saved before the auto-derived
+                             *  title shipped show "Untitled Quote" verbatim;
+                             *  fall back to a scannable client+number label
+                             *  so the list isn't a column of identical cells. */}
+                            {q.title === "Untitled Quote" || !q.title.trim()
+                              ? `${q.client.name} — ${q.quoteNumber}`
+                              : q.title}
+                          </Link>
+                          {/* Flag abandoned drafts: created-but-never-finished
+                           *  rows that have no project and a $0 total. Helps
+                           *  the owner spot rows worth deleting. */}
+                          {q.status === "DRAFT" && q.total === 0 && !q.projectId && (
+                            <Badge variant="outline" className="text-[10px]">
+                              Empty draft
+                            </Badge>
+                          )}
+                        </div>
                       </td>
                       <td className="px-4 py-3">
                         <Link

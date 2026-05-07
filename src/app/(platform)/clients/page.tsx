@@ -106,9 +106,11 @@ export default async function ClientsPage({
                     <h3 className="font-semibold text-foreground">{client.name}</h3>
                     <StatusBadge status={client.status} />
                   </div>
-                  {client.industry && (
-                    <p className="text-sm text-muted-foreground mb-3">{client.industry}</p>
-                  )}
+                  <p className="text-sm text-muted-foreground mb-3">
+                    {client.industry || (
+                      <span className="italic opacity-60">No industry set</span>
+                    )}
+                  </p>
                   <div className="flex gap-4 text-xs text-muted-foreground">
                     <span>{pluralize(client._count.projects, "project")}</span>
                     <span>{pluralize(client._count.contracts, "contract")}</span>

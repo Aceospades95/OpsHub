@@ -20,35 +20,47 @@ describe("nextQuoteNumber", () => {
     vi.clearAllMocks();
   });
 
-  it("strips non-alphanumerics from the client name and joins them", async () => {
+  it("uses the first word of the client name only — respects word boundaries", async () => {
     findFirst.mockResolvedValue(null);
     const number = await nextQuoteNumber(
       "Acme Corp",
       null,
       new Date(Date.UTC(2026, 0, 1))
     );
-    expect(number).toBe("ACMECORP-2026-0001");
+    expect(number).toBe("ACME-2026-0001");
   });
 
-  it("includes the project slug when one is supplied", async () => {
+  it("includes the project slug (first word) when one is supplied", async () => {
     findFirst.mockResolvedValue(null);
     const number = await nextQuoteNumber(
       "Acme",
       "Marketing Site",
       new Date(Date.UTC(2026, 5, 15))
     );
-    expect(number).toBe("ACME-MARKETINGSIT-2026-0001");
+    expect(number).toBe("ACME-MARKETING-2026-0001");
   });
 
-  it("caps each slug at 12 characters", async () => {
+  it("caps each slug at 20 characters even when the first word is long", async () => {
     findFirst.mockResolvedValue(null);
     const number = await nextQuoteNumber(
-      "Beta Industries Holdings International",
+      "Antidisestablishmentarianism Holdings",
       null,
       new Date(Date.UTC(2026, 0, 1))
     );
-    // "BETAINDUSTRIESHOLDINGS..." → first 12 alphanumerics
-    expect(number).toBe("BETAINDUSTRI-2026-0001");
+    // First word = "ANTIDISESTABLISHMENTARIANISM" (28 chars) → capped at 20
+    expect(number).toBe("ANTIDISESTABLISHMENT-2026-0001");
+  });
+
+  it("avoids the mid-word truncation case (regression: GLOBALTECHSO)", async () => {
+    findFirst.mockResolvedValue(null);
+    const number = await nextQuoteNumber(
+      "GlobalTech Solutions",
+      null,
+      new Date(Date.UTC(2026, 0, 1))
+    );
+    // Old behavior produced "GLOBALTECHSO" (truncated mid-word).
+    // New behavior takes the first whole word.
+    expect(number).toBe("GLOBALTECH-2026-0001");
   });
 
   it("increments the trailing counter by parsing the latest year quote", async () => {
