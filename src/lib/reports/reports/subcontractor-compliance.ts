@@ -21,6 +21,7 @@ export const subcontractorCompliance: ReportDefinition = {
     const sixtyDays = new Date(Date.now() + 60 * 24 * 60 * 60 * 1000);
     const subs = await db.subcontractor.findMany({
       where: {
+        deletedAt: null,
         status: { not: "ARCHIVED" },
         OR: [
           { complianceStatus: { in: ["PENDING", "EXPIRED", "NON_COMPLIANT"] } },

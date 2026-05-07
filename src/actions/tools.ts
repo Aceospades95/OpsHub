@@ -86,8 +86,8 @@ export async function cloneTool(_prev: unknown, formData: FormData) {
   if (!perms.canCreate) return { error: "Permission denied" };
 
   const id = formData.get("id") as string;
-  const original = await db.tool.findUnique({
-    where: { id },
+  const original = await db.tool.findFirst({
+    where: { id, deletedAt: null },
     include: { embeds: true },
   });
 

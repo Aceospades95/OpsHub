@@ -34,18 +34,19 @@ export default async function ClientDetailPage({ params }: Props) {
   // card on the user's quotes permissions, not their clients permissions.
   const quotePerms = await resolveModulePerms(user.id, user.role, "quotes");
 
-  const client = await db.client.findUnique({
-    where: { id: clientId },
+  const client = await db.client.findFirst({
+    where: { id: clientId, deletedAt: null },
     include: {
       accountManager: { select: { id: true, name: true } },
       contacts: { orderBy: [{ isPrimary: "desc" }, { name: "asc" }] },
       projects: {
+        where: { deletedAt: null },
         include: {
           _count: { select: { members: true, childProjects: true } },
         },
         orderBy: { updatedAt: "desc" },
       },
-      contracts: { orderBy: { updatedAt: "desc" } },
+      contracts: { where: { deletedAt: null }, orderBy: { updatedAt: "desc" } },
       comments: {
         include: { author: { select: { id: true, name: true } } },
         orderBy: { createdAt: "desc" },
@@ -62,7 +63,7 @@ export default async function ClientDetailPage({ params }: Props) {
 
   // Get tasks associated with this client
   const tasks = await db.task.findMany({
-    where: { clientId: client.id, status: { in: ["TODO", "IN_PROGRESS"] } },
+    where: { clientId: client.id, status: { in: ["TODO", "IN_PROGRESS"] }, deletedAt: null },
     orderBy: [{ priority: "asc" }, { dueDate: "asc" }],
     include: { assignee: { select: { id: true, name: true } } },
     take: 10,

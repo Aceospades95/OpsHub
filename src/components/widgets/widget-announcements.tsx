@@ -7,7 +7,7 @@ import Link from "next/link";
 
 export async function WidgetAnnouncements({ userId: _userId }: { userId: string }) {
   const announcements = await db.intranetResource.findMany({
-    where: { category: "ANNOUNCEMENT", published: true },
+    where: { category: "ANNOUNCEMENT", published: true, deletedAt: null },
     orderBy: [{ pinned: "desc" }, { updatedAt: "desc" }],
     take: 5,
   });

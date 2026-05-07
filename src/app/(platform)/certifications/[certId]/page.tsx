@@ -46,8 +46,8 @@ export default async function CertificationDetailPage({ params }: Props) {
     return <AccessDenied module="certifications" moduleLabel="Certifications" moduleDescription="Compliance certifications and expirations (Admin / Developer only)" />;
   }
 
-  const cert = await db.certification.findUnique({
-    where: { id: certId },
+  const cert = await db.certification.findFirst({
+    where: { id: certId, deletedAt: null },
     include: {
       client: { select: { id: true, name: true } },
       assignee: { select: { id: true, name: true } },
@@ -79,7 +79,7 @@ export default async function CertificationDetailPage({ params }: Props) {
 
   const [clients, users] = await Promise.all([
     db.client.findMany({
-      where: scope.all ? {} : { id: { in: Array.from(scope.clientIds) } },
+      where: { deletedAt: null, ...(scope.all ? {} : { id: { in: Array.from(scope.clientIds) } }) },
       select: { id: true, name: true },
       orderBy: { name: "asc" },
     }),

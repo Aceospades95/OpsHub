@@ -22,8 +22,8 @@ export default async function DocumentDetailPage({ params }: Props) {
   const perms = await resolveModulePerms(user.id, user.role, "projects");
   if (!perms.canView) return <AccessDenied module="projects" moduleLabel="Projects" moduleDescription="Project portfolio, milestones, staffing, and documents" />;
 
-  const document = await db.document.findUnique({
-    where: { id: documentId },
+  const document = await db.document.findFirst({
+    where: { id: documentId, deletedAt: null },
     include: {
       versions: { orderBy: { version: "desc" } },
       comments: {

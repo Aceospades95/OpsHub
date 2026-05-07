@@ -30,8 +30,8 @@ async function authorizeTaskMutation(
   user: { id: string; role: Role },
   taskId: string
 ): Promise<{ error: string } | null> {
-  const task = await db.task.findUnique({
-    where: { id: taskId },
+  const task = await db.task.findFirst({
+    where: { id: taskId, deletedAt: null },
     select: {
       assigneeId: true,
       createdById: true,

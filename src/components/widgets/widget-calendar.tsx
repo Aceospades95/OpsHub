@@ -10,7 +10,7 @@ export async function WidgetCalendar({ userId: _userId }: { userId: string }) {
 
   const [upcomingTasks, upcomingMilestones, expiringContracts] = await Promise.all([
     db.task.findMany({
-      where: { dueDate: { gte: now, lte: thirtyDays }, status: { in: ["TODO", "IN_PROGRESS"] } },
+      where: { dueDate: { gte: now, lte: thirtyDays }, status: { in: ["TODO", "IN_PROGRESS"] }, deletedAt: null },
       orderBy: { dueDate: "asc" },
       take: 5,
       select: { id: true, title: true, dueDate: true },
@@ -22,7 +22,7 @@ export async function WidgetCalendar({ userId: _userId }: { userId: string }) {
       select: { id: true, title: true, dueDate: true },
     }),
     db.contract.findMany({
-      where: { endDate: { gte: now, lte: thirtyDays }, status: "ACTIVE" },
+      where: { endDate: { gte: now, lte: thirtyDays }, status: "ACTIVE", deletedAt: null },
       orderBy: { endDate: "asc" },
       take: 5,
       select: { id: true, title: true, endDate: true },

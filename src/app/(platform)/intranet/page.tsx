@@ -28,6 +28,7 @@ export default async function IntranetPage() {
   const perms = await resolveModulePerms(user.id, user.role, "intranet");
 
   const resources = await db.intranetResource.findMany({
+    where: { deletedAt: null },
     orderBy: [{ pinned: "desc" }, { sortOrder: "asc" }, { updatedAt: "desc" }],
   });
 

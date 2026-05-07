@@ -20,8 +20,8 @@ export async function GET(
   }
 
   const { quoteId } = await params;
-  const quote = await db.quote.findUnique({
-    where: { id: quoteId },
+  const quote = await db.quote.findFirst({
+    where: { id: quoteId, deletedAt: null },
     include: {
       client: { select: { name: true } },
       lineItems: { orderBy: { position: "asc" } },

@@ -44,7 +44,7 @@ export async function updateDocument(_prev: unknown, formData: FormData) {
   const id = formData.get("id") as string;
   const changelog = (formData.get("changelog") as string) || undefined;
 
-  const existing = await db.document.findUnique({ where: { id } });
+  const existing = await db.document.findFirst({ where: { id, deletedAt: null } });
   if (!existing) return { error: "Not found" };
 
   const parsed = documentSchema.safeParse({
@@ -123,7 +123,7 @@ export async function restoreDocumentVersion(_prev: unknown, formData: FormData)
   const documentId = formData.get("documentId") as string;
   const versionId = formData.get("versionId") as string;
 
-  const doc = await db.document.findUnique({ where: { id: documentId } });
+  const doc = await db.document.findFirst({ where: { id: documentId, deletedAt: null } });
   if (!doc) return { error: "Document not found" };
 
   const version = await db.documentVersion.findUnique({ where: { id: versionId } });

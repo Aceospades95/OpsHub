@@ -75,6 +75,7 @@ export default async function CertificationsPage({ searchParams }: PageProps) {
   const [certifications, clients, users] = await Promise.all([
     db.certification.findMany({
       where: {
+        deletedAt: null,
         ...(jurisdictionFilter ? { jurisdictionLevel: jurisdictionFilter } : {}),
         ...(engagementFilter ? { engagementType: engagementFilter } : {}),
         ...(scopedCertIds ? { id: { in: scopedCertIds } } : {}),
@@ -87,7 +88,7 @@ export default async function CertificationsPage({ searchParams }: PageProps) {
       },
     }),
     db.client.findMany({
-      where: scopedClientIds ? { id: { in: scopedClientIds } } : {},
+      where: { deletedAt: null, ...(scopedClientIds ? { id: { in: scopedClientIds } } : {}) },
       select: { id: true, name: true },
       orderBy: { name: "asc" },
     }),

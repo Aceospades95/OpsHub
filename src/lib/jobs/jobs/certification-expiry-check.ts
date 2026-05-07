@@ -35,6 +35,7 @@ export const certificationExpiryCheck: JobDefinition = {
 
     const certs = await db.certification.findMany({
       where: {
+        deletedAt: null,
         status: { not: "EXPIRED" },
         expirationDate: { gte: now, lte: generousHorizon },
       },

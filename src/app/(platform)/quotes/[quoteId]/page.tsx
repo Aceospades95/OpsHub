@@ -30,8 +30,8 @@ export default async function QuoteDetailPage({ params }: Props) {
     );
   }
 
-  const quote = await db.quote.findUnique({
-    where: { id: quoteId },
+  const quote = await db.quote.findFirst({
+    where: { id: quoteId, deletedAt: null },
     include: {
       client: { select: { id: true, name: true } },
       project: { select: { id: true, name: true } },

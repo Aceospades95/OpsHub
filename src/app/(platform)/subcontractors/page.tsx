@@ -29,7 +29,7 @@ export default async function SubcontractorsPage({ searchParams }: Props) {
     );
   }
 
-  const where: Prisma.SubcontractorWhereInput = {};
+  const where: Prisma.SubcontractorWhereInput = { deletedAt: null };
   if (searchParams.status && ["ACTIVE", "INACTIVE", "ONBOARDING", "SUSPENDED", "ARCHIVED"].includes(searchParams.status)) {
     where.status = searchParams.status as Prisma.SubcontractorWhereInput["status"];
   }

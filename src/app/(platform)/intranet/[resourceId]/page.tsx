@@ -19,8 +19,8 @@ export default async function IntranetDetailPage({ params }: Props) {
 
   const perms = await resolveModulePerms(user.id, user.role, "intranet");
 
-  const resource = await db.intranetResource.findUnique({
-    where: { id: resourceId },
+  const resource = await db.intranetResource.findFirst({
+    where: { id: resourceId, deletedAt: null },
     include: { links: true, embeds: true },
   });
 

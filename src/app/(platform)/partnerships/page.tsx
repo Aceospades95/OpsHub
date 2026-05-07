@@ -37,7 +37,7 @@ export default async function PartnershipsPage({ searchParams }: Props) {
     );
   }
 
-  const where: Prisma.PartnershipWhereInput = {};
+  const where: Prisma.PartnershipWhereInput = { deletedAt: null };
   if (
     searchParams.status &&
     ["ACTIVE", "PROSPECT", "INACTIVE", "PAUSED", "ARCHIVED"].includes(searchParams.status)

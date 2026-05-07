@@ -43,17 +43,17 @@ export default async function ProjectsPage() {
       orderBy: { updatedAt: "desc" },
       include: {
         client: { select: { id: true, name: true } },
-        _count: { select: { members: true, childProjects: true, tasks: true } },
+        _count: { select: { members: true, childProjects: { where: { deletedAt: null } }, tasks: { where: { deletedAt: null } } } },
         childProjects: {
           where: { deletedAt: null },
           include: {
             client: { select: { id: true, name: true } },
-            _count: { select: { members: true, childProjects: true, tasks: true } },
+            _count: { select: { members: true, childProjects: { where: { deletedAt: null } }, tasks: { where: { deletedAt: null } } } },
             childProjects: {
               where: { deletedAt: null },
               include: {
                 client: { select: { id: true, name: true } },
-                _count: { select: { members: true, childProjects: true, tasks: true } },
+                _count: { select: { members: true, childProjects: { where: { deletedAt: null } }, tasks: { where: { deletedAt: null } } } },
               },
             },
           },

@@ -19,7 +19,7 @@ export default async function ToolsPage() {
   if (!perms.canView) return <AccessDenied module="tools" moduleLabel="Tools" moduleDescription="Shared tools and linked resources" />;
 
   const scope = await getUserScope(user.id, user.role);
-  const toolWhere: Prisma.ToolWhereInput = { isGlobal: true };
+  const toolWhere: Prisma.ToolWhereInput = { deletedAt: null, isGlobal: true };
   if (!scope.all) {
     toolWhere.id = { in: Array.from(scope.toolIds) };
   }
@@ -28,8 +28,16 @@ export default async function ToolsPage() {
     where: toolWhere,
     orderBy: { name: "asc" },
     include: {
-      _count: { select: { clones: true, projects: true } },
-      projects: { include: { project: { select: { id: true, name: true } } } },
+      _count: {
+        select: {
+          clones: { where: { deletedAt: null } },
+          projects: { where: { project: { deletedAt: null } } },
+        },
+      },
+      projects: {
+        where: { project: { deletedAt: null } },
+        include: { project: { select: { id: true, name: true } } },
+      },
     },
   });
 

@@ -10,6 +10,7 @@ export async function WidgetContractAlerts({ userId: _userId }: { userId: string
 
   const contracts = await db.contract.findMany({
     where: {
+      deletedAt: null,
       OR: [
         { status: "EXPIRING_SOON" },
         { status: "EXPIRED" },

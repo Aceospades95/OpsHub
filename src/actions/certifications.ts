@@ -213,8 +213,8 @@ export async function signOffCertification(_prev: unknown, formData: FormData) {
   const notes = str(formData, "notes");
   const now = new Date();
 
-  const cert = await db.certification.findUnique({
-    where: { id },
+  const cert = await db.certification.findFirst({
+    where: { id, deletedAt: null },
     select: {
       id: true,
       name: true,
@@ -276,8 +276,8 @@ export async function revokeSignOff(_prev: unknown, formData: FormData) {
   const id = formData.get("id") as string;
   if (!id) return { error: "ID required" };
 
-  const cert = await db.certification.findUnique({
-    where: { id },
+  const cert = await db.certification.findFirst({
+    where: { id, deletedAt: null },
     select: { name: true, signedOffAt: true, clientId: true },
   });
   if (!cert) return { error: "Not found" };
@@ -304,8 +304,8 @@ async function canModifyChecklist(
 ): Promise<boolean> {
   if (["ADMIN", "MANAGER", "DEVELOPER"].includes(user.role)) return true;
   // Contributors can toggle if they're the assignee or POC
-  const cert = await db.certification.findUnique({
-    where: { id: certId },
+  const cert = await db.certification.findFirst({
+    where: { id: certId, deletedAt: null },
     select: { assigneeId: true, pointOfContactId: true },
   });
   if (!cert) return false;

@@ -6,7 +6,7 @@ import Link from "next/link";
 
 export async function WidgetMyTasks({ userId }: { userId: string }) {
   const tasks = await db.task.findMany({
-    where: { assigneeId: userId, status: { in: ["TODO", "IN_PROGRESS"] } },
+    where: { assigneeId: userId, status: { in: ["TODO", "IN_PROGRESS"] }, deletedAt: null },
     orderBy: [{ priority: "asc" }, { dueDate: "asc" }],
     take: 8,
     include: {

@@ -30,7 +30,7 @@ export default async function ClientsPage({
   const scope = await getUserScope(user.id, user.role);
 
   // Build where clause
-  const where: Prisma.ClientWhereInput = {};
+  const where: Prisma.ClientWhereInput = { deletedAt: null };
   if (statusFilter && ["ACTIVE", "INACTIVE", "PROSPECT", "ARCHIVED"].includes(statusFilter)) {
     where.status = statusFilter as "ACTIVE" | "INACTIVE" | "PROSPECT" | "ARCHIVED";
   }
@@ -58,7 +58,13 @@ export default async function ClientsPage({
     where,
     orderBy,
     include: {
-      _count: { select: { projects: true, contracts: true, contacts: true } },
+      _count: {
+        select: {
+          projects: { where: { deletedAt: null } },
+          contracts: { where: { deletedAt: null } },
+          contacts: true,
+        },
+      },
     },
   });
 

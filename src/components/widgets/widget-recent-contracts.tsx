@@ -7,6 +7,7 @@ import Link from "next/link";
 
 export async function WidgetRecentContracts({ userId: _userId }: { userId: string }) {
   const contracts = await db.contract.findMany({
+    where: { deletedAt: null },
     orderBy: { updatedAt: "desc" },
     take: 6,
     include: { client: { select: { name: true } } },

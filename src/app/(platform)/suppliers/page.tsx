@@ -18,7 +18,7 @@ export default async function SuppliersPage() {
   const perms = await resolveModulePerms(user.id, user.role, "suppliers");
   if (!perms.canView) return <AccessDenied module="suppliers" moduleLabel="Suppliers" moduleDescription="Vendor and supplier management" />;
 
-  const suppliers = await db.supplier.findMany({ orderBy: [{ isPreferred: "desc" }, { name: "asc" }] });
+  const suppliers = await db.supplier.findMany({ where: { deletedAt: null }, orderBy: [{ isPreferred: "desc" }, { name: "asc" }] });
 
   return (
     <div>
