@@ -352,7 +352,17 @@ export default async function CertificationsPage({ searchParams }: PageProps) {
                         <span className="text-xs text-muted-foreground">#{cert.certNumber}</span>
                       )}
                       {cert.autoRenew && <Badge variant="secondary">Auto-renew</Badge>}
-                      {cert.signedOffAt && (
+                      {/* Round-6 QA: a "Pending" status alongside a
+                       *  green "Signed off" badge read as a
+                       *  contradiction. The signoff fields capture
+                       *  internal review approval — the cert isn't
+                       *  actually issued / Active until status
+                       *  transitions there too. Suppress the badge
+                       *  on Pending; on Active it still confirms
+                       *  approval; on other statuses (Expired,
+                       *  Revoked) the signoff history is still
+                       *  visible on the detail page's audit trail. */}
+                      {cert.signedOffAt && cert.status !== "PENDING" && (
                         <Badge variant="success" className="gap-1">
                           <CheckCircle2 className="h-3 w-3" />
                           Signed off

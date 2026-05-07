@@ -162,6 +162,19 @@ export default function OrgChartCanvas({
       // coordinates with the full tree expanded.
       .expandAll()
       .fit();
+    // Round-6 QA: project detail clipped the leftmost card because the
+    // initial .fit() ran while the wrapping Card was still being laid
+    // out — the SVG measured its container width before flex/grid had
+    // settled, then fit to a too-narrow viewport. Re-fit on the next
+    // animation frame and again 200ms later to catch any second-pass
+    // layout (font load, image hydration, etc.). Idempotent — calling
+    // .fit() repeatedly just re-centers, no transition pile-up.
+    const reFitOnceLaidOut = requestAnimationFrame(() => {
+      chartRef.current?.fit();
+    });
+    const reFitAfterSettle = window.setTimeout(() => {
+      chartRef.current?.fit();
+    }, 200);
     // Capture the current container element for the cleanup closure —
     // by the time React runs cleanup, containerRef.current has already
     // changed (the lint rule react-hooks/exhaustive-deps catches this).
@@ -169,6 +182,8 @@ export default function OrgChartCanvas({
     return () => {
       // No teardown method on d3-org-chart; emptying the container is
       // enough to drop the SVG / event listeners cleanly.
+      cancelAnimationFrame(reFitOnceLaidOut);
+      window.clearTimeout(reFitAfterSettle);
       if (container) container.innerHTML = "";
       chartRef.current = null;
     };
