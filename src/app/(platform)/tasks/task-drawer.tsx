@@ -32,6 +32,10 @@ export interface TaskDrawerTask {
   status: string;
   priority: string;
   dueDate: Date | string | null;
+  /** When the task was marked DONE/CANCELLED — surfaced in the
+   *  list-row metadata for completed tasks so the row isn't a
+   *  blank line where the due date used to be. */
+  completedAt: Date | string | null;
   project: { id: string; name: string } | null;
   client: { id: string; name: string } | null;
   assignee: { id: string; name: string } | null;

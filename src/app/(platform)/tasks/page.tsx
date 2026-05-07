@@ -261,6 +261,7 @@ type TaskRow = {
   status: string;
   priority: string;
   dueDate: Date | null;
+  completedAt: Date | null;
   project: { id: string; name: string } | null;
   client: { id: string; name: string } | null;
   assignee: { id: string; name: string } | null;
@@ -350,20 +351,27 @@ function ProjectGroupedTasks({ tasks }: { tasks: TaskRow[] }) {
                             <Badge variant="default" className="text-[10px]">In Progress</Badge>
                           )}
                         </div>
-                        <div className="flex items-center gap-2 mt-0.5 text-[11px] text-muted-foreground">
+                        <div className="flex items-center gap-2 mt-0.5 text-[11px] text-muted-foreground flex-wrap">
                           {task.client && (
                             <Link href={`/clients/${task.client.id}`} className="hover:text-primary hover:underline">
                               {task.client.name}
                             </Link>
                           )}
-                          {/* Hide the due date for completed/cancelled
-                           *  tasks. "Due Jan 1 2020" on a finished
-                           *  task confuses more than it informs; the
-                           *  completion state is what matters now. */}
-                          {task.dueDate && !isDone && (
-                            <span className={new Date(task.dueDate) < new Date() ? "text-destructive font-medium" : ""}>
-                              Due {formatCalendarDate(task.dueDate, "MMM d, yyyy")}
-                            </span>
+                          {!isDone && task.dueDate && (
+                            <>
+                              {task.client && <span aria-hidden className="opacity-40">·</span>}
+                              <span className={new Date(task.dueDate) < new Date() ? "text-destructive font-medium" : ""}>
+                                Due {formatCalendarDate(task.dueDate, "MMM d, yyyy")}
+                              </span>
+                            </>
+                          )}
+                          {isDone && (
+                            <>
+                              {task.client && <span aria-hidden className="opacity-40">·</span>}
+                              <span>
+                                Completed{task.completedAt ? ` ${formatCalendarDate(task.completedAt, "MMM d, yyyy")}` : ""}
+                              </span>
+                            </>
                           )}
                         </div>
                       </div>

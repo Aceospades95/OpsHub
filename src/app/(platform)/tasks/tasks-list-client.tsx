@@ -160,7 +160,12 @@ function TaskRow({
                 </Badge>
               )}
             </div>
-            <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
+            {/* Round-5 QA: dot separators (·) between metadata items
+             *  so adjacent strings can never visually run together
+             *  even if a gap utility is overridden. The flex
+             *  container's gap still applies; the dots are a
+             *  belt-and-suspenders signal. */}
+            <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground flex-wrap">
               {task.project ? (
                 <Link
                   href={`/projects/${task.project.id}`}
@@ -170,28 +175,39 @@ function TaskRow({
                   {task.project.name}
                 </Link>
               ) : (
-                /* Round-4 QA: orphaned imported tasks (no project,
-                 *  client, assignee) rendered with empty subtitles
-                 *  that made them look broken. Surface the "no
-                 *  project" state explicitly. */
                 <span className="italic opacity-70">No project</span>
               )}
               {task.client && (
-                <Link
-                  href={`/clients/${task.client.id}`}
-                  className="hover:text-primary"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  {task.client.name}
-                </Link>
+                <>
+                  <span aria-hidden className="opacity-40">·</span>
+                  <Link
+                    href={`/clients/${task.client.id}`}
+                    className="hover:text-primary"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {task.client.name}
+                  </Link>
+                </>
               )}
-              {/* Hide the due date for completed/cancelled tasks.
-               *  Round-4 QA flagged "Due Jan 1 2020" on a completed
-               *  task as more confusing than informative. */}
-              {task.dueDate && !completed && (
-                <span className={isPastDue ? "text-destructive font-medium" : ""}>
-                  Due {formatCalendarDate(task.dueDate, "MMM d, yyyy")}
-                </span>
+              {/* For active tasks: show the due date (red if past
+               *  due). For completed tasks: show "Completed [date]"
+               *  so the row isn't a blank space where the due date
+               *  used to be. */}
+              {!completed && task.dueDate && (
+                <>
+                  <span aria-hidden className="opacity-40">·</span>
+                  <span className={isPastDue ? "text-destructive font-medium" : ""}>
+                    Due {formatCalendarDate(task.dueDate, "MMM d, yyyy")}
+                  </span>
+                </>
+              )}
+              {completed && (
+                <>
+                  <span aria-hidden className="opacity-40">·</span>
+                  <span>
+                    Completed{task.completedAt ? ` ${formatCalendarDate(task.completedAt, "MMM d, yyyy")}` : ""}
+                  </span>
+                </>
               )}
             </div>
           </button>
