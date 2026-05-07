@@ -11,6 +11,18 @@ import Link from "next/link";
 
 const PAGE_SIZE = 50;
 
+// Render the entityId column. CUIDs (`c…25-char alphanum`) are too
+// long to scan at full width, so we keep them at an 8-char prefix.
+// Anything that isn't CUID-shaped — job keys like
+// "contract-expiry-check", workflow slugs, etc. — is shown in full
+// because slicing those at 8 chars makes them ambiguous (the QA
+// repro: "job · contract-expiry-check" was rendered as "job ·
+// contract" since the first 8 chars happened to land on a hyphen).
+const CUID_PATTERN = /^c[a-z0-9]{24}$/;
+function shortEntityId(id: string): string {
+  return CUID_PATTERN.test(id) ? id.slice(0, 8) : id;
+}
+
 interface SearchParams {
   actor?: string;
   entityType?: string;
@@ -262,7 +274,7 @@ export default async function AdminActivityPage({
                     <td className="px-3 py-2 whitespace-nowrap text-xs">
                       <span className="font-mono text-muted-foreground">{row.entityType}</span>
                       <span className="text-muted-foreground/60"> · </span>
-                      <span className="font-mono text-[11px]">{row.entityId.slice(0, 8)}</span>
+                      <span className="font-mono text-[11px]">{shortEntityId(row.entityId)}</span>
                     </td>
                     <td className="px-3 py-2 whitespace-nowrap">
                       {row.project ? (

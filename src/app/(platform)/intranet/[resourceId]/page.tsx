@@ -8,6 +8,7 @@ import { Pin } from "lucide-react";
 import { IntranetActions } from "./intranet-actions";
 import { IntranetAttachments } from "./intranet-attachments";
 import { PageLayout } from "@/components/shared/page-layout";
+import { Markdown } from "@/components/shared/markdown";
 
 interface Props {
   params: Promise<{ resourceId: string }>;
@@ -33,7 +34,7 @@ export default async function IntranetDetailPage({ params }: Props) {
       <Card className="h-full">
         <CardHeader><CardTitle>Content</CardTitle></CardHeader>
         <CardContent>
-          <div className="text-sm whitespace-pre-wrap">{resource.content}</div>
+          <Markdown source={resource.content} />
         </CardContent>
       </Card>
     ) : (

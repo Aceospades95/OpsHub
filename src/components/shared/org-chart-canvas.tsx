@@ -333,21 +333,31 @@ export default function OrgChartCanvas({
       {/* Inline styles power the hover-highlight effect: when the
        *  hover useEffect adds data-og-highlight to a node group or a
        *  link path, these rules colorize the path from hovered card
-       *  up to root. Inline so we don't have to wire a CSS module. */}
-      <style>{`
-        [data-og-highlight="true"] path.link,
-        path.link[data-og-highlight="true"] {
-          stroke: var(--primary);
-          stroke-width: 2.5;
-          opacity: 1;
-        }
-        path.link {
-          transition: stroke 120ms ease, stroke-width 120ms ease, opacity 120ms ease;
-        }
-        g.node[data-og-highlight="true"] {
-          filter: drop-shadow(0 0 0.5rem var(--primary));
-        }
-      `}</style>
+       *  up to root. Round-4 QA reported the CSS source leaking out
+       *  as visible text below the chart on the deployed build —
+       *  the `<style>{`…`}</style>` JSX form was being serialized as
+       *  text content in some hydration paths. Using
+       *  dangerouslySetInnerHTML pins it to a real <style> element
+       *  with the CSS as innerHTML, which is unambiguous across
+       *  React versions and SSR/hydration paths. */}
+      <style
+        dangerouslySetInnerHTML={{
+          __html: `
+            [data-og-highlight="true"] path.link,
+            path.link[data-og-highlight="true"] {
+              stroke: var(--primary);
+              stroke-width: 2.5;
+              opacity: 1;
+            }
+            path.link {
+              transition: stroke 120ms ease, stroke-width 120ms ease, opacity 120ms ease;
+            }
+            g.node[data-og-highlight="true"] {
+              filter: drop-shadow(0 0 0.5rem var(--primary));
+            }
+          `,
+        }}
+      />
       <div
         ref={containerRef}
         className="rounded border border-border bg-muted/20"

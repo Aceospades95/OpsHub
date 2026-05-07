@@ -85,6 +85,15 @@ export function CommandPalette() {
   const inputRef = useRef<HTMLInputElement | null>(null);
 
   // Listen for the global "open" event + ⌘K / Ctrl-K shortcut.
+  // Round-4 QA: the previous wiring re-bound on every `open` change,
+  // and the keyboard handler closed over a stale `open` value when
+  // React batched a state update. The keydown was firing but the
+  // toggle reverted before the next render. Mount-once handler with
+  // a ref for the open-state read fixes both: listener attaches at
+  // mount, never leaks across rebinds, and reads `open` fresh on
+  // every key event.
+  const openRef = useRef(open);
+  openRef.current = open;
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       const isMod = e.metaKey || e.ctrlKey;
@@ -93,7 +102,7 @@ export function CommandPalette() {
         setOpen((v) => !v);
         return;
       }
-      if (open && e.key === "Escape") {
+      if (openRef.current && e.key === "Escape") {
         setOpen(false);
       }
     };
@@ -104,7 +113,7 @@ export function CommandPalette() {
       window.removeEventListener("keydown", handler);
       window.removeEventListener(OPEN_EVENT, opener);
     };
-  }, [open]);
+  }, []);
 
   // Reset state on close so reopening starts fresh.
   useEffect(() => {
