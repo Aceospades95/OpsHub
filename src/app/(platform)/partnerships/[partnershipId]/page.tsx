@@ -46,12 +46,13 @@ export default async function PartnershipDetailPage({ params }: Props) {
     );
   }
 
-  const partnership = await db.partnership.findUnique({
-    where: { id: partnershipId },
+  const partnership = await db.partnership.findFirst({
+    where: { id: partnershipId, deletedAt: null },
     include: {
       relationshipOwner: { select: { id: true, name: true } },
       contacts: { orderBy: [{ isPrimary: "desc" }, { name: "asc" }] },
       projects: {
+        where: { project: { deletedAt: null } },
         include: {
           project: {
             select: {
@@ -75,6 +76,7 @@ export default async function PartnershipDetailPage({ params }: Props) {
   if (!partnership) notFound();
 
   const allProjects = await db.project.findMany({
+    where: { deletedAt: null },
     select: { id: true, name: true },
     orderBy: { name: "asc" },
   });

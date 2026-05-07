@@ -116,22 +116,14 @@ export const GLOBAL_WIDGETS: WidgetDefinition[] = [
   },
 
   // --- Content & Media ---
-  {
-    id: "widget-notes",
-    label: "Sticky Note",
-    description: "Rich text note for reminders or documentation",
-    category: "content",
-    icon: "StickyNote",
-    defaultGrid: { w: 4, h: 6, minW: 3, minH: 3 },
-  },
-  {
-    id: "widget-markdown",
-    label: "Markdown Content",
-    description: "Render custom markdown content",
-    category: "content",
-    icon: "FileText",
-    defaultGrid: { w: 6, h: 8, minW: 4, minH: 4 },
-  },
+  // widget-notes, widget-markdown, and widget-countdown were placeholder
+  // shells whose UIs only said "coming soon" — they shipped to prod
+  // before their config layer existed. Pulled from the registry so
+  // admins don't add a half-empty card to their dashboard. The
+  // component files are still here so an existing layout that
+  // referenced them by id renders empty rather than crashing; once
+  // their config UI lands, re-adding the entries here re-enables the
+  // catalog. See widget-renderer.tsx for the runtime side.
   {
     id: "widget-embed",
     label: "Embed / iFrame",
@@ -193,14 +185,9 @@ export const GLOBAL_WIDGETS: WidgetDefinition[] = [
     icon: "AlertTriangle",
     defaultGrid: { w: 6, h: 7, minW: 4, minH: 3 },
   },
-  {
-    id: "widget-countdown",
-    label: "Countdown Timer",
-    description: "Countdown to an important date or deadline",
-    category: "status",
-    icon: "Timer",
-    defaultGrid: { w: 3, h: 5, minW: 2, minH: 3 },
-  },
+  // widget-countdown was a placeholder hardcoded to "30 days" with no
+  // configurable target — see the comment above on widget-notes /
+  // widget-markdown. Re-add to the registry once the config UI ships.
 ];
 
 /** Get a global widget definition by ID */

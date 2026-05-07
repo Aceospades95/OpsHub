@@ -18,6 +18,7 @@ import {
   ShieldQuestion,
   History,
   CalendarClock,
+  Trash2,
 } from "lucide-react";
 
 const SETTINGS_SECTIONS = [
@@ -42,7 +43,9 @@ const SETTINGS_SECTIONS = [
     title: "Data",
     items: [
       { label: "Data Import", href: "/admin/import", icon: FileSpreadsheet, description: "Bulk-create records from CSV uploads" },
+      { label: "Import History", href: "/admin/activity/imports", icon: FileSpreadsheet, description: "Audit trail of every CSV import run with row-level results" },
       { label: "Reports", href: "/admin/reports", icon: BarChart3, description: "Saved reports, CSV downloads, and email digests" },
+      { label: "Recovery Bin", href: "/admin/recovery", icon: Trash2, description: "Restore soft-deleted records or skip the 30-day window and delete now" },
     ],
   },
   {

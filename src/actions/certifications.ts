@@ -184,11 +184,16 @@ export async function deleteCertification(_prev: unknown, formData: FormData) {
   const id = formData.get("id") as string;
   if (!id) return { error: "ID required" };
 
-  const cert = await db.certification.findUnique({ where: { id }, select: { name: true, clientId: true } });
-  await db.certification.delete({ where: { id } });
+  const cert = await db.certification.findUnique({ where: { id }, select: { name: true, clientId: true, deletedAt: true } });
+  if (!cert) return { error: "Not found" };
+  if (cert.deletedAt) {
+    return { error: "Already in the recovery bin" };
+  }
 
-  await logActivity("deleted", "certification", id, user.id, cert?.name || "", {
-    clientId: cert?.clientId ?? null,
+  await db.certification.update({ where: { id }, data: { deletedAt: new Date() } });
+
+  await logActivity("soft-deleted", "certification", id, user.id, cert.name || "", {
+    clientId: cert.clientId ?? null,
   });
   revalidatePath("/certifications");
   return { success: true };

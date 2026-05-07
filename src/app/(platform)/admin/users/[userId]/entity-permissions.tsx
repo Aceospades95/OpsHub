@@ -71,7 +71,12 @@ export function EntityPermissionsEditor({ userId, permissions, clients, projects
               {perm.canManage && <span>Manage</span>}
             </div>
           </div>
-          <button onClick={() => handleDelete(perm.id)} className="text-muted-foreground hover:text-destructive">
+          <button
+            onClick={() => handleDelete(perm.id)}
+            className="text-muted-foreground hover:text-destructive"
+            aria-label="Remove permission"
+            title="Remove permission"
+          >
             <Trash2 className="h-4 w-4" />
           </button>
         </div>

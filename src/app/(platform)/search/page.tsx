@@ -43,33 +43,34 @@ export default async function SearchPage({ searchParams }: Props) {
   const [clients, projects, contracts, suppliers, subcontractors, partnerships, tasks, intranetResources, users] = await Promise.all([
     clientPerms.canView
       ? db.client.findMany({
-          where: { OR: [{ name: contains }, { description: contains }] },
+          where: { deletedAt: null, OR: [{ name: contains }, { description: contains }] },
           take: 10,
         })
       : [],
     projectPerms.canView
       ? db.project.findMany({
-          where: { OR: [{ name: contains }, { description: contains }] },
+          where: { deletedAt: null, OR: [{ name: contains }, { description: contains }] },
           include: { client: { select: { id: true, name: true } } },
           take: 10,
         })
       : [],
     contractPerms.canView
       ? db.contract.findMany({
-          where: { OR: [{ title: contains }, { description: contains }] },
+          where: { deletedAt: null, OR: [{ title: contains }, { description: contains }] },
           include: { client: { select: { id: true, name: true } } },
           take: 10,
         })
       : [],
     supplierPerms.canView
       ? db.supplier.findMany({
-          where: { OR: [{ name: contains }, { notes: contains }] },
+          where: { deletedAt: null, OR: [{ name: contains }, { notes: contains }] },
           take: 10,
         })
       : [],
     subcontractorPerms.canView
       ? db.subcontractor.findMany({
           where: {
+            deletedAt: null,
             OR: [
               { name: contains },
               { legalName: contains },
@@ -84,6 +85,7 @@ export default async function SearchPage({ searchParams }: Props) {
     partnershipPerms.canView
       ? db.partnership.findMany({
           where: {
+            deletedAt: null,
             OR: [
               { name: contains },
               { legalName: contains },
@@ -97,7 +99,7 @@ export default async function SearchPage({ searchParams }: Props) {
         })
       : [],
     db.task.findMany({
-      where: { OR: [{ title: contains }, { description: contains }] },
+      where: { deletedAt: null, OR: [{ title: contains }, { description: contains }] },
       include: {
         project: { select: { id: true, name: true } },
         client: { select: { id: true, name: true } },
@@ -110,6 +112,7 @@ export default async function SearchPage({ searchParams }: Props) {
     intranetPerms.canView
       ? db.intranetResource.findMany({
           where: {
+            deletedAt: null,
             published: true,
             OR: [{ title: contains }, { description: contains }, { content: contains }],
           },

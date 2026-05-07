@@ -21,7 +21,11 @@ function requireAdmin(role: Role): { error: string } | null {
   return null;
 }
 
-const taskTypeSchema = z.enum(["EMAIL_REPORT", "EMAIL_MESSAGE"]);
+const taskTypeSchema = z.enum([
+  "EMAIL_REPORT",
+  "EMAIL_MESSAGE",
+  "PURGE_SOFT_DELETED",
+]);
 const frequencySchema = z.enum(["HOURLY", "DAILY", "WEEKLY", "MONTHLY"]);
 
 const upsertSchema = z.object({

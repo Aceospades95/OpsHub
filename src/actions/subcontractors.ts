@@ -152,9 +152,12 @@ export async function deleteSubcontractor(_prev: unknown, formData: FormData) {
   const id = formData.get("id") as string;
   const sub = await db.subcontractor.findUnique({ where: { id } });
   if (!sub) return { error: "Not found" };
+  if (sub.deletedAt) {
+    return { error: "Already in the recovery bin" };
+  }
 
-  await db.subcontractor.delete({ where: { id } });
-  await logActivity("deleted", "subcontractor", id, user.id, sub.name);
+  await db.subcontractor.update({ where: { id }, data: { deletedAt: new Date() } });
+  await logActivity("soft-deleted", "subcontractor", id, user.id, sub.name);
   revalidateSubcontractor(id, { deleted: true });
   return { success: true };
 }

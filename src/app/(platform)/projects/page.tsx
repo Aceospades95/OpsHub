@@ -6,6 +6,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { AccessDenied } from "@/components/shared/access-denied";
 import { FolderKanban } from "lucide-react";
 import { ProjectCreateButton } from "./project-create-button";
+import { DownloadCsvButton } from "@/components/shared/download-csv-button";
 import { ProjectsPageClient, type ProjectData, type ClientGroup } from "./projects-page-client";
 import type { Prisma } from "@prisma/client";
 
@@ -21,10 +22,12 @@ export default async function ProjectsPage() {
   // need filtering; we hide them via the same set below.
   const scopedProjectIds = scope.all ? null : Array.from(scope.projectIds);
   const projectWhere: Prisma.ProjectWhereInput = {
+    deletedAt: null,
     parentProjectId: null,
     ...(scopedProjectIds ? { id: { in: scopedProjectIds } } : {}),
   };
   const clientWhere: Prisma.ClientWhereInput = {
+    deletedAt: null,
     status: "ACTIVE",
     ...(scope.all ? {} : { id: { in: Array.from(scope.clientIds) } }),
   };
@@ -42,10 +45,12 @@ export default async function ProjectsPage() {
         client: { select: { id: true, name: true } },
         _count: { select: { members: true, childProjects: true, tasks: true } },
         childProjects: {
+          where: { deletedAt: null },
           include: {
             client: { select: { id: true, name: true } },
             _count: { select: { members: true, childProjects: true, tasks: true } },
             childProjects: {
+              where: { deletedAt: null },
               include: {
                 client: { select: { id: true, name: true } },
                 _count: { select: { members: true, childProjects: true, tasks: true } },
@@ -56,7 +61,7 @@ export default async function ProjectsPage() {
       },
     }),
     db.project.findMany({
-      where: scopedProjectIds ? { id: { in: scopedProjectIds } } : {},
+      where: { deletedAt: null, ...(scopedProjectIds ? { id: { in: scopedProjectIds } } : {}) },
       select: { id: true, name: true },
       orderBy: { name: "asc" },
     }),
@@ -84,7 +89,14 @@ export default async function ProjectsPage() {
       <PageHeader
         title="Projects"
         description="Manage projects across all clients"
-        actions={perms.canCreate ? <ProjectCreateButton clients={clients} projects={allProjects} serviceOfferings={serviceOfferings} /> : undefined}
+        actions={
+          <div className="flex items-center gap-2">
+            {user.role === "ADMIN" && <DownloadCsvButton importerKey="projects" />}
+            {perms.canCreate && (
+              <ProjectCreateButton clients={clients} projects={allProjects} serviceOfferings={serviceOfferings} />
+            )}
+          </div>
+        }
       />
 
       {rootProjects.length === 0 ? (

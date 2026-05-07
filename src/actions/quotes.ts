@@ -249,8 +249,8 @@ export async function createQuote(opts: CreateQuoteOptions = {}) {
       recurringInterval: li.recurringInterval,
     }));
   } else if (opts.fromQuoteId) {
-    const src = await db.quote.findUnique({
-      where: { id: opts.fromQuoteId },
+    const src = await db.quote.findFirst({
+      where: { id: opts.fromQuoteId, deletedAt: null },
       include: { lineItems: { orderBy: { position: "asc" } } },
     });
     if (!src) return { error: "Source quote not found" } as const;
@@ -297,8 +297,8 @@ export async function createQuote(opts: CreateQuoteOptions = {}) {
   // generator can build a CLIENT-PROJECT-YEAR-NNNN style id. We've
   // already validated the client id at this point so a missing row
   // would be a programming error; treat as a hard failure.
-  const seedClient = await db.client.findUnique({
-    where: { id: seedClientId },
+  const seedClient = await db.client.findFirst({
+    where: { id: seedClientId, deletedAt: null },
     select: { name: true },
   });
   if (!seedClient) {
@@ -306,8 +306,8 @@ export async function createQuote(opts: CreateQuoteOptions = {}) {
   }
   const seedProjectName = seedProjectId
     ? (
-        await db.project.findUnique({
-          where: { id: seedProjectId },
+        await db.project.findFirst({
+          where: { id: seedProjectId, deletedAt: null },
           select: { name: true },
         })
       )?.name ?? null
@@ -424,8 +424,8 @@ export async function updateQuote(input: { id: string } & QuoteUpsertInput) {
     } as const;
   }
 
-  const existing = await db.quote.findUnique({
-    where: { id: input.id },
+  const existing = await db.quote.findFirst({
+    where: { id: input.id, deletedAt: null },
     select: {
       id: true,
       status: true,
@@ -460,12 +460,15 @@ export async function deleteQuote(id: string) {
 
   const quote = await db.quote.findUnique({
     where: { id },
-    select: { id: true, status: true, clientId: true, projectId: true, title: true },
+    select: { id: true, status: true, clientId: true, projectId: true, title: true, deletedAt: true },
   });
   if (!quote) return { error: "Quote not found" } as const;
+  if (quote.deletedAt) {
+    return { error: "Already in the recovery bin" } as const;
+  }
 
-  await db.quote.delete({ where: { id } });
-  await logActivity("deleted", "quote", id, user.id, quote.title, {
+  await db.quote.update({ where: { id }, data: { deletedAt: new Date() } });
+  await logActivity("soft-deleted", "quote", id, user.id, quote.title, {
     clientId: quote.clientId,
     projectId: quote.projectId,
   });
@@ -489,8 +492,8 @@ export async function saveQuoteAsTemplate(input: { id: string; name: string; des
   const name = input.name?.trim();
   if (!name) return { error: "Template name is required" } as const;
 
-  const quote = await db.quote.findUnique({
-    where: { id: input.id },
+  const quote = await db.quote.findFirst({
+    where: { id: input.id, deletedAt: null },
     include: { lineItems: { orderBy: { position: "asc" } } },
   });
   if (!quote) return { error: "Quote not found" } as const;
@@ -543,8 +546,8 @@ export async function convertQuoteToProject(id: string) {
     } as const;
   }
 
-  const quote = await db.quote.findUnique({
-    where: { id },
+  const quote = await db.quote.findFirst({
+    where: { id, deletedAt: null },
     include: {
       lineItems: { orderBy: { position: "asc" } },
       project: { select: { id: true } },
@@ -649,7 +652,7 @@ export async function listQuotes(filters: QuoteListFilters = {}) {
   const perms = await resolveModulePerms(user.id, user.role, "quotes");
   if (!perms.canView) return { error: "Permission denied" } as const;
 
-  const where: Prisma.QuoteWhereInput = {};
+  const where: Prisma.QuoteWhereInput = { deletedAt: null };
   if (filters.clientId) where.clientId = filters.clientId;
   if (filters.projectId) where.projectId = filters.projectId;
   if (filters.assignedToId) where.assignedToId = filters.assignedToId;

@@ -82,6 +82,18 @@ export const toolsImporter: ImporterDefinition = {
     }));
   },
 
+  async exportRows() {
+    const tools = await db.tool.findMany({ orderBy: { name: "asc" } });
+    return tools.map((t) => ({
+      name: t.name,
+      description: t.description || "",
+      category: t.category || "",
+      toolUrl: t.toolUrl || "",
+      toolType: t.toolType,
+      isGlobal: t.isGlobal ? "true" : "false",
+    }));
+  },
+
   async commit(rows, ctx) {
     const results: ImportRowResult[] = [];
     let imported = 0;

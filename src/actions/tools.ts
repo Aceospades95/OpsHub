@@ -70,9 +70,12 @@ export async function deleteTool(_prev: unknown, formData: FormData) {
   const id = formData.get("id") as string;
   const tool = await db.tool.findUnique({ where: { id } });
   if (!tool) return { error: "Not found" };
+  if (tool.deletedAt) {
+    return { error: "Already in the recovery bin" };
+  }
 
-  await db.tool.delete({ where: { id } });
-  await logActivity("deleted", "tool", id, user.id, tool.name);
+  await db.tool.update({ where: { id }, data: { deletedAt: new Date() } });
+  await logActivity("soft-deleted", "tool", id, user.id, tool.name);
   revalidatePath("/tools");
   return { success: true };
 }

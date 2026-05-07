@@ -42,7 +42,7 @@ export default async function WorkflowTemplateEditPage({ params }: Props) {
     // panel is a client component and ought to receive projects as a
     // serializable prop.
     db.project.findMany({
-      where: { status: { in: ["PLANNING", "ACTIVE"] } },
+      where: { status: { in: ["PLANNING", "ACTIVE"] }, deletedAt: null },
       select: { id: true, name: true },
       orderBy: { name: "asc" },
     }),

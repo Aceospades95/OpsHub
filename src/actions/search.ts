@@ -82,6 +82,7 @@ export async function quickSearch(query: string): Promise<SearchResults> {
     }),
     db.client.findMany({
       where: {
+        deletedAt: null,
         AND: [
           clientScope,
           { OR: [{ name: ci }, { industry: ci }] },
@@ -93,6 +94,7 @@ export async function quickSearch(query: string): Promise<SearchResults> {
     }),
     db.project.findMany({
       where: {
+        deletedAt: null,
         AND: [
           projectScope,
           { OR: [{ name: ci }, { description: ci }] },
@@ -108,6 +110,7 @@ export async function quickSearch(query: string): Promise<SearchResults> {
     }),
     db.supplier.findMany({
       where: {
+        deletedAt: null,
         OR: [{ name: ci }, { contactName: ci }, { category: ci }],
       },
       select: { id: true, name: true, category: true },
@@ -116,6 +119,7 @@ export async function quickSearch(query: string): Promise<SearchResults> {
     }),
     db.contract.findMany({
       where: {
+        deletedAt: null,
         AND: [
           orgWide
             ? {}
@@ -139,6 +143,7 @@ export async function quickSearch(query: string): Promise<SearchResults> {
     }),
     db.quote.findMany({
       where: {
+        deletedAt: null,
         AND: [
           orgWide
             ? {}
@@ -162,6 +167,7 @@ export async function quickSearch(query: string): Promise<SearchResults> {
     }),
     db.tool.findMany({
       where: {
+        deletedAt: null,
         OR: [{ name: ci }, { description: ci }, { category: ci }],
       },
       select: { id: true, name: true, category: true },
@@ -170,6 +176,7 @@ export async function quickSearch(query: string): Promise<SearchResults> {
     }),
     db.intranetResource.findMany({
       where: {
+        deletedAt: null,
         published: true,
         OR: [{ title: ci }, { description: ci }],
       },

@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Wrench } from "lucide-react";
 import Link from "next/link";
 import { ToolCreateButton } from "./tool-create-button";
+import { DownloadCsvButton } from "@/components/shared/download-csv-button";
 import type { Prisma } from "@prisma/client";
 
 export default async function ToolsPage() {
@@ -37,7 +38,12 @@ export default async function ToolsPage() {
       <PageHeader
         title="Tools"
         description="Company tools, forms, and calculators"
-        actions={perms.canCreate ? <ToolCreateButton /> : undefined}
+        actions={
+          <div className="flex items-center gap-2">
+            {user.role === "ADMIN" && <DownloadCsvButton importerKey="tools" />}
+            {perms.canCreate && <ToolCreateButton />}
+          </div>
+        }
       />
 
       {tools.length === 0 ? (

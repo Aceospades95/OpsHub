@@ -12,6 +12,7 @@ import { TaskCreateButton } from "./task-create-button";
 import { TaskCheckbox } from "./task-checkbox";
 import { TaskFilters } from "./task-filters";
 import { TasksListClient } from "./tasks-list-client";
+import { DownloadCsvButton } from "@/components/shared/download-csv-button";
 import { Suspense } from "react";
 import { formatCalendarDate } from "@/lib/dates";
 import Link from "next/link";
@@ -52,7 +53,7 @@ export default async function TasksPage({
   const scope = await getUserScope(user.id, user.role);
 
   // Build filter
-  const where: Prisma.TaskWhereInput = {};
+  const where: Prisma.TaskWhereInput = { deletedAt: null };
 
   if (assignee === "me") {
     where.assigneeId = user.id;
@@ -128,12 +129,12 @@ export default async function TasksPage({
       },
     }),
     db.project.findMany({
-      where: scopedProjectIds ? { id: { in: scopedProjectIds } } : {},
+      where: { deletedAt: null, ...(scopedProjectIds ? { id: { in: scopedProjectIds } } : {}) },
       select: { id: true, name: true },
       orderBy: { name: "asc" },
     }),
     db.client.findMany({
-      where: scopedClientIds ? { id: { in: scopedClientIds } } : {},
+      where: { deletedAt: null, ...(scopedClientIds ? { id: { in: scopedClientIds } } : {}) },
       select: { id: true, name: true },
       orderBy: { name: "asc" },
     }),
@@ -168,7 +169,12 @@ export default async function TasksPage({
       <PageHeader
         title="Tasks"
         description="Track and manage tasks across projects and clients"
-        actions={<TaskCreateButton projects={projects} clients={clients} users={users} />}
+        actions={
+          <div className="flex items-center gap-2">
+            {user.role === "ADMIN" && <DownloadCsvButton importerKey="tasks" />}
+            <TaskCreateButton projects={projects} clients={clients} users={users} />
+          </div>
+        }
       />
 
       <Suspense fallback={null}>

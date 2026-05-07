@@ -276,6 +276,52 @@ export const certificationsImporter: ImporterDefinition = {
     }));
   },
 
+  async exportRows() {
+    const certs = await db.certification.findMany({
+      orderBy: [{ status: "asc" }, { expirationDate: "asc" }, { name: "asc" }],
+      include: {
+        assignee: { select: { email: true } },
+        pointOfContact: { select: { email: true } },
+        client: { select: { name: true } },
+      },
+    });
+    return certs.map((c) => ({
+      name: c.name,
+      plainEnglishSummary: c.plainEnglishSummary || "",
+      description: c.description || "",
+      status: c.status,
+      type: c.type,
+      engagementType: c.engagementType,
+      jurisdictionLevel: c.jurisdictionLevel,
+      jurisdictionName: c.jurisdictionName || "",
+      issuingBody: c.issuingBody || "",
+      agencyWebsiteUrl: c.agencyWebsiteUrl || "",
+      agencyContactName: c.agencyContactName || "",
+      agencyContactEmail: c.agencyContactEmail || "",
+      agencyContactPhone: c.agencyContactPhone || "",
+      certNumber: c.certNumber || "",
+      submittedDate: formatDate(c.submittedDate),
+      issuedDate: formatDate(c.issuedDate),
+      expirationDate: formatDate(c.expirationDate),
+      renewalDate: formatDate(c.renewalDate),
+      renewalLeadDays: String(c.renewalLeadDays),
+      reminderOffsetsDays: c.reminderOffsetsDays.join("|"),
+      autoRenew: c.autoRenew ? "true" : "false",
+      renewalCost:
+        c.renewalCost !== null && c.renewalCost !== undefined
+          ? String(c.renewalCost)
+          : "",
+      currency: c.currency || "",
+      renewalRequirements: c.renewalRequirements || "",
+      renewalNotes: c.renewalNotes || "",
+      documentUrl: c.documentUrl || "",
+      completedCertUrl: c.completedCertUrl || "",
+      assigneeEmail: c.assignee?.email || "",
+      pointOfContactEmail: c.pointOfContact?.email || "",
+      clientName: c.client?.name || "",
+    }));
+  },
+
   async commit(rows, ctx) {
     const results: ImportRowResult[] = [];
     let imported = 0;

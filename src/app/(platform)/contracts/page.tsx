@@ -8,6 +8,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { TreeView, TreeNode } from "@/components/shared/tree-view";
 import { FileText } from "lucide-react";
 import { ContractCreateButton } from "./contract-create-button";
+import { DownloadCsvButton } from "@/components/shared/download-csv-button";
 
 interface ContractWithRelations {
   id: string;
@@ -43,19 +44,19 @@ export default async function ContractsPage() {
   const scopedProjectIds = scope.all ? null : Array.from(scope.projectIds);
 
   const clients = await db.client.findMany({
-    where: scopedClientIds ? { id: { in: scopedClientIds } } : {},
+    where: { deletedAt: null, ...(scopedClientIds ? { id: { in: scopedClientIds } } : {}) },
     select: { id: true, name: true },
     orderBy: { name: "asc" },
   });
 
   const projects = await db.project.findMany({
-    where: scopedProjectIds ? { id: { in: scopedProjectIds } } : {},
+    where: { deletedAt: null, ...(scopedProjectIds ? { id: { in: scopedProjectIds } } : {}) },
     select: { id: true, name: true },
     orderBy: { name: "asc" },
   });
 
   const parentContracts = await db.contract.findMany({
-    where: scopedContractIds ? { id: { in: scopedContractIds } } : {},
+    where: { deletedAt: null, ...(scopedContractIds ? { id: { in: scopedContractIds } } : {}) },
     select: { id: true, title: true },
     orderBy: { title: "asc" },
   });
@@ -63,6 +64,7 @@ export default async function ContractsPage() {
   // Hierarchical query: root contracts grouped by client
   const rootContracts = await db.contract.findMany({
     where: {
+      deletedAt: null,
       parentContractId: null,
       ...(scopedContractIds ? { id: { in: scopedContractIds } } : {}),
     },
@@ -70,12 +72,15 @@ export default async function ContractsPage() {
     include: {
       client: { select: { id: true, name: true } },
       childContracts: {
+        where: { deletedAt: null },
         include: {
           client: { select: { id: true, name: true } },
           childContracts: {
+            where: { deletedAt: null },
             include: {
               client: { select: { id: true, name: true } },
               childContracts: {
+                where: { deletedAt: null },
                 include: { client: { select: { id: true, name: true } } },
               },
             },
@@ -108,9 +113,12 @@ export default async function ContractsPage() {
         title="Contracts"
         description="Manage contracts and agreements"
         actions={
-          perms.canCreate ? (
-            <ContractCreateButton clients={clients} projects={projects} parentContracts={parentContracts} />
-          ) : undefined
+          <div className="flex items-center gap-2">
+            {user.role === "ADMIN" && <DownloadCsvButton importerKey="contracts" />}
+            {perms.canCreate && (
+              <ContractCreateButton clients={clients} projects={projects} parentContracts={parentContracts} />
+            )}
+          </div>
         }
       />
 

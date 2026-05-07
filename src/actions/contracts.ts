@@ -165,9 +165,12 @@ export async function deleteContract(_prev: unknown, formData: FormData) {
   const id = formData.get("id") as string;
   const contract = await db.contract.findUnique({ where: { id } });
   if (!contract) return { error: "Not found" };
+  if (contract.deletedAt) {
+    return { error: "Already in the recovery bin" };
+  }
 
-  await db.contract.delete({ where: { id } });
-  await logActivity("deleted", "contract", id, user.id, contract.title, {
+  await db.contract.update({ where: { id }, data: { deletedAt: new Date() } });
+  await logActivity("soft-deleted", "contract", id, user.id, contract.title, {
     clientId: contract.clientId,
     projectId: contract.projectId,
   });

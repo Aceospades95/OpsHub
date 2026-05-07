@@ -59,16 +59,18 @@ export default async function ProjectDetailPage({ params }: Props) {
   const subPerms = await resolveModulePerms(user.id, user.role, "subcontractors");
   const partnerPerms = await resolveModulePerms(user.id, user.role, "partnerships");
 
-  const project = await db.project.findUnique({
-    where: { id: projectId },
+  const project = await db.project.findFirst({
+    where: { id: projectId, deletedAt: null },
     include: {
       client: { select: { id: true, name: true } },
       serviceOffering: { select: { id: true, name: true } },
       parentProject: { select: { id: true, name: true } },
       childProjects: {
+        where: { deletedAt: null },
         include: {
           _count: { select: { members: true, childProjects: true } },
           childProjects: {
+            where: { deletedAt: null },
             include: { _count: { select: { members: true, childProjects: true } } },
           },
         },
@@ -100,8 +102,8 @@ export default async function ProjectDetailPage({ params }: Props) {
         },
         orderBy: [{ completed: "asc" }, { dueDate: "asc" }],
       },
-      documents: { orderBy: { updatedAt: "desc" } },
-      contracts: { orderBy: { updatedAt: "desc" } },
+      documents: { where: { deletedAt: null }, orderBy: { updatedAt: "desc" } },
+      contracts: { where: { deletedAt: null }, orderBy: { updatedAt: "desc" } },
       tools: { include: { tool: true } },
       links: true,
       embeds: true,
@@ -116,12 +118,14 @@ export default async function ProjectDetailPage({ params }: Props) {
         orderBy: { createdAt: "desc" },
       },
       subcontractors: {
+        where: { subcontractor: { deletedAt: null } },
         include: {
           subcontractor: { select: { id: true, name: true, isPreferred: true } },
         },
         orderBy: { createdAt: "desc" },
       },
       partnerships: {
+        where: { partnership: { deletedAt: null } },
         include: {
           partnership: { select: { id: true, name: true, type: true, tier: true } },
         },
@@ -138,7 +142,7 @@ export default async function ProjectDetailPage({ params }: Props) {
   }
 
   const clients = await db.client.findMany({
-    where: { status: "ACTIVE" },
+    where: { status: "ACTIVE", deletedAt: null },
     select: { id: true, name: true },
     orderBy: { name: "asc" },
   });
@@ -159,17 +163,18 @@ export default async function ProjectDetailPage({ params }: Props) {
       orderBy: { name: "asc" },
     }),
     db.task.findMany({
-      where: { projectId: project.id, status: { in: ["TODO", "IN_PROGRESS"] } },
+      where: { projectId: project.id, status: { in: ["TODO", "IN_PROGRESS"] }, deletedAt: null },
       orderBy: [{ priority: "asc" }, { dueDate: "asc" }],
       include: { assignee: { select: { id: true, name: true } } },
       take: 10,
     }),
     db.tool.findMany({
+      where: { deletedAt: null },
       select: { id: true, name: true },
       orderBy: { name: "asc" },
     }),
     db.project.findMany({
-      where: { id: { not: project.id } },
+      where: { id: { not: project.id }, deletedAt: null },
       select: { id: true, name: true },
       orderBy: { name: "asc" },
     }),
@@ -185,14 +190,14 @@ export default async function ProjectDetailPage({ params }: Props) {
     }),
     subPerms.canView
       ? db.subcontractor.findMany({
-          where: { status: { not: "ARCHIVED" } },
+          where: { status: { not: "ARCHIVED" }, deletedAt: null },
           select: { id: true, name: true },
           orderBy: { name: "asc" },
         })
       : Promise.resolve([] as { id: string; name: string }[]),
     partnerPerms.canView
       ? db.partnership.findMany({
-          where: { status: { not: "ARCHIVED" } },
+          where: { status: { not: "ARCHIVED" }, deletedAt: null },
           select: { id: true, name: true },
           orderBy: { name: "asc" },
         })

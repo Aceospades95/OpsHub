@@ -62,10 +62,20 @@ export function PartnershipContacts({ contacts, partnershipId, canEdit }: Props)
             </div>
             {canEdit && (
               <div className="flex gap-1">
-                <button onClick={() => setEditContact(contact)} className="rounded p-1 text-muted-foreground hover:text-foreground">
+                <button
+                  onClick={() => setEditContact(contact)}
+                  className="rounded p-1 text-muted-foreground hover:text-foreground"
+                  aria-label="Edit contact"
+                  title="Edit contact"
+                >
                   <Pencil className="h-3 w-3" />
                 </button>
-                <button onClick={() => handleDelete(contact.id)} className="rounded p-1 text-muted-foreground hover:text-destructive">
+                <button
+                  onClick={() => handleDelete(contact.id)}
+                  className="rounded p-1 text-muted-foreground hover:text-destructive"
+                  aria-label="Remove contact"
+                  title="Remove contact"
+                >
                   <Trash2 className="h-3 w-3" />
                 </button>
               </div>

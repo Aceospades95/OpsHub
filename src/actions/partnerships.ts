@@ -152,9 +152,12 @@ export async function deletePartnership(_prev: unknown, formData: FormData) {
   const id = formData.get("id") as string;
   const partnership = await db.partnership.findUnique({ where: { id } });
   if (!partnership) return { error: "Not found" };
+  if (partnership.deletedAt) {
+    return { error: "Already in the recovery bin" };
+  }
 
-  await db.partnership.delete({ where: { id } });
-  await logActivity("deleted", "partnership", id, user.id, partnership.name);
+  await db.partnership.update({ where: { id }, data: { deletedAt: new Date() } });
+  await logActivity("soft-deleted", "partnership", id, user.id, partnership.name);
   revalidatePartnership(id, { deleted: true });
   return { success: true };
 }

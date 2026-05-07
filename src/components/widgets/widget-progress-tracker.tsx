@@ -5,12 +5,12 @@ import { BarChart3 } from "lucide-react";
 export async function WidgetProgressTracker({ userId: _userId }: { userId: string }) {
   const [totalTasks, doneTasks, totalMilestones, completedMilestones, totalProjects, completedProjects] =
     await Promise.all([
-      db.task.count(),
-      db.task.count({ where: { status: "DONE" } }),
+      db.task.count({ where: { deletedAt: null } }),
+      db.task.count({ where: { status: "DONE", deletedAt: null } }),
       db.milestone.count(),
       db.milestone.count({ where: { completed: true } }),
-      db.project.count(),
-      db.project.count({ where: { status: "COMPLETED" } }),
+      db.project.count({ where: { deletedAt: null } }),
+      db.project.count({ where: { status: "COMPLETED", deletedAt: null } }),
     ]);
 
   const items = [

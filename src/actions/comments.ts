@@ -81,20 +81,20 @@ async function resolveCommentEntity(
 ): Promise<{ name: string; href: string } | null> {
   switch (entityType) {
     case "client": {
-      const c = await db.client.findUnique({ where: { id: entityId }, select: { name: true } });
+      const c = await db.client.findFirst({ where: { id: entityId, deletedAt: null }, select: { name: true } });
       return c ? { name: c.name, href: `/clients/${entityId}` } : null;
     }
     case "project": {
-      const p = await db.project.findUnique({ where: { id: entityId }, select: { name: true } });
+      const p = await db.project.findFirst({ where: { id: entityId, deletedAt: null }, select: { name: true } });
       return p ? { name: p.name, href: `/projects/${entityId}` } : null;
     }
     case "contract": {
-      const c = await db.contract.findUnique({ where: { id: entityId }, select: { title: true } });
+      const c = await db.contract.findFirst({ where: { id: entityId, deletedAt: null }, select: { title: true } });
       return c ? { name: c.title, href: `/contracts/${entityId}` } : null;
     }
     case "document": {
-      const d = await db.document.findUnique({
-        where: { id: entityId },
+      const d = await db.document.findFirst({
+        where: { id: entityId, deletedAt: null },
         select: { title: true, projectId: true },
       });
       return d
@@ -102,26 +102,26 @@ async function resolveCommentEntity(
         : null;
     }
     case "supplier": {
-      const s = await db.supplier.findUnique({ where: { id: entityId }, select: { name: true } });
+      const s = await db.supplier.findFirst({ where: { id: entityId, deletedAt: null }, select: { name: true } });
       return s ? { name: s.name, href: `/suppliers/${entityId}` } : null;
     }
     case "certification": {
-      const c = await db.certification.findUnique({
-        where: { id: entityId },
+      const c = await db.certification.findFirst({
+        where: { id: entityId, deletedAt: null },
         select: { name: true },
       });
       return c ? { name: c.name, href: `/certifications/${entityId}` } : null;
     }
     case "subcontractor": {
-      const s = await db.subcontractor.findUnique({
-        where: { id: entityId },
+      const s = await db.subcontractor.findFirst({
+        where: { id: entityId, deletedAt: null },
         select: { name: true },
       });
       return s ? { name: s.name, href: `/subcontractors/${entityId}` } : null;
     }
     case "partnership": {
-      const p = await db.partnership.findUnique({
-        where: { id: entityId },
+      const p = await db.partnership.findFirst({
+        where: { id: entityId, deletedAt: null },
         select: { name: true },
       });
       return p ? { name: p.name, href: `/partnerships/${entityId}` } : null;

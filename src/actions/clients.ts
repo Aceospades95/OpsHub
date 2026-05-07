@@ -78,9 +78,12 @@ export async function deleteClient(_prev: unknown, formData: FormData) {
   const id = formData.get("id") as string;
   const client = await db.client.findUnique({ where: { id } });
   if (!client) return { error: "Client not found" };
+  if (client.deletedAt) {
+    return { error: "Already in the recovery bin" };
+  }
 
-  await db.client.delete({ where: { id } });
-  await logActivity("deleted", "client", id, user.id, client.name, { clientId: id });
+  await db.client.update({ where: { id }, data: { deletedAt: new Date() } });
+  await logActivity("soft-deleted", "client", id, user.id, client.name, { clientId: id });
   revalidateClient(id, { deleted: true });
   return { success: true };
 }

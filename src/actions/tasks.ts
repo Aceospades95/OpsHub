@@ -86,8 +86,8 @@ async function notifyTaskAssigned(opts: {
         select: { name: true, hasLoginAccess: true },
       }),
       opts.projectId
-        ? db.project.findUnique({
-            where: { id: opts.projectId },
+        ? db.project.findFirst({
+            where: { id: opts.projectId, deletedAt: null },
             select: { name: true },
           })
         : Promise.resolve(null),
@@ -329,17 +329,34 @@ export async function deleteTask(taskId: string) {
   );
   if (denied) return denied;
 
-  // Look up before delete so we can revalidate the right pages
+  // Look up before soft-delete so we can revalidate the right pages
+  // and detect "already in trash" before stamping deletedAt again.
   const task = await db.task.findUnique({
     where: { id: taskId },
-    select: { projectId: true, clientId: true, assigneeId: true },
+    select: { projectId: true, clientId: true, assigneeId: true, title: true, deletedAt: true },
   });
-  await db.task.delete({ where: { id: taskId } });
+  if (!task) return { error: "Task not found" };
+  if (task.deletedAt) {
+    return { error: "Already in the recovery bin" };
+  }
+
+  await db.task.update({ where: { id: taskId }, data: { deletedAt: new Date() } });
+  await db.activityLog.create({
+    data: {
+      action: "soft-deleted",
+      entityType: "task",
+      entityId: taskId,
+      details: task.title,
+      userId: session.user.id,
+      projectId: task.projectId,
+      clientId: task.clientId,
+    },
+  });
 
   revalidateTask({
-    projectId: task?.projectId,
-    clientId: task?.clientId,
-    assigneeId: task?.assigneeId,
+    projectId: task.projectId,
+    clientId: task.clientId,
+    assigneeId: task.assigneeId,
   });
   return { success: true };
 }

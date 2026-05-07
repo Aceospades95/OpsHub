@@ -235,15 +235,25 @@ export async function deleteProject(_prev: unknown, formData: FormData) {
   const id = formData.get("id") as string;
   const project = await db.project.findUnique({ where: { id } });
   if (!project) return { error: "Project not found" };
+  if (project.deletedAt) {
+    return { error: "Already in the recovery bin" };
+  }
 
-  await db.project.delete({ where: { id } });
-  await logActivity("deleted", "project", id, user.id, project.name, {
+  // Soft-delete: stamp deletedAt = now() instead of running a real
+  // db.project.delete(). The row stays in the DB for the 30-day
+  // recovery window but is filtered out of every list / detail view
+  // (the queries all carry `deletedAt: null`). The
+  // PURGE_SOFT_DELETED scheduled task hard-deletes after the window
+  // expires, at which point the existing onDelete cascades fire.
+  await db.project.update({ where: { id }, data: { deletedAt: new Date() } });
+  await logActivity("soft-deleted", "project", id, user.id, project.name, {
     projectId: id,
     clientId: project.clientId,
   });
   // deleted: true skips revalidating /projects/${id} so the [projectId]
   // RSC tree (which the user is currently on) doesn't auto-refresh
-  // against the now-missing record before the client navigates away.
+  // against the now-soft-deleted record before the client navigates
+  // away. Same race fix as before — see the chunk-A write-up.
   revalidateProject(id, { clientId: project.clientId, deleted: true });
   return { success: true };
 }
@@ -323,8 +333,8 @@ export async function addProjectMember(_prev: unknown, formData: FormData) {
   // Notify the new member (skip if they added themselves)
   if (userId !== user.id) {
     try {
-      const project = await db.project.findUnique({
-        where: { id: projectId },
+      const project = await db.project.findFirst({
+        where: { id: projectId, deletedAt: null },
         select: { name: true },
       });
       if (project) {
@@ -349,8 +359,8 @@ export async function addProjectMember(_prev: unknown, formData: FormData) {
   // reach the same helper so a workflow author who configures the
   // trigger doesn't have to know which mechanism added the member.
   try {
-    const project = await db.project.findUnique({
-      where: { id: projectId },
+    const project = await db.project.findFirst({
+      where: { id: projectId, deletedAt: null },
       select: { serviceOfferingId: true },
     });
     const { fireProjectAssignmentTriggers } = await import(

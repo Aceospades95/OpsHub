@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Truck, Star, Mail, Phone } from "lucide-react";
 import Link from "next/link";
 import { SupplierCreateButton } from "./supplier-create-button";
+import { DownloadCsvButton } from "@/components/shared/download-csv-button";
 
 export default async function SuppliersPage() {
   const user = await requireAuth();
@@ -24,7 +25,12 @@ export default async function SuppliersPage() {
       <PageHeader
         title="Suppliers"
         description="Manage vendors and service providers"
-        actions={perms.canCreate ? <SupplierCreateButton /> : undefined}
+        actions={
+          <div className="flex items-center gap-2">
+            {user.role === "ADMIN" && <DownloadCsvButton importerKey="suppliers" />}
+            {perms.canCreate && <SupplierCreateButton />}
+          </div>
+        }
       />
 
       {suppliers.length === 0 ? (

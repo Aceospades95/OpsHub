@@ -120,12 +120,12 @@ export async function getUserScope(
 
   const [managedClients, scopedProjects] = await Promise.all([
     db.client.findMany({
-      where: { accountManagerId: userId },
+      where: { accountManagerId: userId, deletedAt: null },
       select: { id: true },
     }),
     projectIds.size > 0
       ? db.project.findMany({
-          where: { id: { in: Array.from(projectIds) } },
+          where: { id: { in: Array.from(projectIds) }, deletedAt: null },
           select: { clientId: true },
         })
       : Promise.resolve([] as { clientId: string }[]),
@@ -145,7 +145,7 @@ export async function getUserScope(
     if (p.entityType === "certification") certOrClauses.push({ id: p.entityId });
   }
   const certRows = await db.certification.findMany({
-    where: { OR: certOrClauses },
+    where: { OR: certOrClauses, deletedAt: null },
     select: { id: true },
   });
   const certIds = new Set(certRows.map((c) => c.id));
@@ -161,7 +161,7 @@ export async function getUserScope(
   }
   if (projectIds.size > 0) {
     const contracts = await db.contract.findMany({
-      where: { projectId: { in: Array.from(projectIds) } },
+      where: { projectId: { in: Array.from(projectIds) }, deletedAt: null },
       select: { id: true },
     });
     for (const c of contracts) contractIds.add(c.id);

@@ -4,10 +4,10 @@ import { Building2, FolderKanban, FileText, CheckSquare, Users } from "lucide-re
 
 export async function WidgetStatsSummary({ userId: _userId }: { userId: string }) {
   const [clients, projects, contracts, tasks, team] = await Promise.all([
-    db.client.count({ where: { status: "ACTIVE" } }),
-    db.project.count({ where: { status: "ACTIVE" } }),
-    db.contract.count({ where: { status: "ACTIVE" } }),
-    db.task.count({ where: { status: { in: ["TODO", "IN_PROGRESS"] } } }),
+    db.client.count({ where: { status: "ACTIVE", deletedAt: null } }),
+    db.project.count({ where: { status: "ACTIVE", deletedAt: null } }),
+    db.contract.count({ where: { status: "ACTIVE", deletedAt: null } }),
+    db.task.count({ where: { status: { in: ["TODO", "IN_PROGRESS"] }, deletedAt: null } }),
     db.user.count({ where: { isActive: true } }),
   ]);
 

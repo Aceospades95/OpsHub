@@ -8,6 +8,7 @@ import { Globe, Pin } from "lucide-react";
 import Link from "next/link";
 import { IntranetCreateButton } from "./intranet-create-button";
 import { IntranetCategoryAdd } from "./intranet-category-add";
+import { DownloadCsvButton } from "@/components/shared/download-csv-button";
 
 const categoryLabels: Record<string, string> = {
   EXPENSE_REPORT: "Expense Reports",
@@ -43,7 +44,12 @@ export default async function IntranetPage() {
       <PageHeader
         title="Intranet"
         description="Company resources and announcements"
-        actions={perms.canCreate ? <IntranetCreateButton /> : undefined}
+        actions={
+          <div className="flex items-center gap-2">
+            {user.role === "ADMIN" && <DownloadCsvButton importerKey="intranet" />}
+            {perms.canCreate && <IntranetCreateButton />}
+          </div>
+        }
       />
 
       {resources.length === 0 ? (

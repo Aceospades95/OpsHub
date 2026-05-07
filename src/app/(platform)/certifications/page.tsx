@@ -23,6 +23,7 @@ import Link from "next/link";
 import type { JurisdictionLevel, CertEngagementType } from "@prisma/client";
 import { CertCreateButton } from "./cert-create-button";
 import { CertFilters } from "./cert-filters";
+import { DownloadCsvButton } from "@/components/shared/download-csv-button";
 
 const JURISDICTION_LEVELS: JurisdictionLevel[] = [
   "FEDERAL",
@@ -155,7 +156,12 @@ export default async function CertificationsPage({ searchParams }: PageProps) {
       <PageHeader
         title="Certifications"
         description="Track certifications, renewals, and compliance"
-        actions={canCreate ? <CertCreateButton clients={clients} users={users} /> : undefined}
+        actions={
+          <div className="flex items-center gap-2">
+            {user.role === "ADMIN" && <DownloadCsvButton importerKey="certifications" />}
+            {canCreate && <CertCreateButton clients={clients} users={users} />}
+          </div>
+        }
       />
 
       {/* Clickable status buckets — tap a card to filter the list below. */}

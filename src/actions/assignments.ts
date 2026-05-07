@@ -32,8 +32,8 @@ async function notifyAssignmentChange(opts: {
   try {
     const [project, employee] = await Promise.all([
       opts.projectId
-        ? db.project.findUnique({
-            where: { id: opts.projectId },
+        ? db.project.findFirst({
+            where: { id: opts.projectId, deletedAt: null },
             select: { name: true },
           })
         : Promise.resolve(null),

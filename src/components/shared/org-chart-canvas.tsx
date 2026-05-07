@@ -131,6 +131,134 @@ export default function OrgChartCanvas({
       .render();
   }, [flat, compact, highlightLower]);
 
+  // Post-render: attach hover listeners to highlight the path of edges
+  // from a node up to the root. d3-org-chart doesn't expose an
+  // edge-hover hook, but it does emit the chart as a DOM tree of
+  // <g class="node"> + <path class="link"> elements with data-bind
+  // attributes encoding the parent-child relationship. We walk the
+  // DOM after each render, build a parent map by inspecting each
+  // path's source/target, then bind mouseenter/leave on every node.
+  // On hover we mark the ancestor chain's paths + cards with a
+  // `og-highlight` data attribute that the inline CSS below picks up
+  // for a quick color flash.
+  //
+  // Defensive: if d3-org-chart's DOM shape changes in a future
+  // version, the selectors return [] and the effect silently no-ops.
+  // The chart still works; just the hover-highlight is missing.
+  useEffect(() => {
+    const root = containerRef.current;
+    if (!root) return;
+
+    // Build parent → ancestors map from `flat` so the hover handler
+    // doesn't have to walk the DOM at hover time.
+    const parentById = new Map<string, string | null>();
+    for (const node of flat) {
+      parentById.set(node.id, node.parentId);
+    }
+    function ancestorsOf(id: string): string[] {
+      const out: string[] = [];
+      let cur = parentById.get(id) ?? null;
+      while (cur) {
+        out.push(cur);
+        cur = parentById.get(cur) ?? null;
+      }
+      return out;
+    }
+
+    // d3-org-chart marks node groups with .node and stores the bound
+    // datum on `__data__`; links are <path> elements with class link.
+    // We grab everything that smells like a node and walk the bound
+    // datum to find the id.
+    const nodeEls: HTMLElement[] = [];
+    const allNodes = root.querySelectorAll<SVGGElement>("g.node");
+    allNodes.forEach((g) => nodeEls.push(g as unknown as HTMLElement));
+    const linkEls = root.querySelectorAll<SVGPathElement>("path.link");
+
+    if (nodeEls.length === 0 || linkEls.length === 0) {
+      return; // d3-org-chart not rendered (yet) or DOM shape diverged
+    }
+
+    function readId(el: Element): string | null {
+      // d3 binds the datum on the DOM node itself. Try a couple of
+      // shapes — d3-org-chart wraps each node in a hierarchy point.
+      const datum =
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (el as any).__data__?.data ?? (el as any).__data__;
+      if (datum && typeof datum.id === "string") return datum.id;
+      return el.getAttribute("data-id");
+    }
+
+    // Build a quick lookup from path element → (sourceId, targetId).
+    // d3-org-chart's link layout binds the datum {source, target}
+    // hierarchy point pair on the path; we read both.
+    interface LinkBinding {
+      el: SVGPathElement;
+      sourceId: string;
+      targetId: string;
+    }
+    const links: LinkBinding[] = [];
+    linkEls.forEach((p) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const datum = (p as any).__data__;
+      const sourceId =
+        datum?.source?.data?.id ?? datum?.source?.id ?? null;
+      const targetId =
+        datum?.target?.data?.id ?? datum?.target?.id ?? null;
+      if (typeof sourceId === "string" && typeof targetId === "string") {
+        links.push({ el: p, sourceId, targetId });
+      }
+    });
+
+    function setHighlight(activeId: string | null): void {
+      if (!activeId) {
+        // Clear all
+        nodeEls.forEach((n) => n.removeAttribute("data-og-highlight"));
+        links.forEach((l) => l.el.removeAttribute("data-og-highlight"));
+        return;
+      }
+      const ancestors = new Set<string>([activeId, ...ancestorsOf(activeId)]);
+      nodeEls.forEach((n) => {
+        const id = readId(n);
+        if (id && ancestors.has(id)) {
+          n.setAttribute("data-og-highlight", "true");
+        } else {
+          n.removeAttribute("data-og-highlight");
+        }
+      });
+      links.forEach((l) => {
+        // A link is on the highlighted path if BOTH endpoints are in
+        // the ancestor chain from the hovered node up to root.
+        if (ancestors.has(l.sourceId) && ancestors.has(l.targetId)) {
+          l.el.setAttribute("data-og-highlight", "true");
+        } else {
+          l.el.removeAttribute("data-og-highlight");
+        }
+      });
+    }
+
+    // Bind handlers + capture cleanup
+    const cleanups: Array<() => void> = [];
+    nodeEls.forEach((n) => {
+      const id = readId(n);
+      if (!id || id === VIRTUAL_ROOT_ID) return;
+      const onEnter = () => setHighlight(id);
+      const onLeave = () => setHighlight(null);
+      n.addEventListener("mouseenter", onEnter);
+      n.addEventListener("mouseleave", onLeave);
+      cleanups.push(() => {
+        n.removeEventListener("mouseenter", onEnter);
+        n.removeEventListener("mouseleave", onLeave);
+      });
+    });
+
+    return () => {
+      cleanups.forEach((fn) => fn());
+      setHighlight(null);
+    };
+    // Re-run after every chart re-render. flat/compact/highlightLower
+    // re-render the chart, replacing the DOM nodes — we re-bind.
+  }, [flat, compact, highlightLower]);
+
   return (
     <div className="space-y-2">
       <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -173,6 +301,24 @@ export default function OrgChartCanvas({
           Fit to view
         </button>
       </div>
+      {/* Inline styles power the hover-highlight effect: when the
+       *  hover useEffect adds data-og-highlight to a node group or a
+       *  link path, these rules colorize the path from hovered card
+       *  up to root. Inline so we don't have to wire a CSS module. */}
+      <style>{`
+        [data-og-highlight="true"] path.link,
+        path.link[data-og-highlight="true"] {
+          stroke: var(--primary);
+          stroke-width: 2.5;
+          opacity: 1;
+        }
+        path.link {
+          transition: stroke 120ms ease, stroke-width 120ms ease, opacity 120ms ease;
+        }
+        g.node[data-og-highlight="true"] {
+          filter: drop-shadow(0 0 0.5rem var(--primary));
+        }
+      `}</style>
       <div
         ref={containerRef}
         className="rounded border border-border bg-muted/20"

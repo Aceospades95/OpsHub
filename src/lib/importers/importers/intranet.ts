@@ -107,6 +107,21 @@ export const intranetImporter: ImporterDefinition = {
     }));
   },
 
+  async exportRows() {
+    const resources = await db.intranetResource.findMany({
+      orderBy: [{ pinned: "desc" }, { sortOrder: "asc" }, { title: "asc" }],
+    });
+    return resources.map((r) => ({
+      title: r.title,
+      description: r.description || "",
+      content: r.content || "",
+      category: r.category,
+      published: r.published ? "true" : "false",
+      pinned: r.pinned ? "true" : "false",
+      sortOrder: String(r.sortOrder),
+    }));
+  },
+
   async commit(rows, ctx) {
     const results: ImportRowResult[] = [];
     let imported = 0;

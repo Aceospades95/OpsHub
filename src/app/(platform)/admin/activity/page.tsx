@@ -43,10 +43,12 @@ export default async function AdminActivityPage({
       orderBy: { name: "asc" },
     }),
     db.project.findMany({
+      where: { deletedAt: null },
       select: { id: true, name: true },
       orderBy: { name: "asc" },
     }),
     db.client.findMany({
+      where: { deletedAt: null },
       select: { id: true, name: true },
       orderBy: { name: "asc" },
     }),

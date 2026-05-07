@@ -73,9 +73,12 @@ export async function deleteIntranetResource(_prev: unknown, formData: FormData)
   const id = formData.get("id") as string;
   const resource = await db.intranetResource.findUnique({ where: { id } });
   if (!resource) return { error: "Not found" };
+  if (resource.deletedAt) {
+    return { error: "Already in the recovery bin" };
+  }
 
-  await db.intranetResource.delete({ where: { id } });
-  await logActivity("deleted", "intranet", id, user.id, resource.title);
+  await db.intranetResource.update({ where: { id }, data: { deletedAt: new Date() } });
+  await logActivity("soft-deleted", "intranet", id, user.id, resource.title);
   revalidatePath("/intranet");
   return { success: true };
 }

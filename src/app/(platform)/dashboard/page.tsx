@@ -25,6 +25,12 @@ export default async function DashboardPage() {
 
   const { id: userId, role } = user;
 
+  // Single "now" for the whole render so the past-due indicator on
+  // task rows agrees with itself across the page (and so we don't
+  // create N Date objects per row in the JSX). The server component
+  // re-renders on every visit, so the value stays fresh.
+  const renderedAt = new Date();
+
   const canEditLayout = user.role === "ADMIN" || user.role === "DEVELOPER";
 
   const clientPerms = await resolveModulePerms(userId, role, "clients");
@@ -51,16 +57,17 @@ export default async function DashboardPage() {
     activeProjects,
     teamMembers,
   ] = await Promise.all([
-    clientPerms.canView ? db.client.count() : Promise.resolve(0),
-    projectPerms.canView ? db.project.count() : Promise.resolve(0),
+    clientPerms.canView ? db.client.count({ where: { deletedAt: null } }) : Promise.resolve(0),
+    projectPerms.canView ? db.project.count({ where: { deletedAt: null } }) : Promise.resolve(0),
     projectPerms.canView
-      ? db.project.count({ where: { status: "ACTIVE" } })
+      ? db.project.count({ where: { status: "ACTIVE", deletedAt: null } })
       : Promise.resolve(0),
-    contractPerms.canView ? db.contract.count({ where: { status: "ACTIVE" } }) : Promise.resolve(0),
+    contractPerms.canView ? db.contract.count({ where: { status: "ACTIVE", deletedAt: null } }) : Promise.resolve(0),
     contractPerms.canView
       ? db.contract.count({
           where: {
             status: { in: ["EXPIRING_SOON", "EXPIRED"] },
+            deletedAt: null,
           },
         })
       : Promise.resolve(0),
@@ -74,6 +81,7 @@ export default async function DashboardPage() {
       where: {
         status: { in: ["TODO", "IN_PROGRESS"] },
         assigneeId: userId,
+        deletedAt: null,
       },
       take: 8,
       orderBy: [{ priority: "asc" }, { dueDate: "asc" }],
@@ -88,6 +96,7 @@ export default async function DashboardPage() {
         status: "DONE",
         assigneeId: userId,
         completedAt: { gte: recentlyCompletedSince },
+        deletedAt: null,
       },
       take: 5,
       orderBy: { completedAt: "desc" },
@@ -96,12 +105,12 @@ export default async function DashboardPage() {
       },
     }),
     db.task.count({
-      where: { status: { in: ["TODO", "IN_PROGRESS"] } },
+      where: { status: { in: ["TODO", "IN_PROGRESS"] }, deletedAt: null },
     }),
     // Active projects with status for overview card
     projectPerms.canView
       ? db.project.findMany({
-          where: { status: { in: ["PLANNING", "ACTIVE", "ON_HOLD"] } },
+          where: { status: { in: ["PLANNING", "ACTIVE", "ON_HOLD"] }, deletedAt: null },
           take: 8,
           orderBy: { updatedAt: "desc" },
           select: {
@@ -261,7 +270,7 @@ export default async function DashboardPage() {
                             </Link>
                           )}
                           {task.dueDate && (
-                            <span className={`flex items-center gap-1 ${new Date(task.dueDate) < new Date() ? "text-destructive" : ""}`}>
+                            <span className={`flex items-center gap-1 ${new Date(task.dueDate) < renderedAt ? "text-destructive" : ""}`}>
                               <Clock className="h-3 w-3" />
                               {formatCalendarDate(task.dueDate, "MMM d")}
                             </span>

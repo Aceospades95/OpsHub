@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { Suspense } from "react";
 import { requireAuth, resolveModulePerms } from "@/lib/permissions";
+import { DownloadCsvButton } from "@/components/shared/download-csv-button";
 import { getUserScope } from "@/lib/scope";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent } from "@/components/ui/card";
@@ -66,7 +67,12 @@ export default async function ClientsPage({
       <PageHeader
         title="Clients"
         description="Manage your client portfolio"
-        actions={perms.canCreate ? <ClientCreateButton /> : undefined}
+        actions={
+          <div className="flex items-center gap-2">
+            {user.role === "ADMIN" && <DownloadCsvButton importerKey="clients" />}
+            {perms.canCreate && <ClientCreateButton />}
+          </div>
+        }
       />
 
       <Suspense fallback={null}>
