@@ -70,7 +70,7 @@ export default async function QuotesPage({
   const clientId = searchParams.clientId?.trim();
   const projectId = searchParams.projectId?.trim();
 
-  const where: Prisma.QuoteWhereInput = {};
+  const where: Prisma.QuoteWhereInput = { deletedAt: null };
   if (clientId) where.clientId = clientId;
   if (projectId) where.projectId = projectId;
   if (search) {
@@ -84,7 +84,7 @@ export default async function QuotesPage({
 
   const [clients, quotes] = await Promise.all([
     db.client.findMany({
-      where: { status: { in: ["ACTIVE", "PROSPECT"] } },
+      where: { status: { in: ["ACTIVE", "PROSPECT"] }, deletedAt: null },
       select: { id: true, name: true },
       orderBy: { name: "asc" },
     }),

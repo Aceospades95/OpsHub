@@ -69,7 +69,7 @@ export default async function TeamPage() {
       orderBy: [{ status: "asc" }, { name: "asc" }],
     }),
     db.client.findMany({
-      where: { status: "ACTIVE" },
+      where: { status: "ACTIVE", deletedAt: null },
       select: { id: true, name: true },
       orderBy: { name: "asc" },
     }),
