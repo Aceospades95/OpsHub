@@ -26,9 +26,12 @@ export default async function ProjectsPage() {
     parentProjectId: null,
     ...(scopedProjectIds ? { id: { in: scopedProjectIds } } : {}),
   };
+  // Client dropdown for "+ New Project" intentionally pulls EVERY non-
+  // deleted client regardless of status — round-4 QA flagged that
+  // PROSPECT clients (the natural source of new project work) were
+  // hidden from the picker, blocking the most common create path.
   const clientWhere: Prisma.ClientWhereInput = {
     deletedAt: null,
-    status: "ACTIVE",
     ...(scope.all ? {} : { id: { in: Array.from(scope.clientIds) } }),
   };
 

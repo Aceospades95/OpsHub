@@ -142,7 +142,10 @@ export default async function ProjectDetailPage({ params }: Props) {
   }
 
   const clients = await db.client.findMany({
-    where: { status: "ACTIVE", deletedAt: null },
+    // Round-4 QA: previously filtered to status:"ACTIVE", which hid
+    // PROSPECT/INACTIVE clients from the project edit picker. Any
+    // non-deleted client should be assignable.
+    where: { deletedAt: null },
     select: { id: true, name: true },
     orderBy: { name: "asc" },
   });
