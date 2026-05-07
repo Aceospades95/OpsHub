@@ -35,8 +35,14 @@ export default async function ClientDetailPage({ params }: Props) {
   // card on the user's quotes permissions, not their clients permissions.
   const quotePerms = await resolveModulePerms(user.id, user.role, "quotes");
 
+  // Round-8 QA: resolve by slug-or-id so /clients/<slug> works for
+  // new records (where the slug is the canonical href) and existing
+  // cuid bookmarks keep resolving for older rows.
   const client = await db.client.findFirst({
-    where: { id: clientId, deletedAt: null },
+    where: {
+      OR: [{ id: clientId }, { slug: clientId }],
+      deletedAt: null,
+    },
     include: {
       accountManager: { select: { id: true, name: true } },
       contacts: { orderBy: [{ isPrimary: "desc" }, { name: "asc" }] },

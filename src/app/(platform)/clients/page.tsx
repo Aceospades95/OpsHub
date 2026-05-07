@@ -99,7 +99,7 @@ export default async function ClientsPage({
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {clients.map((client) => (
-            <Link key={client.id} href={`/clients/${client.id}`}>
+            <Link key={client.id} href={`/clients/${client.slug ?? client.id}`}>
               <Card className="hover:shadow-md transition-shadow h-full">
                 <CardContent className="p-5">
                   <div className="flex items-start justify-between mb-2">

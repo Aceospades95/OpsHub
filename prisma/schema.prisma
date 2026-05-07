@@ -521,6 +521,11 @@ model Task {
 model Client {
   id               String       @id @default(cuid())
   name             String
+  /// URL-friendly slug derived from `name` at create time. Used as
+  /// the canonical href on /clients/<slug>; the cuid still resolves
+  /// for backwards compat with existing bookmarks. See
+  /// src/lib/slug.ts for generation + collision rules.
+  slug             String?      @unique
   description      String?      @db.Text
   summary          String?      @db.Text
   industry         String?
@@ -565,6 +570,10 @@ model ClientContact {
 model Project {
   id                String        @id @default(cuid())
   name              String
+  /// URL-friendly slug derived from `name` at create time. Used as
+  /// the canonical href on /projects/<slug>; the cuid still resolves
+  /// for backwards compat. See src/lib/slug.ts for the rules.
+  slug              String?       @unique
   description       String?       @db.Text
   status            ProjectStatus @default(PLANNING)
   startDate         DateTime?
@@ -825,6 +834,10 @@ model ProjectTool {
 model IntranetResource {
   id          String           @id @default(cuid())
   title       String
+  /// URL-friendly slug derived from `title` at create time. Used as
+  /// the canonical href on /intranet/<slug>; the cuid still resolves
+  /// for backwards compat. See src/lib/slug.ts for the rules.
+  slug        String?          @unique
   description String?          @db.Text
   content     String?          @db.Text
   category    IntranetCategory @default(OTHER)

@@ -7,6 +7,7 @@ import { revalidateClient } from "@/lib/revalidate-entity";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { nameField } from "@/lib/validation";
+import { slugify, ensureUniqueSlug } from "@/lib/slug";
 
 const clientSchema = z.object({
   name: nameField({ label: "Name" }),
@@ -34,7 +35,16 @@ export async function createClient(_prev: unknown, formData: FormData) {
 
   if (!parsed.success) return { error: "Invalid input", fieldErrors: parsed.error.flatten().fieldErrors };
 
-  const client = await db.client.create({ data: parsed.data });
+  // Round-8 QA: generate a URL-friendly slug at create time so the
+  // detail page renders /clients/<slug> instead of /clients/<cuid>.
+  // The cuid still resolves via the slug-or-id fallback in the
+  // detail page resolver.
+  const slug = await ensureUniqueSlug(slugify(parsed.data.name), async (s) => {
+    const taken = await db.client.findUnique({ where: { slug: s }, select: { id: true } });
+    return taken !== null;
+  });
+
+  const client = await db.client.create({ data: { ...parsed.data, slug } });
   await logActivity("created", "client", client.id, user.id, client.name, { clientId: client.id });
   revalidateClient(client.id);
   return { success: true };

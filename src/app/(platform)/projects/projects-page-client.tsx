@@ -9,6 +9,8 @@ import { ProjectCreateButton } from "./project-create-button";
 
 export interface ProjectData {
   id: string;
+  /** Round-8: URL-friendly slug; falls back to id when null. */
+  slug: string | null;
   name: string;
   status: string;
   client: { id: string; name: string };
@@ -51,7 +53,7 @@ function buildTreeNodes(projects: ProjectData[]): TreeNode[] {
   return projects.map((project) => ({
     id: project.id,
     label: project.name,
-    href: `/projects/${project.id}`,
+    href: `/projects/${project.slug ?? project.id}`,
     status: project.status,
     meta:
       project._count.members === 1

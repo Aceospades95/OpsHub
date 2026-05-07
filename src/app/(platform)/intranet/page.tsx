@@ -76,7 +76,7 @@ export default async function IntranetPage() {
               </div>
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 {items.map((resource) => (
-                  <Link key={resource.id} href={`/intranet/${resource.id}`}>
+                  <Link key={resource.id} href={`/intranet/${resource.slug ?? resource.id}`}>
                     <Card className="hover:shadow-lg transition-shadow h-full">
                       <CardContent className="p-5">
                         <div className="flex items-start justify-between mb-2">

@@ -20,8 +20,13 @@ export default async function IntranetDetailPage({ params }: Props) {
 
   const perms = await resolveModulePerms(user.id, user.role, "intranet");
 
+  // Round-8 QA: resolve by slug-or-id (slug is the canonical href
+  // for new records; cuid still works for old bookmarks).
   const resource = await db.intranetResource.findFirst({
-    where: { id: resourceId, deletedAt: null },
+    where: {
+      OR: [{ id: resourceId }, { slug: resourceId }],
+      deletedAt: null,
+    },
     include: { links: true, embeds: true },
   });
 

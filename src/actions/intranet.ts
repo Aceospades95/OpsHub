@@ -6,6 +6,7 @@ import { logActivity } from "@/lib/activity";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { nameField } from "@/lib/validation";
+import { slugify, ensureUniqueSlug } from "@/lib/slug";
 
 const resourceSchema = z.object({
   title: nameField({ label: "Title" }),
@@ -34,7 +35,14 @@ export async function createIntranetResource(_prev: unknown, formData: FormData)
 
   if (!parsed.success) return { error: "Invalid input", fieldErrors: parsed.error.flatten().fieldErrors };
 
-  const resource = await db.intranetResource.create({ data: parsed.data });
+  // Round-8 QA: generate URL slug at create time so the detail
+  // page resolves to /intranet/<slug> instead of /intranet/<cuid>.
+  const slug = await ensureUniqueSlug(slugify(parsed.data.title), async (s) => {
+    const taken = await db.intranetResource.findUnique({ where: { slug: s }, select: { id: true } });
+    return taken !== null;
+  });
+
+  const resource = await db.intranetResource.create({ data: { ...parsed.data, slug } });
   await logActivity("created", "intranet", resource.id, user.id, resource.title);
   revalidatePath("/intranet");
   return { success: true };

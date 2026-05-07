@@ -59,8 +59,13 @@ export default async function ProjectDetailPage({ params }: Props) {
   const subPerms = await resolveModulePerms(user.id, user.role, "subcontractors");
   const partnerPerms = await resolveModulePerms(user.id, user.role, "partnerships");
 
+  // Round-8 QA: resolve by slug-or-id (slug is the canonical href
+  // for new records; cuid still works for old bookmarks).
   const project = await db.project.findFirst({
-    where: { id: projectId, deletedAt: null },
+    where: {
+      OR: [{ id: projectId }, { slug: projectId }],
+      deletedAt: null,
+    },
     include: {
       client: { select: { id: true, name: true } },
       serviceOffering: { select: { id: true, name: true } },

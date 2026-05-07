@@ -25,6 +25,7 @@
     "cleanup:demo-data": "npx tsx prisma/cleanup-demo-data.ts",
     "cleanup:orphan-file-refs": "npx tsx prisma/cleanup-orphan-file-refs.ts",
     "backfill:projectrole-suffixes": "npx tsx prisma/backfill-projectrole-suffixes.ts",
+    "backfill:slugs": "npx tsx prisma/backfill-slugs.ts",
     "db:studio": "prisma studio",
     "test": "vitest run",
     "test:watch": "vitest",

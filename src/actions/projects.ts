@@ -12,6 +12,7 @@ import { absoluteUrl } from "@/lib/url";
 import { z } from "zod";
 import { isValidCalendarRange } from "@/lib/dates";
 import { nameField } from "@/lib/validation";
+import { slugify, ensureUniqueSlug } from "@/lib/slug";
 
 const projectSchema = z
   .object({
@@ -85,8 +86,18 @@ export async function createProject(_prev: unknown, formData: FormData) {
 
   if (!parsed.success) return { error: "Invalid input", fieldErrors: parsed.error.flatten().fieldErrors };
 
+  // Round-8 QA: generate a URL-friendly slug at create time so the
+  // detail page renders /projects/<slug> instead of /projects/<cuid>.
+  // The cuid still resolves via the slug-or-id fallback in the
+  // detail page resolver.
+  const slug = await ensureUniqueSlug(slugify(parsed.data.name), async (s) => {
+    const taken = await db.project.findUnique({ where: { slug: s }, select: { id: true } });
+    return taken !== null;
+  });
+
   const data = {
     ...parsed.data,
+    slug,
     startDate: parsed.data.startDate ? new Date(parsed.data.startDate) : undefined,
     endDate: parsed.data.endDate ? new Date(parsed.data.endDate) : undefined,
     parentProjectId: parsed.data.parentProjectId || undefined,
