@@ -22,6 +22,47 @@ import { OrgChart } from "d3-org-chart";
 
 import type { OrgChartNode, OrgChartTreeProps } from "./org-chart-tree";
 
+/**
+ * Inline CSS for the org-chart canvas.
+ *
+ * Round-5 QA flagged that nodes were rendering at ~0.24 opacity
+ * after `.fit()` — d3-org-chart's enter/exit transitions set
+ * `attr("opacity", …)` inline on every g.node and an interrupted
+ * transition can leave nodes stuck at an intermediate value. The
+ * default rule here forces opacity:1 with !important so an inline
+ * residual opacity loses to the stylesheet. The dim rule fires
+ * ONLY when the SVG carries data-og-has-highlight (toggled by the
+ * setHighlight handler at hover-time) so dimming is a hover effect,
+ * not the resting state.
+ *
+ * Exported so the regression test can assert the rule is present.
+ */
+export const ORG_CHART_CSS = `
+  /* Default: every node fully opaque. !important overrides d3's
+     attr("opacity", …) which gets set inline during transitions. */
+  g.node {
+    opacity: 1 !important;
+  }
+  /* Hover-state dim: only fires when the SVG container has
+     data-og-has-highlight set (i.e. the user is hovering some
+     node). At rest this selector matches nothing. */
+  svg[data-og-has-highlight] g.node:not([data-og-highlight]) {
+    opacity: 0.3 !important;
+  }
+  g.node[data-og-highlight] {
+    filter: drop-shadow(0 0 0.5rem var(--primary));
+  }
+  path.link {
+    transition: stroke 120ms ease, stroke-width 120ms ease, opacity 120ms ease;
+  }
+  [data-og-highlight="true"] path.link,
+  path.link[data-og-highlight="true"] {
+    stroke: var(--primary);
+    stroke-width: 2.5;
+    opacity: 1;
+  }
+`;
+
 interface FlatNode {
   id: string;
   parentId: string | null;
@@ -239,12 +280,22 @@ export default function OrgChartCanvas({
     });
 
     function setHighlight(activeId: string | null): void {
+      // Toggle the parent-attr guard so the dim rule fires only
+      // while a hover is active. The CSS rule
+      //   svg[data-og-has-highlight] g.node:not([data-og-highlight])
+      // matches nothing at rest, which is the round-5 fix for the
+      // ghosted-cards regression. `root` is narrowed at the top of
+      // the effect; the optional-chain keeps TS happy across the
+      // closure boundary without any runtime cost.
+      const svgEl = root?.querySelector("svg") ?? null;
       if (!activeId) {
         // Clear all
         nodeEls.forEach((n) => n.removeAttribute("data-og-highlight"));
         links.forEach((l) => l.el.removeAttribute("data-og-highlight"));
+        if (svgEl) svgEl.removeAttribute("data-og-has-highlight");
         return;
       }
+      if (svgEl) svgEl.setAttribute("data-og-has-highlight", "true");
       const ancestors = new Set<string>([activeId, ...ancestorsOf(activeId)]);
       nodeEls.forEach((n) => {
         const id = readId(n);
@@ -341,22 +392,7 @@ export default function OrgChartCanvas({
        *  with the CSS as innerHTML, which is unambiguous across
        *  React versions and SSR/hydration paths. */}
       <style
-        dangerouslySetInnerHTML={{
-          __html: `
-            [data-og-highlight="true"] path.link,
-            path.link[data-og-highlight="true"] {
-              stroke: var(--primary);
-              stroke-width: 2.5;
-              opacity: 1;
-            }
-            path.link {
-              transition: stroke 120ms ease, stroke-width 120ms ease, opacity 120ms ease;
-            }
-            g.node[data-og-highlight="true"] {
-              filter: drop-shadow(0 0 0.5rem var(--primary));
-            }
-          `,
-        }}
+        dangerouslySetInnerHTML={{ __html: ORG_CHART_CSS }}
       />
       <div
         ref={containerRef}
