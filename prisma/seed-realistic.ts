@@ -182,12 +182,37 @@ async function runCleanupDemoData(): Promise<void> {
 
 // ─── Step 2: cleanup-demo-employees ─────────────────────────────
 
+/**
+ * Read cleanup targets from `SEED_CLEANUP_USER_TARGETS`. The env var
+ * holds a JSON array of `{ name, email? }` objects. Default (env unset
+ * or empty): no targets — the step is inert. This keeps real PII out
+ * of the repo: when an operator needs to deactivate a specific demo
+ * employee, they pass the names/emails at runtime, not in source.
+ *
+ *   SEED_CLEANUP_USER_TARGETS='[{"name":"Demo User","email":"demo@example.com"}]'
+ */
+function readCleanupTargets(): { name: string; email: string | null }[] {
+  const raw = process.env.SEED_CLEANUP_USER_TARGETS;
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter((t): t is { name: string; email?: string } => typeof t?.name === "string")
+      .map((t) => ({ name: t.name, email: t.email ?? null }));
+  } catch {
+    console.warn("  SEED_CLEANUP_USER_TARGETS is set but not valid JSON; ignoring");
+    return [];
+  }
+}
+
 async function runCleanupDemoEmployees(): Promise<void> {
   console.log("\n[2/5] Deactivating demo employees...");
-  const targets: { name: string; email: string | null }[] = [
-    { name: "Sanya testing", email: "jakewright95@gmail.com" },
-    { name: "Testing USer", email: null },
-  ];
+  const targets = readCleanupTargets();
+  if (targets.length === 0) {
+    console.log("  no SEED_CLEANUP_USER_TARGETS configured; skipping");
+    return;
+  }
 
   for (const target of targets) {
     const candidates = await db.user.findMany({
@@ -217,29 +242,48 @@ async function runCleanupDemoEmployees(): Promise<void> {
   }
 }
 
-// ─── Step 3: merge Jacob Wright ─────────────────────────────────
+// ─── Step 3: merge a duplicate-named user pair ──────────────────
 
+/**
+ * Inert by default. To opt in, set
+ *   SEED_MERGE_TARGET_NAME="Jane Doe"
+ *   SEED_MERGE_TARGET_EMAIL="jane.doe@example.com"
+ * The merge collapses two User rows that share `name` into one keeper:
+ * the keeper is the row with a synthetic `nologin-...@internal.local`
+ * email; the source is the row whose email matches
+ * SEED_MERGE_TARGET_EMAIL. After the FK walk the keeper's email is
+ * renamed to the target email so it carries the canonical address.
+ *
+ * The standalone `prisma/merge-jacob-wright.ts` and
+ * `prisma/merge-users-by-id.ts` scripts still exist for case-by-case
+ * operator use; this step is just the seed-time hook.
+ */
 async function runMergeJacobWright(): Promise<void> {
-  console.log("\n[3/5] Merging duplicate Jacob Wright if present...");
+  console.log("\n[3/5] Merging duplicate user pair if configured...");
+  const targetName = process.env.SEED_MERGE_TARGET_NAME?.trim();
+  const targetEmail = process.env.SEED_MERGE_TARGET_EMAIL?.trim().toLowerCase();
+  if (!targetName || !targetEmail) {
+    console.log("  no SEED_MERGE_TARGET_NAME / SEED_MERGE_TARGET_EMAIL configured; skipping");
+    return;
+  }
   const candidates = await db.user.findMany({
-    where: { name: { equals: "Jacob Wright", mode: "insensitive" } },
+    where: { name: { equals: targetName, mode: "insensitive" } },
     include: { _count: { select: { assignments: true, projectMembers: true } } },
     orderBy: { createdAt: "asc" },
   });
   if (candidates.length < 2) {
-    console.log(`  found ${candidates.length} 'Jacob Wright' row(s); nothing to merge`);
+    console.log(`  found ${candidates.length} '${targetName}' row(s); nothing to merge`);
     return;
   }
   if (candidates.length > 2) {
-    console.log(`  found ${candidates.length} 'Jacob Wright' rows; refusing — not the QA shape`);
+    console.log(`  found ${candidates.length} '${targetName}' rows; refusing — ambiguous shape`);
     return;
   }
   const SYNTHETIC = /^nologin-.*@internal\.local$/i;
-  const CANONICAL = "j.wright@wynndalco.com";
   const keeper = candidates.find((c) => SYNTHETIC.test(c.email));
-  const source = candidates.find((c) => c.email.trim().toLowerCase() === CANONICAL);
+  const source = candidates.find((c) => c.email.trim().toLowerCase() === targetEmail);
   if (!keeper || !source) {
-    console.log("  data shape doesn't match the QA report (synthetic + canonical); skipping");
+    console.log("  data shape doesn't match (synthetic + canonical); skipping");
     return;
   }
   const keeperLoad = keeper._count.assignments + keeper._count.projectMembers;
@@ -248,8 +292,8 @@ async function runMergeJacobWright(): Promise<void> {
     console.log("  canonical row has more attachments than synthetic — refusing to merge");
     return;
   }
-  await executeMerge(db, source.id, keeper.id, { targetEmail: CANONICAL });
-  console.log("  merged Jacob Wright duplicates");
+  await executeMerge(db, source.id, keeper.id, { targetEmail });
+  console.log(`  merged '${targetName}' duplicates`);
 }
 
 // ─── Step 4: dedupe Org Chart intranet ──────────────────────────
@@ -288,7 +332,7 @@ const CLIENT_DEFS: Array<{
   {
     name: "Bedrock Industrial Co.",
     industry: "Manufacturing",
-    domain: "bedrockindustrial.com",
+    domain: "bedrockindustrial.example.com",
     status: "ACTIVE",
     description: "Mid-market industrial fastener and machined parts producer.",
     contacts: [
@@ -300,7 +344,7 @@ const CLIENT_DEFS: Array<{
   {
     name: "NorthRail Components",
     industry: "Manufacturing",
-    domain: "northrailcomp.com",
+    domain: "northrailcomp.example.com",
     status: "ACTIVE",
     description: "Tier-2 supplier of rolling stock subcomponents to North American rail.",
     contacts: [
@@ -311,7 +355,7 @@ const CLIENT_DEFS: Array<{
   {
     name: "Halcyon Plastics LLC",
     industry: "Manufacturing",
-    domain: "halcyonplastics.com",
+    domain: "halcyonplastics.example.com",
     status: "PROSPECT",
     description: "Injection-molded plastics for the consumer goods sector.",
     contacts: [
@@ -324,7 +368,7 @@ const CLIENT_DEFS: Array<{
   {
     name: "Trailfork Software",
     industry: "Tech",
-    domain: "trailfork.io",
+    domain: "trailfork.example.com",
     status: "ACTIVE",
     description: "B2B SaaS for outdoor logistics planning.",
     contacts: [
@@ -336,7 +380,7 @@ const CLIENT_DEFS: Array<{
   {
     name: "Lattice Cloud Systems",
     industry: "Tech",
-    domain: "latticecloud.com",
+    domain: "latticecloud.example.com",
     status: "ACTIVE",
     description: "Cloud platform reseller and managed-services partner.",
     contacts: [
@@ -347,7 +391,7 @@ const CLIENT_DEFS: Array<{
   {
     name: "Pinedrop Analytics",
     industry: "Tech",
-    domain: "pinedropanalytics.com",
+    domain: "pinedropanalytics.example.com",
     status: "INACTIVE",
     description: "Advanced analytics consultancy — engagement paused.",
     contacts: [
@@ -359,7 +403,7 @@ const CLIENT_DEFS: Array<{
   {
     name: "Glenmoor Medical Group",
     industry: "Healthcare",
-    domain: "glenmoormed.com",
+    domain: "glenmoormed.example.com",
     status: "ACTIVE",
     description: "Multi-specialty physician practice with HIPAA modernization needs.",
     contacts: [
@@ -371,7 +415,7 @@ const CLIENT_DEFS: Array<{
   {
     name: "RidgeView Hospital System",
     industry: "Healthcare",
-    domain: "ridgeviewhealth.org",
+    domain: "ridgeviewhealth.example.com",
     status: "ACTIVE",
     description: "Regional hospital network — patient portal and HIPAA initiatives.",
     contacts: [
@@ -382,7 +426,7 @@ const CLIENT_DEFS: Array<{
   {
     name: "VitaCircle Health",
     industry: "Healthcare",
-    domain: "vitacirclehealth.com",
+    domain: "vitacirclehealth.example.com",
     status: "PROSPECT",
     description: "Virtual-first primary care clinic, exploring vendor relationship.",
     contacts: [
@@ -394,7 +438,7 @@ const CLIENT_DEFS: Array<{
   {
     name: "Holloway Property Group",
     industry: "Real Estate",
-    domain: "hollowayrealestate.com",
+    domain: "hollowayrealestate.example.com",
     status: "ACTIVE",
     description: "Commercial property management across the Midwest.",
     contacts: [
@@ -406,7 +450,7 @@ const CLIENT_DEFS: Array<{
   {
     name: "Civic Crossing Realty",
     industry: "Real Estate",
-    domain: "civiccrossingrealty.com",
+    domain: "civiccrossingrealty.example.com",
     status: "ACTIVE",
     description: "Mixed-use developer with retail and residential portfolios.",
     contacts: [
@@ -417,7 +461,7 @@ const CLIENT_DEFS: Array<{
   {
     name: "Brookhaven Estates",
     industry: "Real Estate",
-    domain: "brookhavenestates.com",
+    domain: "brookhavenestates.example.com",
     status: "PROSPECT",
     description: "Luxury residential brokerage — early discovery phase.",
     contacts: [
@@ -499,22 +543,22 @@ const NEW_EMPLOYEE_DEFS: Array<{
 ];
 
 const SUPPLIER_DEFS: Array<{ name: string; category: string; contactName: string; contactEmail: string; domain: string }> = [
-  { name: "Sterling Office Supply", category: "Office Supplies", contactName: "Erica Boone", contactEmail: "erica@sterlingoffice.com", domain: "sterlingoffice.com" },
-  { name: "Apex IT Hardware", category: "IT Hardware", contactName: "Mason Reilly", contactEmail: "sales@apexithw.com", domain: "apexithw.com" },
-  { name: "Maple & Vine Catering", category: "Catering", contactName: "Renata Voss", contactEmail: "events@mapleandvine.com", domain: "mapleandvine.com" },
-  { name: "Holcombe Legal Services", category: "Legal", contactName: "Roy Holcombe", contactEmail: "roy@holcombelegal.com", domain: "holcombelegal.com" },
-  { name: "Mainline Construction Co.", category: "Construction", contactName: "Diana Wexler", contactEmail: "diana@mainlinecc.com", domain: "mainlinecc.com" },
-  { name: "Bridgewater Marketing Group", category: "Marketing", contactName: "Trent Bramwell", contactEmail: "trent@bridgewatermkt.com", domain: "bridgewatermkt.com" },
-  { name: "Crystal Clear Cleaning", category: "Cleaning", contactName: "Esther Donato", contactEmail: "esther@crystalclearclean.com", domain: "crystalclearclean.com" },
-  { name: "Northstar HR Partners", category: "HR", contactName: "Vivian Reyes", contactEmail: "v.reyes@northstarhrp.com", domain: "northstarhrp.com" },
+  { name: "Sterling Office Supply", category: "Office Supplies", contactName: "Erica Boone", contactEmail: "erica@sterlingoffice.example.com", domain: "sterlingoffice.example.com" },
+  { name: "Apex IT Hardware", category: "IT Hardware", contactName: "Mason Reilly", contactEmail: "sales@apexithw.example.com", domain: "apexithw.example.com" },
+  { name: "Maple & Vine Catering", category: "Catering", contactName: "Renata Voss", contactEmail: "events@mapleandvine.example.com", domain: "mapleandvine.example.com" },
+  { name: "Holcombe Legal Services", category: "Legal", contactName: "Roy Holcombe", contactEmail: "roy@holcombelegal.example.com", domain: "holcombelegal.example.com" },
+  { name: "Mainline Construction Co.", category: "Construction", contactName: "Diana Wexler", contactEmail: "diana@mainlinecc.example.com", domain: "mainlinecc.example.com" },
+  { name: "Bridgewater Marketing Group", category: "Marketing", contactName: "Trent Bramwell", contactEmail: "trent@bridgewatermkt.example.com", domain: "bridgewatermkt.example.com" },
+  { name: "Crystal Clear Cleaning", category: "Cleaning", contactName: "Esther Donato", contactEmail: "esther@crystalclearclean.example.com", domain: "crystalclearclean.example.com" },
+  { name: "Northstar HR Partners", category: "HR", contactName: "Vivian Reyes", contactEmail: "v.reyes@northstarhrp.example.com", domain: "northstarhrp.example.com" },
 ];
 
 const SUBCONTRACTOR_DEFS: Array<{ name: string; type: "INDIVIDUAL" | "COMPANY" | "AGENCY"; specialties: string[]; primaryContactName: string; primaryContactEmail: string }> = [
-  { name: "Rivera Cloud Engineering", type: "COMPANY", specialties: ["AWS", "Terraform", "Kubernetes"], primaryContactName: "Cesar Rivera", primaryContactEmail: "cesar@riveracloud.com" },
-  { name: "Lakeside Data Group", type: "COMPANY", specialties: ["Snowflake", "dbt", "Analytics"], primaryContactName: "Anya Larsson", primaryContactEmail: "anya@lakesidedata.com" },
-  { name: "Marlow Compliance Consulting", type: "INDIVIDUAL", specialties: ["HIPAA", "SOC 2", "Audit Prep"], primaryContactName: "Patricia Marlow", primaryContactEmail: "patricia@marlowcompliance.com" },
-  { name: "Forge UX Studio", type: "AGENCY", specialties: ["Product Design", "UX Research"], primaryContactName: "Devon Yates", primaryContactEmail: "hello@forgeux.studio" },
-  { name: "Quill Technical Writing", type: "INDIVIDUAL", specialties: ["API Docs", "User Manuals"], primaryContactName: "Imogen Brackett", primaryContactEmail: "imogen@quilltechwriting.com" },
+  { name: "Rivera Cloud Engineering", type: "COMPANY", specialties: ["AWS", "Terraform", "Kubernetes"], primaryContactName: "Cesar Rivera", primaryContactEmail: "cesar@riveracloud.example.com" },
+  { name: "Lakeside Data Group", type: "COMPANY", specialties: ["Snowflake", "dbt", "Analytics"], primaryContactName: "Anya Larsson", primaryContactEmail: "anya@lakesidedata.example.com" },
+  { name: "Marlow Compliance Consulting", type: "INDIVIDUAL", specialties: ["HIPAA", "SOC 2", "Audit Prep"], primaryContactName: "Patricia Marlow", primaryContactEmail: "patricia@marlowcompliance.example.com" },
+  { name: "Forge UX Studio", type: "AGENCY", specialties: ["Product Design", "UX Research"], primaryContactName: "Devon Yates", primaryContactEmail: "hello@forgeux.example.com" },
+  { name: "Quill Technical Writing", type: "INDIVIDUAL", specialties: ["API Docs", "User Manuals"], primaryContactName: "Imogen Brackett", primaryContactEmail: "imogen@quilltechwriting.example.com" },
 ];
 
 const PARTNERSHIP_DEFS: Array<{
@@ -530,7 +574,7 @@ const PARTNERSHIP_DEFS: Array<{
     type: "TECHNOLOGY",
     tier: "PLATINUM",
     industry: "Cloud",
-    domain: "westwindcloud.com",
+    domain: "westwindcloud.example.com",
     contacts: [
       { name: "Hugo Mendel", title: "Partner Manager" },
       { name: "Sophia Lee", title: "Solutions Engineer" },
@@ -542,7 +586,7 @@ const PARTNERSHIP_DEFS: Array<{
     type: "STRATEGIC",
     tier: "GOLD",
     industry: "Consulting",
-    domain: "aspenstrategicgroup.com",
+    domain: "aspenstrategicgroup.example.com",
     contacts: [
       { name: "Maxine Doherty", title: "Managing Director" },
       { name: "Conrad Yoo", title: "Senior Advisor" },
@@ -553,7 +597,7 @@ const PARTNERSHIP_DEFS: Array<{
     type: "REFERRAL",
     tier: "SILVER",
     industry: "Healthcare",
-    domain: "beaconhealthpartners.com",
+    domain: "beaconhealthpartners.example.com",
     contacts: [
       { name: "Dr. Naomi Foster", title: "CEO" },
     ],
@@ -563,7 +607,7 @@ const PARTNERSHIP_DEFS: Array<{
     type: "RESELLER",
     tier: "BRONZE",
     industry: "Distribution",
-    domain: "graniteresellers.com",
+    domain: "graniteresellers.example.com",
     contacts: [
       { name: "Phoebe Harrigan", title: "Channel Lead" },
       { name: "Yuri Volkov", title: "Account Manager" },
@@ -831,7 +875,9 @@ async function upsertEmployee(
     .replace(/[^a-z\s]/g, "")
     .trim()
     .replace(/\s+/g, ".");
-  const email = `${slug}@wynndalco.com`;
+  // example.com is reserved by RFC 2606 for documentation / fixture
+  // use; mail to it never reaches a real recipient.
+  const email = `${slug}@example.com`;
   const existing = await db.user.findUnique({ where: { email } });
   if (existing) {
     return { id: existing.id, created: false };
