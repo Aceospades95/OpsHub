@@ -18,7 +18,7 @@ export function ToolEmbedsSection({ embeds, toolId, canEdit, canDelete }: Props)
 
   return (
     <div className="space-y-3">
-      <FileList embeds={embeds} canDelete={canDelete} />
+      <FileList embeds={embeds} canDelete={canDelete} emptyLabel="No embeds yet" />
       {canEdit && (
         <>
           <Button variant="outline" size="sm" onClick={() => setOpen(true)}>

@@ -84,7 +84,23 @@ export default async function IntranetDetailPage({ params }: Props) {
         )}
       </div>
 
-      <PageLayout pageType="intranet-detail" cards={cardMap} canEdit={canEditLayout} mode="flow" />
+      {/* Round-8 QA: the page-type-level layout customization put a
+       *  Team Directory widget on every intranet detail page, which
+       *  read as noise on announcements (and presumably on most
+       *  category-style content). Suppress the widget for category
+       *  types where the directory has no obvious connection. Org
+       *  Chart and SOP keep the widget; everything else hides it. */}
+      <PageLayout
+        pageType="intranet-detail"
+        cards={cardMap}
+        canEdit={canEditLayout}
+        mode="flow"
+        hideWidgetIds={
+          resource.category === "ORG_CHART" || resource.category === "SOP"
+            ? undefined
+            : ["widget-team-directory"]
+        }
+      />
     </div>
   );
 }
