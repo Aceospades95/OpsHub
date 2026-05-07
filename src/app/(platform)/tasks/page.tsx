@@ -17,6 +17,7 @@ import { Suspense } from "react";
 import { formatCalendarDate } from "@/lib/dates";
 import Link from "next/link";
 import type { Prisma } from "@prisma/client";
+import { pluralize } from "@/lib/pluralize";
 
 const priorityColors: Record<string, string> = {
   HIGH: "bg-red-100 text-red-800",
@@ -192,7 +193,7 @@ export default async function TasksPage({
       </Suspense>
 
       <div className="flex items-center justify-between mb-4">
-        <p className="text-xs text-muted-foreground">{filterLabel} — {tasks.length} task{tasks.length !== 1 ? "s" : ""}</p>
+        <p className="text-xs text-muted-foreground">{filterLabel} — {pluralize(tasks.length, "task")}</p>
         {/* View mode: status (default) vs grouped by project */}
         <div className="flex rounded-md border border-border overflow-hidden">
           <Link

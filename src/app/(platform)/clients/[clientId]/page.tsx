@@ -18,6 +18,7 @@ import { PageLayout } from "@/components/shared/page-layout";
 import { TaskCheckbox } from "@/app/(platform)/tasks/task-checkbox";
 import { RecentlyViewedTracker } from "@/components/shared/recently-viewed-tracker";
 import { QuotesCard } from "@/components/quotes/quotes-card";
+import { pluralize } from "@/lib/pluralize";
 
 interface Props {
   params: Promise<{ clientId: string }>;
@@ -118,7 +119,14 @@ export default async function ClientDetailPage({ params }: Props) {
         </CardHeader>
         <CardContent>
           {client.projects.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No projects</p>
+            <div className="text-sm text-muted-foreground">
+              No projects yet.{" "}
+              {perms.canCreate && (
+                <Link href={`/projects?clientId=${client.id}`} className="text-primary hover:underline">
+                  Create the first project →
+                </Link>
+              )}
+            </div>
           ) : (
             <div className="space-y-3">
               {client.projects.map((project) => (
@@ -130,8 +138,8 @@ export default async function ClientDetailPage({ params }: Props) {
                   <div>
                     <p className="font-medium text-sm">{project.name}</p>
                     <p className="text-xs text-muted-foreground">
-                      {project._count.members} members
-                      {project._count.childProjects > 0 && ` · ${project._count.childProjects} sub-projects`}
+                      {pluralize(project._count.members, "member")}
+                      {project._count.childProjects > 0 && ` · ${pluralize(project._count.childProjects, "sub-project")}`}
                     </p>
                   </div>
                   <StatusBadge status={project.status} />
@@ -149,7 +157,14 @@ export default async function ClientDetailPage({ params }: Props) {
         </CardHeader>
         <CardContent>
           {client.contracts.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No contracts</p>
+            <div className="text-sm text-muted-foreground">
+              No contracts yet.{" "}
+              {perms.canCreate && (
+                <Link href={`/contracts?clientId=${client.id}`} className="text-primary hover:underline">
+                  Create one →
+                </Link>
+              )}
+            </div>
           ) : (
             <div className="space-y-3">
               {client.contracts.map((contract) => (
@@ -244,7 +259,12 @@ export default async function ClientDetailPage({ params }: Props) {
         </CardHeader>
         <CardContent>
           {tasks.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No open tasks</p>
+            <div className="text-sm text-muted-foreground">
+              No open tasks.{" "}
+              <Link href={`/tasks?client=${client.id}`} className="text-primary hover:underline">
+                Add a task →
+              </Link>
+            </div>
           ) : (
             <div className="space-y-2">
               {tasks.map((task) => (

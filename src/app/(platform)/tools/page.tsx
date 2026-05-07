@@ -11,6 +11,7 @@ import Link from "next/link";
 import { ToolCreateButton } from "./tool-create-button";
 import { DownloadCsvButton } from "@/components/shared/download-csv-button";
 import type { Prisma } from "@prisma/client";
+import { pluralize } from "@/lib/pluralize";
 
 export default async function ToolsPage() {
   const user = await requireAuth();
@@ -70,10 +71,10 @@ export default async function ToolsPage() {
                     <Badge variant="outline">{tool.toolType}</Badge>
                     {tool.category && <Badge variant="secondary">{tool.category}</Badge>}
                     {tool._count.clones > 0 && (
-                      <span className="text-xs text-muted-foreground">{tool._count.clones} clones</span>
+                      <span className="text-xs text-muted-foreground">{pluralize(tool._count.clones, "clone")}</span>
                     )}
                     {tool._count.projects > 0 && (
-                      <span className="text-xs text-muted-foreground">{tool._count.projects} projects</span>
+                      <span className="text-xs text-muted-foreground">{pluralize(tool._count.projects, "project")}</span>
                     )}
                   </div>
                   {tool.projects.length > 0 && (

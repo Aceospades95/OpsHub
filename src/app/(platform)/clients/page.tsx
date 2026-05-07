@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { Suspense } from "react";
 import { requireAuth, resolveModulePerms } from "@/lib/permissions";
 import { DownloadCsvButton } from "@/components/shared/download-csv-button";
+import { pluralize } from "@/lib/pluralize";
 import { getUserScope } from "@/lib/scope";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent } from "@/components/ui/card";
@@ -109,9 +110,9 @@ export default async function ClientsPage({
                     <p className="text-sm text-muted-foreground mb-3">{client.industry}</p>
                   )}
                   <div className="flex gap-4 text-xs text-muted-foreground">
-                    <span>{client._count.projects} projects</span>
-                    <span>{client._count.contracts} contracts</span>
-                    <span>{client._count.contacts} contacts</span>
+                    <span>{pluralize(client._count.projects, "project")}</span>
+                    <span>{pluralize(client._count.contracts, "contract")}</span>
+                    <span>{pluralize(client._count.contacts, "contact")}</span>
                   </div>
                 </CardContent>
               </Card>

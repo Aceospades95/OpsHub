@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import type { SidebarConfig, SidebarItemConfig } from "@/lib/sidebar-config";
 import { SYSTEM_MODULES } from "@/lib/modules";
+import { SafeImg } from "@/components/ui/safe-img";
 
 interface CustomPage {
   id: string;
@@ -183,13 +184,20 @@ export function Sidebar({
         {!collapsed && (
           <Link href="/dashboard" className="flex items-center gap-2 min-w-0">
             {companyLogoUrl ? (
-              // Custom uploaded logo. Plain <img> instead of next/image so
-              // we don't need to whitelist /api/files in next.config.js.
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
+              // Custom uploaded logo. SafeImg caches a 404 in-session so
+              // a stale logo reference (file deleted from storage but
+              // still pointed at by a ThemeSetting row) doesn't trigger
+              // 22+ refetches across the page lifetime — the QA team
+              // hit that on every navigation.
+              <SafeImg
                 src={companyLogoUrl}
                 alt={companyName || "OpsHub"}
                 className="h-8 w-auto max-w-[160px] object-contain"
+                fallback={
+                  <span className="text-xl font-bold text-primary truncate">
+                    {companyName || "OpsHub"}
+                  </span>
+                }
               />
             ) : (
               <span className="text-xl font-bold text-primary truncate">

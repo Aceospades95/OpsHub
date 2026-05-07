@@ -15,6 +15,7 @@
     "validate:env": "node scripts/validate-env.mjs",
     "promote:admin": "npx tsx prisma/promote-admin.ts",
     "seed:workflows": "npx tsx prisma/seed-workflow-defaults.ts",
+    "seed:realistic": "npx tsx prisma/seed-realistic.ts",
     "merge:duplicate-users": "npx tsx prisma/merge-duplicate-users.ts",
     "merge:users-by-id": "npx tsx prisma/merge-users-by-id.ts",
     "merge:jacob-wright": "npx tsx prisma/merge-jacob-wright.ts",
@@ -22,6 +23,8 @@
     "dedupe:intranet-org-chart": "npx tsx prisma/dedupe-intranet-org-chart.ts",
     "cleanup:demo-employees": "npx tsx prisma/cleanup-demo-employees.ts",
     "cleanup:demo-data": "npx tsx prisma/cleanup-demo-data.ts",
+    "cleanup:orphan-file-refs": "npx tsx prisma/cleanup-orphan-file-refs.ts",
+    "backfill:projectrole-suffixes": "npx tsx prisma/backfill-projectrole-suffixes.ts",
     "db:studio": "prisma studio",
     "test": "vitest run",
     "test:watch": "vitest"

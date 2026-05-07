@@ -10,6 +10,7 @@ import { Handshake, AlertTriangle, Mail } from "lucide-react";
 import Link from "next/link";
 import { PartnershipCreateButton } from "./partnership-create-button";
 import { Prisma } from "@prisma/client";
+import { pluralize } from "@/lib/pluralize";
 
 interface Props {
   searchParams: { status?: string; type?: string; tier?: string };
@@ -105,8 +106,8 @@ export default async function PartnershipsPage({ searchParams }: Props) {
                       <p className="text-sm text-muted-foreground line-clamp-2 mb-3">{p.description}</p>
                     )}
                     <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
-                      <span>{p._count.projects} projects</span>
-                      <span>{p._count.contacts} contacts</span>
+                      <span>{pluralize(p._count.projects, "project")}</span>
+                      <span>{pluralize(p._count.contacts, "contact")}</span>
                       {p.primaryContactEmail && (
                         <span className="flex items-center gap-1">
                           <Mail className="h-3 w-3" />

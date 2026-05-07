@@ -10,6 +10,7 @@ import { HardHat, Star, Mail, Phone, AlertTriangle } from "lucide-react";
 import Link from "next/link";
 import { SubcontractorCreateButton } from "./subcontractor-create-button";
 import { Prisma } from "@prisma/client";
+import { pluralize } from "@/lib/pluralize";
 
 interface Props {
   searchParams: { status?: string; type?: string; compliance?: string };
@@ -111,7 +112,7 @@ export default async function SubcontractorsPage({ searchParams }: Props) {
                           <Phone className="h-3 w-3" /> {sub.primaryContactPhone}
                         </p>
                       )}
-                      <p className="pt-1">{sub._count.projects} active projects</p>
+                      <p className="pt-1">{pluralize(sub._count.projects, "active project")}</p>
                     </div>
                   </CardContent>
                 </Card>

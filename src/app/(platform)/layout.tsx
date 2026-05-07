@@ -8,6 +8,7 @@ import { getBranding } from "@/lib/branding";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Header } from "@/components/layout/header";
 import { CommandPalette } from "@/components/layout/command-palette";
+import { RSCPrefetchHealing } from "@/components/layout/rsc-prefetch-healing";
 
 export default async function PlatformLayout({
   children,
@@ -76,6 +77,11 @@ export default async function PlatformLayout({
        *  header's search trigger and the global ⌘K / Ctrl-K shortcut
        *  both surface this. */}
       <CommandPalette />
+      {/* Wraps window.fetch to retry 503s on RSC payload requests
+       *  once with jitter. Addresses the upstream load-shedding
+       *  symptom that surfaces as the "Server Components render"
+       *  toast. See the component for details. */}
+      <RSCPrefetchHealing />
     </div>
   );
 }

@@ -76,16 +76,20 @@ export default function OrgChartCanvas({
     const chart = chartRef.current;
     chart
       .container(containerRef.current as unknown as string)
-      .data(flat)
+      // Tag every node as initially expanded so d3-org-chart doesn't
+      // hide descendants behind a "click to expand" pager. Real-env
+      // QA flagged that on a fresh load only the root tier (TOP OF
+      // ORG + immediate children) was visible, and clicking the
+      // expand badge on a card was a no-op because d3-org-chart's
+      // _expanded flag wasn't set on the data. Setting it here means
+      // the chart layout sees the full tree and the .fit() call
+      // computes positions for every node — fixing the "Fit to view
+      // stacks all cards at one coordinate" symptom too.
+      .data(flat.map((n) => ({ ...n, _expanded: true })))
       .nodeWidth(() => 240)
       .nodeHeight(() => 96)
       .childrenMargin(() => 50)
       .siblingsMargin(() => 16)
-      // Bumped from 16 → 40 so the leftmost (and rightmost) cards in
-      // compact mode don't sit flush against the SVG viewport edge.
-      // The QA stress test repro: with Compact ON + Fit-to-view, a
-      // card on the left edge had its right side trimmed because the
-      // chart's natural extent reached the viewport boundary.
       .neighbourMargin(() => 40)
       .compactMarginBetween(() => 16)
       .compactMarginPair(() => 64)
@@ -110,7 +114,13 @@ export default function OrgChartCanvas({
           window.location.href = target.href;
         }
       })
-      .render();
+      .render()
+      // Belt and suspenders: call expandAll() after the initial render
+      // so any node d3-org-chart auto-collapsed (compact-mode pager,
+      // depth limit, etc.) becomes visible. Re-fits to compute
+      // coordinates with the full tree expanded.
+      .expandAll()
+      .fit();
     return () => {
       // No teardown method on d3-org-chart; emptying the container is
       // enough to drop the SVG / event listeners cleanly.
@@ -121,11 +131,14 @@ export default function OrgChartCanvas({
   }, []);
 
   // Push fresh data + highlight on every change without remounting.
+  // Same _expanded: true tagging as the mount path — without it, a
+  // data refresh (e.g. after editing a card) would re-collapse
+  // everything past the root tier.
   useEffect(() => {
     const chart = chartRef.current;
     if (!chart) return;
     chart
-      .data(flat)
+      .data(flat.map((n) => ({ ...n, _expanded: true })))
       .compact(compact)
       .nodeContent((d) => renderCardHtml(d.data, highlightLower))
       .render();

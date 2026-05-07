@@ -15,6 +15,7 @@ import {
   updateCatalogItem,
   deleteCatalogItem,
 } from "@/actions/catalog";
+import { pluralize } from "@/lib/pluralize";
 
 interface CatalogRow {
   id: string;
@@ -43,7 +44,7 @@ export function CatalogTable({ items, canEdit, canCreate, canDelete }: Props) {
     <div>
       <div className="flex items-center justify-between p-4 border-b border-border">
         <p className="text-xs text-muted-foreground">
-          {items.length} item{items.length === 1 ? "" : "s"} ·{" "}
+          {pluralize(items.length, "item")} ·{" "}
           {items.filter((i) => i.isActive).length} active
         </p>
         {canCreate && (

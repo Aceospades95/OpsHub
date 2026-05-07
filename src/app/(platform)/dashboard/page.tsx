@@ -45,6 +45,7 @@ export default async function DashboardPage() {
 
   const [
     clientCount,
+    activeClientCount,
     projectCount,
     activeProjectCount,
     contractCount,
@@ -58,6 +59,13 @@ export default async function DashboardPage() {
     teamMembers,
   ] = await Promise.all([
     clientPerms.canView ? db.client.count({ where: { deletedAt: null } }) : Promise.resolve(0),
+    // Round-2 QA flagged the Total Clients card was missing a sub-stat
+    // — surface the same active/inactive breakdown we show on Projects
+    // so admins don't have to click in to see how many are actually
+    // engaged. Matches the /clients filter (status === "ACTIVE").
+    clientPerms.canView
+      ? db.client.count({ where: { status: "ACTIVE", deletedAt: null } })
+      : Promise.resolve(0),
     projectPerms.canView ? db.project.count({ where: { deletedAt: null } }) : Promise.resolve(0),
     projectPerms.canView
       ? db.project.count({ where: { status: "ACTIVE", deletedAt: null } })
@@ -144,7 +152,7 @@ export default async function DashboardPage() {
       icon: Building2,
       href: "/clients",
       visible: clientPerms.canView,
-      sub: "\u00A0",
+      sub: `${activeClientCount} active`,
     },
     {
       label: "Projects",
@@ -163,7 +171,10 @@ export default async function DashboardPage() {
       sub: "\u00A0",
     },
     {
-      label: "Open Tasks",
+      // Renamed from "Open Tasks" to match the /tasks page filter
+      // chip ("Active") and to remove the QA-flagged ambiguity \u2014
+      // value is TODO + IN_PROGRESS, never includes DONE.
+      label: "Active Tasks",
       value: openTaskCount,
       icon: CheckSquare,
       href: "/tasks",
@@ -362,14 +373,18 @@ export default async function DashboardPage() {
           <div className="flex items-center justify-between">
             <CardTitle className="flex items-center gap-2">
               <FolderKanban className="h-5 w-5" />
-              Active Projects
+              {/* Pulls PLANNING + ACTIVE + ON_HOLD — "in progress" is
+               *  the umbrella label that fits all three. Round-2 QA
+               *  flagged the prior "Active Projects" header was wrong
+               *  when only PLANNING projects existed. */}
+              Projects in Progress
             </CardTitle>
             <Link href="/projects" className="text-sm text-primary hover:underline">View all</Link>
           </div>
         </CardHeader>
         <CardContent>
           {activeProjects.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No active projects</p>
+            <p className="text-sm text-muted-foreground">No projects in progress</p>
           ) : (
             <div className="space-y-2">
               {activeProjects.map((p: { id: string; name: string; status: string; client: { name: string } | null; _count: { tasks: number } }) => (

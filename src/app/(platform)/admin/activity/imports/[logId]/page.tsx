@@ -8,6 +8,7 @@ import { db } from "@/lib/db";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { pluralize } from "@/lib/pluralize";
 
 interface RowOutcome {
   row: number;
@@ -97,7 +98,7 @@ export default async function ImportLogDetailPage({ params }: Props) {
         <Card>
           <CardHeader>
             <CardTitle className="text-sm">
-              Issues ({issueRows.length} row{issueRows.length === 1 ? "" : "s"})
+              Issues ({pluralize(issueRows.length, "row")})
             </CardTitle>
           </CardHeader>
           <CardContent className="p-0">

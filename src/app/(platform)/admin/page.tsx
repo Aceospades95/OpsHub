@@ -19,6 +19,7 @@ import {
   History,
   CalendarClock,
   Trash2,
+  Users,
 } from "lucide-react";
 
 const SETTINGS_SECTIONS = [
@@ -26,6 +27,7 @@ const SETTINGS_SECTIONS = [
     title: "General",
     items: [
       { label: "Users & Permissions", href: "/admin/users", icon: Shield, description: "Manage user accounts, roles, and module permissions" },
+      { label: "Merge Users", href: "/admin/users/merge", icon: Users, description: "Consolidate two user records into one (re-points all references)" },
       { label: "Access Requests", href: "/admin/access-requests", icon: ShieldQuestion, description: "Review and approve pending access requests" },
       { label: "Single Sign-On", href: "/admin/sso", icon: KeyRound, description: "Google SSO configuration and allowed email domains" },
       { label: "Custom Pages", href: "/sandbox", icon: Blocks, description: "Build and manage custom pages" },
