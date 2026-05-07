@@ -179,12 +179,20 @@ export function TemplateEditor({
       {/* Top bar */}
       <div className="flex items-center justify-between mb-6 gap-4 flex-wrap">
         <div className="min-w-0">
+          {/* Round-6 QA: breadcrumb used to read "Templates › cmojf683"
+           *  by slicing the template's cuid. Use the loaded name
+           *  instead — truncated at ~30 chars with the full string
+           *  preserved as the title attribute for hover. */}
           <p className="text-xs text-muted-foreground">
             <Link href="/workflows/templates" className="hover:underline">
               Templates
             </Link>{" "}
             ›{" "}
-            <span className="font-mono">{template.id.slice(0, 8)}</span>
+            <span title={template.name}>
+              {template.name.length > 30
+                ? `${template.name.slice(0, 30)}…`
+                : template.name}
+            </span>
           </p>
           <h1 className="text-2xl font-bold truncate">{template.name}</h1>
           <div className="flex flex-wrap gap-1 mt-1">

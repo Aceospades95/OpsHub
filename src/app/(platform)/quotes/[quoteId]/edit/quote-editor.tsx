@@ -265,16 +265,30 @@ export function QuoteEditor({ initial, clients, projects, users, catalog, brandi
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6 gap-4 flex-wrap">
-        <div className="min-w-0">
-          <p className="font-mono text-xs text-muted-foreground">
+      <div className="flex items-start justify-between mb-6 gap-4 flex-wrap">
+        <div className="min-w-0 flex-1">
+          <p className="font-mono text-xs text-muted-foreground mb-1">
             {initial.quoteNumber}
           </p>
+          {/* Round-6 QA: the title input previously rendered as an
+           *  unlabelled borderless field that read as the page H1,
+           *  so users didn't realize it was editable and every
+           *  saved quote ended up with the placeholder title. Add
+           *  a visible "Title" label and a subtle border so the
+           *  field reads as a form input first, page heading
+           *  second. */}
+          <label
+            htmlFor="quote-title-input"
+            className="block text-[11px] font-medium uppercase tracking-wide text-muted-foreground mb-0.5"
+          >
+            Title
+          </label>
           <input
+            id="quote-title-input"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            className="text-2xl font-bold bg-transparent border-0 outline-none focus:ring-0 p-0 w-full"
-            placeholder="Untitled Quote"
+            className="text-2xl font-bold bg-transparent border-b border-border focus:border-primary outline-none p-0 w-full transition-colors"
+            placeholder={`${clients.find((c) => c.id === clientId)?.name ?? "Client"} — ${initial.quoteNumber}`}
           />
         </div>
         <div className="flex items-center gap-2">

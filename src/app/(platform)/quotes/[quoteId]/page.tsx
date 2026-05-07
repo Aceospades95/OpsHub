@@ -54,7 +54,15 @@ export default async function QuoteDetailPage({ params }: Props) {
   return (
     <div>
       <PageHeader
-        title={quote.title}
+        title={
+          /* Round-6: legacy quotes saved before round-4's auto-
+           *  derived title shipped land here with title=
+           *  "Untitled Quote". Mirror the /quotes list fallback so
+           *  the H1 never reads as a placeholder. */
+          quote.title === "Untitled Quote" || !quote.title.trim()
+            ? `${quote.client.name} — ${quote.quoteNumber}`
+            : quote.title
+        }
         description={quote.quoteNumber}
         actions={
           <div className="flex items-center gap-2">
