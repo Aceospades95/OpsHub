@@ -156,7 +156,7 @@ export function MergeUsersClient({ users }: Props) {
               type="email"
               value={targetEmail}
               onChange={(e) => setTargetEmail(e.target.value)}
-              placeholder="e.g. j.wright@wynndalco.com"
+              placeholder="e.g. user@example.com"
             />
             <p className="text-xs text-muted-foreground mt-1">
               Applied AFTER the FK walk. Useful when the keeper happens to be the

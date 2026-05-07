@@ -14,8 +14,8 @@
  *
  * Security gates, in order:
  *   1. profile.email_verified === true  — without this, anyone could
- *      register a Google identity for someone else's wynndalco email
- *      and silently take over the pre-provisioned User row.
+ *      register a Google identity for someone else's allowlisted
+ *      email and silently take over the pre-provisioned User row.
  *   2. Domain allowlist (when AllowedDomain has any rows)
  *   3. hasLoginAccess + isActive on the matched User
  *   4. Refuse to link when 2+ Users with the same email exist (data
@@ -67,7 +67,7 @@ export async function handleGoogleSignIn(
   if (!domain) return "/login?error=InvalidEmail";
 
   // Email-verification gate. Google's `email_verified` claim is the
-  // only thing standing between "your wynndalco email" and "anyone
+  // only thing standing between "your allowlisted email" and "anyone
   // who can spin up a Google account using that string". REJECT if
   // it isn't explicitly true — undefined is not enough.
   const verifiedRaw = (profile as { email_verified?: unknown })?.email_verified;
