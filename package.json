@@ -27,7 +27,8 @@
     "backfill:projectrole-suffixes": "npx tsx prisma/backfill-projectrole-suffixes.ts",
     "db:studio": "prisma studio",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "ci": "npm run lint && npm run test && npm run build"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.7.4",
