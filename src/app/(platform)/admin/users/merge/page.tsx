@@ -1,10 +1,8 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { requireAuth } from "@/lib/permissions";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ArrowLeft } from "lucide-react";
 import { MergeUsersClient } from "./merge-users-client";
 
 export default async function MergeUsersPage() {
@@ -31,14 +29,6 @@ export default async function MergeUsersPage() {
 
   return (
     <div>
-      <Link
-        href="/admin/users"
-        className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground mb-4"
-      >
-        <ArrowLeft className="h-3 w-3" />
-        Back to Users
-      </Link>
-
       <PageHeader
         title="Merge Employees"
         description="Consolidate two employee rows into one. Use this when an SSO sign-in created a second account, or when an import / placeholder collision left a duplicate behind."

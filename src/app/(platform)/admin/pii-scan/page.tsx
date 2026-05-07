@@ -1,11 +1,10 @@
 import { redirect } from "next/navigation";
-import Link from "next/link";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { AlertTriangle, ShieldCheck, ArrowLeft } from "lucide-react";
+import { AlertTriangle, ShieldCheck } from "lucide-react";
 
 /**
  * Admin-only PII / real-data scanner.
@@ -104,12 +103,6 @@ export default async function PiiScanPage() {
 
   return (
     <div>
-      <Link
-        href="/admin"
-        className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground mb-4"
-      >
-        <ArrowLeft className="h-4 w-4" /> Back to Settings
-      </Link>
       <PageHeader
         title="PII Scan"
         description="Find rows containing real customer-or-operator strings (real emails, real domains, leftover demo accounts) so they can be cleaned via the UI before promoting this DB to production."

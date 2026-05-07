@@ -1,6 +1,5 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
-import { ArrowLeft, Trash2 } from "lucide-react";
+import { Trash2 } from "lucide-react";
 
 import { requireAuth } from "@/lib/permissions";
 import { PageHeader } from "@/components/layout/page-header";
@@ -47,14 +46,6 @@ export default async function RecoveryPage() {
 
   return (
     <div>
-      <Link
-        href="/admin"
-        className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground mb-4"
-      >
-        <ArrowLeft className="h-3 w-3" />
-        Back to Settings
-      </Link>
-
       <PageHeader
         title="Recovery bin"
         description={`Soft-deleted records auto-purge after ${retentionLabel}. Restore to bring them back into the lists, or delete forever to skip the wait.`}
