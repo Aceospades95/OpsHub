@@ -12,6 +12,26 @@ import Link from "next/link";
 import { SupplierCreateButton } from "./supplier-create-button";
 import { DownloadCsvButton } from "@/components/shared/download-csv-button";
 
+/**
+ * Render a free-form category string in human-readable form.
+ * Categories arrive as snake_case ("cleaning_services") or
+ * SCREAMING_SNAKE ("OFFICE_SUPPLIES") from the create form. Convert
+ * to "Cleaning Services" / "Office Supplies" without losing
+ * obviously-acronymish tokens (HR, IT) — those stay uppercase.
+ */
+const ACRONYM_TOKENS = new Set(["IT", "HR", "QA", "PR", "SEO", "SaaS"]);
+function titleCase(s: string): string {
+  return s
+    .split(/[_\s]+/)
+    .filter(Boolean)
+    .map((word) => {
+      const upper = word.toUpperCase();
+      if (ACRONYM_TOKENS.has(upper)) return upper;
+      return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+    })
+    .join(" ");
+}
+
 export default async function SuppliersPage() {
   const user = await requireAuth();
 
@@ -50,7 +70,7 @@ export default async function SuppliersPage() {
                     </div>
                     <StatusBadge status={supplier.status} />
                   </div>
-                  <Badge variant="outline" className="mb-3">{supplier.category}</Badge>
+                  <Badge variant="outline" className="mb-3">{titleCase(supplier.category)}</Badge>
                   <div className="space-y-1 text-xs text-muted-foreground">
                     {supplier.contactName && <p>{supplier.contactName}</p>}
                     {supplier.contactEmail && (

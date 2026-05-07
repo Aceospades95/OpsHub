@@ -356,8 +356,12 @@ function ProjectGroupedTasks({ tasks }: { tasks: TaskRow[] }) {
                               {task.client.name}
                             </Link>
                           )}
-                          {task.dueDate && (
-                            <span className={!isDone && new Date(task.dueDate) < new Date() ? "text-destructive font-medium" : ""}>
+                          {/* Hide the due date for completed/cancelled
+                           *  tasks. "Due Jan 1 2020" on a finished
+                           *  task confuses more than it informs; the
+                           *  completion state is what matters now. */}
+                          {task.dueDate && !isDone && (
+                            <span className={new Date(task.dueDate) < new Date() ? "text-destructive font-medium" : ""}>
                               Due {formatCalendarDate(task.dueDate, "MMM d, yyyy")}
                             </span>
                           )}

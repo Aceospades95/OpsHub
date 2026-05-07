@@ -67,16 +67,26 @@ export default async function ToolsPage() {
                   {tool.description && (
                     <p className="text-sm text-muted-foreground mb-3 line-clamp-2">{tool.description}</p>
                   )}
+                  {/* Tag row first — uniform Badge styling so they
+                   *  read as a single visual group. The QA-flagged
+                   *  inconsistency was a mix of badges and bare text
+                   *  spans here; everything is a Badge now. */}
                   <div className="flex items-center gap-2 flex-wrap">
                     <Badge variant="outline">{tool.toolType}</Badge>
                     {tool.category && <Badge variant="secondary">{tool.category}</Badge>}
-                    {tool._count.clones > 0 && (
-                      <span className="text-xs text-muted-foreground">{pluralize(tool._count.clones, "clone")}</span>
-                    )}
-                    {tool._count.projects > 0 && (
-                      <span className="text-xs text-muted-foreground">{pluralize(tool._count.projects, "project")}</span>
-                    )}
                   </div>
+                  {/* Counts moved to a separate sub-row so the inline
+                   *  "Used by 1 project" no longer crowds the tags. */}
+                  {(tool._count.clones > 0 || tool._count.projects > 0) && (
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      {[
+                        tool._count.clones > 0 ? pluralize(tool._count.clones, "clone") : null,
+                        tool._count.projects > 0 ? `Used by ${pluralize(tool._count.projects, "project")}` : null,
+                      ]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </p>
+                  )}
                   {tool.projects.length > 0 && (
                     <div className="mt-3 flex flex-wrap gap-1">
                       {tool.projects.map((pt) => (

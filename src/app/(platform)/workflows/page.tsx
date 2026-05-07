@@ -110,12 +110,11 @@ export default async function WorkflowsLandingPage() {
               Background worker is wired up.
             </p>
             <p className="mt-1">
-              The <code>workflows-tick</code> job advances scheduled steps
-              every minute when cron is configured. Date-driven triggers
-              (e.g. fire offboarding 7 days before termination) run via{" "}
-              <code>workflow-scheduled-triggers</code> daily. The reminder
-              digest (<code>workflow-reminder-digest</code>) emails admins
-              about stuck workflows + expiring quotes.
+              Scheduled steps advance every minute. Date-driven triggers
+              (e.g. fire offboarding 7 days before a termination) run
+              once a day. Admins receive a reminder digest summarizing
+              stuck workflows and expiring quotes. Internal job keys
+              and run history live in Settings → Scheduled Jobs.
             </p>
           </div>
         </div>

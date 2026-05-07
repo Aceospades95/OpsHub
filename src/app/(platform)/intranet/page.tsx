@@ -27,8 +27,17 @@ export default async function IntranetPage() {
 
   const perms = await resolveModulePerms(user.id, user.role, "intranet");
 
+  // Round-4 QA: the /intranet list previously showed every non-
+  // soft-deleted resource regardless of publish state, so unpublished
+  // duplicates (e.g. a second "Org Chart" left behind by the dedupe
+  // step that unpublishes rather than deletes) appeared next to the
+  // canonical entry. Restrict drafts to admins / creators so the
+  // public-facing list dedupes naturally.
   const resources = await db.intranetResource.findMany({
-    where: { deletedAt: null },
+    where: {
+      deletedAt: null,
+      ...(perms.canEdit ? {} : { published: true }),
+    },
     orderBy: [{ pinned: "desc" }, { sortOrder: "asc" }, { updatedAt: "desc" }],
   });
 

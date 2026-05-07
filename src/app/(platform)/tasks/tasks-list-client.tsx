@@ -161,7 +161,7 @@ function TaskRow({
               )}
             </div>
             <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
-              {task.project && (
+              {task.project ? (
                 <Link
                   href={`/projects/${task.project.id}`}
                   className="hover:text-primary"
@@ -169,6 +169,12 @@ function TaskRow({
                 >
                   {task.project.name}
                 </Link>
+              ) : (
+                /* Round-4 QA: orphaned imported tasks (no project,
+                 *  client, assignee) rendered with empty subtitles
+                 *  that made them look broken. Surface the "no
+                 *  project" state explicitly. */
+                <span className="italic opacity-70">No project</span>
               )}
               {task.client && (
                 <Link
@@ -179,7 +185,10 @@ function TaskRow({
                   {task.client.name}
                 </Link>
               )}
-              {task.dueDate && (
+              {/* Hide the due date for completed/cancelled tasks.
+               *  Round-4 QA flagged "Due Jan 1 2020" on a completed
+               *  task as more confusing than informative. */}
+              {task.dueDate && !completed && (
                 <span className={isPastDue ? "text-destructive font-medium" : ""}>
                   Due {formatCalendarDate(task.dueDate, "MMM d, yyyy")}
                 </span>
