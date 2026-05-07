@@ -27,6 +27,7 @@
 
 import { db } from "@/lib/db";
 import { logActivity } from "@/lib/activity";
+import type { DynamicDelegateMap } from "@/lib/dynamic-delegate";
 
 /**
  * Default retention. The PURGE_SOFT_DELETED task config can override
@@ -233,8 +234,7 @@ export async function softDeleteRow(
   actorId: string,
   opts: SoftDeleteOptions = {}
 ): Promise<{ id: string; label: string }> {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const delegate = (db as any)[entity.prismaModel];
+  const delegate = (db as unknown as DynamicDelegateMap)[entity.prismaModel];
 
   const existing = await delegate.findUnique({
     where: { id },
@@ -281,8 +281,7 @@ export async function restoreRow(
   id: string,
   actorId: string
 ): Promise<{ id: string; label: string }> {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const delegate = (db as any)[entity.prismaModel];
+  const delegate = (db as unknown as DynamicDelegateMap)[entity.prismaModel];
 
   const existing = await delegate.findUnique({
     where: { id },
@@ -326,8 +325,7 @@ export async function hardDeleteRow(
   id: string,
   actorId: string | null
 ): Promise<{ deleted: boolean }> {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const delegate = (db as any)[entity.prismaModel];
+  const delegate = (db as unknown as DynamicDelegateMap)[entity.prismaModel];
 
   const existing = await delegate.findUnique({
     where: { id },
@@ -361,8 +359,7 @@ export async function purgeOldSoftDeletes(
   const cutoff = purgeCutoff(retentionDays);
   const summary: { entity: string; purged: number }[] = [];
   for (const entity of SOFT_DELETE_ENTITIES) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const delegate = (db as any)[entity.prismaModel];
+    const delegate = (db as unknown as DynamicDelegateMap)[entity.prismaModel];
     const result = await delegate.deleteMany({
       where: { deletedAt: { lt: cutoff } },
     });

@@ -24,6 +24,7 @@ import { updateUser, deleteUser, saveModulePermissions, saveEntityPermission, de
 import { unlinkGoogleAccount } from "@/actions/auth";
 import { deleteAssignment } from "@/actions/assignments";
 import { AddAssignmentDialog } from "../components/add-assignment-dialog";
+import type { UserData } from "../components/team-types";
 import { getPermissionedModules, ALL_PERMISSION_FLAGS, PERMISSION_FLAG_LABELS } from "@/lib/modules";
 import { getRoleDefaults } from "@/lib/permissions";
 
@@ -157,8 +158,11 @@ export function EmployeeDetailClient({
     return deleteUser(null, fd);
   }
 
-  // Map user data for the assignment dialog
-  const userDataForDialog = [{
+  // Map user data for the assignment dialog. The local `Assignment`
+  // shape served by /team/[employeeId]/page.tsx omits the role-slot
+  // fields the dialog only uses when editing, so fill them with nulls
+  // — the dialog tolerates missing slots and prompts for one.
+  const userDataForDialog: UserData[] = [{
     id: employee.id,
     name: employee.name,
     email: employee.email,
@@ -172,7 +176,12 @@ export function EmployeeDetailClient({
     directReports: employee.directReports.map((r) => ({ id: r.id, name: r.name })),
     isActive: employee.isActive,
     projectMembers: employee.projectMembers.map((pm) => ({ role: pm.role, project: { ...pm.project, clientId: pm.project.client?.id || "" } })),
-    assignments: employee.assignments,
+    assignments: employee.assignments.map((a) => ({
+      ...a,
+      projectRoleId: null,
+      projectRole: null,
+      roleDefinition: null,
+    })),
   }];
 
   return (
@@ -380,7 +389,7 @@ export function EmployeeDetailClient({
         <AddAssignmentDialog
           open={addAssignmentOpen}
           onClose={() => setAddAssignmentOpen(false)}
-          users={userDataForDialog as any}
+          users={userDataForDialog}
           projects={allProjects}
           clients={allClients}
           serviceOfferings={serviceOfferings}

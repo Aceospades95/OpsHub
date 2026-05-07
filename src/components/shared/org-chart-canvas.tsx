@@ -121,10 +121,14 @@ export default function OrgChartCanvas({
       // coordinates with the full tree expanded.
       .expandAll()
       .fit();
+    // Capture the current container element for the cleanup closure —
+    // by the time React runs cleanup, containerRef.current has already
+    // changed (the lint rule react-hooks/exhaustive-deps catches this).
+    const container = containerRef.current;
     return () => {
       // No teardown method on d3-org-chart; emptying the container is
       // enough to drop the SVG / event listeners cleanly.
-      if (containerRef.current) containerRef.current.innerHTML = "";
+      if (container) container.innerHTML = "";
       chartRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -191,12 +195,25 @@ export default function OrgChartCanvas({
       return; // d3-org-chart not rendered (yet) or DOM shape diverged
     }
 
+    // d3 binds its datum on the DOM node itself via the `__data__`
+    // property. We read it through a narrow shape rather than `any` so
+    // the no-explicit-any rule passes.
+    type D3Bound = {
+      __data__?: { data?: { id?: unknown }; id?: unknown } | null;
+    };
+    type D3LinkBound = {
+      __data__?: {
+        source?: { data?: { id?: unknown }; id?: unknown };
+        target?: { data?: { id?: unknown }; id?: unknown };
+      } | null;
+    };
+
     function readId(el: Element): string | null {
-      // d3 binds the datum on the DOM node itself. Try a couple of
-      // shapes — d3-org-chart wraps each node in a hierarchy point.
-      const datum =
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        (el as any).__data__?.data ?? (el as any).__data__;
+      // d3-org-chart wraps each node in a hierarchy point, so we look
+      // for an inner `data` object first, then fall back to `__data__`
+      // itself.
+      const bound = (el as unknown as D3Bound).__data__;
+      const datum = bound?.data ?? bound;
       if (datum && typeof datum.id === "string") return datum.id;
       return el.getAttribute("data-id");
     }
@@ -211,8 +228,7 @@ export default function OrgChartCanvas({
     }
     const links: LinkBinding[] = [];
     linkEls.forEach((p) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const datum = (p as any).__data__;
+      const datum = (p as unknown as D3LinkBound).__data__;
       const sourceId =
         datum?.source?.data?.id ?? datum?.source?.id ?? null;
       const targetId =

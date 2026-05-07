@@ -19,6 +19,7 @@
  */
 
 import type { PrismaClient } from "@prisma/client";
+import type { DynamicDelegateMap } from "@/lib/dynamic-delegate";
 
 /**
  * Per-table reassignment recipe. Each entry produces one updateMany
@@ -118,8 +119,7 @@ export async function executeMerge(
     // of `from`, which is the desired direction; this is a sanity
     // check in case the keeper's manager somehow was the merged-in
     // row.)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const delegate = (db as any)[model];
+    const delegate = (db as unknown as DynamicDelegateMap)[model];
     if (!delegate?.updateMany) {
       console.warn(`  [skip] ${model}.updateMany not found on PrismaClient`);
       continue;
@@ -160,10 +160,9 @@ async function reassignWithCompositeUnique(
   fromUserId: string,
   toUserId: string
 ): Promise<void> {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const delegate = (db as any)[model];
+  const delegate = (db as unknown as DynamicDelegateMap)[model];
   if (!delegate?.findMany) return;
-  const dupRows: Record<string, unknown>[] = await delegate.findMany({
+  const dupRows = await delegate.findMany({
     where: { [fkColumn]: fromUserId },
   });
   for (const row of dupRows) {

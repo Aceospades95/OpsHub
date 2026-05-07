@@ -10,6 +10,7 @@ import {
   restoreRow,
   DEFAULT_RETENTION_DAYS,
 } from "@/lib/soft-delete";
+import type { DynamicDelegateMap } from "@/lib/dynamic-delegate";
 
 /**
  * Server actions backing /admin/recovery.
@@ -100,18 +101,16 @@ export async function listSoftDeletedRows(
   const cutoffMs = retentionDays * 24 * 60 * 60 * 1000;
 
   for (const entity of SOFT_DELETE_ENTITIES) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const delegate = (db as any)[entity.prismaModel];
-    const rows: { id: string; deletedAt: Date | null; [key: string]: unknown }[] =
-      await delegate.findMany({
-        where: { deletedAt: { not: null } },
-        select: {
-          id: true,
-          deletedAt: true,
-          [entity.labelField]: true,
-        },
-        orderBy: { deletedAt: "desc" },
-      });
+    const delegate = (db as unknown as DynamicDelegateMap)[entity.prismaModel];
+    const rows = await delegate.findMany({
+      where: { deletedAt: { not: null } },
+      select: {
+        id: true,
+        deletedAt: true,
+        [entity.labelField]: true,
+      },
+      orderBy: { deletedAt: "desc" },
+    });
     for (const r of rows) {
       if (!r.deletedAt) continue;
       const elapsedMs = Date.now() - r.deletedAt.getTime();

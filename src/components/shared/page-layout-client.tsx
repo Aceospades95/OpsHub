@@ -100,7 +100,7 @@ export function PageLayoutClient({
       labels[w.id] = w.label;
     }
     return labels;
-  }, [pageCardLabels]);
+  }, [pageCardLabels, customWidgets]);
 
   // Extract card content from children
   const cardContentMap = useMemo(() => {
@@ -114,7 +114,12 @@ export function PageLayoutClient({
   }, [children]);
 
   const defs = PAGE_CARDS[pageType] || [];
-  const cardIds = new Set(cards.map((c) => c.id));
+  // cardIds is consumed by two downstream useMemos. Memoize the Set so
+  // its identity is stable across renders that don't change `cards` —
+  // the rule react-hooks/exhaustive-deps flags the bare `new Set(...)`
+  // because rebuilding it on every render would invalidate every
+  // useMemo that depends on it.
+  const cardIds = useMemo(() => new Set(cards.map((c) => c.id)), [cards]);
 
   // Page-specific widgets not in layout
   const availablePageWidgets = defs.filter((d) => !cardIds.has(d.id));

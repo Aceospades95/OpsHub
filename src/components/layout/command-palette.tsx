@@ -215,6 +215,7 @@ export function CommandPalette() {
             onKeyDown={handleKey}
             placeholder="Search projects, employees, clients, quotes…"
             className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+            role="combobox"
             aria-controls="command-palette-results"
             aria-expanded="true"
             aria-autocomplete="list"
