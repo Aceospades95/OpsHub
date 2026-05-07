@@ -23,7 +23,10 @@
  *   2. Updates clientId on every dependent table (Task, Project,
  *      ClientContact, Contract, Quote, Certification, Assignment,
  *      Comment, ActivityLog, SandboxPage).
- *   3. Deletes the old row.
+ *   3. Updates Notification rows where (entityType="client" AND
+ *      entityId=oldId) — Notification stores polymorphic entity refs
+ *      so it isn't covered by typed FK walks.
+ *   4. Deletes the old row.
  * If anything fails the transaction rolls back and no rows change.
  *
  * IDEMPOTENCY
@@ -175,10 +178,20 @@ async function main(): Promise<void> {
         totalMoved += result.count;
       }
 
-      // 4. Delete the old row. With FKs already moved, no cascade fires.
+      // 4. Notification stores polymorphic entity refs in (entityType,
+      //    entityId) — not a typed FK, so the loop above misses it.
+      //    Walk those explicitly.
+      const notifResult = await tx.notification.updateMany({
+        where: { entityType: "client", entityId: p.oldId },
+        data: { entityId: p.newId },
+      });
+
+      // 5. Delete the old row. With FKs already moved, no cascade fires.
       await tx.client.delete({ where: { id: p.oldId } });
 
-      console.log(`  ✓ ${p.name}: ${p.oldId} → ${p.newId} (re-pointed ${totalMoved} FK row(s))`);
+      console.log(
+        `  ✓ ${p.name}: ${p.oldId} → ${p.newId} (re-pointed ${totalMoved} FK row(s), ${notifResult.count} notification(s))`
+      );
     });
   }
 
