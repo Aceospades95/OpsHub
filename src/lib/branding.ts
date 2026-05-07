@@ -15,7 +15,8 @@
  */
 
 import { db } from "@/lib/db";
-import { getFileUrl } from "@/lib/storage";
+import { getFileUrl, getFileForServing } from "@/lib/storage";
+import { log } from "@/lib/log";
 
 export const BRANDING_KEYS = {
   companyName: "branding.companyName",
@@ -45,7 +46,27 @@ export interface BrandingSettings {
  * Looks up the file rows for any uploaded images so we know they actually
  * exist before returning a URL — a stale ThemeSetting pointing at a
  * deleted File will be reported as null instead of broken `<img src>`.
+ *
+ * Round-7 QA: also verifies the underlying storage object exists. The
+ * File DB row can outlive the actual bytes (e.g. the storage backend
+ * was reset, or the local-driver volume was wiped between deploys).
+ * Without this check the layout would render an `<img>` whose
+ * `/api/files/<id>` request 404s on every navigation, generating
+ * the network-spam the QA report flagged.
  */
+async function fileBytesExist(fileId: string): Promise<boolean> {
+  const meta = await getFileForServing(fileId);
+  if (!meta) return false;
+  try {
+    return await meta.driver.exists(meta.storageKey);
+  } catch (err) {
+    // exists() throwing is treated as "we can't confirm" — be safe and
+    // hide the URL so the page doesn't spam the broken endpoint.
+    log.error("branding.exists", "Storage exists() check failed", err, { fileId });
+    return false;
+  }
+}
+
 export async function getBranding(): Promise<BrandingSettings> {
   const rows = await db.themeSetting.findMany({
     where: { key: { in: Object.values(BRANDING_KEYS) } },
@@ -69,21 +90,25 @@ export async function getBranding(): Promise<BrandingSettings> {
     existingFileIds = new Set(files.map((f) => f.id));
   }
 
+  // For every File row that survived the DB check, also confirm the
+  // backing storage object is present. Two round-trips for the
+  // typical "logo + background" pair when both are configured; cheap
+  // enough on a layout-level call.
+  const logoOk =
+    companyLogoFileId !== null &&
+    existingFileIds.has(companyLogoFileId) &&
+    (await fileBytesExist(companyLogoFileId));
+  const backgroundOk =
+    backgroundImageFileId !== null &&
+    existingFileIds.has(backgroundImageFileId) &&
+    (await fileBytesExist(backgroundImageFileId));
+
   return {
     companyName,
-    companyLogoFileId: companyLogoFileId && existingFileIds.has(companyLogoFileId) ? companyLogoFileId : null,
-    companyLogoUrl:
-      companyLogoFileId && existingFileIds.has(companyLogoFileId)
-        ? getFileUrl(companyLogoFileId)
-        : null,
-    backgroundImageFileId:
-      backgroundImageFileId && existingFileIds.has(backgroundImageFileId)
-        ? backgroundImageFileId
-        : null,
-    backgroundImageUrl:
-      backgroundImageFileId && existingFileIds.has(backgroundImageFileId)
-        ? getFileUrl(backgroundImageFileId)
-        : null,
+    companyLogoFileId: logoOk ? companyLogoFileId : null,
+    companyLogoUrl: logoOk ? getFileUrl(companyLogoFileId!) : null,
+    backgroundImageFileId: backgroundOk ? backgroundImageFileId : null,
+    backgroundImageUrl: backgroundOk ? getFileUrl(backgroundImageFileId!) : null,
   };
 }
 
