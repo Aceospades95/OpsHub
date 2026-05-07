@@ -74,8 +74,12 @@ export function Header({
         </span>
       </button>
 
-      {/* Right side — bell + user menu grouped together */}
-      <div className="flex items-center gap-2 shrink-0">
+      {/* Right side — bell + user menu grouped together. ml-auto
+       *  pins the cluster to the right edge once the search button
+       *  hits its max-w-md cap; without it the cluster sat right
+       *  next to the search box leaving ~420px of dead space at
+       *  the right edge on >=1280px viewports. */}
+      <div className="ml-auto flex items-center gap-2 shrink-0">
         <NotificationBell
           initialUnreadCount={unreadNotifications}
           initialNotifications={recentNotifications}
