@@ -456,6 +456,19 @@ function StepEditDialog({
         isRequired,
       });
       if ("error" in res) {
+        // Round-8 QA: surface the first field-specific error from
+        // the strict validator so users see "Task title is
+        // required" instead of just "Validation failed".
+        const fieldErrors = (res as { fieldErrors?: Record<string, string[] | undefined> }).fieldErrors;
+        if (fieldErrors) {
+          const firstField = Object.keys(fieldErrors).find(
+            (k) => (fieldErrors[k]?.length ?? 0) > 0
+          );
+          if (firstField) {
+            setError(fieldErrors[firstField]![0]);
+            return;
+          }
+        }
         setError(res.error ?? "Could not save step");
         return;
       }

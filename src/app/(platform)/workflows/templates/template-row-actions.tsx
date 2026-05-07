@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
@@ -9,6 +9,8 @@ import {
   setWorkflowTemplateActive,
   deleteWorkflowTemplate,
 } from "@/actions/workflow-templates";
+
+const ARCHIVE_UNDO_WINDOW_MS = 5000;
 
 interface Props {
   templateId: string;
@@ -50,11 +52,54 @@ export function WorkflowTemplateRowActions({
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  // Round-8 QA: archive used to fire instantly with no undo path.
+  // After a successful archive we surface a 5-second "Archived.
+  // Undo" toast (inline, per-row) that fires
+  // setWorkflowTemplateActive(true) when clicked. Restore stays
+  // simple — no toast, no confirm.
+  const [showUndo, setShowUndo] = useState(false);
+  const undoTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (undoTimerRef.current !== null) {
+        window.clearTimeout(undoTimerRef.current);
+      }
+    };
+  }, []);
 
   function handleArchiveToggle() {
     setError(null);
     startTransition(async () => {
       const r = await setWorkflowTemplateActive(templateId, !isActive);
+      if ("error" in r && r.error) {
+        setError(r.error);
+        return;
+      }
+      // Only surface undo on the archive direction; restore is
+      // already user-initiated cleanup so a toast adds noise.
+      if (isActive) {
+        setShowUndo(true);
+        if (undoTimerRef.current !== null) {
+          window.clearTimeout(undoTimerRef.current);
+        }
+        undoTimerRef.current = window.setTimeout(() => {
+          setShowUndo(false);
+          undoTimerRef.current = null;
+        }, ARCHIVE_UNDO_WINDOW_MS);
+      }
+      router.refresh();
+    });
+  }
+
+  function handleUndoArchive() {
+    if (undoTimerRef.current !== null) {
+      window.clearTimeout(undoTimerRef.current);
+      undoTimerRef.current = null;
+    }
+    setShowUndo(false);
+    startTransition(async () => {
+      const r = await setWorkflowTemplateActive(templateId, true);
       if ("error" in r && r.error) {
         setError(r.error);
         return;
@@ -125,6 +170,19 @@ export function WorkflowTemplateRowActions({
           </Button>
         )}
       </div>
+      {showUndo && !error && (
+        <span className="flex items-center gap-2 text-[10px] text-muted-foreground">
+          Archived.
+          <button
+            type="button"
+            onClick={handleUndoArchive}
+            disabled={isPending}
+            className="text-primary hover:underline disabled:opacity-50"
+          >
+            Undo
+          </button>
+        </span>
+      )}
       {error && (
         <span className="text-[10px] text-destructive max-w-[260px] text-right">
           {error}

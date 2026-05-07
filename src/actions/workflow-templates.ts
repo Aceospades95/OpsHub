@@ -9,6 +9,7 @@ import {
 import {
   STEP_TYPE_DEFINITIONS,
   validateStepConfig,
+  validateStepConfigStrict,
 } from "@/lib/workflows/step-types";
 import { wouldCreateAfterStepCycle } from "@/lib/workflows/cycle-check";
 import { z } from "zod";
@@ -322,11 +323,21 @@ export async function updateWorkflowStep(
     } as const;
   }
 
-  const cfgValidation = validateStepConfig(
+  // Round-8 QA: edit-modal Save uses strict per-step-type schemas so
+  // a step can't be persisted with blank required fields (e.g. an
+  // ASSIGN_TASK_TO_SUBJECT with no title, which would later spawn a
+  // Task with no description). addWorkflowStep keeps the draft
+  // semantics so the picker still seeds default config rows.
+  const cfgValidation = validateStepConfigStrict(
     parsed.data.stepType as WorkflowStepType,
     parsed.data.config
   );
-  if (!cfgValidation.ok) return { error: cfgValidation.error } as const;
+  if (!cfgValidation.ok) {
+    return {
+      error: cfgValidation.error,
+      fieldErrors: cfgValidation.fieldErrors,
+    } as const;
+  }
 
   const afterStepId = normalizeOptional(parsed.data.afterStepId ?? null);
   if (

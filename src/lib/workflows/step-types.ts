@@ -240,6 +240,116 @@ export const stepConfigSchemas: Record<WorkflowStepType, z.ZodTypeAny> = {
   }),
 };
 
+/**
+ * Strict per-step-type schemas used at SAVE time — block saving a
+ * step with blank required fields. Round-8 QA caught the case where
+ * an "Assign Task to Subject" step saved with an empty title and
+ * later created a real Task with no description, then drove a
+ * confused timeline.
+ *
+ * The loose `stepConfigSchemas` above are kept so the addWorkflowStep
+ * row-create path (which seeds defaults) and any other "draft-mode"
+ * persistence path keep working. updateWorkflowStep — the user-
+ * facing edit-modal Save — uses this strict map instead.
+ *
+ * Fields that are universally required across the step type get
+ * `.min(1)` here. Conditional requirements (e.g. SEND_EMAIL's
+ * customEmail when toRecipient="custom") use `.refine()` so the
+ * validator returns a precise message.
+ */
+export const stepConfigStrictSchemas: Record<WorkflowStepType, z.ZodTypeAny> = {
+  SEND_EMAIL: z
+    .object({
+      toRecipient: z.enum(["subject", "manager", "hr", "it", "owner", "custom"]),
+      customEmail: z.string().email("Custom email must be a valid address").optional().or(z.literal("")),
+      emailTemplateId: z.string().min(1, "Email template is required"),
+      subjectOverride: z.string().optional(),
+      bodyOverride: z.string().optional(),
+    })
+    .refine(
+      (v) => v.toRecipient !== "custom" || (v.customEmail && v.customEmail.length > 0),
+      { message: "Custom recipient email is required when To is set to Custom", path: ["customEmail"] }
+    ),
+  ASSIGN_TASK_TO_SUBJECT: z.object({
+    title: z.string().min(1, "Task title is required"),
+    description: z.string().optional(),
+    dueOffsetDays: z.number().int(),
+  }),
+  ASSIGN_TASK_TO_USER: z
+    .object({
+      assignee: z.enum(["specific_user", "manager", "hr", "it", "owner"]),
+      assigneeUserId: z.string().optional(),
+      title: z.string().min(1, "Task title is required"),
+      description: z.string().optional(),
+      dueOffsetDays: z.number().int(),
+    })
+    .refine(
+      (v) => v.assignee !== "specific_user" || (v.assigneeUserId && v.assigneeUserId.length > 0),
+      { message: "Pick a specific user when assignee is set to Specific user", path: ["assigneeUserId"] }
+    ),
+  REQUEST_DOCUMENT: z.object({
+    documentName: z.string().min(1, "Document name is required"),
+    description: z.string().optional(),
+    required: z.boolean().optional(),
+  }),
+  REQUEST_SIGNATURE: z.object({
+    documentText: z.string().min(1, "Document text is required"),
+    required: z.boolean().optional(),
+  }),
+  REQUEST_FORM: z.object({
+    fields: z
+      .array(
+        z.object({
+          key: z.string().min(1),
+          label: z.string().min(1, "Each form field needs a label"),
+          type: z.enum(["text", "textarea", "number", "date", "select", "checkbox"]),
+          required: z.boolean().optional(),
+          options: z
+            .array(z.object({ label: z.string(), value: z.string() }))
+            .optional(),
+          helpText: z.string().optional(),
+        })
+      )
+      .min(1, "Add at least one form field"),
+  }),
+  WAIT: z.object({
+    delayDays: z.number().int().min(0),
+  }),
+  CONDITIONAL_BRANCH: z.object({
+    condition: z.string().min(1, "Condition expression is required"),
+    ifTrueStepId: z.string().optional(),
+    ifFalseStepId: z.string().optional(),
+  }),
+  APPROVAL: z
+    .object({
+      approver: z.enum(["specific_user", "manager", "hr", "it", "owner"]),
+      approverUserId: z.string().optional(),
+      prompt: z.string().min(1, "Approval prompt is required"),
+    })
+    .refine(
+      (v) => v.approver !== "specific_user" || (v.approverUserId && v.approverUserId.length > 0),
+      { message: "Pick a specific approver when approver is set to Specific user", path: ["approverUserId"] }
+    ),
+  PROVISION_ACCESS: z.object({
+    system: z.string().min(1, "System name is required"),
+    notes: z.string().optional(),
+  }),
+  DEPROVISION_ACCESS: z.object({
+    system: z.string().min(1, "System name is required"),
+    notes: z.string().optional(),
+  }),
+  SCHEDULE_MEETING: z.object({
+    meetingTitle: z.string().min(1, "Meeting title is required"),
+    attendees: z.array(recipientRoleSchema).min(1, "Pick at least one attendee role"),
+    durationMinutes: z.number().int().positive(),
+    offsetDays: z.number().int(),
+  }),
+  SEND_REMINDER: z.object({
+    to: recipientRoleSchema,
+    emailTemplateId: z.string().min(1, "Email template is required"),
+  }),
+};
+
 export function validateStepConfig(
   stepType: WorkflowStepType,
   config: unknown
@@ -251,6 +361,35 @@ export function validateStepConfig(
   const result = schema.safeParse(config);
   if (!result.success) {
     return { ok: false, error: result.error.issues.map((i) => i.message).join(", ") };
+  }
+  return { ok: true, config: result.data };
+}
+
+/**
+ * Save-time validator — uses stepConfigStrictSchemas. Returns the
+ * raw zod issues so the caller can map them to per-field errors
+ * for the edit modal.
+ */
+export function validateStepConfigStrict(
+  stepType: WorkflowStepType,
+  config: unknown
+):
+  | { ok: true; config: unknown }
+  | { ok: false; error: string; fieldErrors: Record<string, string[]> } {
+  const schema = stepConfigStrictSchemas[stepType];
+  if (!schema) {
+    return { ok: false, error: `Unknown step type: ${stepType}`, fieldErrors: {} };
+  }
+  const result = schema.safeParse(config);
+  if (!result.success) {
+    const fieldErrors: Record<string, string[]> = {};
+    for (const issue of result.error.issues) {
+      const path = issue.path.length > 0 ? issue.path.join(".") : "_root";
+      if (!fieldErrors[path]) fieldErrors[path] = [];
+      fieldErrors[path].push(issue.message);
+    }
+    const firstMsg = result.error.issues[0]?.message ?? "Validation failed";
+    return { ok: false, error: firstMsg, fieldErrors };
   }
   return { ok: true, config: result.data };
 }
