@@ -85,20 +85,29 @@ export function CommandPalette() {
   const inputRef = useRef<HTMLInputElement | null>(null);
 
   // Listen for the global "open" event + ⌘K / Ctrl-K shortcut.
-  // Round-4 QA: the previous wiring re-bound on every `open` change,
-  // and the keyboard handler closed over a stale `open` value when
-  // React batched a state update. The keydown was firing but the
-  // toggle reverted before the next render. Mount-once handler with
-  // a ref for the open-state read fixes both: listener attaches at
-  // mount, never leaks across rebinds, and reads `open` fresh on
-  // every key event.
+  //
+  // Round-5 QA: the round-4 wiring (window + bubble phase) didn't
+  // deliver the event in production. Best guess: a downstream
+  // bubble-phase listener was calling stopPropagation before the
+  // keydown reached window. Switching to document + capture phase
+  // moves us upstream of every bubble-phase handler in the tree,
+  // so the hotkey fires before anything else can swallow it. We
+  // still call e.preventDefault() so the browser's default Cmd+K
+  // (e.g. Chrome's URL-bar search) doesn't interfere.
+  //
+  // The ref-mirror pattern below tracks `open` so the cleanup-
+  // resilient mount-once listener can still read fresh state
+  // without re-binding on every change.
   const openRef = useRef(open);
-  openRef.current = open;
+  useEffect(() => {
+    openRef.current = open;
+  }, [open]);
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       const isMod = e.metaKey || e.ctrlKey;
-      if (isMod && e.key.toLowerCase() === "k") {
+      if (isMod && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "k") {
         e.preventDefault();
+        e.stopPropagation();
         setOpen((v) => !v);
         return;
       }
@@ -107,10 +116,10 @@ export function CommandPalette() {
       }
     };
     const opener = () => setOpen(true);
-    window.addEventListener("keydown", handler);
+    document.addEventListener("keydown", handler, { capture: true });
     window.addEventListener(OPEN_EVENT, opener);
     return () => {
-      window.removeEventListener("keydown", handler);
+      document.removeEventListener("keydown", handler, { capture: true });
       window.removeEventListener(OPEN_EVENT, opener);
     };
   }, []);

@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import type { Role } from "@prisma/client";
 import { getSidebarConfig } from "@/actions/sidebar";
-import { getUnreadCount, getUserNotifications } from "@/lib/notifications";
+import { getBellUnreadCount, getUserNotifications } from "@/lib/notifications";
 import { getBranding } from "@/lib/branding";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Header } from "@/components/layout/header";
@@ -33,7 +33,7 @@ export default async function PlatformLayout({
       select: { id: true, title: true, slug: true },
       orderBy: { title: "asc" },
     }),
-    getUnreadCount(session.user.id),
+    getBellUnreadCount(session.user.id, freshUser?.role ?? session.user.role),
     getUserNotifications(session.user.id, { limit: 10 }),
     getBranding(),
   ]);

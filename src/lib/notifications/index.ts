@@ -193,6 +193,28 @@ export async function getUnreadCount(userId: string): Promise<number> {
 }
 
 /**
+ * Count unread notifications for the bell.
+ *
+ * Round-5 QA: admins viewing /admin/notifications saw 9 unread
+ * system-wide while their personal bell stayed bare because
+ * `getUnreadCount(userId)` only counts notifications addressed to
+ * that user. Admins legitimately want a system-wide signal —
+ * they're the ones who'll triage anything an automated job
+ * delivered to a mailbox the original recipient never opens. For
+ * non-admin roles, per-recipient remains correct (a contributor
+ * shouldn't see the count of someone else's mail).
+ */
+export async function getBellUnreadCount(
+  userId: string,
+  role: string
+): Promise<number> {
+  if (role === "ADMIN") {
+    return db.notification.count({ where: { readAt: null } });
+  }
+  return getUnreadCount(userId);
+}
+
+/**
  * Fetch notifications for a user, newest first. Used by the bell dropdown
  * and the /notifications page.
  */

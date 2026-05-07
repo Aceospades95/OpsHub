@@ -36,6 +36,11 @@ export function NotificationBell({ initialUnreadCount, initialNotifications }: P
 
   // Poll every 60s while the tab is visible. Cheap and reliable — can
   // upgrade to SSE/websockets later if notification volume demands it.
+  // Round-5: also tick immediately on mount so the bell reflects the
+  // latest count instead of the SSR snapshot for up to 60s. Without
+  // this, an admin who just received a notification could see a bare
+  // bell until the first interval fires, even though the popover
+  // would show the unread row when opened.
   useEffect(() => {
     if (typeof document === "undefined") return;
     const tick = async () => {
@@ -48,8 +53,8 @@ export function NotificationBell({ initialUnreadCount, initialNotifications }: P
         // Ignore — poll will retry next tick
       }
     };
+    tick();
     const interval = window.setInterval(tick, 60_000);
-    // Also refresh when the tab regains focus
     const onVisibility = () => {
       if (document.visibilityState === "visible") tick();
     };
