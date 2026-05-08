@@ -9,6 +9,7 @@ import { Sidebar } from "@/components/layout/sidebar";
 import { Header } from "@/components/layout/header";
 import { CommandPalette } from "@/components/layout/command-palette";
 import { RSCPrefetchHealing } from "@/components/layout/rsc-prefetch-healing";
+import { Toaster } from "sonner";
 
 /**
  * The full authenticated chrome — sidebar, top bar, command palette,
@@ -87,6 +88,12 @@ export async function PlatformShell({ children }: { children: React.ReactNode })
       </div>
       <CommandPalette />
       <RSCPrefetchHealing />
+      {/* Round-9 QA: round-8 archive "undo" rendered as a 10px
+       *  muted-color span inside the row — functionally there but
+       *  practically invisible. Mount sonner's Toaster once at the
+       *  shell so any client component can call toast() and get a
+       *  card-sized, themed, dismissible affordance. */}
+      <Toaster position="bottom-right" richColors closeButton duration={6000} />
     </div>
   );
 }

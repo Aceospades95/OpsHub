@@ -149,6 +149,8 @@ export function CommentSection({
                 {(canDelete || comment.author.id === currentUserId) && (
                   <button
                     onClick={() => handleDelete(comment.id)}
+                    aria-label="Delete comment"
+                    title="Delete comment"
                     className="rounded p-1 text-muted-foreground hover:text-destructive hover:bg-muted transition-colors"
                   >
                     <Trash2 className="h-3 w-3" />

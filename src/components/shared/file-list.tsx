@@ -73,7 +73,12 @@ export function FileList({ links = [], embeds = [], canDelete, emptyLabel = "No 
             )}
           </div>
           {canDelete && (
-            <button onClick={() => handleDeleteLink(link.id)} className="rounded p-1 text-muted-foreground hover:text-destructive">
+            <button
+              onClick={() => handleDeleteLink(link.id)}
+              aria-label={`Delete link "${link.title}"`}
+              title="Delete link"
+              className="rounded p-1 text-muted-foreground hover:text-destructive"
+            >
               <Trash2 className="h-3 w-3" />
             </button>
           )}
@@ -91,7 +96,12 @@ export function FileList({ links = [], embeds = [], canDelete, emptyLabel = "No 
               )}
             </div>
             {canDelete && (
-              <button onClick={() => handleDeleteEmbed(embed.id)} className="rounded p-1 text-muted-foreground hover:text-destructive">
+              <button
+                onClick={() => handleDeleteEmbed(embed.id)}
+                aria-label={`Delete embed "${embed.title}"`}
+                title="Delete embed"
+                className="rounded p-1 text-muted-foreground hover:text-destructive"
+              >
                 <Trash2 className="h-3 w-3" />
               </button>
             )}
