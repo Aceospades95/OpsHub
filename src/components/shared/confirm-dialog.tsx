@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition, type ReactNode } from "react";
+import { useId, useRef, useState, useTransition, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { Dialog } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -52,6 +52,12 @@ export function ConfirmDialog({
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const router = useRouter();
+  // Round-10 QA: alertdialog wires aria-describedby at the body so
+  // SR users hear the explanation alongside the title, and the
+  // destructive button gets initial focus so a keyboard user lands
+  // on the action they're confirming.
+  const messageId = useId();
+  const confirmButtonRef = useRef<HTMLButtonElement>(null);
 
   function handleClose() {
     if (pending) return;
@@ -86,8 +92,17 @@ export function ConfirmDialog({
   }
 
   return (
-    <Dialog open={open} onClose={handleClose} title={title}>
-      <div className="text-sm text-muted-foreground mb-4">{message}</div>
+    <Dialog
+      open={open}
+      onClose={handleClose}
+      title={title}
+      role="alertdialog"
+      describedBy={messageId}
+      initialFocusRef={confirmButtonRef}
+    >
+      <div id={messageId} className="text-sm text-muted-foreground mb-4">
+        {message}
+      </div>
       {error && (
         <div className="mb-4 rounded bg-destructive/10 p-3 text-sm text-destructive">
           {error}
@@ -98,6 +113,7 @@ export function ConfirmDialog({
           {cancelLabel}
         </Button>
         <Button
+          ref={confirmButtonRef}
           variant={variant}
           onClick={handleConfirm}
           disabled={pending}
