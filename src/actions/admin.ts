@@ -15,6 +15,8 @@ import { sendFromTemplate } from "@/lib/email";
 import { absoluteUrl } from "@/lib/url";
 import { hash } from "bcryptjs";
 import { z } from "zod";
+import { nameField } from "@/lib/validation";
+import { issueSignupToken, INVITE_TOKEN_TTL_MS, consumeSignupToken } from "@/lib/signup-tokens";
 
 function requireAdminOrManager(role: string): { error: string } | null {
   if (role !== "ADMIN" && role !== "MANAGER") {
@@ -39,9 +41,8 @@ function requireAdmin(role: string): { error: string } | null {
 }
 
 const createUserSchema = z.object({
-  name: z.string().min(2, "Name required"),
+  name: nameField({ label: "Name", min: 2 }),
   email: z.string().email("Invalid email").optional(),
-  password: z.string().min(6, "Min 6 chars").optional(),
   role: z.enum(["ADMIN", "MANAGER", "DEVELOPER", "CONTRIBUTOR", "VIEWER", "GUEST"]),
   department: z.string().optional(),
   jobTitle: z.string().optional(),
@@ -60,16 +61,15 @@ export async function createUser(_prev: unknown, formData: FormData) {
   // Normalize email to lowercase so login is case-insensitive and we never
   // end up with two rows for the same address differing only in case.
   const emailRaw = (formData.get("email") as string)?.trim().toLowerCase();
-  const passwordRaw = (formData.get("password") as string)?.trim();
 
-  // For login users, email and password are required
+  // For login users, email is required. Password is no longer accepted
+  // here — the user sets their own via /signup/[token] after we send
+  // them the invite. See src/lib/signup-tokens.ts for the rationale.
   if (hasLogin && !emailRaw) return { error: "Email is required for users with login access" };
-  if (hasLogin && (!passwordRaw || passwordRaw.length < 6)) return { error: "Password must be at least 6 characters" };
 
   const parsed = createUserSchema.safeParse({
     name: formData.get("name"),
     email: emailRaw || undefined,
-    password: passwordRaw || undefined,
     role: formData.get("role") || "VIEWER",
     department: formData.get("department") || undefined,
     jobTitle: formData.get("jobTitle") || undefined,
@@ -86,61 +86,111 @@ export async function createUser(_prev: unknown, formData: FormData) {
   const existing = await db.user.findUnique({ where: { email } });
   if (existing) return { error: "Email already exists" };
 
-  const hashedPassword = parsed.data.password
-    ? await hash(parsed.data.password, 12)
-    : await hash(`noaccess-${Date.now()}`, 12);
+  // Same-name duplicate guard. Two of the QA stress-test bugs traced
+  // back to a previous import / seed creating a synthetic-email
+  // placeholder for someone who already had a real account, leaving
+  // two "Jacob Wright" rows in the Employees table. Block silent
+  // recurrences: if any active user already has this name (case-
+  // insensitive), require the admin to confirm explicitly. The Add
+  // Employee dialog re-submits with confirmDuplicateName=true after
+  // the operator clicks through the warning.
+  const confirmDuplicate =
+    formData.get("confirmDuplicateName") === "true";
+  if (!confirmDuplicate) {
+    const namedClash = await db.user.findFirst({
+      where: {
+        name: { equals: parsed.data.name, mode: "insensitive" },
+        isActive: true,
+      },
+      select: { id: true, name: true, email: true, jobTitle: true, department: true },
+    });
+    if (namedClash) {
+      return {
+        error: `An active employee named "${namedClash.name}" already exists${
+          namedClash.jobTitle ? ` (${namedClash.jobTitle})` : ""
+        }. Confirm to create a second one.`,
+        duplicateName: {
+          id: namedClash.id,
+          name: namedClash.name,
+          email: namedClash.email,
+          jobTitle: namedClash.jobTitle,
+          department: namedClash.department,
+        },
+      };
+    }
+  }
 
-  const { password: _pw, email: _email, ...rest } = parsed.data;
+  // No password is stored on create. For login users we mint a
+  // SignupToken (consumed via /signup/[token]) and email them an
+  // invite. Until they consume it, hashedPassword stays null and
+  // they can't sign in via credentials. For no-login users we leave
+  // hashedPassword null too; they have hasLoginAccess=false so the
+  // credentials provider rejects them either way.
+  const { email: _email, ...rest } = parsed.data;
 
   const user = await db.user.create({
-    data: { ...rest, email, hashedPassword, hasLoginAccess: hasLogin },
+    data: { ...rest, email, hashedPassword: null, hasLoginAccess: hasLogin },
   });
 
   await logActivity("created", "user", user.id, admin.id, user.name);
   revalidateUser(user.id, { managerId: user.managerId });
 
-  // Welcome email — opt-out per-user via the create-user dialog, with
-  // a configurable org-wide default at /admin/settings. Originally this
-  // fired unconditionally on every login-enabled user create, which
-  // surprised admins who'd archived their welcome workflow expecting
-  // the email to stop. The send is now driven by an explicit form
-  // field with the org default as fallback so the action is always
-  // visible to whoever's creating the user.
+  /** Set when an invite is generated, so the UI can surface the URL
+   *  as a fallback when email delivery is unverified or disabled. */
+  let inviteUrl: string | null = null;
+
+  // Invite flow — for login users with a real email, mint a one-time
+  // signup token and (optionally) email it. The form's
+  // `sendWelcomeEmail` toggle now controls whether the invite email
+  // goes out; if off, the action still mints the token and returns
+  // the URL so the admin can hand it off out-of-band (Slack DM,
+  // pasted into a separate password manager, etc).
   //
-  // The send is skipped for no-login placeholder users (tracked-only
-  // employees) since their email column is a fake placeholder.
-  let shouldSendWelcome = false;
+  // No-login users (tracked-only employees) skip the token entirely
+  // — their email column is a synthetic placeholder.
   if (hasLogin && parsed.data.email) {
+    let shouldSendInvite = false;
     const fieldValue = formData.get("sendWelcomeEmail");
-    if (fieldValue === "true") shouldSendWelcome = true;
-    else if (fieldValue === "false") shouldSendWelcome = false;
+    if (fieldValue === "true") shouldSendInvite = true;
+    else if (fieldValue === "false") shouldSendInvite = false;
     else {
-      // No field at all (legacy client / script POST) — fall back to
-      // the org-wide default so existing automation keeps working.
-      shouldSendWelcome = await getBooleanAdminSetting(
+      shouldSendInvite = await getBooleanAdminSetting(
         ADMIN_SETTING_KEYS.sendWelcomeEmailDefault,
         true
       );
     }
-  }
-  if (shouldSendWelcome) {
+
     try {
-      await sendFromTemplate(
-        "welcome",
-        {
-          name: user.name,
-          loginUrl: absoluteUrl("/login"),
-        },
-        {
-          to: user.email,
-          entityType: "user",
-          entityId: user.id,
+      const issued = await issueSignupToken(user.id, "invite");
+      const fullUrl = absoluteUrl(issued.signupPath);
+      inviteUrl = fullUrl;
+
+      if (shouldSendInvite) {
+        try {
+          await sendFromTemplate(
+            "invite",
+            {
+              name: user.name,
+              signupUrl: fullUrl,
+              expiresInHours: Math.round(INVITE_TOKEN_TTL_MS / (60 * 60 * 1000)),
+              kind: "invite",
+              invitedByName: admin.name || undefined,
+            },
+            {
+              to: user.email,
+              entityType: "user",
+              entityId: user.id,
+            }
+          );
+        } catch (err) {
+          // Don't fail user creation if the invite email errors out —
+          // the URL is also surfaced inline so the admin can deliver
+          // it manually. The failure is logged in EmailLog.
+          log.error("admin.user.inviteEmail", "Invite email failed", err);
         }
-      );
+      }
     } catch (err) {
-      // Don't fail user creation if the welcome email errors out — the
-      // failure is logged in EmailLog and visible at /admin/emails
-      log.error("admin.user.welcomeEmail", "Welcome email failed", err);
+      log.error("admin.user.invite", "Invite token generation failed", err);
     }
   }
 
@@ -201,7 +251,145 @@ export async function createUser(_prev: unknown, formData: FormData) {
     }
   }
 
-  return { success: true };
+  // Return the invite URL when one was issued so the admin can copy
+  // it from the form (handy when email delivery is disabled, the
+  // recipient prefers a different channel, or the invite bounces).
+  return { success: true, inviteUrl };
+}
+
+/**
+ * Re-issue an invite / password-reset link for an existing user.
+ *
+ * Used by:
+ *   - the admin Users page "Resend invite / reset password" action
+ *     (which replaces the legacy resetUserPassword form that took a
+ *     plaintext password from the admin)
+ *   - the merge-employees flow when the keeper still has a null
+ *     hashedPassword after consolidation
+ *
+ * Returns the URL even when the email send is skipped so the admin
+ * can deliver it out-of-band.
+ */
+export async function sendUserInvite(
+  _prev: unknown,
+  formData: FormData
+): Promise<{
+  success?: boolean;
+  error?: string;
+  inviteUrl?: string | null;
+}> {
+  const admin = await requireAuth();
+  if (admin.role !== "ADMIN") {
+    return { error: "Admin access required" };
+  }
+
+  const id = formData.get("id") as string;
+  const sendEmail = formData.get("sendEmail") !== "false";
+  if (!id) return { error: "Missing user" };
+
+  const user = await db.user.findUnique({ where: { id } });
+  if (!user) return { error: "User not found" };
+  if (!user.hasLoginAccess) {
+    return {
+      error: "This employee doesn't have login access. Toggle hasLoginAccess on first.",
+    };
+  }
+  if (
+    !user.email ||
+    user.email.endsWith("@internal.local") ||
+    !user.email.includes("@")
+  ) {
+    return {
+      error:
+        "User has a placeholder email. Edit the email first, then resend the invite.",
+    };
+  }
+
+  // "reset" if the user already has a working password; "invite"
+  // otherwise. The flows are identical — only the email copy differs.
+  const kind = user.hashedPassword ? "reset" : "invite";
+
+  try {
+    const issued = await issueSignupToken(id, kind);
+    const fullUrl = absoluteUrl(issued.signupPath);
+
+    if (sendEmail) {
+      try {
+        await sendFromTemplate(
+          "invite",
+          {
+            name: user.name,
+            signupUrl: fullUrl,
+            expiresInHours: Math.round(INVITE_TOKEN_TTL_MS / (60 * 60 * 1000)),
+            kind,
+            invitedByName: admin.name || undefined,
+          },
+          {
+            to: user.email,
+            entityType: "user",
+            entityId: user.id,
+          }
+        );
+      } catch (err) {
+        log.error("admin.user.resendInvite.email", "Email failed", err);
+      }
+    }
+
+    await logActivity(
+      kind === "reset" ? "reset-link-sent" : "invite-resent",
+      "user",
+      user.id,
+      admin.id,
+      user.name
+    );
+
+    return { success: true, inviteUrl: fullUrl };
+  } catch (err) {
+    log.error("admin.user.resendInvite", "Token generation failed", err);
+    return { error: "Could not generate invite token. Check server logs." };
+  }
+}
+
+/**
+ * Server action backing the public /signup/[token] page. Validates
+ * the token + sets the user's password atomically. Returns the email
+ * the user should sign in with so the page can pre-fill the login
+ * form on success.
+ */
+export async function setPasswordFromToken(
+  _prev: unknown,
+  formData: FormData
+): Promise<
+  | { success: true; email: string }
+  | { success?: false; error: string; reason?: string }
+> {
+  const token = (formData.get("token") as string)?.trim() ?? "";
+  const password = (formData.get("password") as string) ?? "";
+  const confirm = (formData.get("confirm") as string) ?? "";
+
+  if (!token) return { error: "Missing token" };
+  if (password.length < 8) {
+    return { error: "Password must be at least 8 characters", reason: "weak" };
+  }
+  if (password !== confirm) {
+    return { error: "Passwords don't match", reason: "mismatch" };
+  }
+
+  const result = await consumeSignupToken(token, password);
+  if (!result.ok) {
+    const messages: Record<string, string> = {
+      missing: "This link isn't valid. Ask an admin to send a new one.",
+      expired: "This link has expired. Ask an admin to send a new one.",
+      used: "This link has already been used. Try signing in or ask for a new one.",
+      weak: "Password must be at least 8 characters",
+    };
+    return {
+      error: messages[result.reason] ?? "Could not set password",
+      reason: result.reason,
+    };
+  }
+
+  return { success: true, email: result.userEmail };
 }
 
 const updateUserSchema = z.object({
@@ -328,7 +516,7 @@ export async function deleteUser(_prev: unknown, formData: FormData) {
     };
   }
   await logActivity("deleted", "user", id, admin.id, user.name);
-  revalidateUser(id, { managerId: user.managerId });
+  revalidateUser(id, { managerId: user.managerId, deleted: true });
   return { success: true };
 }
 

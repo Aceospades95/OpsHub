@@ -114,7 +114,18 @@ export default async function AdminUsersPage() {
       <PageHeader
         title="User Management"
         description="Manage users, roles, and permissions"
-        actions={<UserCreateButton allUsers={allUsers} workflowTemplates={workflowTemplates} defaultSendWelcomeEmail={defaultSendWelcomeEmail} />}
+        actions={
+          <div className="flex items-center gap-2">
+            <Link
+              href="/admin/users/merge"
+              className="inline-flex items-center rounded border border-border bg-background px-3 py-1.5 text-sm hover:bg-muted/40 transition-colors"
+              title="Consolidate two duplicate user rows into one"
+            >
+              Merge employees
+            </Link>
+            <UserCreateButton allUsers={allUsers} workflowTemplates={workflowTemplates} defaultSendWelcomeEmail={defaultSendWelcomeEmail} />
+          </div>
+        }
       />
 
       <Card className="mb-6">

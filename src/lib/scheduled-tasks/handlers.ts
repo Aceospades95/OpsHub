@@ -166,11 +166,47 @@ const emailMessageHandler: Handler = async ({ config }) => {
   };
 };
 
+// ─── PURGE_SOFT_DELETED ────────────────────────────────────────────────
+
+const purgeSoftDeletedHandler: Handler = async ({ taskName, config }) => {
+  // Lazy-import so the scheduled-task runtime in the cron worker
+  // doesn't pay the soft-delete module's startup cost when it's not
+  // running this task type.
+  const { purgeOldSoftDeletes, DEFAULT_RETENTION_DAYS } = await import(
+    "@/lib/soft-delete"
+  );
+
+  const retention = Number(config?.retentionDays);
+  const retentionDays =
+    Number.isFinite(retention) && retention > 0
+      ? retention
+      : DEFAULT_RETENTION_DAYS;
+
+  const summary = await purgeOldSoftDeletes(retentionDays);
+  const totalPurged = summary.reduce((acc, s) => acc + s.purged, 0);
+
+  if (totalPurged === 0) {
+    return {
+      output: `${taskName}: nothing to purge (cutoff = ${retentionDays}d)`,
+    };
+  }
+  // Surface a per-entity breakdown so an admin can spot-check the
+  // numbers in the scheduled-task last-run column.
+  const breakdown = summary
+    .filter((s) => s.purged > 0)
+    .map((s) => `${s.entity}=${s.purged}`)
+    .join(" ");
+  return {
+    output: `Purged ${totalPurged} row${totalPurged === 1 ? "" : "s"} older than ${retentionDays}d (${breakdown})`,
+  };
+};
+
 // ─── Registry ──────────────────────────────────────────────────────────
 
 const HANDLERS: Record<ScheduledTaskType, Handler> = {
   EMAIL_REPORT: emailReportHandler,
   EMAIL_MESSAGE: emailMessageHandler,
+  PURGE_SOFT_DELETED: purgeSoftDeletedHandler,
 };
 
 export async function runHandler(

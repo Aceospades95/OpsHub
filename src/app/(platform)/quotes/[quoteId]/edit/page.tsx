@@ -26,17 +26,17 @@ export default async function QuoteEditPage({ params }: Props) {
   }
 
   const [quote, clients, projects, users, catalog, branding] = await Promise.all([
-    db.quote.findUnique({
-      where: { id: quoteId },
+    db.quote.findFirst({
+      where: { id: quoteId, deletedAt: null },
       include: { lineItems: { orderBy: { position: "asc" } } },
     }),
     db.client.findMany({
-      where: { status: { in: ["ACTIVE", "PROSPECT"] } },
+      where: { status: { in: ["ACTIVE", "PROSPECT"] }, deletedAt: null },
       select: { id: true, name: true },
       orderBy: { name: "asc" },
     }),
     db.project.findMany({
-      where: { status: { in: ["PLANNING", "ACTIVE"] } },
+      where: { status: { in: ["PLANNING", "ACTIVE"] }, deletedAt: null },
       select: { id: true, name: true, clientId: true },
       orderBy: { name: "asc" },
     }),

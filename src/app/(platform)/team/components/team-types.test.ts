@@ -105,6 +105,24 @@ describe("computeEmployeeFte", () => {
     const user = makeUser([{ allocationFte: 0.75 }]);
     expect(computeEmployeeFte(user)).toBe(0.75);
   });
+
+  it("ignores ProjectMember rows without matching Assignment (the QA-flagged Jacob Wright bug)", () => {
+    // Pre-fix this returned 1.5 (0.5 from the assignment + 1.0 from
+    // each of the two unmatched ProjectMembers). ProjectMember is an
+    // access grant, not a staffing record — we don't count it.
+    const user = makeUser([{ allocationFte: 0.5 }]);
+    user.projectMembers = [
+      {
+        role: "VIEWER",
+        project: { id: "p2", name: "Other A", status: "ACTIVE", clientId: "c1" },
+      },
+      {
+        role: "VIEWER",
+        project: { id: "p3", name: "Other B", status: "ACTIVE", clientId: "c1" },
+      },
+    ];
+    expect(computeEmployeeFte(user)).toBe(0.5);
+  });
 });
 
 describe("formatFte", () => {

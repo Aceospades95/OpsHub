@@ -18,6 +18,9 @@ import {
   ShieldQuestion,
   History,
   CalendarClock,
+  Trash2,
+  Users,
+  ShieldAlert,
 } from "lucide-react";
 
 const SETTINGS_SECTIONS = [
@@ -25,6 +28,7 @@ const SETTINGS_SECTIONS = [
     title: "General",
     items: [
       { label: "Users & Permissions", href: "/admin/users", icon: Shield, description: "Manage user accounts, roles, and module permissions" },
+      { label: "Merge Users", href: "/admin/users/merge", icon: Users, description: "Consolidate two user records into one (re-points all references)" },
       { label: "Access Requests", href: "/admin/access-requests", icon: ShieldQuestion, description: "Review and approve pending access requests" },
       { label: "Single Sign-On", href: "/admin/sso", icon: KeyRound, description: "Google SSO configuration and allowed email domains" },
       { label: "Custom Pages", href: "/sandbox", icon: Blocks, description: "Build and manage custom pages" },
@@ -42,7 +46,10 @@ const SETTINGS_SECTIONS = [
     title: "Data",
     items: [
       { label: "Data Import", href: "/admin/import", icon: FileSpreadsheet, description: "Bulk-create records from CSV uploads" },
+      { label: "Import History", href: "/admin/activity/imports", icon: FileSpreadsheet, description: "Audit trail of every CSV import run with row-level results" },
       { label: "Reports", href: "/admin/reports", icon: BarChart3, description: "Saved reports, CSV downloads, and email digests" },
+      { label: "Recovery Bin", href: "/admin/recovery", icon: Trash2, description: "Restore soft-deleted records or skip the 30-day window and delete now" },
+      { label: "PII Scan", href: "/admin/pii-scan", icon: ShieldAlert, description: "Find rows containing real customer-or-operator strings before promoting this DB to production" },
     ],
   },
   {

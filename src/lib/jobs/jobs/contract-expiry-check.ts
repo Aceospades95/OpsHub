@@ -36,6 +36,7 @@ export const contractExpiryCheck: JobDefinition = {
     // Find ACTIVE contracts whose end or renewal date is in the window
     const contracts = await db.contract.findMany({
       where: {
+        deletedAt: null,
         status: { in: ["ACTIVE", "EXPIRING_SOON"] },
         OR: [
           { endDate: { gte: now, lte: horizon } },

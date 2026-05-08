@@ -12,23 +12,23 @@ import { AccessRequestActions } from "./access-request-actions";
 async function resolveEntityName(entityType: string, entityId: string): Promise<string | null> {
   switch (entityType) {
     case "project": {
-      const p = await db.project.findUnique({ where: { id: entityId }, select: { name: true } });
+      const p = await db.project.findFirst({ where: { id: entityId, deletedAt: null }, select: { name: true } });
       return p?.name || null;
     }
     case "client": {
-      const c = await db.client.findUnique({ where: { id: entityId }, select: { name: true } });
+      const c = await db.client.findFirst({ where: { id: entityId, deletedAt: null }, select: { name: true } });
       return c?.name || null;
     }
     case "contract": {
-      const c = await db.contract.findUnique({ where: { id: entityId }, select: { title: true } });
+      const c = await db.contract.findFirst({ where: { id: entityId, deletedAt: null }, select: { title: true } });
       return c?.title || null;
     }
     case "tool": {
-      const t = await db.tool.findUnique({ where: { id: entityId }, select: { name: true } });
+      const t = await db.tool.findFirst({ where: { id: entityId, deletedAt: null }, select: { name: true } });
       return t?.name || null;
     }
     case "certification": {
-      const c = await db.certification.findUnique({ where: { id: entityId }, select: { name: true } });
+      const c = await db.certification.findFirst({ where: { id: entityId, deletedAt: null }, select: { name: true } });
       return c?.name || null;
     }
     default:

@@ -8,7 +8,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PlayCircle } from "lucide-react";
-import { format, formatDistanceToNowStrict } from "date-fns";
+import { formatDistanceToNowStrict } from "date-fns";
+import { formatCalendarDate } from "@/lib/dates";
 
 const STATUS_VARIANT: Record<string, "default" | "success" | "warning" | "destructive" | "secondary" | "outline"> = {
   PENDING: "outline",
@@ -181,7 +182,7 @@ export default async function WorkflowInstancesPage({
                     <p className="text-xs text-muted-foreground">
                       Started {formatDistanceToNowStrict(inst.startDate, { addSuffix: true })}
                       {inst.targetDate && (
-                        <> · target {format(inst.targetDate, "MMM d")}</>
+                        <> · target {formatCalendarDate(inst.targetDate, "MMM d")}</>
                       )}
                     </p>
                   </CardContent>

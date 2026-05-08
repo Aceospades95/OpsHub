@@ -62,6 +62,27 @@ function flattenRow(row: Record<string, unknown>, dataSourceId: string): Record<
   return flat;
 }
 
+// Models that carry the soft-delete `deletedAt` column. We inject
+// `deletedAt: null` into every widget query so soft-deleted rows stay
+// out of dashboards.
+const SOFT_DELETE_DATA_SOURCES = new Set([
+  "client",
+  "project",
+  "task",
+  "contract",
+  "document",
+  "supplier",
+  "certification",
+]);
+
+function withSoftDeleteFilter(
+  dataSourceId: string,
+  where: Record<string, unknown>,
+): Record<string, unknown> {
+  if (!SOFT_DELETE_DATA_SOURCES.has(dataSourceId)) return where;
+  return { ...where, deletedAt: null };
+}
+
 async function queryModel(
   dataSourceId: string,
   where: Record<string, unknown>,
@@ -69,7 +90,8 @@ async function queryModel(
   take: number,
   include: Record<string, unknown>,
 ): Promise<Record<string, unknown>[]> {
-  const args = { where, orderBy, take, include: Object.keys(include).length > 0 ? include : undefined };
+  const filteredWhere = withSoftDeleteFilter(dataSourceId, where);
+  const args = { where: filteredWhere, orderBy, take, include: Object.keys(include).length > 0 ? include : undefined };
 
   switch (dataSourceId) {
     case "client": return db.client.findMany(args as Parameters<typeof db.client.findMany>[0]) as unknown as Record<string, unknown>[];
@@ -87,7 +109,7 @@ async function queryModel(
 }
 
 async function countModel(dataSourceId: string, where: Record<string, unknown>): Promise<number> {
-  const w = where as never;
+  const w = withSoftDeleteFilter(dataSourceId, where) as never;
   switch (dataSourceId) {
     case "client": return db.client.count({ where: w });
     case "project": return db.project.count({ where: w });

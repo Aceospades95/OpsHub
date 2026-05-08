@@ -173,12 +173,16 @@ function OrgChartView({
 
   return (
     <div>
-      <div className="text-xs text-muted-foreground mb-3">
-        {users.length} team members ·{" "}
+      {/* The status / how-to line that used to live here was a dupe of the
+       *  one inside org-chart-canvas.tsx (which sits next to the chart's
+       *  layout buttons). Pre-cleanup the team page rendered both, which
+       *  the QA stress test flagged. The canvas version is the canonical
+       *  one — it stays. */}
+      <p className="text-xs text-muted-foreground mb-3">
         {canManage
           ? "Click a card to edit. Use search to highlight people without breaking the tree."
           : "Click a card to view the profile."}
-      </div>
+      </p>
 
       <OrgChartTree
         nodes={tree}

@@ -28,12 +28,28 @@ export function revalidateUser(
     managerId?: string | null;
     /** Previous managerId if it changed — will revalidate their page too */
     previousManagerId?: string | null;
+    /**
+     * Set when the user was just hard-deleted. Skips invalidating the
+     * user's own detail path AND switches the list-view invalidation
+     * from "layout" to "page" mode. "layout" mode invalidates every
+     * page under /team — including /team/${userId} we just deleted —
+     * which causes Next.js to refresh the current RSC tree against the
+     * now-missing record. The detail page calls notFound() in that
+     * state and the resulting throw bubbles back to the client as the
+     * generic "An error occurred in the Server Components render"
+     * production message. See docs/entity-map.md and the Chunk A QA
+     * fixes for the full write-up.
+     */
+    deleted?: boolean;
   }
 ) {
-  // Canonical detail page
-  revalidatePath(`/team/${userId}`);
-  // List views that show this user
-  revalidatePath("/team", "layout");
+  // Canonical detail page — skip when deleted; the next visit will be
+  // a fresh fetch (which renders /team's not-found UI).
+  if (!opts?.deleted) revalidatePath(`/team/${userId}`);
+  // List views that show this user. Use "page" mode on delete so the
+  // current detail page (which is also under /team) isn't auto-refreshed
+  // before the client navigates away.
+  revalidatePath("/team", opts?.deleted ? "page" : "layout");
   revalidatePath("/admin/users");
   // Pages that reference users as members, assignees, authors, managers, etc.
   revalidatePath("/projects", "layout");
@@ -62,10 +78,14 @@ export function revalidateProject(
   opts?: {
     clientId?: string | null;
     previousClientId?: string | null;
+    /** See revalidateUser's `deleted` doc — same rationale. */
+    deleted?: boolean;
   }
 ) {
-  revalidatePath(`/projects/${projectId}`);
-  revalidatePath("/projects", "layout");
+  if (!opts?.deleted) revalidatePath(`/projects/${projectId}`);
+  // "page" on delete so /projects/${projectId} (the current page) isn't
+  // pulled into the layout-mode invalidation set.
+  revalidatePath("/projects", opts?.deleted ? "page" : "layout");
   revalidatePath("/team", "layout"); // staffing matrix
   revalidatePath("/tasks");
   revalidatePath("/dashboard");
@@ -87,9 +107,15 @@ export function revalidateProject(
 // A client appears on: clients list, client detail, projects (shows client
 // name), team staffing matrix (client is a grouping level), dashboard.
 
-export function revalidateClient(clientId: string) {
-  revalidatePath(`/clients/${clientId}`);
-  revalidatePath("/clients", "layout");
+export function revalidateClient(
+  clientId: string,
+  opts?: {
+    /** See revalidateUser's `deleted` doc — same rationale. */
+    deleted?: boolean;
+  }
+) {
+  if (!opts?.deleted) revalidatePath(`/clients/${clientId}`);
+  revalidatePath("/clients", opts?.deleted ? "page" : "layout");
   revalidatePath("/projects", "layout"); // projects show client name
   revalidatePath("/team", "layout"); // staffing matrix groups by client
   revalidatePath("/dashboard");
@@ -146,11 +172,15 @@ export function revalidateQuote(
     previousClientId?: string | null;
     projectId?: string | null;
     previousProjectId?: string | null;
+    /** See revalidateUser's `deleted` doc — same rationale. */
+    deleted?: boolean;
   }
 ) {
-  revalidatePath(`/quotes/${quoteId}`);
-  revalidatePath(`/quotes/${quoteId}/edit`);
-  revalidatePath("/quotes", "layout");
+  if (!opts?.deleted) {
+    revalidatePath(`/quotes/${quoteId}`);
+    revalidatePath(`/quotes/${quoteId}/edit`);
+  }
+  revalidatePath("/quotes", opts?.deleted ? "page" : "layout");
   revalidatePath("/dashboard");
 
   if (opts?.clientId) revalidatePath(`/clients/${opts.clientId}`);
@@ -209,10 +239,14 @@ export function revalidateWorkflowInstance(
 
 export function revalidateSubcontractor(
   subcontractorId: string,
-  opts?: { projectId?: string | null }
+  opts?: {
+    projectId?: string | null;
+    /** See revalidateUser's `deleted` doc — same rationale. */
+    deleted?: boolean;
+  }
 ) {
-  revalidatePath(`/subcontractors/${subcontractorId}`);
-  revalidatePath("/subcontractors", "layout");
+  if (!opts?.deleted) revalidatePath(`/subcontractors/${subcontractorId}`);
+  revalidatePath("/subcontractors", opts?.deleted ? "page" : "layout");
   revalidatePath("/dashboard");
   if (opts?.projectId) revalidatePath(`/projects/${opts.projectId}`);
 }
@@ -224,10 +258,14 @@ export function revalidateSubcontractor(
 
 export function revalidatePartnership(
   partnershipId: string,
-  opts?: { projectId?: string | null }
+  opts?: {
+    projectId?: string | null;
+    /** See revalidateUser's `deleted` doc — same rationale. */
+    deleted?: boolean;
+  }
 ) {
-  revalidatePath(`/partnerships/${partnershipId}`);
-  revalidatePath("/partnerships", "layout");
+  if (!opts?.deleted) revalidatePath(`/partnerships/${partnershipId}`);
+  revalidatePath("/partnerships", opts?.deleted ? "page" : "layout");
   revalidatePath("/dashboard");
   if (opts?.projectId) revalidatePath(`/projects/${opts.projectId}`);
 }

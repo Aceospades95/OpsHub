@@ -4,9 +4,9 @@ import { TrendingUp, Building2, FolderKanban, CheckSquare } from "lucide-react";
 
 export async function WidgetKpiCard({ userId: _userId }: { userId: string }) {
   const [clients, projects, tasks] = await Promise.all([
-    db.client.count(),
-    db.project.count({ where: { status: "ACTIVE" } }),
-    db.task.count({ where: { status: { in: ["TODO", "IN_PROGRESS"] } } }),
+    db.client.count({ where: { deletedAt: null } }),
+    db.project.count({ where: { status: "ACTIVE", deletedAt: null } }),
+    db.task.count({ where: { status: { in: ["TODO", "IN_PROGRESS"] }, deletedAt: null } }),
   ]);
 
   return (

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { format } from "date-fns";
+import { formatCalendarDate } from "@/lib/dates";
 
 import { db } from "@/lib/db";
 import { requireAuth, resolveModulePerms } from "@/lib/permissions";
@@ -30,8 +30,8 @@ export default async function QuoteDetailPage({ params }: Props) {
     );
   }
 
-  const quote = await db.quote.findUnique({
-    where: { id: quoteId },
+  const quote = await db.quote.findFirst({
+    where: { id: quoteId, deletedAt: null },
     include: {
       client: { select: { id: true, name: true } },
       project: { select: { id: true, name: true } },
@@ -54,7 +54,15 @@ export default async function QuoteDetailPage({ params }: Props) {
   return (
     <div>
       <PageHeader
-        title={quote.title}
+        title={
+          /* Round-6: legacy quotes saved before round-4's auto-
+           *  derived title shipped land here with title=
+           *  "Untitled Quote". Mirror the /quotes list fallback so
+           *  the H1 never reads as a placeholder. */
+          quote.title === "Untitled Quote" || !quote.title.trim()
+            ? `${quote.client.name} — ${quote.quoteNumber}`
+            : quote.title
+        }
         description={quote.quoteNumber}
         actions={
           <div className="flex items-center gap-2">
@@ -117,7 +125,7 @@ export default async function QuoteDetailPage({ params }: Props) {
                   </dt>
                   <dd className="mt-1">
                     {quote.validUntil
-                      ? format(quote.validUntil, "MMMM d, yyyy")
+                      ? formatCalendarDate(quote.validUntil, "MMMM d, yyyy")
                       : <span className="text-muted-foreground">—</span>}
                   </dd>
                 </div>

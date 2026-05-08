@@ -19,7 +19,7 @@ export const partnershipPipeline: ReportDefinition = {
 
   async run() {
     const partners = await db.partnership.findMany({
-      where: { status: { in: ["ACTIVE", "PROSPECT"] } },
+      where: { status: { in: ["ACTIVE", "PROSPECT"] }, deletedAt: null },
       include: {
         relationshipOwner: { select: { name: true } },
         projects: { select: { role: true, referralValue: true } },

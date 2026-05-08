@@ -255,6 +255,24 @@ export function QuoteEditor({ initial, clients, projects, users, catalog, brandi
         })),
       });
       if ("error" in res) {
+        // Round-7 QA: the server returns both a generic top-level
+        // `error` ("Invalid input") AND a structured `fieldErrors`
+        // map keyed on the field name. Surface the first field-
+        // specific message so the user sees "Title contains
+        // disallowed HTML" instead of the generic banner.
+        const fieldErrors = (res as { fieldErrors?: Record<string, string[] | undefined> }).fieldErrors;
+        if (fieldErrors) {
+          const firstField = Object.keys(fieldErrors).find(
+            (k) => (fieldErrors[k]?.length ?? 0) > 0
+          );
+          if (firstField) {
+            const msg = fieldErrors[firstField]![0];
+            const niceField =
+              firstField.charAt(0).toUpperCase() + firstField.slice(1).replace(/([A-Z])/g, " $1").trim().toLowerCase();
+            setError(`${niceField.charAt(0).toUpperCase()}${niceField.slice(1)}: ${msg}`);
+            return;
+          }
+        }
         setError(res.error ?? "Unknown error");
         return;
       }
@@ -265,16 +283,30 @@ export function QuoteEditor({ initial, clients, projects, users, catalog, brandi
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6 gap-4 flex-wrap">
-        <div className="min-w-0">
-          <p className="font-mono text-xs text-muted-foreground">
+      <div className="flex items-start justify-between mb-6 gap-4 flex-wrap">
+        <div className="min-w-0 flex-1">
+          <p className="font-mono text-xs text-muted-foreground mb-1">
             {initial.quoteNumber}
           </p>
+          {/* Round-6 QA: the title input previously rendered as an
+           *  unlabelled borderless field that read as the page H1,
+           *  so users didn't realize it was editable and every
+           *  saved quote ended up with the placeholder title. Add
+           *  a visible "Title" label and a subtle border so the
+           *  field reads as a form input first, page heading
+           *  second. */}
+          <label
+            htmlFor="quote-title-input"
+            className="block text-[11px] font-medium uppercase tracking-wide text-muted-foreground mb-0.5"
+          >
+            Title
+          </label>
           <input
+            id="quote-title-input"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            className="text-2xl font-bold bg-transparent border-0 outline-none focus:ring-0 p-0 w-full"
-            placeholder="Untitled Quote"
+            className="text-2xl font-bold bg-transparent border-b border-border focus:border-primary outline-none p-0 w-full transition-colors"
+            placeholder={`${clients.find((c) => c.id === clientId)?.name ?? "Client"} — ${initial.quoteNumber}`}
           />
         </div>
         <div className="flex items-center gap-2">
@@ -455,7 +487,7 @@ export function QuoteEditor({ initial, clients, projects, users, catalog, brandi
 
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Assumptions, terms &amp; notes</CardTitle>
+              <CardTitle className="text-base">Assumptions, terms & notes</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <Textarea

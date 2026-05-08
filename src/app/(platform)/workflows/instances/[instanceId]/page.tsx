@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { format, formatDistanceToNowStrict } from "date-fns";
+import { formatCalendarDate } from "@/lib/dates";
 
 import { db } from "@/lib/db";
 import { requireAuth, resolveModulePerms } from "@/lib/permissions";
@@ -84,7 +85,7 @@ export default async function WorkflowInstanceDetailPage({ params }: Props) {
     <div>
       <PageHeader
         title={`${instance.workflowTemplate.name} — ${subjectName}`}
-        description={`Started ${format(instance.startDate, "MMM d, yyyy")}${instance.targetDate ? ` · target ${format(instance.targetDate, "MMM d, yyyy")}` : ""}`}
+        description={`Started ${formatCalendarDate(instance.startDate, "MMM d, yyyy")}${instance.targetDate ? ` · target ${formatCalendarDate(instance.targetDate, "MMM d, yyyy")}` : ""}`}
         actions={
           <div className="flex items-center gap-2">
             <Link

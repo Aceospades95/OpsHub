@@ -23,8 +23,8 @@ export default async function SupplierDetailPage({ params }: Props) {
   const perms = await resolveModulePerms(user.id, user.role, "suppliers");
   if (!perms.canView) return <AccessDenied module="suppliers" moduleLabel="Suppliers" moduleDescription="Vendor and supplier management" />;
 
-  const supplier = await db.supplier.findUnique({
-    where: { id: supplierId },
+  const supplier = await db.supplier.findFirst({
+    where: { id: supplierId, deletedAt: null },
     include: {
       projects: true,
       links: true,
@@ -38,6 +38,7 @@ export default async function SupplierDetailPage({ params }: Props) {
   if (!supplier) notFound();
 
   const allProjects = await db.project.findMany({
+    where: { deletedAt: null },
     select: { id: true, name: true },
     orderBy: { name: "asc" },
   });

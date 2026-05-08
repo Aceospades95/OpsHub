@@ -38,12 +38,13 @@ export default async function SubcontractorDetailPage({ params }: Props) {
     );
   }
 
-  const sub = await db.subcontractor.findUnique({
-    where: { id: subcontractorId },
+  const sub = await db.subcontractor.findFirst({
+    where: { id: subcontractorId, deletedAt: null },
     include: {
       accountManager: { select: { id: true, name: true } },
       contacts: { orderBy: [{ isPrimary: "desc" }, { name: "asc" }] },
       projects: {
+        where: { project: { deletedAt: null } },
         include: {
           project: { select: { id: true, name: true, status: true, client: { select: { id: true, name: true } } } },
         },
@@ -60,6 +61,7 @@ export default async function SubcontractorDetailPage({ params }: Props) {
   if (!sub) notFound();
 
   const allProjects = await db.project.findMany({
+    where: { deletedAt: null },
     select: { id: true, name: true },
     orderBy: { name: "asc" },
   });

@@ -30,6 +30,7 @@ export const contractsExpiring: ReportDefinition = {
 
     const contracts = await db.contract.findMany({
       where: {
+        deletedAt: null,
         status: { in: ["ACTIVE", "EXPIRING_SOON", "UNDER_REVIEW"] },
         OR: [
           { endDate: { gte: now, lte: horizon } },

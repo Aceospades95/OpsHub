@@ -17,11 +17,13 @@ import {
   RotateCcw,
   MapPin,
 } from "lucide-react";
-import { format, differenceInDays } from "date-fns";
+import { differenceInDays } from "date-fns";
+import { formatCalendarDate } from "@/lib/dates";
 import Link from "next/link";
 import type { JurisdictionLevel, CertEngagementType } from "@prisma/client";
 import { CertCreateButton } from "./cert-create-button";
 import { CertFilters } from "./cert-filters";
+import { DownloadCsvButton } from "@/components/shared/download-csv-button";
 
 const JURISDICTION_LEVELS: JurisdictionLevel[] = [
   "FEDERAL",
@@ -73,6 +75,7 @@ export default async function CertificationsPage({ searchParams }: PageProps) {
   const [certifications, clients, users] = await Promise.all([
     db.certification.findMany({
       where: {
+        deletedAt: null,
         ...(jurisdictionFilter ? { jurisdictionLevel: jurisdictionFilter } : {}),
         ...(engagementFilter ? { engagementType: engagementFilter } : {}),
         ...(scopedCertIds ? { id: { in: scopedCertIds } } : {}),
@@ -85,7 +88,7 @@ export default async function CertificationsPage({ searchParams }: PageProps) {
       },
     }),
     db.client.findMany({
-      where: scopedClientIds ? { id: { in: scopedClientIds } } : {},
+      where: { deletedAt: null, ...(scopedClientIds ? { id: { in: scopedClientIds } } : {}) },
       select: { id: true, name: true },
       orderBy: { name: "asc" },
     }),
@@ -154,7 +157,12 @@ export default async function CertificationsPage({ searchParams }: PageProps) {
       <PageHeader
         title="Certifications"
         description="Track certifications, renewals, and compliance"
-        actions={canCreate ? <CertCreateButton clients={clients} users={users} /> : undefined}
+        actions={
+          <div className="flex items-center gap-2">
+            {user.role === "ADMIN" && <DownloadCsvButton importerKey="certifications" />}
+            {canCreate && <CertCreateButton clients={clients} users={users} />}
+          </div>
+        }
       />
 
       {/* Clickable status buckets — tap a card to filter the list below. */}
@@ -344,7 +352,17 @@ export default async function CertificationsPage({ searchParams }: PageProps) {
                         <span className="text-xs text-muted-foreground">#{cert.certNumber}</span>
                       )}
                       {cert.autoRenew && <Badge variant="secondary">Auto-renew</Badge>}
-                      {cert.signedOffAt && (
+                      {/* Round-6 QA: a "Pending" status alongside a
+                       *  green "Signed off" badge read as a
+                       *  contradiction. The signoff fields capture
+                       *  internal review approval — the cert isn't
+                       *  actually issued / Active until status
+                       *  transitions there too. Suppress the badge
+                       *  on Pending; on Active it still confirms
+                       *  approval; on other statuses (Expired,
+                       *  Revoked) the signoff history is still
+                       *  visible on the detail page's audit trail. */}
+                      {cert.signedOffAt && cert.status !== "PENDING" && (
                         <Badge variant="success" className="gap-1">
                           <CheckCircle2 className="h-3 w-3" />
                           Signed off
@@ -357,7 +375,7 @@ export default async function CertificationsPage({ searchParams }: PageProps) {
                         <span className="flex items-center gap-1 text-destructive font-medium">
                           <AlertTriangle className="h-3 w-3" /> Expired
                           {cert.expirationDate &&
-                            ` ${format(cert.expirationDate, "MMM d, yyyy")}`}
+                            ` ${formatCalendarDate(cert.expirationDate, "MMM d, yyyy")}`}
                         </span>
                       )}
                       {isExpiring && (
@@ -367,7 +385,7 @@ export default async function CertificationsPage({ searchParams }: PageProps) {
                       )}
                       {!isExpired && !isExpiring && cert.expirationDate && (
                         <span className="text-muted-foreground">
-                          Expires {format(cert.expirationDate, "MMM d, yyyy")}
+                          Expires {formatCalendarDate(cert.expirationDate, "MMM d, yyyy")}
                         </span>
                       )}
                       {!cert.expirationDate && (

@@ -11,10 +11,13 @@ import { CheckSquare } from "lucide-react";
 import { TaskCreateButton } from "./task-create-button";
 import { TaskCheckbox } from "./task-checkbox";
 import { TaskFilters } from "./task-filters";
+import { TasksListClient } from "./tasks-list-client";
+import { DownloadCsvButton } from "@/components/shared/download-csv-button";
 import { Suspense } from "react";
-import { format } from "date-fns";
+import { formatCalendarDate } from "@/lib/dates";
 import Link from "next/link";
 import type { Prisma } from "@prisma/client";
+import { pluralize } from "@/lib/pluralize";
 
 const priorityColors: Record<string, string> = {
   HIGH: "bg-red-100 text-red-800",
@@ -32,18 +35,26 @@ const statusLabels: Record<string, string> = {
 export default async function TasksPage({
   searchParams,
 }: {
-  searchParams: { assignee?: string; project?: string; client?: string; show?: string; view?: string };
+  searchParams: {
+    assignee?: string;
+    project?: string;
+    client?: string;
+    show?: string;
+    view?: string;
+    /** Filter chip: "overdue" or "week". Empty / unknown = no filter. */
+    due?: string;
+  };
 }) {
   const user = await requireAuth();
 
-  const { assignee, project, client, show, view } = searchParams;
+  const { assignee, project, client, show, view, due } = searchParams;
   // Default view is grouped by status. "by-project" groups by project name.
   const groupBy = view === "by-project" ? "project" : "status";
 
   const scope = await getUserScope(user.id, user.role);
 
   // Build filter
-  const where: Prisma.TaskWhereInput = {};
+  const where: Prisma.TaskWhereInput = { deletedAt: null };
 
   if (assignee === "me") {
     where.assigneeId = user.id;
@@ -53,7 +64,9 @@ export default async function TasksPage({
     where.assigneeId = assignee;
   }
 
-  if (project) {
+  if (project === "none") {
+    where.projectId = null;
+  } else if (project) {
     where.projectId = project;
   }
 
@@ -67,6 +80,22 @@ export default async function TasksPage({
     where.status = "DONE";
   }
   // default: show all
+
+  // Due-date chips. "overdue" = dueDate < today AND task isn't already
+  // DONE/CANCELLED. "week" = dueDate within the next 7 calendar days
+  // (today inclusive). We treat dates as UTC midnights to match the
+  // calendar-date convention introduced in chunk B.
+  if (due === "overdue") {
+    const startOfToday = new Date();
+    startOfToday.setUTCHours(0, 0, 0, 0);
+    where.dueDate = { lt: startOfToday };
+    where.status = { in: ["TODO", "IN_PROGRESS"] };
+  } else if (due === "week") {
+    const startOfToday = new Date();
+    startOfToday.setUTCHours(0, 0, 0, 0);
+    const weekFromNow = new Date(startOfToday.getTime() + 7 * 24 * 60 * 60 * 1000);
+    where.dueDate = { gte: startOfToday, lt: weekFromNow };
+  }
 
   // Scope: non-org-wide roles only see tasks in projects/clients they can
   // access or tasks where they are the assignee or creator.
@@ -91,6 +120,8 @@ export default async function TasksPage({
     db.task.findMany({
       where,
       orderBy: [{ status: "asc" }, { priority: "asc" }, { dueDate: "asc" }],
+      // `description` is included so the TaskDrawer can display + edit
+      // it without a second round-trip when a row is opened.
       include: {
         project: { select: { id: true, name: true } },
         client: { select: { id: true, name: true } },
@@ -99,12 +130,12 @@ export default async function TasksPage({
       },
     }),
     db.project.findMany({
-      where: scopedProjectIds ? { id: { in: scopedProjectIds } } : {},
+      where: { deletedAt: null, ...(scopedProjectIds ? { id: { in: scopedProjectIds } } : {}) },
       select: { id: true, name: true },
       orderBy: { name: "asc" },
     }),
     db.client.findMany({
-      where: scopedClientIds ? { id: { in: scopedClientIds } } : {},
+      where: { deletedAt: null, ...(scopedClientIds ? { id: { in: scopedClientIds } } : {}) },
       select: { id: true, name: true },
       orderBy: { name: "asc" },
     }),
@@ -139,7 +170,12 @@ export default async function TasksPage({
       <PageHeader
         title="Tasks"
         description="Track and manage tasks across projects and clients"
-        actions={<TaskCreateButton projects={projects} clients={clients} users={users} />}
+        actions={
+          <div className="flex items-center gap-2">
+            {user.role === "ADMIN" && <DownloadCsvButton importerKey="tasks" />}
+            <TaskCreateButton projects={projects} clients={clients} users={users} />
+          </div>
+        }
       />
 
       <Suspense fallback={null}>
@@ -151,12 +187,13 @@ export default async function TasksPage({
           currentProject={project}
           currentClient={client}
           currentShow={show}
+          currentDue={due}
           currentUserId={user.id}
         />
       </Suspense>
 
       <div className="flex items-center justify-between mb-4">
-        <p className="text-xs text-muted-foreground">{filterLabel} — {tasks.length} task{tasks.length !== 1 ? "s" : ""}</p>
+        <p className="text-xs text-muted-foreground">{filterLabel} — {pluralize(tasks.length, "task")}</p>
         {/* View mode: status (default) vs grouped by project */}
         <div className="flex rounded-md border border-border overflow-hidden">
           <Link
@@ -204,103 +241,13 @@ export default async function TasksPage({
       ) : groupBy === "project" ? (
         <ProjectGroupedTasks tasks={tasks} />
       ) : (
-        <div className="space-y-8">
-          {activeTasks.length > 0 && (
-            <div>
-              <h2 className="text-lg font-semibold text-foreground mb-4">
-                Active ({activeTasks.length})
-              </h2>
-              <div className="space-y-2">
-                {activeTasks.map((task) => (
-                  <Card key={task.id} className="hover:shadow-sm transition-shadow">
-                    <CardContent className="p-4">
-                      <div className="flex items-center gap-4">
-                        <TaskCheckbox taskId={task.id} status={task.status} />
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="font-medium text-foreground">{task.title}</span>
-                            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${priorityColors[task.priority]}`}>
-                              {task.priority}
-                            </span>
-                            {task.status === "IN_PROGRESS" && (
-                              <Badge variant="default" className="text-xs">In Progress</Badge>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
-                            {task.project && (
-                              <Link href={`/projects/${task.project.id}`} className="hover:text-primary">
-                                {task.project.name}
-                              </Link>
-                            )}
-                            {task.client && (
-                              <Link href={`/clients/${task.client.id}`} className="hover:text-primary">
-                                {task.client.name}
-                              </Link>
-                            )}
-                            {task.dueDate && (
-                              <span className={new Date(task.dueDate) < new Date() ? "text-destructive font-medium" : ""}>
-                                Due {format(new Date(task.dueDate), "MMM d, yyyy")}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                        {task.assignee && (
-                          <Link
-                            href={`/team/${task.assignee.id}`}
-                            className="flex items-center gap-1.5 shrink-0 hover:text-primary"
-                          >
-                            <Avatar name={task.assignee.name} size="xs" />
-                            <span className="text-xs text-muted-foreground hover:text-primary hidden sm:inline">{task.assignee.name}</span>
-                          </Link>
-                        )}
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {completedTasks.length > 0 && (
-            <div>
-              <h2 className="text-lg font-semibold text-muted-foreground mb-4">
-                Completed ({completedTasks.length})
-              </h2>
-              <div className="space-y-2 opacity-60">
-                {completedTasks.map((task) => (
-                  <Card key={task.id}>
-                    <CardContent className="p-4">
-                      <div className="flex items-center gap-4">
-                        <TaskCheckbox taskId={task.id} status={task.status} />
-                        <div className="flex-1 min-w-0">
-                          <span className="font-medium text-foreground line-through">{task.title}</span>
-                          <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
-                            {task.project && (
-                              <Link href={`/projects/${task.project.id}`} className="hover:text-primary hover:underline">
-                                {task.project.name}
-                              </Link>
-                            )}
-                            {task.client && (
-                              <Link href={`/clients/${task.client.id}`} className="hover:text-primary hover:underline">
-                                {task.client.name}
-                              </Link>
-                            )}
-                            {task.assignee && (
-                              <Link href={`/team/${task.assignee.id}`} className="hover:text-primary hover:underline">
-                                {task.assignee.name}
-                              </Link>
-                            )}
-                            <span>{statusLabels[task.status]}</span>
-                          </div>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
+        <TasksListClient
+          activeTasks={activeTasks}
+          completedTasks={completedTasks}
+          projects={projects}
+          clients={clients}
+          users={users}
+        />
       )}
     </div>
   );
@@ -314,6 +261,7 @@ type TaskRow = {
   status: string;
   priority: string;
   dueDate: Date | null;
+  completedAt: Date | null;
   project: { id: string; name: string } | null;
   client: { id: string; name: string } | null;
   assignee: { id: string; name: string } | null;
@@ -403,16 +351,27 @@ function ProjectGroupedTasks({ tasks }: { tasks: TaskRow[] }) {
                             <Badge variant="default" className="text-[10px]">In Progress</Badge>
                           )}
                         </div>
-                        <div className="flex items-center gap-2 mt-0.5 text-[11px] text-muted-foreground">
+                        <div className="flex items-center gap-2 mt-0.5 text-[11px] text-muted-foreground flex-wrap">
                           {task.client && (
                             <Link href={`/clients/${task.client.id}`} className="hover:text-primary hover:underline">
                               {task.client.name}
                             </Link>
                           )}
-                          {task.dueDate && (
-                            <span className={!isDone && new Date(task.dueDate) < new Date() ? "text-destructive font-medium" : ""}>
-                              Due {format(new Date(task.dueDate), "MMM d, yyyy")}
-                            </span>
+                          {!isDone && task.dueDate && (
+                            <>
+                              {task.client && <span aria-hidden className="opacity-40">·</span>}
+                              <span className={new Date(task.dueDate) < new Date() ? "text-destructive font-medium" : ""}>
+                                Due {formatCalendarDate(task.dueDate, "MMM d, yyyy")}
+                              </span>
+                            </>
+                          )}
+                          {isDone && (
+                            <>
+                              {task.client && <span aria-hidden className="opacity-40">·</span>}
+                              <span>
+                                Completed{task.completedAt ? ` ${formatCalendarDate(task.completedAt, "MMM d, yyyy")}` : ""}
+                              </span>
+                            </>
                           )}
                         </div>
                       </div>

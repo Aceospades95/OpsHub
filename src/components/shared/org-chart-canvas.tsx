@@ -22,6 +22,47 @@ import { OrgChart } from "d3-org-chart";
 
 import type { OrgChartNode, OrgChartTreeProps } from "./org-chart-tree";
 
+/**
+ * Inline CSS for the org-chart canvas.
+ *
+ * Round-5 QA flagged that nodes were rendering at ~0.24 opacity
+ * after `.fit()` — d3-org-chart's enter/exit transitions set
+ * `attr("opacity", …)` inline on every g.node and an interrupted
+ * transition can leave nodes stuck at an intermediate value. The
+ * default rule here forces opacity:1 with !important so an inline
+ * residual opacity loses to the stylesheet. The dim rule fires
+ * ONLY when the SVG carries data-og-has-highlight (toggled by the
+ * setHighlight handler at hover-time) so dimming is a hover effect,
+ * not the resting state.
+ *
+ * Exported so the regression test can assert the rule is present.
+ */
+export const ORG_CHART_CSS = `
+  /* Default: every node fully opaque. !important overrides d3's
+     attr("opacity", …) which gets set inline during transitions. */
+  g.node {
+    opacity: 1 !important;
+  }
+  /* Hover-state dim: only fires when the SVG container has
+     data-og-has-highlight set (i.e. the user is hovering some
+     node). At rest this selector matches nothing. */
+  svg[data-og-has-highlight] g.node:not([data-og-highlight]) {
+    opacity: 0.3 !important;
+  }
+  g.node[data-og-highlight] {
+    filter: drop-shadow(0 0 0.5rem var(--primary));
+  }
+  path.link {
+    transition: stroke 120ms ease, stroke-width 120ms ease, opacity 120ms ease;
+  }
+  [data-og-highlight="true"] path.link,
+  path.link[data-og-highlight="true"] {
+    stroke: var(--primary);
+    stroke-width: 2.5;
+    opacity: 1;
+  }
+`;
+
 interface FlatNode {
   id: string;
   parentId: string | null;
@@ -76,12 +117,21 @@ export default function OrgChartCanvas({
     const chart = chartRef.current;
     chart
       .container(containerRef.current as unknown as string)
-      .data(flat)
+      // Tag every node as initially expanded so d3-org-chart doesn't
+      // hide descendants behind a "click to expand" pager. Real-env
+      // QA flagged that on a fresh load only the root tier (TOP OF
+      // ORG + immediate children) was visible, and clicking the
+      // expand badge on a card was a no-op because d3-org-chart's
+      // _expanded flag wasn't set on the data. Setting it here means
+      // the chart layout sees the full tree and the .fit() call
+      // computes positions for every node — fixing the "Fit to view
+      // stacks all cards at one coordinate" symptom too.
+      .data(flat.map((n) => ({ ...n, _expanded: true })))
       .nodeWidth(() => 240)
       .nodeHeight(() => 96)
       .childrenMargin(() => 50)
       .siblingsMargin(() => 16)
-      .neighbourMargin(() => 16)
+      .neighbourMargin(() => 40)
       .compactMarginBetween(() => 16)
       .compactMarginPair(() => 64)
       .compact(compact)
@@ -105,25 +155,203 @@ export default function OrgChartCanvas({
           window.location.href = target.href;
         }
       })
-      .render();
+      .render()
+      // Belt and suspenders: call expandAll() after the initial render
+      // so any node d3-org-chart auto-collapsed (compact-mode pager,
+      // depth limit, etc.) becomes visible. Re-fits to compute
+      // coordinates with the full tree expanded.
+      .expandAll()
+      .fit();
+    // Round-6 QA: project detail clipped the leftmost card because the
+    // initial .fit() ran while the wrapping Card was still being laid
+    // out — the SVG measured its container width before flex/grid had
+    // settled, then fit to a too-narrow viewport. Re-fit on the next
+    // animation frame and again 200ms later to catch any second-pass
+    // layout (font load, image hydration, etc.). Idempotent — calling
+    // .fit() repeatedly just re-centers, no transition pile-up.
+    const reFitOnceLaidOut = requestAnimationFrame(() => {
+      chartRef.current?.fit();
+    });
+    const reFitAfterSettle = window.setTimeout(() => {
+      chartRef.current?.fit();
+    }, 200);
+    // Capture the current container element for the cleanup closure —
+    // by the time React runs cleanup, containerRef.current has already
+    // changed (the lint rule react-hooks/exhaustive-deps catches this).
+    const container = containerRef.current;
     return () => {
       // No teardown method on d3-org-chart; emptying the container is
       // enough to drop the SVG / event listeners cleanly.
-      if (containerRef.current) containerRef.current.innerHTML = "";
+      cancelAnimationFrame(reFitOnceLaidOut);
+      window.clearTimeout(reFitAfterSettle);
+      if (container) container.innerHTML = "";
       chartRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Push fresh data + highlight on every change without remounting.
+  // Same _expanded: true tagging as the mount path — without it, a
+  // data refresh (e.g. after editing a card) would re-collapse
+  // everything past the root tier.
   useEffect(() => {
     const chart = chartRef.current;
     if (!chart) return;
     chart
-      .data(flat)
+      .data(flat.map((n) => ({ ...n, _expanded: true })))
       .compact(compact)
       .nodeContent((d) => renderCardHtml(d.data, highlightLower))
       .render();
+  }, [flat, compact, highlightLower]);
+
+  // Post-render: attach hover listeners to highlight the path of edges
+  // from a node up to the root. d3-org-chart doesn't expose an
+  // edge-hover hook, but it does emit the chart as a DOM tree of
+  // <g class="node"> + <path class="link"> elements with data-bind
+  // attributes encoding the parent-child relationship. We walk the
+  // DOM after each render, build a parent map by inspecting each
+  // path's source/target, then bind mouseenter/leave on every node.
+  // On hover we mark the ancestor chain's paths + cards with a
+  // `og-highlight` data attribute that the inline CSS below picks up
+  // for a quick color flash.
+  //
+  // Defensive: if d3-org-chart's DOM shape changes in a future
+  // version, the selectors return [] and the effect silently no-ops.
+  // The chart still works; just the hover-highlight is missing.
+  useEffect(() => {
+    const root = containerRef.current;
+    if (!root) return;
+
+    // Build parent → ancestors map from `flat` so the hover handler
+    // doesn't have to walk the DOM at hover time.
+    const parentById = new Map<string, string | null>();
+    for (const node of flat) {
+      parentById.set(node.id, node.parentId);
+    }
+    function ancestorsOf(id: string): string[] {
+      const out: string[] = [];
+      let cur = parentById.get(id) ?? null;
+      while (cur) {
+        out.push(cur);
+        cur = parentById.get(cur) ?? null;
+      }
+      return out;
+    }
+
+    // d3-org-chart marks node groups with .node and stores the bound
+    // datum on `__data__`; links are <path> elements with class link.
+    // We grab everything that smells like a node and walk the bound
+    // datum to find the id.
+    const nodeEls: HTMLElement[] = [];
+    const allNodes = root.querySelectorAll<SVGGElement>("g.node");
+    allNodes.forEach((g) => nodeEls.push(g as unknown as HTMLElement));
+    const linkEls = root.querySelectorAll<SVGPathElement>("path.link");
+
+    if (nodeEls.length === 0 || linkEls.length === 0) {
+      return; // d3-org-chart not rendered (yet) or DOM shape diverged
+    }
+
+    // d3 binds its datum on the DOM node itself via the `__data__`
+    // property. We read it through a narrow shape rather than `any` so
+    // the no-explicit-any rule passes.
+    type D3Bound = {
+      __data__?: { data?: { id?: unknown }; id?: unknown } | null;
+    };
+    type D3LinkBound = {
+      __data__?: {
+        source?: { data?: { id?: unknown }; id?: unknown };
+        target?: { data?: { id?: unknown }; id?: unknown };
+      } | null;
+    };
+
+    function readId(el: Element): string | null {
+      // d3-org-chart wraps each node in a hierarchy point, so we look
+      // for an inner `data` object first, then fall back to `__data__`
+      // itself.
+      const bound = (el as unknown as D3Bound).__data__;
+      const datum = bound?.data ?? bound;
+      if (datum && typeof datum.id === "string") return datum.id;
+      return el.getAttribute("data-id");
+    }
+
+    // Build a quick lookup from path element → (sourceId, targetId).
+    // d3-org-chart's link layout binds the datum {source, target}
+    // hierarchy point pair on the path; we read both.
+    interface LinkBinding {
+      el: SVGPathElement;
+      sourceId: string;
+      targetId: string;
+    }
+    const links: LinkBinding[] = [];
+    linkEls.forEach((p) => {
+      const datum = (p as unknown as D3LinkBound).__data__;
+      const sourceId =
+        datum?.source?.data?.id ?? datum?.source?.id ?? null;
+      const targetId =
+        datum?.target?.data?.id ?? datum?.target?.id ?? null;
+      if (typeof sourceId === "string" && typeof targetId === "string") {
+        links.push({ el: p, sourceId, targetId });
+      }
+    });
+
+    function setHighlight(activeId: string | null): void {
+      // Toggle the parent-attr guard so the dim rule fires only
+      // while a hover is active. The CSS rule
+      //   svg[data-og-has-highlight] g.node:not([data-og-highlight])
+      // matches nothing at rest, which is the round-5 fix for the
+      // ghosted-cards regression. `root` is narrowed at the top of
+      // the effect; the optional-chain keeps TS happy across the
+      // closure boundary without any runtime cost.
+      const svgEl = root?.querySelector("svg") ?? null;
+      if (!activeId) {
+        // Clear all
+        nodeEls.forEach((n) => n.removeAttribute("data-og-highlight"));
+        links.forEach((l) => l.el.removeAttribute("data-og-highlight"));
+        if (svgEl) svgEl.removeAttribute("data-og-has-highlight");
+        return;
+      }
+      if (svgEl) svgEl.setAttribute("data-og-has-highlight", "true");
+      const ancestors = new Set<string>([activeId, ...ancestorsOf(activeId)]);
+      nodeEls.forEach((n) => {
+        const id = readId(n);
+        if (id && ancestors.has(id)) {
+          n.setAttribute("data-og-highlight", "true");
+        } else {
+          n.removeAttribute("data-og-highlight");
+        }
+      });
+      links.forEach((l) => {
+        // A link is on the highlighted path if BOTH endpoints are in
+        // the ancestor chain from the hovered node up to root.
+        if (ancestors.has(l.sourceId) && ancestors.has(l.targetId)) {
+          l.el.setAttribute("data-og-highlight", "true");
+        } else {
+          l.el.removeAttribute("data-og-highlight");
+        }
+      });
+    }
+
+    // Bind handlers + capture cleanup
+    const cleanups: Array<() => void> = [];
+    nodeEls.forEach((n) => {
+      const id = readId(n);
+      if (!id || id === VIRTUAL_ROOT_ID) return;
+      const onEnter = () => setHighlight(id);
+      const onLeave = () => setHighlight(null);
+      n.addEventListener("mouseenter", onEnter);
+      n.addEventListener("mouseleave", onLeave);
+      cleanups.push(() => {
+        n.removeEventListener("mouseenter", onEnter);
+        n.removeEventListener("mouseleave", onLeave);
+      });
+    });
+
+    return () => {
+      cleanups.forEach((fn) => fn());
+      setHighlight(null);
+    };
+    // Re-run after every chart re-render. flat/compact/highlightLower
+    // re-render the chart, replacing the DOM nodes — we re-bind.
   }, [flat, compact, highlightLower]);
 
   return (
@@ -147,6 +375,7 @@ export default function OrgChartCanvas({
           type="button"
           onClick={() => chartRef.current?.expandAll().fit()}
           className="rounded border border-border px-2 py-1 hover:bg-muted/40 transition-colors"
+          title="Expand every node and re-fit to the viewport. If everything is already expanded the tree just re-centers."
         >
           Expand all
         </button>
@@ -154,6 +383,7 @@ export default function OrgChartCanvas({
           type="button"
           onClick={() => chartRef.current?.collapseAll().fit()}
           className="rounded border border-border px-2 py-1 hover:bg-muted/40 transition-colors"
+          title="Collapse every node down to the roots."
         >
           Collapse all
         </button>
@@ -161,10 +391,24 @@ export default function OrgChartCanvas({
           type="button"
           onClick={() => chartRef.current?.fit()}
           className="rounded border border-border px-2 py-1 hover:bg-muted/40 transition-colors"
+          title="Re-center and zoom so the whole tree fits in view."
         >
           Fit to view
         </button>
       </div>
+      {/* Inline styles power the hover-highlight effect: when the
+       *  hover useEffect adds data-og-highlight to a node group or a
+       *  link path, these rules colorize the path from hovered card
+       *  up to root. Round-4 QA reported the CSS source leaking out
+       *  as visible text below the chart on the deployed build —
+       *  the `<style>{`…`}</style>` JSX form was being serialized as
+       *  text content in some hydration paths. Using
+       *  dangerouslySetInnerHTML pins it to a real <style> element
+       *  with the CSS as innerHTML, which is unambiguous across
+       *  React versions and SSR/hydration paths. */}
+      <style
+        dangerouslySetInnerHTML={{ __html: ORG_CHART_CSS }}
+      />
       <div
         ref={containerRef}
         className="rounded border border-border bg-muted/20"

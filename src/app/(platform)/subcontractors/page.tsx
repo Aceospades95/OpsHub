@@ -9,7 +9,9 @@ import { Badge } from "@/components/ui/badge";
 import { HardHat, Star, Mail, Phone, AlertTriangle } from "lucide-react";
 import Link from "next/link";
 import { SubcontractorCreateButton } from "./subcontractor-create-button";
+import { DownloadCsvButton } from "@/components/shared/download-csv-button";
 import { Prisma } from "@prisma/client";
+import { pluralize } from "@/lib/pluralize";
 
 interface Props {
   searchParams: { status?: string; type?: string; compliance?: string };
@@ -29,7 +31,7 @@ export default async function SubcontractorsPage({ searchParams }: Props) {
     );
   }
 
-  const where: Prisma.SubcontractorWhereInput = {};
+  const where: Prisma.SubcontractorWhereInput = { deletedAt: null };
   if (searchParams.status && ["ACTIVE", "INACTIVE", "ONBOARDING", "SUSPENDED", "ARCHIVED"].includes(searchParams.status)) {
     where.status = searchParams.status as Prisma.SubcontractorWhereInput["status"];
   }
@@ -60,7 +62,12 @@ export default async function SubcontractorsPage({ searchParams }: Props) {
       <PageHeader
         title="Subcontractors"
         description="External project labor"
-        actions={perms.canCreate ? <SubcontractorCreateButton /> : undefined}
+        actions={
+          <div className="flex items-center gap-2">
+            {user.role === "ADMIN" && <DownloadCsvButton importerKey="subcontractors" />}
+            {perms.canCreate && <SubcontractorCreateButton />}
+          </div>
+        }
       />
 
       {subcontractors.length === 0 ? (
@@ -111,7 +118,7 @@ export default async function SubcontractorsPage({ searchParams }: Props) {
                           <Phone className="h-3 w-3" /> {sub.primaryContactPhone}
                         </p>
                       )}
-                      <p className="pt-1">{sub._count.projects} active projects</p>
+                      <p className="pt-1">{pluralize(sub._count.projects, "active project")}</p>
                     </div>
                   </CardContent>
                 </Card>

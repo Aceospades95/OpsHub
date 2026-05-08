@@ -142,13 +142,17 @@ export default async function AdminJobsPage() {
             )}
           </div>
           <div className="flex gap-4">
+            {/* These tiles count JobRun rows, not Job definitions —
+             *  "Completed" alone reads like "9 of 12 jobs are
+             *  completed" which is wrong. Label as runs so the
+             *  number's meaning matches the count. */}
             <div className="text-center">
               <p className="text-2xl font-semibold text-emerald-600">{completedTotal}</p>
-              <p className="text-xs text-muted-foreground">Completed</p>
+              <p className="text-xs text-muted-foreground">Completed runs</p>
             </div>
             <div className="text-center">
               <p className="text-2xl font-semibold text-destructive">{failedTotal}</p>
-              <p className="text-xs text-muted-foreground">Failed</p>
+              <p className="text-xs text-muted-foreground">Failed runs</p>
             </div>
             {runningTotal > 0 && (
               <div className="text-center">

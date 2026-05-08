@@ -25,6 +25,7 @@ export const quotePipeline: ReportDefinition = {
   async run() {
     const quotes = await db.quote.findMany({
       where: {
+        deletedAt: null,
         status: { in: ["DRAFT", "SENT", "VIEWED", "ACCEPTED", "REJECTED", "EXPIRED", "REVISED"] },
       },
       include: {

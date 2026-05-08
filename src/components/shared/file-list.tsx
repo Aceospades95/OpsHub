@@ -26,9 +26,16 @@ interface FileListProps {
   links?: LinkItem[];
   embeds?: EmbedItem[];
   canDelete: boolean;
+  /**
+   * Round-8 QA: the same component is reused for "Attachments",
+   * "Links", and "Embeds" cards but the empty-state always read
+   * "No attachments". Callers now pass the specific label so the
+   * Tool detail "Embeds" card reads "No embeds yet" instead.
+   */
+  emptyLabel?: string;
 }
 
-export function FileList({ links = [], embeds = [], canDelete }: FileListProps) {
+export function FileList({ links = [], embeds = [], canDelete, emptyLabel = "No attachments" }: FileListProps) {
   const router = useRouter();
 
   async function handleDeleteLink(id: string) {
@@ -48,7 +55,7 @@ export function FileList({ links = [], embeds = [], canDelete }: FileListProps) 
   const hasContent = links.length > 0 || embeds.length > 0;
 
   if (!hasContent) {
-    return <p className="text-sm text-muted-foreground">No attachments</p>;
+    return <p className="text-sm text-muted-foreground">{emptyLabel}</p>;
   }
 
   return (
@@ -66,7 +73,12 @@ export function FileList({ links = [], embeds = [], canDelete }: FileListProps) 
             )}
           </div>
           {canDelete && (
-            <button onClick={() => handleDeleteLink(link.id)} className="rounded p-1 text-muted-foreground hover:text-destructive">
+            <button
+              onClick={() => handleDeleteLink(link.id)}
+              aria-label={`Delete link "${link.title}"`}
+              title="Delete link"
+              className="rounded p-1 text-muted-foreground hover:text-destructive"
+            >
               <Trash2 className="h-3 w-3" />
             </button>
           )}
@@ -84,7 +96,12 @@ export function FileList({ links = [], embeds = [], canDelete }: FileListProps) 
               )}
             </div>
             {canDelete && (
-              <button onClick={() => handleDeleteEmbed(embed.id)} className="rounded p-1 text-muted-foreground hover:text-destructive">
+              <button
+                onClick={() => handleDeleteEmbed(embed.id)}
+                aria-label={`Delete embed "${embed.title}"`}
+                title="Delete embed"
+                className="rounded p-1 text-muted-foreground hover:text-destructive"
+              >
                 <Trash2 className="h-3 w-3" />
               </button>
             )}

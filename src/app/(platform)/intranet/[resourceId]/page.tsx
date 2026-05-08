@@ -8,6 +8,7 @@ import { Pin } from "lucide-react";
 import { IntranetActions } from "./intranet-actions";
 import { IntranetAttachments } from "./intranet-attachments";
 import { PageLayout } from "@/components/shared/page-layout";
+import { Markdown } from "@/components/shared/markdown";
 
 interface Props {
   params: Promise<{ resourceId: string }>;
@@ -19,8 +20,13 @@ export default async function IntranetDetailPage({ params }: Props) {
 
   const perms = await resolveModulePerms(user.id, user.role, "intranet");
 
-  const resource = await db.intranetResource.findUnique({
-    where: { id: resourceId },
+  // Round-8 QA: resolve by slug-or-id (slug is the canonical href
+  // for new records; cuid still works for old bookmarks).
+  const resource = await db.intranetResource.findFirst({
+    where: {
+      OR: [{ id: resourceId }, { slug: resourceId }],
+      deletedAt: null,
+    },
     include: { links: true, embeds: true },
   });
 
@@ -33,7 +39,7 @@ export default async function IntranetDetailPage({ params }: Props) {
       <Card className="h-full">
         <CardHeader><CardTitle>Content</CardTitle></CardHeader>
         <CardContent>
-          <div className="text-sm whitespace-pre-wrap">{resource.content}</div>
+          <Markdown source={resource.content} />
         </CardContent>
       </Card>
     ) : (
@@ -78,7 +84,23 @@ export default async function IntranetDetailPage({ params }: Props) {
         )}
       </div>
 
-      <PageLayout pageType="intranet-detail" cards={cardMap} canEdit={canEditLayout} mode="flow" />
+      {/* Round-8 QA: the page-type-level layout customization put a
+       *  Team Directory widget on every intranet detail page, which
+       *  read as noise on announcements (and presumably on most
+       *  category-style content). Suppress the widget for category
+       *  types where the directory has no obvious connection. Org
+       *  Chart and SOP keep the widget; everything else hides it. */}
+      <PageLayout
+        pageType="intranet-detail"
+        cards={cardMap}
+        canEdit={canEditLayout}
+        mode="flow"
+        hideWidgetIds={
+          resource.category === "ORG_CHART" || resource.category === "SOP"
+            ? undefined
+            : ["widget-team-directory"]
+        }
+      />
     </div>
   );
 }

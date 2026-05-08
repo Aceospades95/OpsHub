@@ -5,28 +5,34 @@ import { requireAuth, resolveModulePerms } from "@/lib/permissions";
 import { logActivity } from "@/lib/activity";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { isValidCalendarRange } from "@/lib/dates";
 
-const contractSchema = z.object({
-  title: z.string().min(1, "Title is required"),
-  description: z.string().optional(),
-  status: z.enum(["DRAFT", "UNDER_REVIEW", "ACTIVE", "EXPIRING_SOON", "EXPIRED", "TERMINATED", "RENEWED"]).optional(),
-  contractNumber: z.string().optional(),
-  contractType: z.enum(["MSA", "SOW", "NDA", "Amendment", "Other"]).optional().nullable(),
-  value: z.coerce.number().optional().nullable(),
-  currency: z.string().optional(),
-  startDate: z.string().optional(),
-  endDate: z.string().optional(),
-  renewalDate: z.string().optional(),
-  noticePeriodDays: z.coerce.number().int().optional().nullable(),
-  autoRenew: z.boolean().optional(),
-  summary: z.string().optional(),
-  externalDocumentUrl: z.string().optional(),
-  documentSourceType: z.string().optional(),
-  documentSourceLabel: z.string().optional(),
-  parentContractId: z.string().optional(),
-  clientId: z.string().min(1, "Client is required"),
-  projectId: z.string().optional(),
-});
+const contractSchema = z
+  .object({
+    title: z.string().min(1, "Title is required"),
+    description: z.string().optional(),
+    status: z.enum(["DRAFT", "UNDER_REVIEW", "ACTIVE", "EXPIRING_SOON", "EXPIRED", "TERMINATED", "RENEWED"]).optional(),
+    contractNumber: z.string().optional(),
+    contractType: z.enum(["MSA", "SOW", "NDA", "Amendment", "Other"]).optional().nullable(),
+    value: z.coerce.number().optional().nullable(),
+    currency: z.string().optional(),
+    startDate: z.string().optional(),
+    endDate: z.string().optional(),
+    renewalDate: z.string().optional(),
+    noticePeriodDays: z.coerce.number().int().optional().nullable(),
+    autoRenew: z.boolean().optional(),
+    summary: z.string().optional(),
+    externalDocumentUrl: z.string().optional(),
+    documentSourceType: z.string().optional(),
+    documentSourceLabel: z.string().optional(),
+    parentContractId: z.string().optional(),
+    clientId: z.string().min(1, "Client is required"),
+    projectId: z.string().optional(),
+  })
+  .refine((d) => isValidCalendarRange(d.startDate, d.endDate), {
+    message: "End date must be on or after start date",
+    path: ["endDate"],
+  });
 
 export async function createContract(_prev: unknown, formData: FormData) {
   const user = await requireAuth();
@@ -159,9 +165,12 @@ export async function deleteContract(_prev: unknown, formData: FormData) {
   const id = formData.get("id") as string;
   const contract = await db.contract.findUnique({ where: { id } });
   if (!contract) return { error: "Not found" };
+  if (contract.deletedAt) {
+    return { error: "Already in the recovery bin" };
+  }
 
-  await db.contract.delete({ where: { id } });
-  await logActivity("deleted", "contract", id, user.id, contract.title, {
+  await db.contract.update({ where: { id }, data: { deletedAt: new Date() } });
+  await logActivity("soft-deleted", "contract", id, user.id, contract.title, {
     clientId: contract.clientId,
     projectId: contract.projectId,
   });

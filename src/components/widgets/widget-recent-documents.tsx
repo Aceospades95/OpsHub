@@ -6,6 +6,7 @@ import Link from "next/link";
 
 export async function WidgetRecentDocuments({ userId: _userId }: { userId: string }) {
   const documents = await db.document.findMany({
+    where: { deletedAt: null },
     orderBy: { updatedAt: "desc" },
     take: 6,
     include: { project: { select: { id: true, name: true } } },

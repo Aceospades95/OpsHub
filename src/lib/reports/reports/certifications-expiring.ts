@@ -29,6 +29,7 @@ export const certificationsExpiring: ReportDefinition = {
 
     const certs = await db.certification.findMany({
       where: {
+        deletedAt: null,
         status: { in: ["ACTIVE", "EXPIRING_SOON", "PENDING"] },
         expirationDate: { gte: now, lte: horizon },
       },

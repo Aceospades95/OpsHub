@@ -60,7 +60,7 @@ export default async function TeamPage() {
       orderBy: { name: "asc" },
     }),
     db.project.findMany({
-      where: { status: { in: ["PLANNING", "ACTIVE", "ON_HOLD", "COMPLETED"] } },
+      where: { status: { in: ["PLANNING", "ACTIVE", "ON_HOLD", "COMPLETED"] }, deletedAt: null },
       select: {
         id: true, name: true, status: true, clientId: true,
         serviceOfferingId: true,
@@ -69,7 +69,7 @@ export default async function TeamPage() {
       orderBy: [{ status: "asc" }, { name: "asc" }],
     }),
     db.client.findMany({
-      where: { status: "ACTIVE" },
+      where: { status: "ACTIVE", deletedAt: null },
       select: { id: true, name: true },
       orderBy: { name: "asc" },
     }),

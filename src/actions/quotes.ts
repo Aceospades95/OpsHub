@@ -9,6 +9,7 @@ import { nextQuoteNumber } from "@/lib/quotes/numbering";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import type { Prisma } from "@prisma/client";
+import { rejectHtmlChars, HTML_CHARS_MESSAGE } from "@/lib/validation";
 
 // ─── Validation ──────────────────────────────────────────────────────────
 
@@ -46,7 +47,15 @@ const MAX_LINE_ITEMS = 500;
 const quoteUpsertSchema = z.object({
   clientId: z.string().min(1, "Client is required"),
   projectId: z.string().nullish(),
-  title: z.string().min(1, "Title is required"),
+  title: z
+    .string()
+    .trim()
+    .min(1, "Title is required")
+    .max(200, "Title must be at most 200 characters")
+    .refine((v) => v !== "Untitled Quote", {
+      message: "Give the quote a meaningful title before saving",
+    })
+    .refine(rejectHtmlChars, { message: HTML_CHARS_MESSAGE }),
   introText: z.string().nullish(),
   assumptionsText: z.string().nullish(),
   termsText: z.string().nullish(),
@@ -240,8 +249,8 @@ export async function createQuote(opts: CreateQuoteOptions = {}) {
       recurringInterval: li.recurringInterval,
     }));
   } else if (opts.fromQuoteId) {
-    const src = await db.quote.findUnique({
-      where: { id: opts.fromQuoteId },
+    const src = await db.quote.findFirst({
+      where: { id: opts.fromQuoteId, deletedAt: null },
       include: { lineItems: { orderBy: { position: "asc" } } },
     });
     if (!src) return { error: "Source quote not found" } as const;
@@ -288,8 +297,8 @@ export async function createQuote(opts: CreateQuoteOptions = {}) {
   // generator can build a CLIENT-PROJECT-YEAR-NNNN style id. We've
   // already validated the client id at this point so a missing row
   // would be a programming error; treat as a hard failure.
-  const seedClient = await db.client.findUnique({
-    where: { id: seedClientId },
+  const seedClient = await db.client.findFirst({
+    where: { id: seedClientId, deletedAt: null },
     select: { name: true },
   });
   if (!seedClient) {
@@ -297,12 +306,27 @@ export async function createQuote(opts: CreateQuoteOptions = {}) {
   }
   const seedProjectName = seedProjectId
     ? (
-        await db.project.findUnique({
-          where: { id: seedProjectId },
+        await db.project.findFirst({
+          where: { id: seedProjectId, deletedAt: null },
           select: { name: true },
         })
       )?.name ?? null
     : null;
+
+  // Promote the empty-seed placeholder title to something meaningful.
+  // The QA stress test flagged that every quote in the system was
+  // titled "Untitled Quote" because users hit Save in the editor
+  // without retitling — the placeholder shipped untouched. A default
+  // that includes client + (optional) project + ISO date makes the
+  // saved row useful even if the user never edits the field. Templates
+  // and duplicate flows already supplied their own title above; only
+  // the bare-create path lands here.
+  if (seedTitle === "Untitled Quote") {
+    const today = new Date().toISOString().slice(0, 10);
+    seedTitle = seedProjectName
+      ? `${seedClient.name} — ${seedProjectName} — ${today}`
+      : `${seedClient.name} — ${today}`;
+  }
 
   // Retry the create if quoteNumber collides — concurrent creates in the
   // same year can race. After two retries, surface the error.
@@ -400,8 +424,8 @@ export async function updateQuote(input: { id: string } & QuoteUpsertInput) {
     } as const;
   }
 
-  const existing = await db.quote.findUnique({
-    where: { id: input.id },
+  const existing = await db.quote.findFirst({
+    where: { id: input.id, deletedAt: null },
     select: {
       id: true,
       status: true,
@@ -436,16 +460,23 @@ export async function deleteQuote(id: string) {
 
   const quote = await db.quote.findUnique({
     where: { id },
-    select: { id: true, status: true, clientId: true, projectId: true, title: true },
+    select: { id: true, status: true, clientId: true, projectId: true, title: true, deletedAt: true },
   });
   if (!quote) return { error: "Quote not found" } as const;
+  if (quote.deletedAt) {
+    return { error: "Already in the recovery bin" } as const;
+  }
 
-  await db.quote.delete({ where: { id } });
-  await logActivity("deleted", "quote", id, user.id, quote.title, {
+  await db.quote.update({ where: { id }, data: { deletedAt: new Date() } });
+  await logActivity("soft-deleted", "quote", id, user.id, quote.title, {
     clientId: quote.clientId,
     projectId: quote.projectId,
   });
-  revalidateQuote(id, { clientId: quote.clientId, projectId: quote.projectId });
+  revalidateQuote(id, {
+    clientId: quote.clientId,
+    projectId: quote.projectId,
+    deleted: true,
+  });
   return { success: true } as const;
 }
 
@@ -461,8 +492,8 @@ export async function saveQuoteAsTemplate(input: { id: string; name: string; des
   const name = input.name?.trim();
   if (!name) return { error: "Template name is required" } as const;
 
-  const quote = await db.quote.findUnique({
-    where: { id: input.id },
+  const quote = await db.quote.findFirst({
+    where: { id: input.id, deletedAt: null },
     include: { lineItems: { orderBy: { position: "asc" } } },
   });
   if (!quote) return { error: "Quote not found" } as const;
@@ -515,8 +546,8 @@ export async function convertQuoteToProject(id: string) {
     } as const;
   }
 
-  const quote = await db.quote.findUnique({
-    where: { id },
+  const quote = await db.quote.findFirst({
+    where: { id, deletedAt: null },
     include: {
       lineItems: { orderBy: { position: "asc" } },
       project: { select: { id: true } },
@@ -621,7 +652,7 @@ export async function listQuotes(filters: QuoteListFilters = {}) {
   const perms = await resolveModulePerms(user.id, user.role, "quotes");
   if (!perms.canView) return { error: "Permission denied" } as const;
 
-  const where: Prisma.QuoteWhereInput = {};
+  const where: Prisma.QuoteWhereInput = { deletedAt: null };
   if (filters.clientId) where.clientId = filters.clientId;
   if (filters.projectId) where.projectId = filters.projectId;
   if (filters.assignedToId) where.assignedToId = filters.assignedToId;

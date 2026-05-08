@@ -14,7 +14,8 @@ import {
   CheckSquare,
   Clock,
 } from "lucide-react";
-import { formatDistanceToNow, format } from "date-fns";
+import { formatDistanceToNow } from "date-fns";
+import { formatCalendarDate } from "@/lib/dates";
 import Link from "next/link";
 import { DashboardTaskCheckbox } from "./dashboard-task-checkbox";
 import { PageLayout } from "@/components/shared/page-layout";
@@ -23,6 +24,12 @@ export default async function DashboardPage() {
   const user = await requireAuth();
 
   const { id: userId, role } = user;
+
+  // Single "now" for the whole render so the past-due indicator on
+  // task rows agrees with itself across the page (and so we don't
+  // create N Date objects per row in the JSX). The server component
+  // re-renders on every visit, so the value stays fresh.
+  const renderedAt = new Date();
 
   const canEditLayout = user.role === "ADMIN" || user.role === "DEVELOPER";
 
@@ -38,6 +45,7 @@ export default async function DashboardPage() {
 
   const [
     clientCount,
+    clientStatusBreakdown,
     projectCount,
     activeProjectCount,
     contractCount,
@@ -50,16 +58,30 @@ export default async function DashboardPage() {
     activeProjects,
     teamMembers,
   ] = await Promise.all([
-    clientPerms.canView ? db.client.count() : Promise.resolve(0),
-    projectPerms.canView ? db.project.count() : Promise.resolve(0),
+    clientPerms.canView ? db.client.count({ where: { deletedAt: null } }) : Promise.resolve(0),
+    // Round-7 QA: the previous "{n} active" sub read as "the
+    // remainder are inactive", but in practice a Client row is one
+    // of ACTIVE / PROSPECT / INACTIVE / ARCHIVED. Pull the full
+    // groupBy so the sub-line can show the actual mix. Round-2's
+    // active-only sub was misleading when a deployment had any
+    // PROSPECT rows.
+    clientPerms.canView
+      ? db.client.groupBy({
+          by: ["status"],
+          where: { deletedAt: null },
+          _count: { _all: true },
+        })
+      : Promise.resolve([] as { status: string; _count: { _all: number } }[]),
+    projectPerms.canView ? db.project.count({ where: { deletedAt: null } }) : Promise.resolve(0),
     projectPerms.canView
-      ? db.project.count({ where: { status: "ACTIVE" } })
+      ? db.project.count({ where: { status: "ACTIVE", deletedAt: null } })
       : Promise.resolve(0),
-    contractPerms.canView ? db.contract.count({ where: { status: "ACTIVE" } }) : Promise.resolve(0),
+    contractPerms.canView ? db.contract.count({ where: { status: "ACTIVE", deletedAt: null } }) : Promise.resolve(0),
     contractPerms.canView
       ? db.contract.count({
           where: {
             status: { in: ["EXPIRING_SOON", "EXPIRED"] },
+            deletedAt: null,
           },
         })
       : Promise.resolve(0),
@@ -73,6 +95,7 @@ export default async function DashboardPage() {
       where: {
         status: { in: ["TODO", "IN_PROGRESS"] },
         assigneeId: userId,
+        deletedAt: null,
       },
       take: 8,
       orderBy: [{ priority: "asc" }, { dueDate: "asc" }],
@@ -87,6 +110,7 @@ export default async function DashboardPage() {
         status: "DONE",
         assigneeId: userId,
         completedAt: { gte: recentlyCompletedSince },
+        deletedAt: null,
       },
       take: 5,
       orderBy: { completedAt: "desc" },
@@ -95,12 +119,12 @@ export default async function DashboardPage() {
       },
     }),
     db.task.count({
-      where: { status: { in: ["TODO", "IN_PROGRESS"] } },
+      where: { status: { in: ["TODO", "IN_PROGRESS"] }, deletedAt: null },
     }),
     // Active projects with status for overview card
     projectPerms.canView
       ? db.project.findMany({
-          where: { status: { in: ["PLANNING", "ACTIVE", "ON_HOLD"] } },
+          where: { status: { in: ["PLANNING", "ACTIVE", "ON_HOLD"] }, deletedAt: null },
           take: 8,
           orderBy: { updatedAt: "desc" },
           select: {
@@ -127,6 +151,22 @@ export default async function DashboardPage() {
     }),
   ]);
 
+  // Build a non-zero-only sub-line from the status breakdown so the
+  // dashboard reads "3 active · 2 prospect" instead of "3 active"
+  // when the remainder isn't in the inactive/archived bucket the
+  // user might assume. Lowercase status labels for sentence-flow.
+  const statusOrder = ["ACTIVE", "PROSPECT", "INACTIVE", "ARCHIVED"] as const;
+  const clientByStatus = new Map<string, number>(
+    Array.isArray(clientStatusBreakdown)
+      ? clientStatusBreakdown.map((b) => [b.status, b._count._all])
+      : []
+  );
+  const clientSubParts = statusOrder
+    .map((s) => ({ status: s, n: clientByStatus.get(s) ?? 0 }))
+    .filter((b) => b.n > 0)
+    .map((b) => `${b.n} ${b.status.toLowerCase()}`);
+  const clientSub = clientSubParts.length > 0 ? clientSubParts.join(" · ") : "";
+
   const stats = [
     {
       label: "Total Clients",
@@ -134,7 +174,7 @@ export default async function DashboardPage() {
       icon: Building2,
       href: "/clients",
       visible: clientPerms.canView,
-      sub: "\u00A0",
+      sub: clientSub,
     },
     {
       label: "Projects",
@@ -153,7 +193,10 @@ export default async function DashboardPage() {
       sub: "\u00A0",
     },
     {
-      label: "Open Tasks",
+      // Renamed from "Open Tasks" to match the /tasks page filter
+      // chip ("Active") and to remove the QA-flagged ambiguity \u2014
+      // value is TODO + IN_PROGRESS, never includes DONE.
+      label: "Active Tasks",
       value: openTaskCount,
       icon: CheckSquare,
       href: "/tasks",
@@ -243,7 +286,7 @@ export default async function DashboardPage() {
                       <DashboardTaskCheckbox taskId={task.id} status={task.status} />
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
-                          <span className="text-sm font-medium truncate">{task.title}</span>
+                          <span className="text-sm font-medium truncate" title={task.title}>{task.title}</span>
                           <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${priorityColors[task.priority]}`}>
                             {task.priority}
                           </span>
@@ -260,9 +303,9 @@ export default async function DashboardPage() {
                             </Link>
                           )}
                           {task.dueDate && (
-                            <span className={`flex items-center gap-1 ${new Date(task.dueDate) < new Date() ? "text-destructive" : ""}`}>
+                            <span className={`flex items-center gap-1 ${new Date(task.dueDate) < renderedAt ? "text-destructive" : ""}`}>
                               <Clock className="h-3 w-3" />
-                              {format(new Date(task.dueDate), "MMM d")}
+                              {formatCalendarDate(task.dueDate, "MMM d")}
                             </span>
                           )}
                         </div>
@@ -282,7 +325,7 @@ export default async function DashboardPage() {
                     <div key={task.id} className="flex items-center gap-3 py-0.5 opacity-70">
                       <DashboardTaskCheckbox taskId={task.id} status={task.status} />
                       <div className="flex-1 min-w-0">
-                        <span className="text-sm line-through truncate block">{task.title}</span>
+                        <span className="text-sm line-through truncate block" title={task.title}>{task.title}</span>
                         <div className="flex items-center gap-2 text-xs text-muted-foreground">
                           {task.project && (
                             <Link href={`/projects/${task.project.id}`} className="hover:text-primary hover:underline">
@@ -352,21 +395,25 @@ export default async function DashboardPage() {
           <div className="flex items-center justify-between">
             <CardTitle className="flex items-center gap-2">
               <FolderKanban className="h-5 w-5" />
-              Active Projects
+              {/* Pulls PLANNING + ACTIVE + ON_HOLD — "in progress" is
+               *  the umbrella label that fits all three. Round-2 QA
+               *  flagged the prior "Active Projects" header was wrong
+               *  when only PLANNING projects existed. */}
+              Projects in Progress
             </CardTitle>
             <Link href="/projects" className="text-sm text-primary hover:underline">View all</Link>
           </div>
         </CardHeader>
         <CardContent>
           {activeProjects.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No active projects</p>
+            <p className="text-sm text-muted-foreground">No projects in progress</p>
           ) : (
             <div className="space-y-2">
               {activeProjects.map((p: { id: string; name: string; status: string; client: { name: string } | null; _count: { tasks: number } }) => (
                 <Link key={p.id} href={`/projects/${p.id}`} className="flex items-center gap-3 rounded border border-border bg-muted p-3 hover:border-primary hover:bg-muted transition-colors">
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate">{p.name}</p>
-                    <p className="text-xs text-muted-foreground truncate">{p.client?.name || "No client"}</p>
+                    <p className="text-sm font-medium truncate" title={p.name}>{p.name}</p>
+                    <p className="text-xs text-muted-foreground truncate" title={p.client?.name || "No client"}>{p.client?.name || "No client"}</p>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
                     {p._count.tasks > 0 && (
@@ -401,8 +448,8 @@ export default async function DashboardPage() {
                 <Link key={m.id} href={`/team/${m.id}`} className="flex items-center gap-3 rounded border border-border bg-muted p-3 hover:border-primary hover:bg-muted transition-colors">
                   <Avatar name={m.name} size="xs" />
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate">{m.name}</p>
-                    <p className="text-xs text-muted-foreground truncate">{m.jobTitle || m.department || "Team member"}</p>
+                    <p className="text-sm font-medium truncate" title={m.name}>{m.name}</p>
+                    <p className="text-xs text-muted-foreground truncate" title={m.jobTitle || m.department || "Team member"}>{m.jobTitle || m.department || "Team member"}</p>
                   </div>
                   <span className="text-xs text-muted-foreground shrink-0">{m._count.assignments} active</span>
                 </Link>

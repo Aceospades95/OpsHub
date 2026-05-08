@@ -10,7 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
 import { Mail, Phone, MapPin, Globe, AlertTriangle } from "lucide-react";
 import Link from "next/link";
-import { format } from "date-fns";
+import { formatCalendarDate } from "@/lib/dates";
 import { PartnershipActions } from "./partnership-actions";
 import { PartnershipContacts } from "./partnership-contacts";
 import { PartnershipProjects } from "./partnership-projects";
@@ -46,12 +46,13 @@ export default async function PartnershipDetailPage({ params }: Props) {
     );
   }
 
-  const partnership = await db.partnership.findUnique({
-    where: { id: partnershipId },
+  const partnership = await db.partnership.findFirst({
+    where: { id: partnershipId, deletedAt: null },
     include: {
       relationshipOwner: { select: { id: true, name: true } },
       contacts: { orderBy: [{ isPrimary: "desc" }, { name: "asc" }] },
       projects: {
+        where: { project: { deletedAt: null } },
         include: {
           project: {
             select: {
@@ -75,6 +76,7 @@ export default async function PartnershipDetailPage({ params }: Props) {
   if (!partnership) notFound();
 
   const allProjects = await db.project.findMany({
+    where: { deletedAt: null },
     select: { id: true, name: true },
     orderBy: { name: "asc" },
   });
@@ -271,20 +273,20 @@ export default async function PartnershipDetailPage({ params }: Props) {
                 {partnership.partnerSinceDate && (
                   <p>
                     <span className="text-muted-foreground">Partner since:</span>{" "}
-                    <span className="font-medium">{format(partnership.partnerSinceDate, "MMM d, yyyy")}</span>
+                    <span className="font-medium">{formatCalendarDate(partnership.partnerSinceDate, "MMM d, yyyy")}</span>
                   </p>
                 )}
                 {partnership.agreementSignedAt && (
                   <p>
                     <span className="text-muted-foreground">Signed:</span>{" "}
-                    <span className="font-medium">{format(partnership.agreementSignedAt, "MMM d, yyyy")}</span>
+                    <span className="font-medium">{formatCalendarDate(partnership.agreementSignedAt, "MMM d, yyyy")}</span>
                   </p>
                 )}
                 {partnership.agreementExpiresAt && (
                   <p>
                     <span className="text-muted-foreground">Expires:</span>{" "}
                     <span className={`font-medium ${agreementExpired ? "text-destructive" : agreementLapsing ? "text-warning" : ""}`}>
-                      {format(partnership.agreementExpiresAt, "MMM d, yyyy")}
+                      {formatCalendarDate(partnership.agreementExpiresAt, "MMM d, yyyy")}
                     </span>
                   </p>
                 )}

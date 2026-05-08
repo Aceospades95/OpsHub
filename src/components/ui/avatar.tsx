@@ -1,3 +1,5 @@
+import { SafeImg } from "@/components/ui/safe-img";
+
 type AvatarSize = "xs" | "sm" | "md" | "lg";
 
 interface AvatarProps {
@@ -24,22 +26,26 @@ function getInitials(name: string): string {
 }
 
 export function Avatar({ src, name, size = "md", className = "" }: AvatarProps) {
-  if (src) {
-    return (
-      // eslint-disable-next-line @next/next/no-img-element
-      <img
-        src={src}
-        alt={name}
-        className={`inline-flex items-center justify-center rounded-full object-cover ${sizeStyles[size]} ${className}`}
-      />
-    );
-  }
-
-  return (
+  const initials = (
     <span
       className={`inline-flex items-center justify-center rounded-full bg-primary text-primary-foreground font-medium ${sizeStyles[size]} ${className}`}
     >
       {getInitials(name)}
     </span>
+  );
+
+  if (!src) return initials;
+
+  // SafeImg caches in-session 404s so a stale user.avatar reference
+  // (the file was deleted from storage but the User row still points
+  // at it) doesn't refetch on every render. The fallback renders the
+  // same initial-circle the no-src branch would have shown.
+  return (
+    <SafeImg
+      src={src}
+      alt={name}
+      className={`inline-flex items-center justify-center rounded-full object-cover ${sizeStyles[size]} ${className}`}
+      fallback={initials}
+    />
   );
 }

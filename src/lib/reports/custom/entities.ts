@@ -265,7 +265,7 @@ const PROJECT: EntityDef = {
       include.serviceOffering = { select: { id: true, name: true } };
     }
     const rows = await db.project.findMany({
-      where,
+      where: { ...where, deletedAt: null },
       orderBy,
       take,
       include: Object.keys(include).length > 0 ? include : undefined,
@@ -330,7 +330,7 @@ const CLIENT: EntityDef = {
       include.accountManager = { select: { id: true, name: true, email: true } };
     }
     const rows = await db.client.findMany({
-      where,
+      where: { ...where, deletedAt: null },
       orderBy,
       take,
       include: Object.keys(include).length > 0 ? include : undefined,
@@ -441,7 +441,7 @@ const QUOTE: EntityDef = {
       include.assignedTo = { select: { id: true, name: true } };
     }
     const rows = await db.quote.findMany({
-      where,
+      where: { ...where, deletedAt: null },
       orderBy,
       take,
       include: Object.keys(include).length > 0 ? include : undefined,
@@ -552,7 +552,7 @@ const TASK: EntityDef = {
       include.client = { select: { id: true, name: true } };
     }
     const rows = await db.task.findMany({
-      where,
+      where: { ...where, deletedAt: null },
       orderBy,
       take,
       include: Object.keys(include).length > 0 ? include : undefined,
@@ -627,7 +627,7 @@ const CONTRACT: EntityDef = {
       include.project = { select: { id: true, name: true } };
     }
     const rows = await db.contract.findMany({
-      where,
+      where: { ...where, deletedAt: null },
       orderBy,
       take,
       include: Object.keys(include).length > 0 ? include : undefined,
@@ -719,7 +719,7 @@ const CERTIFICATION: EntityDef = {
       include.pointOfContact = { select: { id: true, name: true } };
     }
     const rows = await db.certification.findMany({
-      where,
+      where: { ...where, deletedAt: null },
       orderBy,
       take,
       include: Object.keys(include).length > 0 ? include : undefined,
@@ -932,7 +932,7 @@ const SUBCONTRACTOR: EntityDef = {
       include.accountManager = { select: { id: true, name: true, email: true } };
     }
     const rows = await db.subcontractor.findMany({
-      where,
+      where: { ...where, deletedAt: null },
       orderBy,
       take,
       include: Object.keys(include).length > 0 ? include : undefined,
@@ -1015,7 +1015,7 @@ const PARTNERSHIP: EntityDef = {
       include.relationshipOwner = { select: { id: true, name: true, email: true } };
     }
     const rows = await db.partnership.findMany({
-      where,
+      where: { ...where, deletedAt: null },
       orderBy,
       take,
       include: Object.keys(include).length > 0 ? include : undefined,

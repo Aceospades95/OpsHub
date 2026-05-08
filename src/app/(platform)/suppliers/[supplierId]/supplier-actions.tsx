@@ -66,7 +66,13 @@ export function SupplierActions({ supplier, canEdit, canDelete }: Props) {
             open={deleteOpen}
             onClose={() => setDeleteOpen(false)}
             title="Delete Supplier"
-            message={<>Delete <strong>{supplier.name}</strong>?</>}
+            message={
+              <>
+                Are you sure you want to delete <strong>{supplier.name}</strong>?
+                Project links, attachments, and comments tied to this supplier
+                will be removed. This cannot be undone.
+              </>
+            }
             onConfirm={runDelete}
             navigateTo="/suppliers"
             confirmLabel="Delete"

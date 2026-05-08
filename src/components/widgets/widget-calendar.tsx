@@ -1,7 +1,8 @@
 import { db } from "@/lib/db";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Calendar, Clock } from "lucide-react";
-import { format, addDays, isBefore } from "date-fns";
+import { addDays } from "date-fns";
+import { formatCalendarDate } from "@/lib/dates";
 
 export async function WidgetCalendar({ userId: _userId }: { userId: string }) {
   const now = new Date();
@@ -9,7 +10,7 @@ export async function WidgetCalendar({ userId: _userId }: { userId: string }) {
 
   const [upcomingTasks, upcomingMilestones, expiringContracts] = await Promise.all([
     db.task.findMany({
-      where: { dueDate: { gte: now, lte: thirtyDays }, status: { in: ["TODO", "IN_PROGRESS"] } },
+      where: { dueDate: { gte: now, lte: thirtyDays }, status: { in: ["TODO", "IN_PROGRESS"] }, deletedAt: null },
       orderBy: { dueDate: "asc" },
       take: 5,
       select: { id: true, title: true, dueDate: true },
@@ -21,7 +22,7 @@ export async function WidgetCalendar({ userId: _userId }: { userId: string }) {
       select: { id: true, title: true, dueDate: true },
     }),
     db.contract.findMany({
-      where: { endDate: { gte: now, lte: thirtyDays }, status: "ACTIVE" },
+      where: { endDate: { gte: now, lte: thirtyDays }, status: "ACTIVE", deletedAt: null },
       orderBy: { endDate: "asc" },
       take: 5,
       select: { id: true, title: true, endDate: true },
@@ -56,8 +57,8 @@ export async function WidgetCalendar({ userId: _userId }: { userId: string }) {
             {events.map((e) => (
               <div key={`${e.type}-${e.id}`} className="flex items-center gap-3 py-1">
                 <div className="text-center w-10 shrink-0">
-                  <div className="text-xs text-muted-foreground">{format(e.date, "MMM")}</div>
-                  <div className="text-lg font-bold leading-tight">{format(e.date, "d")}</div>
+                  <div className="text-xs text-muted-foreground">{formatCalendarDate(e.date, "MMM")}</div>
+                  <div className="text-lg font-bold leading-tight">{formatCalendarDate(e.date, "d")}</div>
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium truncate">{e.title}</p>

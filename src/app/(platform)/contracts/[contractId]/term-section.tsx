@@ -11,7 +11,7 @@ import { StatusBadge } from "@/components/shared/status-badge";
 import { Badge } from "@/components/ui/badge";
 import { createContractTerm, deleteContractTerm } from "@/actions/contracts";
 import { Plus, Trash2 } from "lucide-react";
-import { format } from "date-fns";
+import { formatCalendarDate } from "@/lib/dates";
 
 interface Term {
   id: string;
@@ -61,7 +61,7 @@ export function TermSection({ terms, contractId, canEdit, canDelete }: Props) {
           <p className="text-sm text-muted-foreground mt-1 whitespace-pre-wrap">{term.description}</p>
           {term.dueDate && (
             <p className="text-xs text-muted-foreground mt-2">
-              Due: {format(term.dueDate, "MMM d, yyyy")}
+              Due: {formatCalendarDate(term.dueDate, "MMM d, yyyy")}
             </p>
           )}
         </div>

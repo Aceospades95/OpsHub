@@ -21,13 +21,25 @@ export function TaskCreateButton({ projects, clients, users }: TaskCreateButtonP
   const [open, setOpen] = useState(false);
   const [state, action] = useFormState(createTask, null);
   const router = useRouter();
+  const [dueDate, setDueDate] = useState("");
 
   useEffect(() => {
     if (state?.success) {
       setOpen(false);
+      setDueDate("");
       router.refresh();
     }
   }, [state, router]);
+
+  // Compare picked dueDate against today's calendar date — both as
+  // YYYY-MM-DD strings so we never construct a Date object that would
+  // shift across the viewer's timezone (see src/lib/dates.ts for the
+  // longer write-up). The hint is informational, not blocking.
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const isPastDue = dueDate !== "" && dueDate < todayStr;
+  const titleError = state?.fieldErrors?.title?.[0] ?? state?.error?.includes("title")
+    ? state?.fieldErrors?.title?.[0] ?? null
+    : null;
 
   return (
     <>
@@ -36,10 +48,16 @@ export function TaskCreateButton({ projects, clients, users }: TaskCreateButtonP
       </Button>
       <Dialog open={open} onClose={() => setOpen(false)} title="Create Task">
         <form action={action} className="space-y-4">
-          {state?.error && (
-            <p className="text-sm text-destructive">{state.error}</p>
+          {state?.error && !titleError && (
+            <p className="text-sm text-destructive" role="alert">{state.error}</p>
           )}
-          <Input name="title" label="Title" required />
+          <Input
+            name="title"
+            label="Title"
+            required
+            error={titleError ?? undefined}
+            aria-invalid={titleError ? true : undefined}
+          />
           <Textarea name="description" label="Description" />
           <div className="grid grid-cols-2 gap-4">
             <Select
@@ -51,7 +69,20 @@ export function TaskCreateButton({ projects, clients, users }: TaskCreateButtonP
                 { label: "Low", value: "LOW" },
               ]}
             />
-            <Input name="dueDate" label="Due Date" type="date" />
+            <div>
+              <Input
+                name="dueDate"
+                label="Due Date"
+                type="date"
+                value={dueDate}
+                onChange={(e) => setDueDate(e.target.value)}
+              />
+              {isPastDue && (
+                <p className="mt-1 text-xs text-amber-600" role="status">
+                  This due date is in the past — are you sure?
+                </p>
+              )}
+            </div>
           </div>
           <Select
             name="assigneeId"

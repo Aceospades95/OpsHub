@@ -5,9 +5,10 @@ import { requireAuth, resolveModulePerms } from "@/lib/permissions";
 import { logActivity } from "@/lib/activity";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { nameField } from "@/lib/validation";
 
 const supplierSchema = z.object({
-  name: z.string().min(1, "Name is required"),
+  name: nameField({ label: "Name" }),
   category: z.string().min(1, "Category is required"),
   contactName: z.string().optional(),
   contactEmail: z.string().optional(),
@@ -81,9 +82,12 @@ export async function deleteSupplier(_prev: unknown, formData: FormData) {
   const id = formData.get("id") as string;
   const supplier = await db.supplier.findUnique({ where: { id } });
   if (!supplier) return { error: "Not found" };
+  if (supplier.deletedAt) {
+    return { error: "Already in the recovery bin" };
+  }
 
-  await db.supplier.delete({ where: { id } });
-  await logActivity("deleted", "supplier", id, user.id, supplier.name);
+  await db.supplier.update({ where: { id }, data: { deletedAt: new Date() } });
+  await logActivity("soft-deleted", "supplier", id, user.id, supplier.name);
   revalidatePath("/suppliers");
   return { success: true };
 }

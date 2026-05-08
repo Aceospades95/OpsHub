@@ -1,11 +1,18 @@
 /**
- * Client contacts importer — bulk-create per-client contact rows from CSV.
+ * Client contacts importer — bulk-create or update per-client contact rows
+ * from CSV.
  *
  * Required: name, clientName
  * Optional: title, email, phone, isPrimary, notes
  *
- * When isPrimary=true, any existing primary contact on the same client is
- * unset (matches the createContact server action behavior).
+ * Upsert match key: (clientId + email) lowercased when an email is
+ * present; falls back to (clientId + name) lowercased when email is
+ * blank. This way migration files with email addresses match cleanly,
+ * and contacts entered via name-only legacy spreadsheets still upsert.
+ *
+ * When isPrimary=true on a create or upsert, any existing primary
+ * contact on the same client is unset (matches the createContact
+ * server action behavior).
  */
 
 import { db } from "@/lib/db";
@@ -20,12 +27,28 @@ function parseBool(value: string | undefined, defaultValue: boolean): boolean {
   return defaultValue;
 }
 
+/** Build the natural-key string used for upsert matching. Prefers email
+ *  (the more stable identifier) and falls back to name only when no
+ *  email is given. Both halves are lowercased. */
+function contactMatchKey(
+  clientId: string,
+  email: string | null | undefined,
+  name: string
+): string {
+  const emailKey = (email || "").trim().toLowerCase();
+  if (emailKey) return `${clientId}|email|${emailKey}`;
+  return `${clientId}|name|${name.trim().toLowerCase()}`;
+}
+
 export const clientContactsImporter: ImporterDefinition = {
   key: "client-contacts",
   name: "Client Contacts",
   description:
-    "Bulk-create per-client contacts. Required: name, clientName. Optional: title, email, phone, isPrimary, notes.",
+    "Bulk-create or update per-client contacts. Required: name, clientName. Optional: title, email, phone, isPrimary, notes.",
   module: "clients",
+  supportsUpsert: true,
+  upsertKeyDescription:
+    "Matched by (client + email), case-insensitive. When email is blank, falls back to (client + name). Re-uploading the same contact under the same client updates the existing row instead of creating a duplicate.",
 
   fields: [
     { key: "name", label: "Contact name", required: true, aliases: ["full name", "person"] },
@@ -63,11 +86,27 @@ export const clientContactsImporter: ImporterDefinition = {
   async commit(rows, ctx) {
     const results: ImportRowResult[] = [];
     let imported = 0;
-    const skipped = 0;
+    let updated = 0;
+    let skipped = 0;
     let failed = 0;
+    const upsert = ctx.mode === "upsert";
 
     const clients = await db.client.findMany({ select: { id: true, name: true } });
     const clientByName = new Map(clients.map((c) => [c.name.toLowerCase(), c.id]));
+
+    // Pre-fetch every contact and bucket it under its natural key. Build
+    // this AFTER the client lookup so we can compute the key with the
+    // resolved clientId — matching the same logic the per-row code uses.
+    const existingContacts = await db.clientContact.findMany({
+      select: { id: true, clientId: true, email: true, name: true },
+    });
+    const existingByKey = new Map<string, { id: string }>(
+      existingContacts.map((c) => [
+        contactMatchKey(c.clientId, c.email, c.name),
+        { id: c.id },
+      ])
+    );
+    const seenInBatch = new Set<string>();
 
     for (let i = 0; i < rows.length; i++) {
       const rowNumber = i + 1;
@@ -98,30 +137,71 @@ export const clientContactsImporter: ImporterDefinition = {
       }
 
       const isPrimary = parseBool(raw.isPrimary, false);
+      const email = raw.email?.trim() || null;
+      const key = contactMatchKey(clientId, email, name);
+
+      if (seenInBatch.has(key)) {
+        skipped++;
+        results.push({
+          row: rowNumber,
+          status: "skipped",
+          message: `Duplicate row in file: "${name}" for ${clientNameRaw}`,
+        });
+        continue;
+      }
+      seenInBatch.add(key);
+
+      const data = {
+        name,
+        clientId,
+        title: raw.title?.trim() || null,
+        email,
+        phone: raw.phone?.trim() || null,
+        isPrimary,
+        notes: raw.notes?.trim() || null,
+      };
+
+      const existing = existingByKey.get(key);
 
       try {
-        if (isPrimary) {
-          await db.clientContact.updateMany({
-            where: { clientId, isPrimary: true },
-            data: { isPrimary: false },
+        if (existing && upsert) {
+          if (isPrimary) {
+            await db.clientContact.updateMany({
+              where: { clientId, isPrimary: true, NOT: { id: existing.id } },
+              data: { isPrimary: false },
+            });
+          }
+          const contact = await db.clientContact.update({
+            where: { id: existing.id },
+            data,
+          });
+          updated++;
+          results.push({ row: rowNumber, status: "updated" });
+          await logActivity("imported", "clientContact", contact.id, ctx.triggeredBy, `${name} (updated)`, {
+            clientId,
+          });
+        } else if (existing && !upsert) {
+          skipped++;
+          results.push({
+            row: rowNumber,
+            status: "skipped",
+            message: `Contact already exists: "${name}" for ${clientNameRaw}. Re-run with "Update existing rows" enabled to update it.`,
+          });
+        } else {
+          if (isPrimary) {
+            await db.clientContact.updateMany({
+              where: { clientId, isPrimary: true },
+              data: { isPrimary: false },
+            });
+          }
+          const contact = await db.clientContact.create({ data });
+          existingByKey.set(key, { id: contact.id });
+          imported++;
+          results.push({ row: rowNumber, status: "imported" });
+          await logActivity("imported", "clientContact", contact.id, ctx.triggeredBy, name, {
+            clientId,
           });
         }
-        const contact = await db.clientContact.create({
-          data: {
-            name,
-            clientId,
-            title: raw.title?.trim() || null,
-            email: raw.email?.trim() || null,
-            phone: raw.phone?.trim() || null,
-            isPrimary,
-            notes: raw.notes?.trim() || null,
-          },
-        });
-        imported++;
-        results.push({ row: rowNumber, status: "imported" });
-        await logActivity("imported", "clientContact", contact.id, ctx.triggeredBy, name, {
-          clientId,
-        });
       } catch (err) {
         failed++;
         results.push({
@@ -132,6 +212,6 @@ export const clientContactsImporter: ImporterDefinition = {
       }
     }
 
-    return { imported, updated: 0, skipped, failed, rows: results };
+    return { imported, updated, skipped, failed, rows: results };
   },
 };

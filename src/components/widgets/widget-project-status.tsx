@@ -12,7 +12,7 @@ const statusConfig: { status: string; label: string; color: string; bg: string }
 
 export async function WidgetProjectStatus({ userId: _userId }: { userId: string }) {
   const projects = await db.project.findMany({
-    where: { status: { in: ["PLANNING", "ACTIVE", "ON_HOLD", "COMPLETED"] } },
+    where: { status: { in: ["PLANNING", "ACTIVE", "ON_HOLD", "COMPLETED"] }, deletedAt: null },
     select: { id: true, name: true, status: true, client: { select: { name: true } } },
     orderBy: { updatedAt: "desc" },
     take: 20,

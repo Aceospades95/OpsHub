@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Archive, ArchiveRestore, Trash2 } from "lucide-react";
@@ -35,10 +36,10 @@ interface Props {
  *   - Archived template: Restore + Delete (delete only when canDelete
  *                        and no running instances)
  *
- * Errors land in a small inline label so the admin sees the reason
- * without a full page navigation. The most common deletion blocker is
- * "template has N instances attached" — the error text from the
- * server already explains the path forward.
+ * Archive shows a real toast (sonner, mounted at the platform shell)
+ * with an Undo action for ~6s. Round-9 QA: the previous inline span
+ * lived in the row at text-[10px] muted color and was practically
+ * invisible.
  */
 export function WorkflowTemplateRowActions({
   templateId,
@@ -58,6 +59,26 @@ export function WorkflowTemplateRowActions({
       if ("error" in r && r.error) {
         setError(r.error);
         return;
+      }
+      // Only surface undo on the archive direction; restore is
+      // already user-initiated cleanup so a toast adds noise.
+      if (isActive) {
+        toast.success("Workflow template archived", {
+          action: {
+            label: "Undo",
+            onClick: () => {
+              startTransition(async () => {
+                const restore = await setWorkflowTemplateActive(templateId, true);
+                if ("error" in restore && restore.error) {
+                  toast.error(restore.error);
+                  return;
+                }
+                toast.success("Restored");
+                router.refresh();
+              });
+            },
+          },
+        });
       }
       router.refresh();
     });

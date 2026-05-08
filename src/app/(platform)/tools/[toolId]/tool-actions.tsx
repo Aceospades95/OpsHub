@@ -88,7 +88,13 @@ export function ToolActions({ tool, canEdit, canDelete, canCreate }: Props) {
             open={deleteOpen}
             onClose={() => setDeleteOpen(false)}
             title="Delete Tool"
-            message={<>Delete <strong>{tool.name}</strong>?</>}
+            message={
+              <>
+                Are you sure you want to delete <strong>{tool.name}</strong>?
+                Project links to this tool will be removed; the projects
+                themselves are unaffected. This cannot be undone.
+              </>
+            }
             onConfirm={runDelete}
             navigateTo="/tools"
             confirmLabel="Delete"

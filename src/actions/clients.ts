@@ -6,9 +6,11 @@ import { logActivity } from "@/lib/activity";
 import { revalidateClient } from "@/lib/revalidate-entity";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { nameField } from "@/lib/validation";
+import { slugify, ensureUniqueSlug } from "@/lib/slug";
 
 const clientSchema = z.object({
-  name: z.string().min(1, "Name is required"),
+  name: nameField({ label: "Name" }),
   description: z.string().optional(),
   summary: z.string().optional(),
   industry: z.string().optional(),
@@ -33,7 +35,16 @@ export async function createClient(_prev: unknown, formData: FormData) {
 
   if (!parsed.success) return { error: "Invalid input", fieldErrors: parsed.error.flatten().fieldErrors };
 
-  const client = await db.client.create({ data: parsed.data });
+  // Round-8 QA: generate a URL-friendly slug at create time so the
+  // detail page renders /clients/<slug> instead of /clients/<cuid>.
+  // The cuid still resolves via the slug-or-id fallback in the
+  // detail page resolver.
+  const slug = await ensureUniqueSlug(slugify(parsed.data.name), async (s) => {
+    const taken = await db.client.findUnique({ where: { slug: s }, select: { id: true } });
+    return taken !== null;
+  });
+
+  const client = await db.client.create({ data: { ...parsed.data, slug } });
   await logActivity("created", "client", client.id, user.id, client.name, { clientId: client.id });
   revalidateClient(client.id);
   return { success: true };
@@ -77,16 +88,19 @@ export async function deleteClient(_prev: unknown, formData: FormData) {
   const id = formData.get("id") as string;
   const client = await db.client.findUnique({ where: { id } });
   if (!client) return { error: "Client not found" };
+  if (client.deletedAt) {
+    return { error: "Already in the recovery bin" };
+  }
 
-  await db.client.delete({ where: { id } });
-  await logActivity("deleted", "client", id, user.id, client.name, { clientId: id });
-  revalidateClient(id);
+  await db.client.update({ where: { id }, data: { deletedAt: new Date() } });
+  await logActivity("soft-deleted", "client", id, user.id, client.name, { clientId: id });
+  revalidateClient(id, { deleted: true });
   return { success: true };
 }
 
 // Client Contacts
 const contactSchema = z.object({
-  name: z.string().min(1, "Name is required"),
+  name: nameField({ label: "Name" }),
   title: z.string().optional(),
   email: z.string().email().optional().or(z.literal("")),
   phone: z.string().optional(),

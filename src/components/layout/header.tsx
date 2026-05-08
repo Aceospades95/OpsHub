@@ -1,12 +1,12 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Search, LogOut, User, Settings } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
 import { signOut } from "next-auth/react";
 import { NotificationBell } from "./notification-bell";
+import { openCommandPalette } from "./command-palette";
 
 interface NotificationLite {
   id: string;
@@ -35,38 +35,51 @@ export function Header({
   unreadNotifications,
   recentNotifications,
 }: HeaderProps) {
-  const [searchQuery, setSearchQuery] = useState("");
   const [showMenu, setShowMenu] = useState(false);
-  const router = useRouter();
+  const [isMac, setIsMac] = useState(false);
 
   const isAdmin = userRole === "ADMIN";
 
-  const handleSearch = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (searchQuery.trim()) {
-      router.push(`/search?q=${encodeURIComponent(searchQuery.trim())}`);
-    }
-  };
+  // Match the platform-mod-key hint to the user's OS so the kbd label
+  // is correct on each machine. Default rendering during SSR shows
+  // ⌘K and corrects on hydration — both shortcuts work either way.
+  useEffect(() => {
+    if (typeof navigator === "undefined") return;
+    setIsMac(/Mac|iPhone|iPad/.test(navigator.platform));
+  }, []);
 
   return (
     <header className="flex h-16 items-center border-b border-border bg-card px-4 sm:px-6 gap-4">
       {/* Spacer for mobile hamburger button */}
       <div className="w-10 md:hidden shrink-0" />
 
-      {/* Search — takes available space */}
-      <form onSubmit={handleSearch} className="flex items-center gap-2 flex-1 min-w-0">
-        <Search className="h-4 w-4 text-muted-foreground shrink-0" />
-        <input
-          type="text"
-          placeholder="Search..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground min-w-0 max-w-md"
-        />
-      </form>
+      {/* Search trigger — opens the Cmd-K command palette. The QA stress
+       *  test flagged that the prior input did nothing on submit (it
+       *  navigated to /search?q=… which doesn't exist as a route, so
+       *  Enter 404'd silently). Now it's a button-styled trigger that
+       *  hands off to the palette, which is mounted once at the layout
+       *  level. The palette also opens via ⌘K / Ctrl-K from anywhere. */}
+      <button
+        type="button"
+        onClick={() => openCommandPalette()}
+        className="flex items-center gap-2 flex-1 min-w-0 max-w-md rounded border border-input bg-background px-3 py-1.5 text-sm text-muted-foreground hover:bg-muted/40 transition-colors"
+        aria-label="Open command palette"
+      >
+        <Search className="h-4 w-4 shrink-0" />
+        <span className="flex-1 text-left truncate">
+          Search projects, employees, clients…
+        </span>
+        <span className="hidden sm:inline-block rounded border border-border bg-card px-1.5 py-0.5 text-[10px] font-mono">
+          {isMac ? "⌘K" : "Ctrl K"}
+        </span>
+      </button>
 
-      {/* Right side — bell + user menu grouped together */}
-      <div className="flex items-center gap-2 shrink-0">
+      {/* Right side — bell + user menu grouped together. ml-auto
+       *  pins the cluster to the right edge once the search button
+       *  hits its max-w-md cap; without it the cluster sat right
+       *  next to the search box leaving ~420px of dead space at
+       *  the right edge on >=1280px viewports. */}
+      <div className="ml-auto flex items-center gap-2 shrink-0">
         <NotificationBell
           initialUnreadCount={unreadNotifications}
           initialNotifications={recentNotifications}

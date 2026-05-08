@@ -207,6 +207,8 @@ export function SidebarEditor({ initialConfig, customPages }: Props) {
                 onClick={() => moveSection(sectionIndex, -1)}
                 disabled={sectionIndex === 0}
                 className="h-10 w-10 p-0"
+                aria-label={`Move section "${section.title || `Section ${sectionIndex + 1}`}" up`}
+                title="Move section up"
               >
                 <ChevronUp className="h-6 w-6" />
               </Button>
@@ -216,6 +218,8 @@ export function SidebarEditor({ initialConfig, customPages }: Props) {
                 onClick={() => moveSection(sectionIndex, 1)}
                 disabled={sectionIndex === config.sections.length - 1}
                 className="h-10 w-10 p-0"
+                aria-label={`Move section "${section.title || `Section ${sectionIndex + 1}`}" down`}
+                title="Move section down"
               >
                 <ChevronDown className="h-6 w-6" />
               </Button>
@@ -224,6 +228,8 @@ export function SidebarEditor({ initialConfig, customPages }: Props) {
                 size="sm"
                 onClick={() => removeSection(sectionIndex)}
                 className="h-10 w-10 p-0 text-destructive hover:text-destructive"
+                aria-label={`Delete section "${section.title || `Section ${sectionIndex + 1}`}"`}
+                title="Delete section"
               >
                 <Trash2 className="h-6 w-6" />
               </Button>
@@ -249,13 +255,36 @@ export function SidebarEditor({ initialConfig, customPages }: Props) {
                       <span className="text-[10px] px-1.5 py-0.5 rounded bg-secondary text-secondary-foreground">page</span>
                     )}
                     <div className="flex items-center gap-1.5 shrink-0">
-                      <Button variant="ghost" size="sm" className="h-10 w-10 p-0" onClick={() => moveItem(sectionIndex, itemIndex, -1)} disabled={itemIndex === 0}>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-10 w-10 p-0"
+                        onClick={() => moveItem(sectionIndex, itemIndex, -1)}
+                        disabled={itemIndex === 0}
+                        aria-label={`Move "${getItemLabel(item)}" up`}
+                        title="Move item up"
+                      >
                         <ChevronUp className="h-6 w-6" />
                       </Button>
-                      <Button variant="ghost" size="sm" className="h-10 w-10 p-0" onClick={() => moveItem(sectionIndex, itemIndex, 1)} disabled={itemIndex === section.items.length - 1}>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-10 w-10 p-0"
+                        onClick={() => moveItem(sectionIndex, itemIndex, 1)}
+                        disabled={itemIndex === section.items.length - 1}
+                        aria-label={`Move "${getItemLabel(item)}" down`}
+                        title="Move item down"
+                      >
                         <ChevronDown className="h-6 w-6" />
                       </Button>
-                      <Button variant="ghost" size="sm" className="h-10 w-10 p-0" onClick={() => toggleItemVisibility(sectionIndex, itemIndex)}>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-10 w-10 p-0"
+                        onClick={() => toggleItemVisibility(sectionIndex, itemIndex)}
+                        aria-label={item.visible ? `Hide "${getItemLabel(item)}" from sidebar` : `Show "${getItemLabel(item)}" in sidebar`}
+                        title={item.visible ? "Hide from sidebar" : "Show in sidebar"}
+                      >
                         {item.visible ? <Eye className="h-6 w-6" /> : <EyeOff className="h-6 w-6" />}
                       </Button>
                       {/* Move to another section */}
@@ -268,6 +297,7 @@ export function SidebarEditor({ initialConfig, customPages }: Props) {
                               if (!isNaN(toIdx)) moveItemToSection(sectionIndex, itemIndex, toIdx);
                             }}
                             className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                            aria-label={`Move "${getItemLabel(item)}" to another section`}
                             title="Move to another section"
                           >
                             <option value="">Move to...</option>
@@ -275,12 +305,19 @@ export function SidebarEditor({ initialConfig, customPages }: Props) {
                               <option key={s.id} value={i}>{s.title || `Section ${i + 1}`}</option>
                             ))}
                           </select>
-                          <div className="h-10 w-10 flex items-center justify-center rounded-md hover:bg-muted text-muted-foreground pointer-events-none">
+                          <div className="h-10 w-10 flex items-center justify-center rounded-md hover:bg-muted text-muted-foreground pointer-events-none" aria-hidden>
                             <ArrowRightToLine className="h-6 w-6" />
                           </div>
                         </div>
                       )}
-                      <Button variant="ghost" size="sm" className="h-10 w-10 p-0 text-destructive" onClick={() => removeItem(sectionIndex, itemIndex)}>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-10 w-10 p-0 text-destructive"
+                        onClick={() => removeItem(sectionIndex, itemIndex)}
+                        aria-label={`Remove "${getItemLabel(item)}" from sidebar`}
+                        title="Remove from sidebar"
+                      >
                         <Trash2 className="h-6 w-6" />
                       </Button>
                     </div>

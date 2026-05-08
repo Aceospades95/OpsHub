@@ -11,7 +11,6 @@ import { CalendarClock } from "lucide-react";
 import { listReports } from "@/lib/reports/registry";
 import { describeCadence } from "@/lib/scheduled-tasks/scheduling";
 
-import { SettingsNav } from "../settings-nav";
 import { ScheduledTaskCreateButton } from "./create-button";
 import { TaskRowActions } from "./row-actions";
 
@@ -58,7 +57,6 @@ export default async function ScheduledTasksPage() {
 
   return (
     <div>
-      <SettingsNav />
       <PageHeader
         title="Scheduled tasks"
         description="Admin-built recurring tasks. Email a report on a schedule, broadcast a status message, etc."

@@ -34,16 +34,41 @@ const DRIVERS: Record<string, EmailDriver> = {
  * for the rare case (load test, dry run, sandbox env) where the log
  * driver in production is actually intended.
  *
- * The boot-time validator (scripts/validate-env.mjs) catches this
- * earlier, but we keep a runtime guard here as defense-in-depth — env
- * can drift at runtime (operator deletes a var while the container is
- * up) and it's better to fail loud at the next send than to write
- * "sent" rows to EmailLog with no actual delivery.
+ * Non-production safety: round-4 QA found welcome emails being
+ * delivered to a real Gmail address from a QA environment because
+ * EMAIL_DRIVER=smtp had been left set when the box was promoted from
+ * dev → QA. To keep the QA / staging / dev lanes from ever sending
+ * a real message by default, we now silently swap `smtp`/`ses`/etc.
+ * for `log` whenever NODE_ENV !== "production". Override with
+ * ALLOW_REAL_EMAIL_IN_NONPROD=true when an integration-test rig
+ * actually needs to talk to a live SMTP / SES endpoint.
+ *
+ * The boot-time validator (scripts/validate-env.mjs) catches the
+ * production-side foot-gun earlier, but we keep a runtime guard here
+ * as defense-in-depth — env can drift at runtime (operator deletes a
+ * var while the container is up) and it's better to fail loud at the
+ * next send than to write "sent" rows to EmailLog with no actual
+ * delivery.
  */
 export function getActiveDriver(): EmailDriver {
   const isProduction = process.env.NODE_ENV === "production";
   const allowLogInProd = process.env.ALLOW_LOG_DRIVER_IN_PROD === "true";
-  const name = process.env.EMAIL_DRIVER?.toLowerCase() || "log";
+  const allowRealInNonProd = process.env.ALLOW_REAL_EMAIL_IN_NONPROD === "true";
+  const requestedName = process.env.EMAIL_DRIVER?.toLowerCase() || "log";
+
+  // Non-prod safety override: any real driver becomes `log` unless the
+  // operator opts in. This is the ONLY path that can change the
+  // requested driver name; everything else respects the env value.
+  const name =
+    !isProduction && requestedName !== "log" && !allowRealInNonProd
+      ? "log"
+      : requestedName;
+  if (name !== requestedName) {
+    log.warn("email.drivers", "non-production: forcing log driver (set ALLOW_REAL_EMAIL_IN_NONPROD=true to override)", {
+      requested: requestedName,
+    });
+  }
+
   const driver = DRIVERS[name];
 
   if (!driver) {

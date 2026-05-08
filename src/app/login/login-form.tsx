@@ -14,6 +14,10 @@ interface Props {
   googleEnabled: boolean;
   /** Friendly message for a sign-in error surfaced via ?error=… in the URL. */
   initialError?: string | null;
+  /** Pre-populates the email field. Used by the /signup/[token] redirect
+   *  so a user who just set their password lands with their email
+   *  already filled in. */
+  initialEmail?: string;
 }
 
 export function LoginForm({
@@ -21,6 +25,7 @@ export function LoginForm({
   companyLogoUrl,
   googleEnabled,
   initialError,
+  initialEmail,
 }: Props) {
   const [state, formAction] = useFormState(loginAction, null);
   const [pending, setPending] = useState(false);
@@ -109,6 +114,7 @@ export function LoginForm({
           label="Email"
           placeholder="you@company.com"
           required
+          defaultValue={initialEmail}
           error={state?.fieldErrors?.email?.[0]}
         />
         <Input

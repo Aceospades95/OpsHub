@@ -10,7 +10,7 @@ import { CommentSection } from "@/components/shared/comment-section";
 import { FileList } from "@/components/shared/file-list";
 import { TreeView, type TreeNode } from "@/components/shared/tree-view";
 import { Badge } from "@/components/ui/badge";
-import { format } from "date-fns";
+import { formatCalendarDate } from "@/lib/dates";
 import Link from "next/link";
 import { ContractActions } from "./contract-actions";
 import { TermSection } from "./term-section";
@@ -31,13 +31,13 @@ export default async function ContractDetailPage({ params }: Props) {
   const perms = await resolveModulePerms(user.id, user.role, "contracts");
   if (!perms.canView) return <AccessDenied module="contracts" moduleLabel="Contracts" moduleDescription="Contracts, SOWs, amendments, and renewals" />;
 
-  const contract = await db.contract.findUnique({
-    where: { id: contractId },
+  const contract = await db.contract.findFirst({
+    where: { id: contractId, deletedAt: null },
     include: {
       client: { select: { id: true, name: true } },
       project: { select: { id: true, name: true } },
       parentContract: { select: { id: true, title: true } },
-      childContracts: { select: { id: true, title: true, status: true, contractType: true } },
+      childContracts: { where: { deletedAt: null }, select: { id: true, title: true, status: true, contractType: true } },
       terms: { orderBy: [{ priority: "asc" }, { createdAt: "desc" }] },
       links: true,
       embeds: true,
@@ -55,9 +55,9 @@ export default async function ContractDetailPage({ params }: Props) {
     return <AccessDenied module="contracts" moduleLabel="Contracts" entityType="contract" entityId={contract.id} entityLabel={contract.title} />;
   }
 
-  const clients = await db.client.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } });
-  const projects = await db.project.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } });
-  const allContracts = await db.contract.findMany({ select: { id: true, title: true }, orderBy: { title: "asc" } });
+  const clients = await db.client.findMany({ where: { deletedAt: null }, select: { id: true, name: true }, orderBy: { name: "asc" } });
+  const projects = await db.project.findMany({ where: { deletedAt: null }, select: { id: true, name: true }, orderBy: { name: "asc" } });
+  const allContracts = await db.contract.findMany({ where: { deletedAt: null }, select: { id: true, title: true }, orderBy: { title: "asc" } });
 
   const childNodes: TreeNode[] = contract.childContracts.map((c) => ({
     id: c.id,
@@ -84,19 +84,19 @@ export default async function ContractDetailPage({ params }: Props) {
             {contract.startDate && (
               <div>
                 <p className="text-muted-foreground">Start Date</p>
-                <p className="font-medium">{format(contract.startDate, "MMM d, yyyy")}</p>
+                <p className="font-medium">{formatCalendarDate(contract.startDate, "MMM d, yyyy")}</p>
               </div>
             )}
             {contract.endDate && (
               <div>
                 <p className="text-muted-foreground">End Date</p>
-                <p className="font-medium">{format(contract.endDate, "MMM d, yyyy")}</p>
+                <p className="font-medium">{formatCalendarDate(contract.endDate, "MMM d, yyyy")}</p>
               </div>
             )}
             {contract.renewalDate && (
               <div>
                 <p className="text-muted-foreground">Renewal Date</p>
-                <p className="font-medium">{format(contract.renewalDate, "MMM d, yyyy")}</p>
+                <p className="font-medium">{formatCalendarDate(contract.renewalDate, "MMM d, yyyy")}</p>
               </div>
             )}
             {contract.noticePeriodDays && (

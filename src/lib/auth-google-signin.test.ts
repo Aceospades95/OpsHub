@@ -71,7 +71,7 @@ const baseAccount = {
 const baseUser = {
   id: "google-uid",
   name: "Jane Doe",
-  email: "jane@wynndalco.com",
+  email: "jane@example.com",
   image: "https://example.com/jane.jpg",
   // role is part of the module-augmented next-auth User type but isn't
   // populated until the JWT/session callback — set a placeholder so
@@ -127,7 +127,7 @@ describe("handleGoogleSignIn", () => {
     const db = newDb();
     const preProvisioned = {
       id: "user-pre",
-      email: "jane@wynndalco.com",
+      email: "jane@example.com",
       role: "ADMIN",
       isActive: true,
       hasLoginAccess: true,
@@ -173,7 +173,7 @@ describe("handleGoogleSignIn", () => {
     db.user.findMany.mockResolvedValueOnce([
       {
         id: "user-disabled",
-        email: "jane@wynndalco.com",
+        email: "jane@example.com",
         role: "ADMIN",
         isActive: true,
         hasLoginAccess: false,
@@ -198,7 +198,7 @@ describe("handleGoogleSignIn", () => {
     expect(out).toBe(true);
     expect(db.user.create).toHaveBeenCalledTimes(1);
     expect(db.user.create.mock.calls[0][0].data).toMatchObject({
-      email: "jane@wynndalco.com",
+      email: "jane@example.com",
       role: "GUEST",
       authProvider: "google",
     });
@@ -218,7 +218,7 @@ describe("handleGoogleSignIn", () => {
       providerAccountId: baseAccount.providerAccountId,
       user: {
         id: "user-existing",
-        email: "jane@wynndalco.com",
+        email: "jane@example.com",
         isActive: true,
         hasLoginAccess: true,
         avatar: "/already-set.png",
@@ -239,7 +239,7 @@ describe("handleGoogleSignIn", () => {
     db.user.findMany.mockResolvedValueOnce([
       {
         id: "user-both",
-        email: "jane@wynndalco.com",
+        email: "jane@example.com",
         role: "MANAGER",
         isActive: true,
         hasLoginAccess: true,
@@ -264,12 +264,12 @@ describe("handleGoogleSignIn", () => {
     }
   });
 
-  it("(8) case-insensitive match: 'Jane@Wynndalco.com' pre-provisioned, Google returns 'jane@wynndalco.com'", async () => {
+  it("(8) case-insensitive match: 'Jane@example.com' pre-provisioned, Google returns 'jane@example.com'", async () => {
     const db = newDb();
     db.user.findMany.mockResolvedValueOnce([
       {
         id: "user-mixed-case",
-        email: "Jane@Wynndalco.com",
+        email: "Jane@example.com",
         role: "ADMIN",
         isActive: true,
         hasLoginAccess: true,
@@ -284,7 +284,7 @@ describe("handleGoogleSignIn", () => {
     // already-lowercased email.
     expect(db.user.findMany).toHaveBeenCalledTimes(1);
     expect(db.user.findMany.mock.calls[0][0]).toMatchObject({
-      where: { email: { equals: "jane@wynndalco.com", mode: "insensitive" } },
+      where: { email: { equals: "jane@example.com", mode: "insensitive" } },
       take: 2,
     });
     expect(db.account.create).toHaveBeenCalledTimes(1);
@@ -296,7 +296,7 @@ describe("handleGoogleSignIn", () => {
     db.user.findMany.mockResolvedValueOnce([
       {
         id: "user-dup-1",
-        email: "jane@wynndalco.com",
+        email: "jane@example.com",
         role: "ADMIN",
         isActive: true,
         hasLoginAccess: true,
@@ -304,7 +304,7 @@ describe("handleGoogleSignIn", () => {
       },
       {
         id: "user-dup-2",
-        email: "Jane@wynndalco.com",
+        email: "Jane@example.com",
         role: "GUEST",
         isActive: true,
         hasLoginAccess: true,

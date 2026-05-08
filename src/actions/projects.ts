@@ -10,17 +10,25 @@ import { revalidateProject, revalidateUser } from "@/lib/revalidate-entity";
 import { notify } from "@/lib/notifications";
 import { absoluteUrl } from "@/lib/url";
 import { z } from "zod";
+import { isValidCalendarRange } from "@/lib/dates";
+import { nameField } from "@/lib/validation";
+import { slugify, ensureUniqueSlug } from "@/lib/slug";
 
-const projectSchema = z.object({
-  name: z.string().min(1, "Name is required"),
-  description: z.string().optional(),
-  status: z.enum(["PLANNING", "ACTIVE", "ON_HOLD", "COMPLETED", "ARCHIVED"]).optional(),
-  startDate: z.string().optional(),
-  endDate: z.string().optional(),
-  clientId: z.string().min(1, "Client is required"),
-  parentProjectId: z.string().optional(),
-  serviceOfferingId: z.string().optional(),
-});
+const projectSchema = z
+  .object({
+    name: nameField({ label: "Name" }),
+    description: z.string().optional(),
+    status: z.enum(["PLANNING", "ACTIVE", "ON_HOLD", "COMPLETED", "ARCHIVED"]).optional(),
+    startDate: z.string().optional(),
+    endDate: z.string().optional(),
+    clientId: z.string().min(1, "Client is required"),
+    parentProjectId: z.string().optional(),
+    serviceOfferingId: z.string().optional(),
+  })
+  .refine((d) => isValidCalendarRange(d.startDate, d.endDate), {
+    message: "End date must be on or after start date",
+    path: ["endDate"],
+  });
 
 export async function createProject(_prev: unknown, formData: FormData) {
   const user = await requireAuth();
@@ -78,8 +86,18 @@ export async function createProject(_prev: unknown, formData: FormData) {
 
   if (!parsed.success) return { error: "Invalid input", fieldErrors: parsed.error.flatten().fieldErrors };
 
+  // Round-8 QA: generate a URL-friendly slug at create time so the
+  // detail page renders /projects/<slug> instead of /projects/<cuid>.
+  // The cuid still resolves via the slug-or-id fallback in the
+  // detail page resolver.
+  const slug = await ensureUniqueSlug(slugify(parsed.data.name), async (s) => {
+    const taken = await db.project.findUnique({ where: { slug: s }, select: { id: true } });
+    return taken !== null;
+  });
+
   const data = {
     ...parsed.data,
+    slug,
     startDate: parsed.data.startDate ? new Date(parsed.data.startDate) : undefined,
     endDate: parsed.data.endDate ? new Date(parsed.data.endDate) : undefined,
     parentProjectId: parsed.data.parentProjectId || undefined,
@@ -172,6 +190,43 @@ export async function updateProject(_prev: unknown, formData: FormData) {
     },
   });
 
+  // Sync related-project links. The Edit dialog (mirroring the Create
+  // dialog's parity per the QA report) posts the full set of
+  // relatedProjectIds it wants the project to have. We replace the
+  // current set: drop any link that's no longer present and create the
+  // missing ones. Self-references and the existing parentProjectId are
+  // filtered out so the form can't accidentally create a cycle.
+  const desiredRelated = (formData.getAll("relatedProjectIds") as string[])
+    .filter((rid) => rid && rid !== id && rid !== parsed.data.parentProjectId);
+
+  const existingRelated = await db.projectRelation.findMany({
+    where: { projectId: id },
+    select: { id: true, relatedProjectId: true },
+  });
+  const existingByRelatedId = new Map(
+    existingRelated.map((r) => [r.relatedProjectId, r.id])
+  );
+  const desiredSet = new Set(desiredRelated);
+
+  // Drop links that aren't in the new set.
+  const toDelete = existingRelated
+    .filter((r) => !desiredSet.has(r.relatedProjectId))
+    .map((r) => r.id);
+  if (toDelete.length > 0) {
+    await db.projectRelation.deleteMany({ where: { id: { in: toDelete } } });
+  }
+
+  // Create the new ones, skipping any that already exist.
+  const toCreate = desiredRelated
+    .filter((rid) => !existingByRelatedId.has(rid))
+    .map((rid) => ({ projectId: id, relatedProjectId: rid }));
+  if (toCreate.length > 0) {
+    await db.projectRelation.createMany({
+      data: toCreate,
+      skipDuplicates: true,
+    });
+  }
+
   await logActivity("updated", "project", id, user.id, parsed.data.name, {
     projectId: id,
     clientId: parsed.data.clientId,
@@ -191,13 +246,26 @@ export async function deleteProject(_prev: unknown, formData: FormData) {
   const id = formData.get("id") as string;
   const project = await db.project.findUnique({ where: { id } });
   if (!project) return { error: "Project not found" };
+  if (project.deletedAt) {
+    return { error: "Already in the recovery bin" };
+  }
 
-  await db.project.delete({ where: { id } });
-  await logActivity("deleted", "project", id, user.id, project.name, {
+  // Soft-delete: stamp deletedAt = now() instead of running a real
+  // db.project.delete(). The row stays in the DB for the 30-day
+  // recovery window but is filtered out of every list / detail view
+  // (the queries all carry `deletedAt: null`). The
+  // PURGE_SOFT_DELETED scheduled task hard-deletes after the window
+  // expires, at which point the existing onDelete cascades fire.
+  await db.project.update({ where: { id }, data: { deletedAt: new Date() } });
+  await logActivity("soft-deleted", "project", id, user.id, project.name, {
     projectId: id,
     clientId: project.clientId,
   });
-  revalidateProject(id, { clientId: project.clientId });
+  // deleted: true skips revalidating /projects/${id} so the [projectId]
+  // RSC tree (which the user is currently on) doesn't auto-refresh
+  // against the now-soft-deleted record before the client navigates
+  // away. Same race fix as before — see the chunk-A write-up.
+  revalidateProject(id, { clientId: project.clientId, deleted: true });
   return { success: true };
 }
 
@@ -276,8 +344,8 @@ export async function addProjectMember(_prev: unknown, formData: FormData) {
   // Notify the new member (skip if they added themselves)
   if (userId !== user.id) {
     try {
-      const project = await db.project.findUnique({
-        where: { id: projectId },
+      const project = await db.project.findFirst({
+        where: { id: projectId, deletedAt: null },
         select: { name: true },
       });
       if (project) {
@@ -302,8 +370,8 @@ export async function addProjectMember(_prev: unknown, formData: FormData) {
   // reach the same helper so a workflow author who configures the
   // trigger doesn't have to know which mechanism added the member.
   try {
-    const project = await db.project.findUnique({
-      where: { id: projectId },
+    const project = await db.project.findFirst({
+      where: { id: projectId, deletedAt: null },
       select: { serviceOfferingId: true },
     });
     const { fireProjectAssignmentTriggers } = await import(

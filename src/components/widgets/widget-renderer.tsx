@@ -15,6 +15,7 @@ import { WidgetNotes } from "./widget-notes";
 import { WidgetRecentProjects } from "./widget-recent-projects";
 import { WidgetRecentContracts } from "./widget-recent-contracts";
 import { WidgetRecentDocuments } from "./widget-recent-documents";
+import { WidgetRecentlyViewed } from "./widget-recently-viewed";
 import { WidgetProjectStatus } from "./widget-project-status";
 import { WidgetContractAlerts } from "./widget-contract-alerts";
 import { WidgetCountdown } from "./widget-countdown";
@@ -41,6 +42,7 @@ const WIDGET_MAP: Record<string, React.ComponentType<{ userId: string }>> = {
   "widget-recent-projects": WidgetRecentProjects,
   "widget-recent-contracts": WidgetRecentContracts,
   "widget-recent-documents": WidgetRecentDocuments,
+  "widget-recently-viewed": WidgetRecentlyViewed,
   "widget-project-status": WidgetProjectStatus,
   "widget-contract-alerts": WidgetContractAlerts,
   "widget-countdown": WidgetCountdown,

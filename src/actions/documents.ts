@@ -44,7 +44,7 @@ export async function updateDocument(_prev: unknown, formData: FormData) {
   const id = formData.get("id") as string;
   const changelog = (formData.get("changelog") as string) || undefined;
 
-  const existing = await db.document.findUnique({ where: { id } });
+  const existing = await db.document.findFirst({ where: { id, deletedAt: null } });
   if (!existing) return { error: "Not found" };
 
   const parsed = documentSchema.safeParse({
@@ -93,9 +93,12 @@ export async function deleteDocument(_prev: unknown, formData: FormData) {
   const id = formData.get("id") as string;
   const doc = await db.document.findUnique({ where: { id } });
   if (!doc) return { error: "Not found" };
+  if (doc.deletedAt) {
+    return { error: "Already in the recovery bin" };
+  }
 
-  // Snapshot the project scope BEFORE deleting; the helper's lookup
-  // would return empty after the row is gone.
+  // Snapshot the project scope so the activity-log entry carries it
+  // even after the cron eventually purges the document row.
   const scope = doc.projectId
     ? {
         projectId: doc.projectId,
@@ -106,8 +109,8 @@ export async function deleteDocument(_prev: unknown, formData: FormData) {
           }))?.clientId ?? null,
       }
     : {};
-  await db.document.delete({ where: { id } });
-  await logActivity("deleted", "document", id, user.id, doc.title, scope);
+  await db.document.update({ where: { id }, data: { deletedAt: new Date() } });
+  await logActivity("soft-deleted", "document", id, user.id, doc.title, scope);
   revalidatePath(`/projects/${doc.projectId}`);
   return { success: true };
 }
@@ -120,7 +123,7 @@ export async function restoreDocumentVersion(_prev: unknown, formData: FormData)
   const documentId = formData.get("documentId") as string;
   const versionId = formData.get("versionId") as string;
 
-  const doc = await db.document.findUnique({ where: { id: documentId } });
+  const doc = await db.document.findFirst({ where: { id: documentId, deletedAt: null } });
   if (!doc) return { error: "Document not found" };
 
   const version = await db.documentVersion.findUnique({ where: { id: versionId } });

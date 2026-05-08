@@ -92,7 +92,7 @@ export function WorkflowTemplateCreateButton() {
               Cancel
             </Button>
             <Button onClick={handleCreate} disabled={pending}>
-              {pending ? "Creating…" : "Create &amp; edit"}
+              {pending ? "Creating…" : "Create & edit"}
             </Button>
           </div>
         </div>

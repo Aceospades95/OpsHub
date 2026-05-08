@@ -19,11 +19,12 @@ export const projectStatus: ReportDefinition = {
     const projects = await db.project.findMany({
       where: {
         status: { in: ["PLANNING", "ACTIVE", "ON_HOLD"] },
+        deletedAt: null,
       },
       include: {
         client: { select: { name: true } },
         milestones: { select: { completed: true } },
-        tasks: { select: { status: true } },
+        tasks: { where: { deletedAt: null }, select: { status: true } },
         _count: {
           select: { members: true, assignments: { where: { status: "ACTIVE" } } },
         },

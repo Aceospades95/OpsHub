@@ -443,7 +443,7 @@ export function ReportBuilder({
 
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Sort &amp; limit</CardTitle>
+              <CardTitle className="text-base">Sort & limit</CardTitle>
             </CardHeader>
             <CardContent className="grid grid-cols-2 gap-3">
               <Select

@@ -8,6 +8,7 @@ import { Globe, Pin } from "lucide-react";
 import Link from "next/link";
 import { IntranetCreateButton } from "./intranet-create-button";
 import { IntranetCategoryAdd } from "./intranet-category-add";
+import { DownloadCsvButton } from "@/components/shared/download-csv-button";
 
 const categoryLabels: Record<string, string> = {
   EXPENSE_REPORT: "Expense Reports",
@@ -26,7 +27,17 @@ export default async function IntranetPage() {
 
   const perms = await resolveModulePerms(user.id, user.role, "intranet");
 
+  // Round-4 QA: the /intranet list previously showed every non-
+  // soft-deleted resource regardless of publish state, so unpublished
+  // duplicates (e.g. a second "Org Chart" left behind by the dedupe
+  // step that unpublishes rather than deletes) appeared next to the
+  // canonical entry. Restrict drafts to admins / creators so the
+  // public-facing list dedupes naturally.
   const resources = await db.intranetResource.findMany({
+    where: {
+      deletedAt: null,
+      ...(perms.canEdit ? {} : { published: true }),
+    },
     orderBy: [{ pinned: "desc" }, { sortOrder: "asc" }, { updatedAt: "desc" }],
   });
 
@@ -43,7 +54,12 @@ export default async function IntranetPage() {
       <PageHeader
         title="Intranet"
         description="Company resources and announcements"
-        actions={perms.canCreate ? <IntranetCreateButton /> : undefined}
+        actions={
+          <div className="flex items-center gap-2">
+            {user.role === "ADMIN" && <DownloadCsvButton importerKey="intranet" />}
+            {perms.canCreate && <IntranetCreateButton />}
+          </div>
+        }
       />
 
       {resources.length === 0 ? (
@@ -60,7 +76,7 @@ export default async function IntranetPage() {
               </div>
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 {items.map((resource) => (
-                  <Link key={resource.id} href={`/intranet/${resource.id}`}>
+                  <Link key={resource.id} href={`/intranet/${resource.slug ?? resource.id}`}>
                     <Card className="hover:shadow-lg transition-shadow h-full">
                       <CardContent className="p-5">
                         <div className="flex items-start justify-between mb-2">

@@ -19,14 +19,29 @@ interface PageLayoutProps {
    *   card definitions but auto-places vertically.
    */
   mode?: "grid" | "flow";
+  /**
+   * Round-8 QA: page-type-level layout customization meant a global
+   * widget added to e.g. "intranet-detail" appeared on every intranet
+   * resource regardless of category. The Team Directory panel made
+   * sense on Org Chart pages but read as noise on an announcement.
+   * Callers can pass widget ids that should be filtered out for the
+   * specific record being rendered (e.g. announcement detail passes
+   * `["widget-team-directory"]`). The saved layout is unchanged; the
+   * widget is just suppressed at render time for this one record.
+   */
+  hideWidgetIds?: string[];
 }
 
-export async function PageLayout({ pageType, cards, canEdit, mode = "grid" }: PageLayoutProps) {
+export async function PageLayout({ pageType, cards, canEdit, mode = "grid", hideWidgetIds }: PageLayoutProps) {
   const session = await auth();
   const userId = session?.user?.id || "";
 
   const savedLayout = await getPageLayout(pageType);
-  const resolvedCards = resolveLayout(savedLayout, pageType);
+  const allResolvedCards = resolveLayout(savedLayout, pageType);
+  const hideSet = new Set(hideWidgetIds ?? []);
+  const resolvedCards = hideSet.size > 0
+    ? allResolvedCards.filter((c) => !hideSet.has(c.id))
+    : allResolvedCards;
   const savedGap = savedLayout?.gap ?? DEFAULT_GAP;
   const defs = PAGE_CARDS[pageType] || [];
 

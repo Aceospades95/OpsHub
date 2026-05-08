@@ -100,7 +100,7 @@ export function PageLayoutClient({
       labels[w.id] = w.label;
     }
     return labels;
-  }, [pageCardLabels]);
+  }, [pageCardLabels, customWidgets]);
 
   // Extract card content from children
   const cardContentMap = useMemo(() => {
@@ -114,7 +114,12 @@ export function PageLayoutClient({
   }, [children]);
 
   const defs = PAGE_CARDS[pageType] || [];
-  const cardIds = new Set(cards.map((c) => c.id));
+  // cardIds is consumed by two downstream useMemos. Memoize the Set so
+  // its identity is stable across renders that don't change `cards` —
+  // the rule react-hooks/exhaustive-deps flags the bare `new Set(...)`
+  // because rebuilding it on every render would invalidate every
+  // useMemo that depends on it.
+  const cardIds = useMemo(() => new Set(cards.map((c) => c.id)), [cards]);
 
   // Page-specific widgets not in layout
   const availablePageWidgets = defs.filter((d) => !cardIds.has(d.id));
@@ -304,7 +309,8 @@ export function PageLayoutClient({
             <button
               onClick={() => setEditing(true)}
               className="fixed bottom-6 right-6 z-30 flex items-center gap-2 rounded-full bg-primary text-primary-foreground px-4 py-3 shadow-lg hover:bg-primary/90 transition-colors"
-              title="Edit page layout"
+              title="Customize this page's layout — show/hide cards and reorder them. Saves to your account so it persists across sessions."
+              aria-label="Customize page layout"
             >
               <Settings2 className="h-5 w-5" />
               <span className="text-sm font-medium hidden sm:inline">Edit Layout</span>
@@ -336,7 +342,8 @@ export function PageLayoutClient({
           <button
             onClick={() => setEditing(true)}
             className="fixed bottom-6 right-6 z-30 flex items-center gap-2 rounded-full bg-primary text-primary-foreground px-4 py-3 shadow-lg hover:bg-primary/90 transition-colors"
-            title="Edit page layout"
+            title="Customize this dashboard — show/hide widgets and reorder them. Saves to your account so it persists across sessions."
+            aria-label="Customize dashboard layout"
           >
             <Settings2 className="h-5 w-5" />
             <span className="text-sm font-medium hidden sm:inline">Edit Layout</span>

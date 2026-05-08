@@ -42,8 +42,8 @@ export default async function SandboxDetailPage({ params }: Props) {
   const canDelete = isAdmin || isOwner;
 
   const [projects, clients] = await Promise.all([
-    db.project.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } }),
-    db.client.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } }),
+    db.project.findMany({ where: { deletedAt: null }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
+    db.client.findMany({ where: { deletedAt: null }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
   ]);
 
   return (

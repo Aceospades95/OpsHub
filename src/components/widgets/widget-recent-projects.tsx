@@ -15,6 +15,7 @@ const statusColors: Record<string, string> = {
 
 export async function WidgetRecentProjects({ userId: _userId }: { userId: string }) {
   const projects = await db.project.findMany({
+    where: { deletedAt: null },
     orderBy: { updatedAt: "desc" },
     take: 6,
     include: { client: { select: { name: true } } },

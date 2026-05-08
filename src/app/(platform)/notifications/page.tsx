@@ -1,6 +1,6 @@
 import { requireAuth } from "@/lib/permissions";
 import { PageHeader } from "@/components/layout/page-header";
-import { Card, CardContent } from "@/components/ui/card";
+import { EmptyState } from "@/components/ui/empty-state";
 import { getUserNotifications } from "@/lib/notifications";
 import { NotificationsList } from "./notifications-list";
 import { Bell } from "lucide-react";
@@ -18,13 +18,11 @@ export default async function NotificationsPage() {
       />
 
       {notifications.length === 0 ? (
-        <Card>
-          <CardContent className="py-16 text-center text-muted-foreground">
-            <Bell className="h-12 w-12 mx-auto mb-3 opacity-40" />
-            <p className="text-sm">You&rsquo;re all caught up — no notifications yet.</p>
-            <p className="text-xs mt-2">When something happens that involves you, it&rsquo;ll show up here.</p>
-          </CardContent>
-        </Card>
+        <EmptyState
+          icon={Bell}
+          title="You're all caught up"
+          description="When something happens that involves you, it'll show up here."
+        />
       ) : (
         <NotificationsList
           initialNotifications={notifications.map((n) => ({

@@ -32,7 +32,7 @@ export default async function TemplatesPage() {
       },
     }),
     db.client.findMany({
-      where: { status: { in: ["ACTIVE", "PROSPECT"] } },
+      where: { status: { in: ["ACTIVE", "PROSPECT"] }, deletedAt: null },
       select: { id: true, name: true },
       orderBy: { name: "asc" },
     }),

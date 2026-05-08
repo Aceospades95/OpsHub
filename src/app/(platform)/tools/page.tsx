@@ -9,7 +9,9 @@ import { Badge } from "@/components/ui/badge";
 import { Wrench } from "lucide-react";
 import Link from "next/link";
 import { ToolCreateButton } from "./tool-create-button";
+import { DownloadCsvButton } from "@/components/shared/download-csv-button";
 import type { Prisma } from "@prisma/client";
+import { pluralize } from "@/lib/pluralize";
 
 export default async function ToolsPage() {
   const user = await requireAuth();
@@ -18,7 +20,7 @@ export default async function ToolsPage() {
   if (!perms.canView) return <AccessDenied module="tools" moduleLabel="Tools" moduleDescription="Shared tools and linked resources" />;
 
   const scope = await getUserScope(user.id, user.role);
-  const toolWhere: Prisma.ToolWhereInput = { isGlobal: true };
+  const toolWhere: Prisma.ToolWhereInput = { deletedAt: null, isGlobal: true };
   if (!scope.all) {
     toolWhere.id = { in: Array.from(scope.toolIds) };
   }
@@ -27,8 +29,16 @@ export default async function ToolsPage() {
     where: toolWhere,
     orderBy: { name: "asc" },
     include: {
-      _count: { select: { clones: true, projects: true } },
-      projects: { include: { project: { select: { id: true, name: true } } } },
+      _count: {
+        select: {
+          clones: { where: { deletedAt: null } },
+          projects: { where: { project: { deletedAt: null } } },
+        },
+      },
+      projects: {
+        where: { project: { deletedAt: null } },
+        include: { project: { select: { id: true, name: true } } },
+      },
     },
   });
 
@@ -37,7 +47,12 @@ export default async function ToolsPage() {
       <PageHeader
         title="Tools"
         description="Company tools, forms, and calculators"
-        actions={perms.canCreate ? <ToolCreateButton /> : undefined}
+        actions={
+          <div className="flex items-center gap-2">
+            {user.role === "ADMIN" && <DownloadCsvButton importerKey="tools" />}
+            {perms.canCreate && <ToolCreateButton />}
+          </div>
+        }
       />
 
       {tools.length === 0 ? (
@@ -52,16 +67,26 @@ export default async function ToolsPage() {
                   {tool.description && (
                     <p className="text-sm text-muted-foreground mb-3 line-clamp-2">{tool.description}</p>
                   )}
+                  {/* Tag row first — uniform Badge styling so they
+                   *  read as a single visual group. The QA-flagged
+                   *  inconsistency was a mix of badges and bare text
+                   *  spans here; everything is a Badge now. */}
                   <div className="flex items-center gap-2 flex-wrap">
                     <Badge variant="outline">{tool.toolType}</Badge>
                     {tool.category && <Badge variant="secondary">{tool.category}</Badge>}
-                    {tool._count.clones > 0 && (
-                      <span className="text-xs text-muted-foreground">{tool._count.clones} clones</span>
-                    )}
-                    {tool._count.projects > 0 && (
-                      <span className="text-xs text-muted-foreground">{tool._count.projects} projects</span>
-                    )}
                   </div>
+                  {/* Counts moved to a separate sub-row so the inline
+                   *  "Used by 1 project" no longer crowds the tags. */}
+                  {(tool._count.clones > 0 || tool._count.projects > 0) && (
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      {[
+                        tool._count.clones > 0 ? pluralize(tool._count.clones, "clone") : null,
+                        tool._count.projects > 0 ? `Used by ${pluralize(tool._count.projects, "project")}` : null,
+                      ]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </p>
+                  )}
                   {tool.projects.length > 0 && (
                     <div className="mt-3 flex flex-wrap gap-1">
                       {tool.projects.map((pt) => (

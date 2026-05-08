@@ -11,8 +11,10 @@ import type { QuotePdfData } from "./pdf";
 export async function loadQuoteForExport(
   lookup: { id: string } | { token: string }
 ): Promise<QuotePdfData | null> {
-  const quote = await db.quote.findUnique({
-    where: "id" in lookup ? { id: lookup.id } : { publicToken: lookup.token },
+  const quote = await db.quote.findFirst({
+    where: "id" in lookup
+      ? { id: lookup.id, deletedAt: null }
+      : { publicToken: lookup.token, deletedAt: null },
     include: {
       client: { select: { name: true } },
       lineItems: { orderBy: { position: "asc" } },

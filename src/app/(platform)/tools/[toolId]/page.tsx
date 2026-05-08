@@ -24,13 +24,16 @@ export default async function ToolDetailPage({ params }: Props) {
   const perms = await resolveModulePerms(user.id, user.role, "tools");
   if (!perms.canView) return <AccessDenied module="tools" moduleLabel="Tools" moduleDescription="Shared tools and linked resources" />;
 
-  const tool = await db.tool.findUnique({
-    where: { id: toolId },
+  const tool = await db.tool.findFirst({
+    where: { id: toolId, deletedAt: null },
     include: {
       clonedFrom: { select: { id: true, name: true } },
-      clones: { select: { id: true, name: true } },
+      clones: { where: { deletedAt: null }, select: { id: true, name: true } },
       embeds: true,
-      projects: { include: { project: { select: { id: true, name: true } } } },
+      projects: {
+        where: { project: { deletedAt: null } },
+        include: { project: { select: { id: true, name: true } } },
+      },
     },
   });
 
@@ -42,7 +45,7 @@ export default async function ToolDetailPage({ params }: Props) {
   }
 
   const allProjects = await db.project.findMany({
-    where: scope.all ? {} : { id: { in: Array.from(scope.projectIds) } },
+    where: { deletedAt: null, ...(scope.all ? {} : { id: { in: Array.from(scope.projectIds) } }) },
     select: { id: true, name: true },
     orderBy: { name: "asc" },
   });

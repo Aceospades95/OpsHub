@@ -122,8 +122,9 @@ export function CommentSection({
 
   return (
     <div className="space-y-4">
-      <h3 className="text-sm font-semibold text-foreground">Comments</h3>
-
+      {/* Header is owned by the calling page (every caller wraps this
+       *  in a <Card> with a "Comments" CardTitle). Keeping a second
+       *  h3 here stacked two identical headings on every detail page. */}
       {sortedComments.length === 0 && (
         <p className="text-sm text-muted-foreground">No comments yet</p>
       )}
@@ -148,6 +149,8 @@ export function CommentSection({
                 {(canDelete || comment.author.id === currentUserId) && (
                   <button
                     onClick={() => handleDelete(comment.id)}
+                    aria-label="Delete comment"
+                    title="Delete comment"
                     className="rounded p-1 text-muted-foreground hover:text-destructive hover:bg-muted transition-colors"
                   >
                     <Trash2 className="h-3 w-3" />

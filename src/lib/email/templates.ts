@@ -79,6 +79,65 @@ If you didn't expect this email you can ignore it.
   return { subject, html, text };
 };
 
+export interface InviteTemplateData {
+  /** Recipient's display name. */
+  name: string;
+  /** Absolute URL the recipient clicks to set their password. */
+  signupUrl: string;
+  /** Hours until the link stops working. */
+  expiresInHours: number;
+  /** "invite" for first-time setup, "reset" for password reset. The
+   *  same template covers both with slightly different copy. */
+  kind: "invite" | "reset";
+  /** Display name of the admin who triggered this. Optional — used in
+   *  the "{Admin} just invited you" intro line. */
+  invitedByName?: string;
+}
+
+const invite: EmailTemplate<InviteTemplateData> = ({
+  name,
+  signupUrl,
+  expiresInHours,
+  kind,
+  invitedByName,
+}) => {
+  const isReset = kind === "reset";
+  const subject = isReset
+    ? `Reset your OpsHub password`
+    : `${invitedByName ? `${invitedByName} ` : ""}invited you to OpsHub`;
+  const intro = isReset
+    ? `<p>A password reset was requested for your OpsHub account. Click the button below to choose a new password.</p>`
+    : `<p>${
+        invitedByName
+          ? `${escapeHtml(invitedByName)} invited you to OpsHub.`
+          : "You've been invited to OpsHub."
+      } Click the button below to set your password and sign in for the first time.</p>`;
+  const html = shell(
+    subject,
+    `<p>Hi ${escapeHtml(name)},</p>
+     ${intro}
+     <p><a href="${escapeHtml(signupUrl)}" style="display:inline-block;padding:10px 18px;background:#1a1a1a;color:#fff;text-decoration:none;border-radius:6px;">${
+       isReset ? "Reset password" : "Set password & sign in"
+     }</a></p>
+     <p style="color:#666;font-size:12px;">This link expires in ${expiresInHours} hour${expiresInHours === 1 ? "" : "s"} and can only be used once. If you didn't expect this email you can ignore it.</p>`
+  );
+  const text = `Hi ${name},
+
+${
+  isReset
+    ? "A password reset was requested for your OpsHub account."
+    : `${invitedByName ? `${invitedByName} invited you to OpsHub.` : "You've been invited to OpsHub."}`
+}
+
+${isReset ? "Reset your password" : "Set your password and sign in"} at:
+${signupUrl}
+
+This link expires in ${expiresInHours} hour${expiresInHours === 1 ? "" : "s"} and can only be used once. If you didn't expect this email you can ignore it.
+
+— OpsHub`;
+  return { subject, html, text };
+};
+
 export interface NotificationTemplateData {
   recipientName: string;
   /** Headline e.g. "You were assigned a task" */
@@ -307,6 +366,7 @@ If you're seeing this, the email pipeline is wired up correctly.
  */
 export const TEMPLATES: Record<string, EmailTemplate<unknown>> = {
   welcome: welcome as EmailTemplate<unknown>,
+  invite: invite as EmailTemplate<unknown>,
   notification: notification as EmailTemplate<unknown>,
   report: report as EmailTemplate<unknown>,
   test: test as EmailTemplate<unknown>,
@@ -316,6 +376,7 @@ export const TEMPLATES: Record<string, EmailTemplate<unknown>> = {
 // Template data map for type-safe calls
 export interface TemplateDataMap {
   welcome: WelcomeTemplateData;
+  invite: InviteTemplateData;
   notification: NotificationTemplateData;
   report: ReportTemplateData;
   test: TestTemplateData;

@@ -106,15 +106,18 @@ export function getAllocationBadge(status: AllocationStatus): { label: string; c
 }
 
 export function computeEmployeeFte(user: UserData): number {
-  const assignmentFte = user.assignments.reduce((sum, a) => sum + a.allocationFte, 0);
-  // Project memberships without a matching assignment default to 1.0 FTE each
-  const assignedProjectIds = new Set(
-    user.assignments.map((a) => a.project?.id).filter(Boolean)
-  );
-  const unmatchedPmCount = user.projectMembers.filter(
-    (pm) => !assignedProjectIds.has(pm.project.id)
-  ).length;
-  return assignmentFte + unmatchedPmCount * 1.0;
+  // FTE is the sum of explicit Assignment.allocationFte values only.
+  //
+  // Pre-fix this function ALSO added 1.0 for every ProjectMember the
+  // user had without a matching Assignment — the rationale being
+  // "they're on the project so they must be working on it." That's
+  // wrong: ProjectMember is an *access* grant (see item 14), not a
+  // staffing record. The QA stress test caught Jacob Wright at 7 FTE
+  // across 5 projects because four of those projects only had
+  // ProjectMember entries (he had access to inspect them) but no
+  // Assignment (he wasn't actually staffed). The 1.0/each fallback
+  // double-counted access-only relationships as full-time work.
+  return user.assignments.reduce((sum, a) => sum + a.allocationFte, 0);
 }
 
 export function formatFte(value: number): string {

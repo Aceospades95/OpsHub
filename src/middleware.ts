@@ -28,6 +28,11 @@ export default auth((req) => {
     "/api/files/",
     "/portal/",
     "/api/public/",
+    // /signup/[token] is the set-password page invitees land on. The
+    // token validation (src/lib/signup-tokens.ts) IS the auth check
+    // here — anyone who has a valid unused un-expired token gets to
+    // pick a password for the user they were invited as.
+    "/signup/",
   ];
   const isPublic = publicPaths.some((p) => pathname.startsWith(p));
 

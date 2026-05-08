@@ -9,7 +9,7 @@ import { StatusBadge } from "@/components/shared/status-badge";
 import { CommentSection } from "@/components/shared/comment-section";
 import { TreeView, type TreeNode } from "@/components/shared/tree-view";
 import { Badge } from "@/components/ui/badge";
-import { format } from "date-fns";
+import { formatCalendarDate } from "@/lib/dates";
 import { CheckSquare, Clock } from "lucide-react";
 import Link from "next/link";
 import { ProjectActions } from "./project-actions";
@@ -25,6 +25,7 @@ import { TaskCheckbox } from "@/app/(platform)/tasks/task-checkbox";
 import { QuotesCard } from "@/components/quotes/quotes-card";
 import { ProjectSubcontractorsCard } from "./project-subcontractors-card";
 import { ProjectPartnershipsCard } from "./project-partnerships-card";
+import { RecentlyViewedTracker } from "@/components/shared/recently-viewed-tracker";
 
 interface Props {
   params: Promise<{ projectId: string }>;
@@ -36,7 +37,10 @@ function buildTree(projects: { id: string; name: string; status: string; _count:
     label: p.name,
     href: `/projects/${p.id}`,
     status: p.status,
-    meta: `${p._count.members} members`,
+    meta:
+      p._count.members === 1
+        ? "1 with access"
+        : `${p._count.members} with access`,
     children: p.childProjects ? buildTree(p.childProjects as typeof projects) : [],
   }));
 }
@@ -55,16 +59,23 @@ export default async function ProjectDetailPage({ params }: Props) {
   const subPerms = await resolveModulePerms(user.id, user.role, "subcontractors");
   const partnerPerms = await resolveModulePerms(user.id, user.role, "partnerships");
 
-  const project = await db.project.findUnique({
-    where: { id: projectId },
+  // Round-8 QA: resolve by slug-or-id (slug is the canonical href
+  // for new records; cuid still works for old bookmarks).
+  const project = await db.project.findFirst({
+    where: {
+      OR: [{ id: projectId }, { slug: projectId }],
+      deletedAt: null,
+    },
     include: {
       client: { select: { id: true, name: true } },
       serviceOffering: { select: { id: true, name: true } },
       parentProject: { select: { id: true, name: true } },
       childProjects: {
+        where: { deletedAt: null },
         include: {
           _count: { select: { members: true, childProjects: true } },
           childProjects: {
+            where: { deletedAt: null },
             include: { _count: { select: { members: true, childProjects: true } } },
           },
         },
@@ -96,22 +107,30 @@ export default async function ProjectDetailPage({ params }: Props) {
         },
         orderBy: [{ completed: "asc" }, { dueDate: "asc" }],
       },
-      documents: { orderBy: { updatedAt: "desc" } },
-      contracts: { orderBy: { updatedAt: "desc" } },
+      documents: { where: { deletedAt: null }, orderBy: { updatedAt: "desc" } },
+      contracts: { where: { deletedAt: null }, orderBy: { updatedAt: "desc" } },
       tools: { include: { tool: true } },
       links: true,
       embeds: true,
+      // Existing related-project links so the Edit dialog can seed the
+      // checkbox state on open. Schema name is `relations` —
+      // the back-relation `relatedRelations` is the inverse direction.
+      relations: {
+        select: { relatedProjectId: true },
+      },
       comments: {
         include: { author: { select: { id: true, name: true } } },
         orderBy: { createdAt: "desc" },
       },
       subcontractors: {
+        where: { subcontractor: { deletedAt: null } },
         include: {
           subcontractor: { select: { id: true, name: true, isPreferred: true } },
         },
         orderBy: { createdAt: "desc" },
       },
       partnerships: {
+        where: { partnership: { deletedAt: null } },
         include: {
           partnership: { select: { id: true, name: true, type: true, tier: true } },
         },
@@ -128,7 +147,10 @@ export default async function ProjectDetailPage({ params }: Props) {
   }
 
   const clients = await db.client.findMany({
-    where: { status: "ACTIVE" },
+    // Round-4 QA: previously filtered to status:"ACTIVE", which hid
+    // PROSPECT/INACTIVE clients from the project edit picker. Any
+    // non-deleted client should be assignable.
+    where: { deletedAt: null },
     select: { id: true, name: true },
     orderBy: { name: "asc" },
   });
@@ -149,17 +171,18 @@ export default async function ProjectDetailPage({ params }: Props) {
       orderBy: { name: "asc" },
     }),
     db.task.findMany({
-      where: { projectId: project.id, status: { in: ["TODO", "IN_PROGRESS"] } },
+      where: { projectId: project.id, status: { in: ["TODO", "IN_PROGRESS"] }, deletedAt: null },
       orderBy: [{ priority: "asc" }, { dueDate: "asc" }],
       include: { assignee: { select: { id: true, name: true } } },
       take: 10,
     }),
     db.tool.findMany({
+      where: { deletedAt: null },
       select: { id: true, name: true },
       orderBy: { name: "asc" },
     }),
     db.project.findMany({
-      where: { id: { not: project.id } },
+      where: { id: { not: project.id }, deletedAt: null },
       select: { id: true, name: true },
       orderBy: { name: "asc" },
     }),
@@ -175,14 +198,14 @@ export default async function ProjectDetailPage({ params }: Props) {
     }),
     subPerms.canView
       ? db.subcontractor.findMany({
-          where: { status: { not: "ARCHIVED" } },
+          where: { status: { not: "ARCHIVED" }, deletedAt: null },
           select: { id: true, name: true },
           orderBy: { name: "asc" },
         })
       : Promise.resolve([] as { id: string; name: string }[]),
     partnerPerms.canView
       ? db.partnership.findMany({
-          where: { status: { not: "ARCHIVED" } },
+          where: { status: { not: "ARCHIVED" }, deletedAt: null },
           select: { id: true, name: true },
           orderBy: { name: "asc" },
         })
@@ -385,7 +408,7 @@ export default async function ProjectDetailPage({ params }: Props) {
                         {task.dueDate && (
                           <span className={`flex items-center gap-1 ${new Date(task.dueDate) < new Date() ? "text-destructive" : ""}`}>
                             <Clock className="h-3 w-3" />
-                            {format(new Date(task.dueDate), "MMM d")}
+                            {formatCalendarDate(task.dueDate, "MMM d")}
                           </span>
                         )}
                       </div>
@@ -514,14 +537,26 @@ export default async function ProjectDetailPage({ params }: Props) {
 
   return (
     <div>
+      <RecentlyViewedTracker
+        type="project"
+        id={project.id}
+        label={project.name}
+        sublabel={project.client.name}
+        href={`/projects/${project.id}`}
+      />
       <PageHeader
         title={project.name}
         description={project.description || undefined}
         actions={
           <ProjectActions
-            project={{ ...project, clientId: project.client.id }}
+            project={{
+              ...project,
+              clientId: project.client.id,
+              relatedProjectIds: project.relations.map((r) => r.relatedProjectId),
+            }}
             clients={clients}
             serviceOfferings={serviceOfferings}
+            allProjects={allProjects}
             canEdit={perms.canEdit}
             canDelete={perms.canDelete}
           />
@@ -549,8 +584,8 @@ export default async function ProjectDetailPage({ params }: Props) {
         )}
         {project.startDate && (
           <span className="text-sm text-muted-foreground">
-            {format(project.startDate, "MMM d, yyyy")}
-            {project.endDate && ` — ${format(project.endDate, "MMM d, yyyy")}`}
+            {formatCalendarDate(project.startDate, "MMM d, yyyy")}
+            {project.endDate && ` — ${formatCalendarDate(project.endDate, "MMM d, yyyy")}`}
           </span>
         )}
       </div>

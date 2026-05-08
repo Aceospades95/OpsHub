@@ -76,7 +76,8 @@ export const projectsImporter: ImporterDefinition = {
 
   async commit(rows, ctx) {
     const results: ImportRowResult[] = [];
-    let imported = 0, updated = 0, skipped = 0, failed = 0;
+    let imported = 0, updated = 0, failed = 0;
+    const skipped = 0;
     const upsert = ctx.mode === "upsert";
 
     const clients = await db.client.findMany({ select: { id: true, name: true } });

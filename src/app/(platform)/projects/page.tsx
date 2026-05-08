@@ -6,14 +6,24 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { AccessDenied } from "@/components/shared/access-denied";
 import { FolderKanban } from "lucide-react";
 import { ProjectCreateButton } from "./project-create-button";
+import { DownloadCsvButton } from "@/components/shared/download-csv-button";
 import { ProjectsPageClient, type ProjectData, type ClientGroup } from "./projects-page-client";
 import type { Prisma } from "@prisma/client";
 
-export default async function ProjectsPage() {
+export default async function ProjectsPage({
+  searchParams,
+}: {
+  // Honor `?clientId=...` from the "Create the first project →" link
+  // on a client detail page. When present, the list filters to that
+  // client and the "+ New Project" modal pre-selects them.
+  searchParams: { clientId?: string };
+}) {
   const user = await requireAuth();
 
   const perms = await resolveModulePerms(user.id, user.role, "projects");
   if (!perms.canView) return <AccessDenied module="projects" moduleLabel="Projects" moduleDescription="Project portfolio, milestones, staffing, and documents" />;
+
+  const focusClientId = searchParams.clientId?.trim() || undefined;
 
   const scope = await getUserScope(user.id, user.role);
   // When the user isn't org-wide, show only projects in scope. Still include
@@ -21,11 +31,17 @@ export default async function ProjectsPage() {
   // need filtering; we hide them via the same set below.
   const scopedProjectIds = scope.all ? null : Array.from(scope.projectIds);
   const projectWhere: Prisma.ProjectWhereInput = {
+    deletedAt: null,
     parentProjectId: null,
+    ...(focusClientId ? { clientId: focusClientId } : {}),
     ...(scopedProjectIds ? { id: { in: scopedProjectIds } } : {}),
   };
+  // Client dropdown for "+ New Project" intentionally pulls EVERY non-
+  // deleted client regardless of status — round-4 QA flagged that
+  // PROSPECT clients (the natural source of new project work) were
+  // hidden from the picker, blocking the most common create path.
   const clientWhere: Prisma.ClientWhereInput = {
-    status: "ACTIVE",
+    deletedAt: null,
     ...(scope.all ? {} : { id: { in: Array.from(scope.clientIds) } }),
   };
 
@@ -40,15 +56,17 @@ export default async function ProjectsPage() {
       orderBy: { updatedAt: "desc" },
       include: {
         client: { select: { id: true, name: true } },
-        _count: { select: { members: true, childProjects: true, tasks: true } },
+        _count: { select: { members: true, childProjects: { where: { deletedAt: null } }, tasks: { where: { deletedAt: null } } } },
         childProjects: {
+          where: { deletedAt: null },
           include: {
             client: { select: { id: true, name: true } },
-            _count: { select: { members: true, childProjects: true, tasks: true } },
+            _count: { select: { members: true, childProjects: { where: { deletedAt: null } }, tasks: { where: { deletedAt: null } } } },
             childProjects: {
+              where: { deletedAt: null },
               include: {
                 client: { select: { id: true, name: true } },
-                _count: { select: { members: true, childProjects: true, tasks: true } },
+                _count: { select: { members: true, childProjects: { where: { deletedAt: null } }, tasks: { where: { deletedAt: null } } } },
               },
             },
           },
@@ -56,7 +74,7 @@ export default async function ProjectsPage() {
       },
     }),
     db.project.findMany({
-      where: scopedProjectIds ? { id: { in: scopedProjectIds } } : {},
+      where: { deletedAt: null, ...(scopedProjectIds ? { id: { in: scopedProjectIds } } : {}) },
       select: { id: true, name: true },
       orderBy: { name: "asc" },
     }),
@@ -84,7 +102,19 @@ export default async function ProjectsPage() {
       <PageHeader
         title="Projects"
         description="Manage projects across all clients"
-        actions={perms.canCreate ? <ProjectCreateButton clients={clients} projects={allProjects} serviceOfferings={serviceOfferings} /> : undefined}
+        actions={
+          <div className="flex items-center gap-2">
+            {user.role === "ADMIN" && <DownloadCsvButton importerKey="projects" />}
+            {perms.canCreate && (
+              <ProjectCreateButton
+                clients={clients}
+                projects={allProjects}
+                serviceOfferings={serviceOfferings}
+                defaultClientId={focusClientId}
+              />
+            )}
+          </div>
+        }
       />
 
       {rootProjects.length === 0 ? (

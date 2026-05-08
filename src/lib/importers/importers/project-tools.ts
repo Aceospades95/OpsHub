@@ -1,14 +1,23 @@
 /**
  * Project tools importer — bulk-link existing tools to existing projects.
- * Both sides must already exist (by name). The unique (projectId, toolId)
- * constraint means duplicate rows soft-skip rather than fail.
+ * Both sides must already exist (by name).
  *
  * Required: projectName, toolName
+ *
+ * This is a pure link table: there are no editable fields beyond the
+ * pair itself, so an upsert is effectively a no-op in the DB. The
+ * importer still honors the upsert toggle so admins re-running the same
+ * file see consistent counts (existing-pair → updated in upsert mode,
+ * skipped in create mode).
  */
 
 import { db } from "@/lib/db";
 import { logActivity } from "@/lib/activity";
 import type { ImporterDefinition, ImportRowResult } from "../types";
+
+function projectToolMatchKey(projectId: string, toolId: string): string {
+  return `${projectId}|${toolId}`;
+}
 
 export const projectToolsImporter: ImporterDefinition = {
   key: "project-tools",
@@ -16,6 +25,9 @@ export const projectToolsImporter: ImporterDefinition = {
   description:
     "Bulk-link tools to projects. Both must already exist (by name). Required: projectName, toolName.",
   module: "projects",
+  supportsUpsert: true,
+  upsertKeyDescription:
+    "Matched by (project + tool), case-insensitive on both. The link has no other editable fields, so upsert mode treats existing pairs as updated no-ops; in create mode they're reported as skipped.",
 
   fields: [
     { key: "projectName", label: "Project name", required: true, description: "Must match an existing project by name.", aliases: ["project"] },
@@ -40,13 +52,24 @@ export const projectToolsImporter: ImporterDefinition = {
   async commit(rows, ctx) {
     const results: ImportRowResult[] = [];
     let imported = 0;
+    let updated = 0;
     let skipped = 0;
     let failed = 0;
+    const upsert = ctx.mode === "upsert";
 
     const projects = await db.project.findMany({ select: { id: true, name: true, clientId: true } });
     const projectByName = new Map(projects.map((p) => [p.name.toLowerCase(), p]));
     const tools = await db.tool.findMany({ select: { id: true, name: true } });
     const toolByName = new Map(tools.map((t) => [t.name.toLowerCase(), t.id]));
+
+    // Pre-fetch every link keyed by (projectId + toolId).
+    const existingLinks = await db.projectTool.findMany({
+      select: { id: true, projectId: true, toolId: true },
+    });
+    const existingByKey = new Map<string, { id: string }>(
+      existingLinks.map((l) => [projectToolMatchKey(l.projectId, l.toolId), { id: l.id }])
+    );
+    const seenInBatch = new Set<string>();
 
     for (let i = 0; i < rows.length; i++) {
       const rowNumber = i + 1;
@@ -78,32 +101,62 @@ export const projectToolsImporter: ImporterDefinition = {
         continue;
       }
 
-      try {
-        const link = await db.projectTool.create({
-          data: { projectId: project.id, toolId },
-        });
-        imported++;
-        results.push({ row: rowNumber, status: "imported" });
-        await logActivity("imported", "projectTool", link.id, ctx.triggeredBy, `${toolNameRaw} → ${projectNameRaw}`, {
-          projectId: project.id,
-          clientId: project.clientId,
-        });
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : "DB error";
-        if (msg.includes("Unique constraint")) {
+      const key = projectToolMatchKey(project.id, toolId);
+      if (seenInBatch.has(key)) {
+        if (upsert) {
+          // No editable fields → DB no-op, but report as updated so
+          // admins re-running the same file see a stable count.
+          updated++;
+          results.push({ row: rowNumber, status: "updated" });
+        } else {
           skipped++;
           results.push({
             row: rowNumber,
             status: "skipped",
-            message: `Tool "${toolNameRaw}" already linked to "${projectNameRaw}"`,
+            message: `Duplicate row in file: "${toolNameRaw}" → "${projectNameRaw}"`,
+          });
+        }
+        continue;
+      }
+      seenInBatch.add(key);
+
+      const existing = existingByKey.get(key);
+
+      try {
+        if (existing && upsert) {
+          // Pure link, nothing to mutate — count it as updated for
+          // consistency with the rest of the upsert importers.
+          updated++;
+          results.push({ row: rowNumber, status: "updated" });
+        } else if (existing && !upsert) {
+          skipped++;
+          results.push({
+            row: rowNumber,
+            status: "skipped",
+            message: `Tool "${toolNameRaw}" already linked to "${projectNameRaw}". Re-run with "Update existing rows" enabled to refresh it.`,
           });
         } else {
-          failed++;
-          results.push({ row: rowNumber, status: "failed", message: msg });
+          const link = await db.projectTool.create({
+            data: { projectId: project.id, toolId },
+          });
+          existingByKey.set(key, { id: link.id });
+          imported++;
+          results.push({ row: rowNumber, status: "imported" });
+          await logActivity("imported", "projectTool", link.id, ctx.triggeredBy, `${toolNameRaw} → ${projectNameRaw}`, {
+            projectId: project.id,
+            clientId: project.clientId,
+          });
         }
+      } catch (err) {
+        failed++;
+        results.push({
+          row: rowNumber,
+          status: "failed",
+          message: err instanceof Error ? err.message : "DB error",
+        });
       }
     }
 
-    return { imported, updated: 0, skipped, failed, rows: results };
+    return { imported, updated, skipped, failed, rows: results };
   },
 };

@@ -12,6 +12,7 @@ import {
   UserData,
   getAllocationStatus, getAllocationBadge, computeEmployeeFte, formatFte,
 } from "./team-types";
+import { isSyntheticEmail } from "@/lib/synthetic-email";
 
 interface EmployeeListProps {
   users: UserData[];
@@ -143,7 +144,19 @@ export function EmployeeList({ users, inactiveUsers, search }: EmployeeListProps
                 {user.jobTitle && (
                   <p className="text-xs text-primary/80 font-medium truncate">{user.jobTitle}</p>
                 )}
-                <p className="text-[10px] text-muted-foreground truncate">{user.email}</p>
+                {isSyntheticEmail(user.email) ? (
+                  <p
+                    className="text-[10px] text-muted-foreground truncate flex items-center gap-1"
+                    title="Placeholder email assigned by the system because this employee was created without login access."
+                  >
+                    <span className="rounded-sm bg-muted px-1 py-px text-[9px] font-medium uppercase tracking-wide text-muted-foreground/80">
+                      placeholder
+                    </span>
+                    <span className="truncate">{user.email}</span>
+                  </p>
+                ) : (
+                  <p className="text-[10px] text-muted-foreground truncate">{user.email}</p>
+                )}
               </div>
             </div>
           </td>
@@ -261,13 +274,13 @@ export function EmployeeList({ users, inactiveUsers, search }: EmployeeListProps
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border bg-muted">
-                <th className="text-left py-3 px-4 font-semibold"><SortHeader field="name">Employee</SortHeader></th>
-                <th className="text-left py-3 px-4 font-semibold hidden md:table-cell"><SortHeader field="department">Department</SortHeader></th>
-                <th className="text-left py-3 px-4 font-semibold hidden md:table-cell"><SortHeader field="location">Location</SortHeader></th>
-                <th className="text-left py-3 px-4 font-semibold hidden lg:table-cell"><SortHeader field="manager">Reports To</SortHeader></th>
-                <th className="text-center py-3 px-4 font-semibold"><SortHeader field="role" className="justify-center">Position</SortHeader></th>
-                <th className="text-center py-3 px-4 font-semibold"><SortHeader field="totalFte" className="justify-center">FTE</SortHeader></th>
-                <th className="text-center py-3 px-4 font-semibold hidden lg:table-cell"><SortHeader field="projects" className="justify-center">Assignments</SortHeader></th>
+                <th className="text-left py-3 px-4 font-semibold whitespace-nowrap"><SortHeader field="name">Employee</SortHeader></th>
+                <th className="text-left py-3 px-4 font-semibold whitespace-nowrap hidden md:table-cell"><SortHeader field="department">Department</SortHeader></th>
+                <th className="text-left py-3 px-4 font-semibold whitespace-nowrap hidden md:table-cell"><SortHeader field="location">Location</SortHeader></th>
+                <th className="text-left py-3 px-4 font-semibold whitespace-nowrap hidden lg:table-cell"><SortHeader field="manager">Reports To</SortHeader></th>
+                <th className="text-center py-3 px-4 font-semibold whitespace-nowrap"><SortHeader field="role" className="justify-center">Position</SortHeader></th>
+                <th className="text-center py-3 px-4 font-semibold whitespace-nowrap"><SortHeader field="totalFte" className="justify-center">FTE</SortHeader></th>
+                <th className="text-center py-3 px-4 font-semibold whitespace-nowrap hidden lg:table-cell"><SortHeader field="projects" className="justify-center">Assignments</SortHeader></th>
               </tr>
             </thead>
             <tbody>
@@ -296,13 +309,13 @@ export function EmployeeList({ users, inactiveUsers, search }: EmployeeListProps
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-border bg-muted">
-                      <th className="text-left py-3 px-4 font-semibold">Employee</th>
-                      <th className="text-left py-3 px-4 font-semibold hidden md:table-cell">Department</th>
-                      <th className="text-left py-3 px-4 font-semibold hidden md:table-cell">Location</th>
-                      <th className="text-left py-3 px-4 font-semibold hidden lg:table-cell">Reports To</th>
-                      <th className="text-center py-3 px-4 font-semibold">Position</th>
-                      <th className="text-center py-3 px-4 font-semibold">FTE</th>
-                      <th className="text-center py-3 px-4 font-semibold hidden lg:table-cell">Assignments</th>
+                      <th className="text-left py-3 px-4 font-semibold whitespace-nowrap">Employee</th>
+                      <th className="text-left py-3 px-4 font-semibold whitespace-nowrap hidden md:table-cell">Department</th>
+                      <th className="text-left py-3 px-4 font-semibold whitespace-nowrap hidden md:table-cell">Location</th>
+                      <th className="text-left py-3 px-4 font-semibold whitespace-nowrap hidden lg:table-cell">Reports To</th>
+                      <th className="text-center py-3 px-4 font-semibold whitespace-nowrap">Position</th>
+                      <th className="text-center py-3 px-4 font-semibold whitespace-nowrap">FTE</th>
+                      <th className="text-center py-3 px-4 font-semibold whitespace-nowrap hidden lg:table-cell">Assignments</th>
                     </tr>
                   </thead>
                   <tbody>

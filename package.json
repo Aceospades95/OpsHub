@@ -15,10 +15,21 @@
     "validate:env": "node scripts/validate-env.mjs",
     "promote:admin": "npx tsx prisma/promote-admin.ts",
     "seed:workflows": "npx tsx prisma/seed-workflow-defaults.ts",
+    "seed:realistic": "npx tsx prisma/seed-realistic.ts",
     "merge:duplicate-users": "npx tsx prisma/merge-duplicate-users.ts",
+    "merge:users-by-id": "npx tsx prisma/merge-users-by-id.ts",
+    "merge:jacob-wright": "npx tsx prisma/merge-jacob-wright.ts",
+    "backfill:quote-numbers": "npx tsx prisma/backfill-quote-numbers.ts",
+    "dedupe:intranet-org-chart": "npx tsx prisma/dedupe-intranet-org-chart.ts",
+    "cleanup:demo-employees": "npx tsx prisma/cleanup-demo-employees.ts",
+    "cleanup:demo-data": "npx tsx prisma/cleanup-demo-data.ts",
+    "cleanup:orphan-file-refs": "npx tsx prisma/cleanup-orphan-file-refs.ts",
+    "backfill:projectrole-suffixes": "npx tsx prisma/backfill-projectrole-suffixes.ts",
+    "backfill:slugs": "npx tsx prisma/backfill-slugs.ts",
     "db:studio": "prisma studio",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "ci": "npm run lint && npm run test && npm run build"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.7.4",
@@ -47,6 +58,10 @@
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-grid-layout": "^2.2.3",
+    "react-markdown": "^10.1.0",
+    "rehype-sanitize": "^6.0.0",
+    "remark-gfm": "^4.0.1",
+    "sonner": "^2.0.7",
     "zod": "^3.24.1"
   },
   "devDependencies": {

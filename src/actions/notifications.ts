@@ -6,7 +6,7 @@ import {
   markAsRead as markAsReadLib,
   markAllAsRead as markAllAsReadLib,
   deleteNotification as deleteNotificationLib,
-  getUnreadCount,
+  getBellUnreadCount,
   getUserNotifications,
 } from "@/lib/notifications";
 import { db } from "@/lib/db";
@@ -41,7 +41,7 @@ export async function fetchRecent(limit = 10) {
   const user = await requireAuth();
   const [notifications, unreadCount] = await Promise.all([
     getUserNotifications(user.id, { limit }),
-    getUnreadCount(user.id),
+    getBellUnreadCount(user.id, user.role),
   ]);
   return {
     notifications: notifications.map((n) => ({

@@ -179,12 +179,20 @@ export function TemplateEditor({
       {/* Top bar */}
       <div className="flex items-center justify-between mb-6 gap-4 flex-wrap">
         <div className="min-w-0">
+          {/* Round-6 QA: breadcrumb used to read "Templates › cmojf683"
+           *  by slicing the template's cuid. Use the loaded name
+           *  instead — truncated at ~30 chars with the full string
+           *  preserved as the title attribute for hover. */}
           <p className="text-xs text-muted-foreground">
             <Link href="/workflows/templates" className="hover:underline">
               Templates
             </Link>{" "}
             ›{" "}
-            <span className="font-mono">{template.id.slice(0, 8)}</span>
+            <span title={template.name}>
+              {template.name.length > 30
+                ? `${template.name.slice(0, 30)}…`
+                : template.name}
+            </span>
           </p>
           <h1 className="text-2xl font-bold truncate">{template.name}</h1>
           <div className="flex flex-wrap gap-1 mt-1">
@@ -448,6 +456,19 @@ function StepEditDialog({
         isRequired,
       });
       if ("error" in res) {
+        // Round-8 QA: surface the first field-specific error from
+        // the strict validator so users see "Task title is
+        // required" instead of just "Validation failed".
+        const fieldErrors = (res as { fieldErrors?: Record<string, string[] | undefined> }).fieldErrors;
+        if (fieldErrors) {
+          const firstField = Object.keys(fieldErrors).find(
+            (k) => (fieldErrors[k]?.length ?? 0) > 0
+          );
+          if (firstField) {
+            setError(fieldErrors[firstField]![0]);
+            return;
+          }
+        }
         setError(res.error ?? "Could not save step");
         return;
       }

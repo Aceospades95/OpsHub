@@ -9,6 +9,7 @@ import { absoluteUrl } from "@/lib/url";
 import { resolveModulePerms } from "@/lib/permissions";
 import type { Role } from "@prisma/client";
 import { z } from "zod";
+import { nameField } from "@/lib/validation";
 
 /**
  * Verify the actor is allowed to mutate this specific task. Without
@@ -29,8 +30,8 @@ async function authorizeTaskMutation(
   user: { id: string; role: Role },
   taskId: string
 ): Promise<{ error: string } | null> {
-  const task = await db.task.findUnique({
-    where: { id: taskId },
+  const task = await db.task.findFirst({
+    where: { id: taskId, deletedAt: null },
     select: {
       assigneeId: true,
       createdById: true,
@@ -85,8 +86,8 @@ async function notifyTaskAssigned(opts: {
         select: { name: true, hasLoginAccess: true },
       }),
       opts.projectId
-        ? db.project.findUnique({
-            where: { id: opts.projectId },
+        ? db.project.findFirst({
+            where: { id: opts.projectId, deletedAt: null },
             select: { name: true },
           })
         : Promise.resolve(null),
@@ -127,7 +128,7 @@ async function notifyTaskAssigned(opts: {
 }
 
 const taskSchema = z.object({
-  title: z.string().min(1, "Title is required"),
+  title: nameField({ label: "Title", max: 500 }),
   description: z.string().optional(),
   priority: z.enum(["HIGH", "MEDIUM", "LOW"]).default("MEDIUM"),
   status: z.enum(["TODO", "IN_PROGRESS", "DONE", "CANCELLED"]).default("TODO"),
@@ -154,7 +155,10 @@ export async function createTask(_prevState: unknown, formData: FormData) {
 
   const parsed = taskSchema.safeParse(raw);
   if (!parsed.success) {
-    return { error: parsed.error.errors[0].message };
+    return {
+      error: parsed.error.errors[0].message,
+      fieldErrors: parsed.error.flatten().fieldErrors,
+    };
   }
 
   const data = parsed.data;
@@ -253,7 +257,10 @@ export async function updateTask(_prevState: unknown, formData: FormData) {
 
   const parsed = taskSchema.safeParse(raw);
   if (!parsed.success) {
-    return { error: parsed.error.errors[0].message };
+    return {
+      error: parsed.error.errors[0].message,
+      fieldErrors: parsed.error.flatten().fieldErrors,
+    };
   }
 
   const data = parsed.data;
@@ -322,17 +329,34 @@ export async function deleteTask(taskId: string) {
   );
   if (denied) return denied;
 
-  // Look up before delete so we can revalidate the right pages
+  // Look up before soft-delete so we can revalidate the right pages
+  // and detect "already in trash" before stamping deletedAt again.
   const task = await db.task.findUnique({
     where: { id: taskId },
-    select: { projectId: true, clientId: true, assigneeId: true },
+    select: { projectId: true, clientId: true, assigneeId: true, title: true, deletedAt: true },
   });
-  await db.task.delete({ where: { id: taskId } });
+  if (!task) return { error: "Task not found" };
+  if (task.deletedAt) {
+    return { error: "Already in the recovery bin" };
+  }
+
+  await db.task.update({ where: { id: taskId }, data: { deletedAt: new Date() } });
+  await db.activityLog.create({
+    data: {
+      action: "soft-deleted",
+      entityType: "task",
+      entityId: taskId,
+      details: task.title,
+      userId: session.user.id,
+      projectId: task.projectId,
+      clientId: task.clientId,
+    },
+  });
 
   revalidateTask({
-    projectId: task?.projectId,
-    clientId: task?.clientId,
-    assigneeId: task?.assigneeId,
+    projectId: task.projectId,
+    clientId: task.clientId,
+    assigneeId: task.assigneeId,
   });
   return { success: true };
 }

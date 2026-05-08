@@ -14,6 +14,7 @@ import {
 import { AddAssignmentDialog } from "./add-assignment-dialog";
 import { ManageOfferingsDialog } from "./manage-offerings-dialog";
 import { updateAssignmentFte, updateAssignmentRole, createProjectRole, createRoleDefinition, deleteProjectRole, updateProjectRole, removeAssignment, quickAssign } from "@/actions/assignments";
+import { pluralize } from "@/lib/pluralize";
 
 interface StaffingMatrixProps {
   users: UserData[];
@@ -632,7 +633,7 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, rol
 
         <div className="ml-auto flex items-center gap-2">
           <span className="text-sm text-muted-foreground">
-            {filteredRows.length} rows · {formatFte(metrics.totalFte)} FTE
+            {pluralize(filteredRows.length, "row")} · {formatFte(metrics.totalFte)} FTE
           </span>
           {canManage && (
             <>
@@ -777,7 +778,7 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, rol
                                             <span className="font-medium text-xs text-muted-foreground">{pg.projectName || "No Project"}</span>
                                           )}
                                           <span className="text-[10px] text-muted-foreground">
-                                            ({pg.roles.length} role{pg.roles.length !== 1 ? "s" : ""} · {pg.filledPositions}/{pg.neededPositions} filled)
+                                            ({pluralize(pg.roles.length, "role")} · {pg.filledPositions}/{pg.neededPositions} filled)
                                           </span>
                                           {unfilled > 0 && (
                                             <Badge variant="outline" className="text-[9px] bg-amber-500/15 border-amber-500/50 text-amber-700 dark:text-amber-300 gap-0.5">

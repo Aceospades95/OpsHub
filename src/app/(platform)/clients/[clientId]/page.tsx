@@ -10,13 +10,15 @@ import { CommentSection } from "@/components/shared/comment-section";
 import { Badge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
 import { Globe, Mail, Phone, Star, CheckSquare, Clock, UserCircle } from "lucide-react";
-import { format } from "date-fns";
+import { formatCalendarDate } from "@/lib/dates";
 import Link from "next/link";
 import { ClientActions } from "./client-actions";
 import { ContactSection } from "./contact-section";
 import { PageLayout } from "@/components/shared/page-layout";
 import { TaskCheckbox } from "@/app/(platform)/tasks/task-checkbox";
+import { RecentlyViewedTracker } from "@/components/shared/recently-viewed-tracker";
 import { QuotesCard } from "@/components/quotes/quotes-card";
+import { pluralize } from "@/lib/pluralize";
 
 interface Props {
   params: Promise<{ clientId: string }>;
@@ -33,18 +35,25 @@ export default async function ClientDetailPage({ params }: Props) {
   // card on the user's quotes permissions, not their clients permissions.
   const quotePerms = await resolveModulePerms(user.id, user.role, "quotes");
 
-  const client = await db.client.findUnique({
-    where: { id: clientId },
+  // Round-8 QA: resolve by slug-or-id so /clients/<slug> works for
+  // new records (where the slug is the canonical href) and existing
+  // cuid bookmarks keep resolving for older rows.
+  const client = await db.client.findFirst({
+    where: {
+      OR: [{ id: clientId }, { slug: clientId }],
+      deletedAt: null,
+    },
     include: {
       accountManager: { select: { id: true, name: true } },
       contacts: { orderBy: [{ isPrimary: "desc" }, { name: "asc" }] },
       projects: {
+        where: { deletedAt: null },
         include: {
           _count: { select: { members: true, childProjects: true } },
         },
         orderBy: { updatedAt: "desc" },
       },
-      contracts: { orderBy: { updatedAt: "desc" } },
+      contracts: { where: { deletedAt: null }, orderBy: { updatedAt: "desc" } },
       comments: {
         include: { author: { select: { id: true, name: true } } },
         orderBy: { createdAt: "desc" },
@@ -61,7 +70,7 @@ export default async function ClientDetailPage({ params }: Props) {
 
   // Get tasks associated with this client
   const tasks = await db.task.findMany({
-    where: { clientId: client.id, status: { in: ["TODO", "IN_PROGRESS"] } },
+    where: { clientId: client.id, status: { in: ["TODO", "IN_PROGRESS"] }, deletedAt: null },
     orderBy: [{ priority: "asc" }, { dueDate: "asc" }],
     include: { assignee: { select: { id: true, name: true } } },
     take: 10,
@@ -116,7 +125,14 @@ export default async function ClientDetailPage({ params }: Props) {
         </CardHeader>
         <CardContent>
           {client.projects.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No projects</p>
+            <div className="text-sm text-muted-foreground">
+              No projects yet.{" "}
+              {perms.canCreate && (
+                <Link href={`/projects?clientId=${client.id}`} className="text-primary hover:underline">
+                  Create the first project →
+                </Link>
+              )}
+            </div>
           ) : (
             <div className="space-y-3">
               {client.projects.map((project) => (
@@ -128,8 +144,8 @@ export default async function ClientDetailPage({ params }: Props) {
                   <div>
                     <p className="font-medium text-sm">{project.name}</p>
                     <p className="text-xs text-muted-foreground">
-                      {project._count.members} members
-                      {project._count.childProjects > 0 && ` · ${project._count.childProjects} sub-projects`}
+                      {pluralize(project._count.members, "member")}
+                      {project._count.childProjects > 0 && ` · ${pluralize(project._count.childProjects, "sub-project")}`}
                     </p>
                   </div>
                   <StatusBadge status={project.status} />
@@ -147,7 +163,14 @@ export default async function ClientDetailPage({ params }: Props) {
         </CardHeader>
         <CardContent>
           {client.contracts.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No contracts</p>
+            <div className="text-sm text-muted-foreground">
+              No contracts yet.{" "}
+              {perms.canCreate && (
+                <Link href={`/contracts?clientId=${client.id}`} className="text-primary hover:underline">
+                  Create one →
+                </Link>
+              )}
+            </div>
           ) : (
             <div className="space-y-3">
               {client.contracts.map((contract) => (
@@ -242,7 +265,12 @@ export default async function ClientDetailPage({ params }: Props) {
         </CardHeader>
         <CardContent>
           {tasks.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No open tasks</p>
+            <div className="text-sm text-muted-foreground">
+              No open tasks.{" "}
+              <Link href={`/tasks?client=${client.id}`} className="text-primary hover:underline">
+                Add a task →
+              </Link>
+            </div>
           ) : (
             <div className="space-y-2">
               {tasks.map((task) => (
@@ -259,7 +287,7 @@ export default async function ClientDetailPage({ params }: Props) {
                       {task.dueDate && (
                         <span className={`flex items-center gap-1 ${new Date(task.dueDate) < new Date() ? "text-destructive" : ""}`}>
                           <Clock className="h-3 w-3" />
-                          {format(new Date(task.dueDate), "MMM d")}
+                          {formatCalendarDate(task.dueDate, "MMM d")}
                         </span>
                       )}
                     </div>
@@ -275,6 +303,13 @@ export default async function ClientDetailPage({ params }: Props) {
 
   return (
     <div>
+      <RecentlyViewedTracker
+        type="client"
+        id={client.id}
+        label={client.name}
+        sublabel={client.industry || undefined}
+        href={`/clients/${client.id}`}
+      />
       <PageHeader
         title={client.name}
         description={client.description || undefined}

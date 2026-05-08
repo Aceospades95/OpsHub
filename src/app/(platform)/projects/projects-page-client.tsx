@@ -9,6 +9,8 @@ import { ProjectCreateButton } from "./project-create-button";
 
 export interface ProjectData {
   id: string;
+  /** Round-8: URL-friendly slug; falls back to id when null. */
+  slug: string | null;
   name: string;
   status: string;
   client: { id: string; name: string };
@@ -51,9 +53,12 @@ function buildTreeNodes(projects: ProjectData[]): TreeNode[] {
   return projects.map((project) => ({
     id: project.id,
     label: project.name,
-    href: `/projects/${project.id}`,
+    href: `/projects/${project.slug ?? project.id}`,
     status: project.status,
-    meta: `${project._count.members} members`,
+    meta:
+      project._count.members === 1
+        ? "1 with access"
+        : `${project._count.members} with access`,
     children: project.childProjects.length > 0
       ? buildTreeNodes(project.childProjects)
       : undefined,
@@ -256,8 +261,9 @@ export function ProjectsPageClient({ clientGroups, clients, allProjects, canCrea
                       <button
                         className="w-32 flex items-center justify-end gap-1 hover:text-foreground transition-colors"
                         onClick={() => toggleSort(group.id, "members")}
+                        title="People with view/edit access to this project. Different from staffing — staffed roles are managed on the project's Staffing card."
                       >
-                        Members
+                        Access
                         <SortIcon field="members" current={clientSort} />
                       </button>
                     </div>

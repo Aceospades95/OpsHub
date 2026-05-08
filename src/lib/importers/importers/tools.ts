@@ -1,8 +1,12 @@
 /**
- * Tools importer — bulk-create internal/external tool entries from CSV.
+ * Tools importer — bulk-create or update internal/external tool entries
+ * from CSV.
  *
  * Required: name
  * Optional: description, category, toolUrl, toolType, isGlobal
+ *
+ * Upsert match key: lowercased name. Re-uploading the same CSV updates
+ * existing rows in upsert mode and skips them in create mode.
  */
 
 import { db } from "@/lib/db";
@@ -24,8 +28,11 @@ export const toolsImporter: ImporterDefinition = {
   key: "tools",
   name: "Tools",
   description:
-    "Bulk-create tool entries. Required: name. Optional: description, category, URL, tool type, global flag.",
+    "Bulk-create or update tool entries. Required: name. Optional: description, category, URL, tool type, global flag.",
   module: "tools",
+  supportsUpsert: true,
+  upsertKeyDescription:
+    "Matched by tool name (case-insensitive). Re-uploading the same name updates the existing row instead of creating a duplicate.",
 
   fields: [
     { key: "name", label: "Name", required: true, aliases: ["tool", "tool name"] },
@@ -75,11 +82,33 @@ export const toolsImporter: ImporterDefinition = {
     }));
   },
 
+  async exportRows() {
+    const tools = await db.tool.findMany({ orderBy: { name: "asc" } });
+    return tools.map((t) => ({
+      name: t.name,
+      description: t.description || "",
+      category: t.category || "",
+      toolUrl: t.toolUrl || "",
+      toolType: t.toolType,
+      isGlobal: t.isGlobal ? "true" : "false",
+    }));
+  },
+
   async commit(rows, ctx) {
     const results: ImportRowResult[] = [];
     let imported = 0;
-    const skipped = 0;
+    let updated = 0;
+    let skipped = 0;
     let failed = 0;
+    const upsert = ctx.mode === "upsert";
+
+    // Pre-fetch every tool keyed by lowercased name. Used for both
+    // dedupe and the upsert update path.
+    const existingByKey = new Map(
+      (await db.tool.findMany({ select: { id: true, name: true } }))
+        .map((t) => [t.name.toLowerCase(), { id: t.id }])
+    );
+    const seenInBatch = new Set<string>();
 
     for (let i = 0; i < rows.length; i++) {
       const rowNumber = i + 1;
@@ -96,20 +125,49 @@ export const toolsImporter: ImporterDefinition = {
         ? (toolTypeRaw as ToolType)
         : "internal";
 
-      try {
-        const tool = await db.tool.create({
-          data: {
-            name,
-            description: raw.description?.trim() || null,
-            category: raw.category?.trim() || null,
-            toolUrl: raw.toolUrl?.trim() || null,
-            toolType,
-            isGlobal: parseBool(raw.isGlobal, true),
-          },
+      const key = name.toLowerCase();
+      if (seenInBatch.has(key)) {
+        skipped++;
+        results.push({
+          row: rowNumber,
+          status: "skipped",
+          message: `Duplicate row in file: "${name}"`,
         });
-        imported++;
-        results.push({ row: rowNumber, status: "imported" });
-        await logActivity("imported", "tool", tool.id, ctx.triggeredBy, name);
+        continue;
+      }
+      seenInBatch.add(key);
+
+      const data = {
+        name,
+        description: raw.description?.trim() || null,
+        category: raw.category?.trim() || null,
+        toolUrl: raw.toolUrl?.trim() || null,
+        toolType,
+        isGlobal: parseBool(raw.isGlobal, true),
+      };
+
+      const existing = existingByKey.get(key);
+
+      try {
+        if (existing && upsert) {
+          const tool = await db.tool.update({ where: { id: existing.id }, data });
+          updated++;
+          results.push({ row: rowNumber, status: "updated" });
+          await logActivity("imported", "tool", tool.id, ctx.triggeredBy, `${name} (updated)`);
+        } else if (existing && !upsert) {
+          skipped++;
+          results.push({
+            row: rowNumber,
+            status: "skipped",
+            message: `Tool already exists: "${name}". Re-run with "Update existing rows" enabled to update it.`,
+          });
+        } else {
+          const tool = await db.tool.create({ data });
+          existingByKey.set(key, { id: tool.id });
+          imported++;
+          results.push({ row: rowNumber, status: "imported" });
+          await logActivity("imported", "tool", tool.id, ctx.triggeredBy, name);
+        }
       } catch (err) {
         failed++;
         results.push({
@@ -120,6 +178,6 @@ export const toolsImporter: ImporterDefinition = {
       }
     }
 
-    return { imported, updated: 0, skipped, failed, rows: results };
+    return { imported, updated, skipped, failed, rows: results };
   },
 };

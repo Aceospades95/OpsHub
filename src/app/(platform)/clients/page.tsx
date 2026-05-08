@@ -1,6 +1,8 @@
 import { db } from "@/lib/db";
 import { Suspense } from "react";
 import { requireAuth, resolveModulePerms } from "@/lib/permissions";
+import { DownloadCsvButton } from "@/components/shared/download-csv-button";
+import { pluralize } from "@/lib/pluralize";
 import { getUserScope } from "@/lib/scope";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent } from "@/components/ui/card";
@@ -29,7 +31,7 @@ export default async function ClientsPage({
   const scope = await getUserScope(user.id, user.role);
 
   // Build where clause
-  const where: Prisma.ClientWhereInput = {};
+  const where: Prisma.ClientWhereInput = { deletedAt: null };
   if (statusFilter && ["ACTIVE", "INACTIVE", "PROSPECT", "ARCHIVED"].includes(statusFilter)) {
     where.status = statusFilter as "ACTIVE" | "INACTIVE" | "PROSPECT" | "ARCHIVED";
   }
@@ -57,7 +59,13 @@ export default async function ClientsPage({
     where,
     orderBy,
     include: {
-      _count: { select: { projects: true, contracts: true, contacts: true } },
+      _count: {
+        select: {
+          projects: { where: { deletedAt: null } },
+          contracts: { where: { deletedAt: null } },
+          contacts: true,
+        },
+      },
     },
   });
 
@@ -66,7 +74,12 @@ export default async function ClientsPage({
       <PageHeader
         title="Clients"
         description="Manage your client portfolio"
-        actions={perms.canCreate ? <ClientCreateButton /> : undefined}
+        actions={
+          <div className="flex items-center gap-2">
+            {user.role === "ADMIN" && <DownloadCsvButton importerKey="clients" />}
+            {perms.canCreate && <ClientCreateButton />}
+          </div>
+        }
       />
 
       <Suspense fallback={null}>
@@ -86,20 +99,22 @@ export default async function ClientsPage({
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {clients.map((client) => (
-            <Link key={client.id} href={`/clients/${client.id}`}>
+            <Link key={client.id} href={`/clients/${client.slug ?? client.id}`}>
               <Card className="hover:shadow-md transition-shadow h-full">
                 <CardContent className="p-5">
                   <div className="flex items-start justify-between mb-2">
                     <h3 className="font-semibold text-foreground">{client.name}</h3>
                     <StatusBadge status={client.status} />
                   </div>
-                  {client.industry && (
-                    <p className="text-sm text-muted-foreground mb-3">{client.industry}</p>
-                  )}
+                  <p className="text-sm text-muted-foreground mb-3">
+                    {client.industry || (
+                      <span className="italic opacity-60">No industry set</span>
+                    )}
+                  </p>
                   <div className="flex gap-4 text-xs text-muted-foreground">
-                    <span>{client._count.projects} projects</span>
-                    <span>{client._count.contracts} contracts</span>
-                    <span>{client._count.contacts} contacts</span>
+                    <span>{pluralize(client._count.projects, "project")}</span>
+                    <span>{pluralize(client._count.contracts, "contract")}</span>
+                    <span>{pluralize(client._count.contacts, "contact")}</span>
                   </div>
                 </CardContent>
               </Card>

@@ -8,10 +8,19 @@ interface DialogProps {
   onClose: () => void;
   title: string;
   children: ReactNode;
+  /**
+   * Optional sticky footer (typically the action buttons row).
+   * When supplied, the body becomes the only scrollable region —
+   * the header and footer stay pinned. Round-6 QA: without this
+   * the create-page modal at >930px content + 920px viewport
+   * scrolled the WHOLE panel and the Cancel/Save buttons ended
+   * up clipped below the viewport edge.
+   */
+  footer?: ReactNode;
   className?: string;
 }
 
-export function Dialog({ open, onClose, title, children, className = "" }: DialogProps) {
+export function Dialog({ open, onClose, title, children, footer, className = "" }: DialogProps) {
   const overlayRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -44,9 +53,9 @@ export function Dialog({ open, onClose, title, children, className = "" }: Dialo
       }}
     >
       <div
-        className={`relative w-full max-w-lg max-h-[85vh] overflow-y-auto rounded bg-card border border-border shadow-lg ${className}`}
+        className={`relative flex w-full max-w-lg max-h-[85vh] flex-col rounded bg-card border border-border shadow-lg ${className}`}
       >
-        <div className="flex items-center justify-between border-b border-border p-4">
+        <div className="flex shrink-0 items-center justify-between border-b border-border p-4">
           <h2 className="text-lg font-semibold">{title}</h2>
           <button
             onClick={onClose}
@@ -55,7 +64,12 @@ export function Dialog({ open, onClose, title, children, className = "" }: Dialo
             <X className="h-4 w-4" />
           </button>
         </div>
-        <div className="p-4">{children}</div>
+        <div className="flex-1 overflow-y-auto p-4">{children}</div>
+        {footer && (
+          <div className="shrink-0 border-t border-border bg-card p-4">
+            {footer}
+          </div>
+        )}
       </div>
     </div>
   );

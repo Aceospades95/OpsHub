@@ -10,6 +10,7 @@ import { Avatar } from "@/components/ui/avatar";
 import { Blocks } from "lucide-react";
 import Link from "next/link";
 import { SandboxCreateButton } from "./sandbox-create-button";
+import { SettingsNav } from "@/app/(platform)/admin/settings-nav";
 import { Icon } from "@/components/ui/icon-picker";
 import type { Role } from "@prisma/client";
 
@@ -38,12 +39,18 @@ export default async function SandboxListPage() {
   });
 
   const [projects, clients] = await Promise.all([
-    db.project.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } }),
-    db.client.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } }),
+    db.project.findMany({ where: { deletedAt: null }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
+    db.client.findMany({ where: { deletedAt: null }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
   ]);
 
   return (
     <div>
+      {/* /sandbox lives outside the admin route segment so the
+       *  admin layout's SettingsNav doesn't render here. The
+       *  Settings hub links to /sandbox under "Custom Pages", so
+       *  giving this page the same back-link as every other
+       *  admin sub-page keeps the navigation symmetric. */}
+      <SettingsNav />
       <PageHeader
         title="Custom Pages"
         description="Create and manage custom pages and modules"

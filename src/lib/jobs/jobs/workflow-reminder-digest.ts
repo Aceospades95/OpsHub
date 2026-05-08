@@ -40,6 +40,7 @@ export const workflowReminderDigest: JobDefinition = {
     const sevenDaysAhead = new Date(now.getTime() + 7 * ONE_DAY_MS);
     const expiringQuotes = await db.quote.findMany({
       where: {
+        deletedAt: null,
         status: { in: ["DRAFT", "SENT", "VIEWED", "EXPIRED"] },
         validUntil: { lte: sevenDaysAhead },
       },

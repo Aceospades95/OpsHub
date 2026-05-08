@@ -26,7 +26,7 @@ export async function QuotesCard({ clientId, projectId, canCreate, limit = 8 }: 
   if (!clientId && !projectId) return null;
 
   const quotes = await db.quote.findMany({
-    where: clientId ? { clientId } : { projectId },
+    where: clientId ? { clientId, deletedAt: null } : { projectId, deletedAt: null },
     orderBy: { updatedAt: "desc" },
     include: { client: { select: { id: true, name: true } } },
     take: limit,
