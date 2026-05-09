@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import { requireAuth, resolveModulePerms } from "@/lib/permissions";
+import { getUserScope, hasOrgWideManage } from "@/lib/scope";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent } from "@/components/ui/card";
 import { StatusBadge } from "@/components/shared/status-badge";
@@ -30,33 +31,95 @@ export default async function SearchPage({ searchParams }: Props) {
     );
   }
 
-  const clientPerms = await resolveModulePerms(userId, role, "clients");
-  const projectPerms = await resolveModulePerms(userId, role, "projects");
-  const contractPerms = await resolveModulePerms(userId, role, "contracts");
-  const supplierPerms = await resolveModulePerms(userId, role, "suppliers");
-  const subcontractorPerms = await resolveModulePerms(userId, role, "subcontractors");
-  const partnershipPerms = await resolveModulePerms(userId, role, "partnerships");
-  const intranetPerms = await resolveModulePerms(userId, role, "intranet");
+  // Module-level canView for each section. Entity-scoped modules
+  // (projects, clients, contracts) get an additional ID-set filter
+  // applied to the SQL where-clause so a user with module canView
+  // but no entity scope only sees the entities they're assigned to.
+  const [
+    scope,
+    clientPerms,
+    projectPerms,
+    contractPerms,
+    supplierPerms,
+    subcontractorPerms,
+    partnershipPerms,
+    intranetPerms,
+    tasksPerms,
+    teamPerms,
+  ] = await Promise.all([
+    getUserScope(userId, role),
+    resolveModulePerms(userId, role, "clients"),
+    resolveModulePerms(userId, role, "projects"),
+    resolveModulePerms(userId, role, "contracts"),
+    resolveModulePerms(userId, role, "suppliers"),
+    resolveModulePerms(userId, role, "subcontractors"),
+    resolveModulePerms(userId, role, "partnerships"),
+    resolveModulePerms(userId, role, "intranet"),
+    resolveModulePerms(userId, role, "tasks"),
+    resolveModulePerms(userId, role, "team"),
+  ]);
+
+  const orgWide = hasOrgWideManage(role) || scope.all;
+
+  const projectScope = orgWide
+    ? {}
+    : { id: { in: Array.from(scope.projectIds) } };
+  const clientScope = orgWide
+    ? {}
+    : { id: { in: Array.from(scope.clientIds) } };
+  // Contracts are scoped via the parent client/project relation
+  // (matching how the Contracts list page filters).
+  const contractScope = orgWide
+    ? {}
+    : {
+        OR: [
+          { clientId: { in: Array.from(scope.clientIds) } },
+          { projectId: { in: Array.from(scope.projectIds) } },
+        ],
+      };
+  // Tasks are scoped via the parent project. A non-org-wide user
+  // sees their assigned-or-created tasks, plus tasks on projects
+  // they have scope on. Tasks with no project (org-wide tasks) are
+  // visible to everyone with canView on the tasks module.
+  const taskScope = orgWide
+    ? {}
+    : {
+        OR: [
+          { projectId: { in: Array.from(scope.projectIds) } },
+          { projectId: null },
+          { assigneeId: userId },
+          { createdById: userId },
+        ],
+      };
 
   const contains = { contains: query, mode: "insensitive" as const };
 
   const [clients, projects, contracts, suppliers, subcontractors, partnerships, tasks, intranetResources, users] = await Promise.all([
     clientPerms.canView
       ? db.client.findMany({
-          where: { deletedAt: null, OR: [{ name: contains }, { description: contains }] },
+          where: {
+            deletedAt: null,
+            AND: [clientScope, { OR: [{ name: contains }, { description: contains }] }],
+          },
           take: 10,
         })
       : [],
     projectPerms.canView
       ? db.project.findMany({
-          where: { deletedAt: null, OR: [{ name: contains }, { description: contains }] },
+          where: {
+            deletedAt: null,
+            AND: [projectScope, { OR: [{ name: contains }, { description: contains }] }],
+          },
           include: { client: { select: { id: true, name: true } } },
           take: 10,
         })
       : [],
     contractPerms.canView
       ? db.contract.findMany({
-          where: { deletedAt: null, OR: [{ title: contains }, { description: contains }] },
+          where: {
+            deletedAt: null,
+            AND: [contractScope, { OR: [{ title: contains }, { description: contains }] }],
+          },
           include: { client: { select: { id: true, name: true } } },
           take: 10,
         })
@@ -98,15 +161,20 @@ export default async function SearchPage({ searchParams }: Props) {
           take: 10,
         })
       : [],
-    db.task.findMany({
-      where: { deletedAt: null, OR: [{ title: contains }, { description: contains }] },
-      include: {
-        project: { select: { id: true, name: true } },
-        client: { select: { id: true, name: true } },
-        assignee: { select: { id: true, name: true } },
-      },
-      take: 10,
-    }),
+    tasksPerms.canView
+      ? db.task.findMany({
+          where: {
+            deletedAt: null,
+            AND: [taskScope, { OR: [{ title: contains }, { description: contains }] }],
+          },
+          include: {
+            project: { select: { id: true, name: true } },
+            client: { select: { id: true, name: true } },
+            assignee: { select: { id: true, name: true } },
+          },
+          take: 10,
+        })
+      : [],
     // Intranet resources (Time Off, HR policies, handbooks, etc.) —
     // previously missing from search which caused the reported Time Off bug.
     intranetPerms.canView
@@ -120,20 +188,23 @@ export default async function SearchPage({ searchParams }: Props) {
           orderBy: { updatedAt: "desc" },
         })
       : [],
-    // Team members — search by name, email, job title, department
-    db.user.findMany({
-      where: {
-        isActive: true,
-        OR: [
-          { name: contains },
-          { email: contains },
-          { jobTitle: contains },
-          { department: contains },
-        ],
-      },
-      select: { id: true, name: true, email: true, jobTitle: true, department: true, location: true },
-      take: 10,
-    }),
+    // Team members — gated by the team module canView (intentionally
+    // open to GUEST in default config so org-wide directory works).
+    teamPerms.canView
+      ? db.user.findMany({
+          where: {
+            isActive: true,
+            OR: [
+              { name: contains },
+              { email: contains },
+              { jobTitle: contains },
+              { department: contains },
+            ],
+          },
+          select: { id: true, name: true, email: true, jobTitle: true, department: true, location: true },
+          take: 10,
+        })
+      : [],
   ]);
 
   const totalResults =
