@@ -76,6 +76,7 @@ export function SupplierActions({ supplier, canEdit, canDelete }: Props) {
             onConfirm={runDelete}
             navigateTo="/suppliers"
             confirmLabel="Delete"
+            successToast="Supplier deleted"
           />
         </>
       )}

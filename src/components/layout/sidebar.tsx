@@ -209,12 +209,16 @@ export function Sidebar({
         <button
           onClick={() => setCollapsed(!collapsed)}
           className="hidden md:block rounded p-1.5 hover:bg-muted transition-colors"
+          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
         >
           {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
         </button>
         <button
           onClick={() => setMobileOpen(false)}
           className="md:hidden rounded p-1.5 hover:bg-muted transition-colors"
+          aria-label="Close menu"
+          title="Close menu"
         >
           <X className="h-5 w-5" />
         </button>

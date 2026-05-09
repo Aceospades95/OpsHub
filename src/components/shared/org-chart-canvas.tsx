@@ -78,7 +78,24 @@ interface FlatNode {
   searchBlob: string;
 }
 
-const VIRTUAL_ROOT_ID = "__virtual_root__";
+export const VIRTUAL_ROOT_ID = "__virtual_root__";
+
+/**
+ * The fixed nodeWidth/nodeHeight + margin tuning the canvas sends to
+ * d3-org-chart. Exported so the regression test can assert that
+ * compactMarginPair is large enough to keep sibling cards from
+ * overlapping even if d3's compact-flex algorithm packs them at
+ * mathematically-identical positions.
+ */
+export const ORG_CHART_LAYOUT = {
+  nodeWidth: 240,
+  nodeHeight: 96,
+  childrenMargin: 50,
+  siblingsMargin: 16,
+  neighbourMargin: 40,
+  compactMarginBetween: 24,
+  compactMarginPair: 290,
+} as const;
 
 export default function OrgChartCanvas({
   nodes,
@@ -89,7 +106,16 @@ export default function OrgChartCanvas({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<OrgChart<FlatNode> | null>(null);
   const onCardClickRef = useRef(onCardClick);
-  const [compact, setCompact] = useState(true);
+  // Round-10 P0: d3-org-chart's compact-flex layout collapses siblings
+  // to identical (x, y) coordinates when a single parent has many
+  // leaf children — the exact shape the /team page produces with all
+  // 8 employees under the virtual root. Result: 8 cards stack into a
+  // ~120x70 px cluster with 28 pairwise overlaps. Non-compact mode
+  // renders correctly. Default compact OFF so a fresh load is always
+  // legible; the toggle still works for trees where compact actually
+  // helps (deep + many sub-trees, where the "stacks deep branches
+  // vertically with a side connector" tooltip applies).
+  const [compact, setCompact] = useState(false);
 
   // Keep the latest onCardClick reachable from the chart's own click
   // handler without re-instantiating the chart. d3-org-chart isn't a
@@ -132,8 +158,13 @@ export default function OrgChartCanvas({
       .childrenMargin(() => 50)
       .siblingsMargin(() => 16)
       .neighbourMargin(() => 40)
-      .compactMarginBetween(() => 16)
-      .compactMarginPair(() => 64)
+      // Compact margins picked so even when compact mode is ON and
+      // d3-org-chart's flex layout is asymmetric, sibling pairs are
+      // separated by at least nodeWidth + 50 px of cross-axis gap.
+      // The previous 64 px was less than half a nodeWidth (240) so
+      // overlapping positions visually merged into one cluster.
+      .compactMarginBetween(() => 24)
+      .compactMarginPair(() => 290)
       .compact(compact)
       .nodeContent((d) => renderCardHtml(d.data, highlightLower))
       .onNodeClick((nodeOrId) => {
@@ -485,7 +516,7 @@ function escapeHtml(s: string): string {
 
 // ─── Tree → flat conversion ──────────────────────────────────────────────
 
-function flattenForOrgChart(
+export function flattenForOrgChart(
   nodes: OrgChartNode[],
   hideTopHeaderForSingleRoot: boolean
 ): FlatNode[] {

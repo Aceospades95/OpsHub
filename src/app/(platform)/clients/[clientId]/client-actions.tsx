@@ -103,6 +103,7 @@ export function ClientActions({ client, users, canEdit, canDelete }: Props) {
             onConfirm={runDelete}
             navigateTo="/clients"
             confirmLabel="Delete"
+            successToast="Client deleted"
           />
         </>
       )}
