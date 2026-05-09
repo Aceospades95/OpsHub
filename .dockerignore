@@ -1,0 +1,66 @@
+# .dockerignore — context excludes for the OpsHub Docker build.
+#
+# Two goals:
+#   1. Keep the build context small (faster `docker build` start).
+#   2. Make sure dev-only files don't accidentally end up in the
+#      runner stage. The Dockerfile's runner stage is also explicit
+#      about what it COPYs, but excluding here is a defense-in-depth
+#      layer — a future Dockerfile change that adds `COPY . .` to
+#      the runner won't quietly ship seed scripts or test fixtures.
+
+# Build outputs / caches
+node_modules
+.next
+.next/cache
+out
+build
+coverage
+.storage
+
+# Version control
+.git
+.gitattributes
+.gitignore
+
+# Editor / OS
+.vscode
+.idea
+.DS_Store
+
+# Test + spec files (we never need them at runtime)
+**/*.test.ts
+**/*.test.tsx
+**/*.spec.ts
+**/*.spec.tsx
+__tests__
+tests
+src/test-setup.ts
+vitest.config.ts
+
+# CI / GitHub
+.github
+
+# Documentation — never executed at runtime
+docs
+*.md
+!README.md
+
+# Environment files (must be supplied by the orchestrator at run-time,
+# not baked into the image)
+.env
+.env.*
+
+# One-off Prisma scripts. The runner stage uses a COPY allow-list so
+# these wouldn't ship anyway, but excluding from the context means
+# the build stage never even sees them — keeping any accidental
+# `tsx prisma/<script>` invocation out of the build.
+prisma/seed*.ts
+prisma/cleanup*.ts
+prisma/merge*.ts
+prisma/backfill*.ts
+prisma/dedupe*.ts
+prisma/migrate-slug-*.ts
+prisma/promote-admin.ts
+
+# Dev/CI-only scripts. Only validate-env.mjs is needed at runtime.
+scripts/check-no-pii.sh

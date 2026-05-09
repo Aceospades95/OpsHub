@@ -48,17 +48,27 @@ COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
-# Copy Prisma files and FULL node_modules for CLI. Both need
-# nextjs:nodejs ownership so prisma can write the .prisma cache and
-# query-engine binaries on first boot when the container runs as the
-# unprivileged user.
-COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
+# Prisma files: ONLY schema.prisma + migrations/. The seed / cleanup /
+# merge / backfill / dedupe / migrate-slug / promote-admin scripts
+# stay in the build stage and are never shipped to runtime — they're
+# operator one-offs, not boot-path code, and including them inflates
+# the image and creates a dev-tool-shaped surface in production.
+# `prisma migrate deploy` only needs the schema and migrations.
+COPY --from=builder --chown=nextjs:nodejs /app/prisma/schema.prisma ./prisma/schema.prisma
+COPY --from=builder --chown=nextjs:nodejs /app/prisma/migrations ./prisma/migrations
+
+# Full node_modules from the deps stage (Prisma CLI needs to be
+# resolvable at boot for `npx prisma migrate deploy`). Owned by
+# nextjs:nodejs so the unprivileged runtime user can write the
+# .prisma cache and query-engine binaries on first boot.
 COPY --from=deps --chown=nextjs:nodejs /app/node_modules ./node_modules
 
-# Copy startup script + boot-time env validator. Validator is plain
-# JS so it works even before any TypeScript module loads.
+# Startup script + boot-time env validator. Validator is plain JS
+# (no TS transpile required) so it can run before the app server.
+# Only validate-env.mjs ships — check-no-pii.sh and any future
+# dev/CI-only scripts are explicitly excluded.
 COPY --from=builder --chown=nextjs:nodejs /app/start.sh ./start.sh
-COPY --from=builder --chown=nextjs:nodejs /app/scripts ./scripts
+COPY --from=builder --chown=nextjs:nodejs /app/scripts/validate-env.mjs ./scripts/validate-env.mjs
 
 # Pre-create the local-storage directory and hand it to nextjs:nodejs.
 # Without this the first upload fails with `EACCES: permission denied,
