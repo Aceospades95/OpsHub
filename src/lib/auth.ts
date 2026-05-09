@@ -1,41 +1,34 @@
+/**
+ * Full Node-runtime NextAuth surface.
+ *
+ * This file extends the Edge-safe `authConfig` (src/auth.config.ts)
+ * with everything that requires Prisma or other Node-only deps:
+ *
+ *   - The Credentials provider (uses Prisma + bcryptjs).
+ *   - The Google sign-in callback (uses Prisma to auto-link existing
+ *     accounts — see src/lib/auth-google-signin.ts).
+ *   - The DB-aware branch of the jwt callback (looks up the User row
+ *     to populate token.id / token.role on initial Google sign-in).
+ *
+ * src/middleware.ts must NOT import from this file — doing so pulls
+ * Prisma, bcryptjs, and the rest of the Node-only surface into the
+ * Edge bundle. Use authConfig from src/auth.config.ts instead.
+ */
+
 import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
-import Google from "next-auth/providers/google";
 import { compare } from "bcryptjs";
 import { db } from "@/lib/db";
 import { handleGoogleSignIn } from "@/lib/auth-google-signin";
 import { consume as consumeRateLimit, clientIpFromRequest } from "@/lib/rate-limit";
 import { log } from "@/lib/log";
 import type { Role } from "@prisma/client";
-
-declare module "next-auth" {
-  interface Session {
-    user: {
-      id: string;
-      name: string;
-      email: string;
-      role: Role;
-    };
-  }
-  interface User {
-    role: Role;
-  }
-}
-
-declare module "next-auth" {
-  interface JWT {
-    id: string;
-    role: Role;
-  }
-}
+import { authConfig } from "@/auth.config";
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
-  trustHost: true,
-  session: { strategy: "jwt" },
-  pages: {
-    signIn: "/login",
-  },
+  ...authConfig,
   providers: [
+    ...authConfig.providers,
     Credentials({
       name: "credentials",
       credentials: {
@@ -103,12 +96,9 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         };
       },
     }),
-    Google({
-      clientId: process.env.GOOGLE_CLIENT_ID,
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-    }),
   ],
   callbacks: {
+    ...authConfig.callbacks,
     async signIn({ user, account, profile }) {
       // Google flow lives in a separate, testable helper. Credentials
       // sign-ins fall through (the credentials provider's `authorize`
