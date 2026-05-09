@@ -48,9 +48,33 @@ npm run db:push          # writes the schema to $DATABASE_URL
 npm run dev              # starts Next.js on http://localhost:3000
 ```
 
-`npm run ci` (lint + test + build) mirrors the prod Docker build's
-quality gate. Run before pushing — CI is set up to fail on the same
-things `next build` fails on, so green here means green there.
+`npm run ci` runs the same gates as the GitHub Actions workflow:
+`lint` → `lint:pii` → `test` → `build`. Run before pushing.
+
+## Before you push
+
+The repository enforces these gates in CI (`.github/workflows/ci.yml`)
+— anything that fails locally fails there too:
+
+- **`npm run lint`** — ESLint. Includes the no-`.skip()` rule (R11-I)
+  so a forgotten `it.skip()` lands as a failed CI build, not a quietly
+  un-run test.
+- **`npm run lint:pii`** (`scripts/check-no-pii.sh`) — fails if any
+  historical operator/customer real-data string sneaks back into the
+  tree (R11-A purge baseline).
+- **`npm run test`** — Vitest. 5 skipped tests would have been a soft
+  fail; they were either deleted or converted to `test.todo` in R11-I.
+- **`npm run build`** — Next standalone build. Pre-deploys, the build
+  output prints `Middleware = 79 kB`; if that grows past ~110 kB, the
+  Edge bundle has regressed (see R11-E).
+- **Docker bloat audit** (CI only — needs a Docker daemon) —
+  `scripts/check-docker-bloat.sh` against the built image asserts
+  `/app/scripts` has only `validate-env.mjs` and `/app/prisma` has no
+  loose `*.ts` outside `migrations/`.
+
+After deploying, run `BASE_URL=<deploy-url> npm run smoke` to hit a
+handful of RSC routes 50× each and confirm no 5xx. See R11-G for the
+context on why this exists.
 
 ## Test data
 

@@ -176,11 +176,6 @@ describe("StaffingMatrix", () => {
     expect(allFte2.length).toBeGreaterThanOrEqual(1);
   });
 
-  it.skip("makes single-employee FTE values clickable links", () => {
-    // Component no longer wraps FTE cells in team links after the projectRoles refactor.
-    // Keeping the test skeleton so the behaviour can be re-added if desired.
-  });
-
   it("shows manager names as links", () => {
     render(<StaffingMatrix {...defaultProps} />);
     const managerLinks = screen.getAllByText("Bob Manager");
@@ -192,10 +187,6 @@ describe("StaffingMatrix", () => {
     // Should show "Lead Developer" and "QA Analyst" (functional roles from assignments)
     expect(screen.getByText("Lead Developer")).toBeInTheDocument();
     expect(screen.getByText("QA Analyst")).toBeInTheDocument();
-  });
-
-  it.skip("shows notes in assignment rows", () => {
-    // "Notes" column was removed from the staffing matrix layout.
   });
 
   it("filters by search on employee name", () => {
@@ -222,11 +213,6 @@ describe("StaffingMatrix", () => {
     expect(screen.getByText("New Hire")).toBeInTheDocument();
     const unassignedElements = screen.getAllByText("Unassigned");
     expect(unassignedElements.length).toBeGreaterThanOrEqual(2);
-  });
-
-  it.skip("shows project members without assignments under Project Staffing", () => {
-    // The matrix now derives rows from Assignments and defined ProjectRoles only;
-    // unassigned project-member rows were removed in the staffing refactor.
   });
 
   it("does not show system role for project-member rows", () => {
@@ -266,15 +252,6 @@ describe("StaffingMatrix", () => {
     render(<StaffingMatrix {...defaultProps} canManage={false} />);
     expect(screen.queryByText("Add Assignment")).not.toBeInTheDocument();
     expect(screen.queryByText("Manage Offerings")).not.toBeInTheDocument();
-  });
-
-  it.skip("shows Edit assignment for project-member rows when canManage", () => {
-    // Inline "Edit assignment" buttons were removed in favor of row-level inline
-    // FTE/Role editors in the staffing refactor.
-  });
-
-  it.skip("shows Assign button for unassigned rows when canManage", () => {
-    // The per-row "Assign" button was replaced with quick-assign dropdowns.
   });
 
   it("filters by capacity when clicking metric cards", () => {

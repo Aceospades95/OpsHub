@@ -14,6 +14,13 @@
         ]
       }
     ],
+    "no-restricted-syntax": [
+      "error",
+      {
+        "selector": "CallExpression[callee.object.name=/^(test|it|describe)$/][callee.property.name='skip']",
+        "message": "Don't merge .skip()'d tests. Either fix it, delete it, or convert to test.todo('reason — issue link') with a tracking issue. R11-I gate."
+      }
+    ],
     "@typescript-eslint/no-explicit-any": "error",
     "@typescript-eslint/no-unused-vars": "off",
     "@typescript-eslint/no-empty-object-type": "off",
