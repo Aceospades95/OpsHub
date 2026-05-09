@@ -2,9 +2,9 @@
  * Merge two User rows by explicit ID — the operator picks the keeper.
  *
  * Used when the email-based merge-duplicate-users.ts can't help, e.g.
- * when the two duplicate rows have *different* emails (the QA Jacob
- * Wright case: a real account with j.wright@wynndalco.com and a
- * synthetic-email "VP" record that ended up with the assignments).
+ * when the two duplicate rows have *different* emails — for example,
+ * a real account with a canonical address and a synthetic-email
+ * placeholder record that ended up holding the bulk of assignments.
  *
  * Strategy
  * --------

@@ -89,7 +89,7 @@ export async function createUser(_prev: unknown, formData: FormData) {
   // Same-name duplicate guard. Two of the QA stress-test bugs traced
   // back to a previous import / seed creating a synthetic-email
   // placeholder for someone who already had a real account, leaving
-  // two "Jacob Wright" rows in the Employees table. Block silent
+  // duplicate same-name rows in the Employees table. Block silent
   // recurrences: if any active user already has this name (case-
   // insensitive), require the admin to confirm explicitly. The Add
   // Employee dialog re-submits with confirmDuplicateName=true after

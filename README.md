@@ -13,10 +13,11 @@ No fixtures, no demo data.
 Before promoting a new customer to production, the backing database
 must be empty (or hand-curated). Specifically, the image expects:
 
-- No User rows carrying the OpsHub team's own emails (e.g.
-  `*@wynndalco.com`, `jakewright95@gmail.com`).
+- No User rows carrying internal-team or operator emails left over
+  from prior development (e.g. `*@your-company.example`,
+  personal Gmail addresses used for testing).
 - No `EmailLog` rows referencing those addresses.
-- No `AllowedDomain` rows for the OpsHub team's company domain.
+- No `AllowedDomain` rows for the operator team's company domain.
 - No `ThemeSetting` rows containing the OpsHub team's branding.
 - No `Client` / `Project` / etc. rows carrying real customer data
   from a different tenant.

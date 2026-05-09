@@ -14,7 +14,7 @@
  *      "Q1 2025 All-Hands Recap", StressTest* tasks).
  *   2. Deactivate the QA-flagged demo employees (Sanya testing,
  *      Testing USer).
- *   3. Run the Jacob Wright duplicate-merge inline.
+ *   3. Run the configured named-pair duplicate-merge inline.
  *   4. Dedupe the Org Chart intranet card collisions.
  *   5. Upsert the realistic dataset (12 clients + projects + tasks +
  *      contracts + quotes + suppliers + subs + partnerships + certs +
@@ -254,11 +254,11 @@ async function runCleanupDemoEmployees(): Promise<void> {
  * SEED_MERGE_TARGET_EMAIL. After the FK walk the keeper's email is
  * renamed to the target email so it carries the canonical address.
  *
- * The standalone `prisma/merge-jacob-wright.ts` and
+ * The standalone `prisma/merge-named-user.ts` and
  * `prisma/merge-users-by-id.ts` scripts still exist for case-by-case
  * operator use; this step is just the seed-time hook.
  */
-async function runMergeJacobWright(): Promise<void> {
+async function runNamedPairMerge(): Promise<void> {
   console.log("\n[3/5] Merging duplicate user pair if configured...");
   const targetName = process.env.SEED_MERGE_TARGET_NAME?.trim();
   const targetEmail = process.env.SEED_MERGE_TARGET_EMAIL?.trim().toLowerCase();
@@ -1531,7 +1531,7 @@ async function main(): Promise<void> {
   // narrow per-row updates or no-ops). Each helper is best-effort.
   await runCleanupDemoData();
   await runCleanupDemoEmployees();
-  await runMergeJacobWright();
+  await runNamedPairMerge();
   await runDedupeOrgChart();
 
   let counts: SeedCounts;

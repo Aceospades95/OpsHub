@@ -23,7 +23,7 @@
  * test row in the meantime.
  *
  * The other narrower scripts (already shipped) handle:
- *   - prisma/merge-jacob-wright.ts        (the duplicate VP)
+ *   - prisma/merge-named-user.ts          (named-pair duplicate merge)
  *   - prisma/dedupe-intranet-org-chart.ts (dupe Org Chart entry)
  *   - prisma/cleanup-demo-employees.ts    (Sanya testing, Testing USer)
  *   - prisma/backfill-quote-numbers.ts    (legacy Q-YYYY-NNNN numbers)

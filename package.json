@@ -18,7 +18,7 @@
     "seed:realistic": "npx tsx prisma/seed-realistic.ts",
     "merge:duplicate-users": "npx tsx prisma/merge-duplicate-users.ts",
     "merge:users-by-id": "npx tsx prisma/merge-users-by-id.ts",
-    "merge:jacob-wright": "npx tsx prisma/merge-jacob-wright.ts",
+    "merge:named-user": "npx tsx prisma/merge-named-user.ts",
     "backfill:quote-numbers": "npx tsx prisma/backfill-quote-numbers.ts",
     "dedupe:intranet-org-chart": "npx tsx prisma/dedupe-intranet-org-chart.ts",
     "cleanup:demo-employees": "npx tsx prisma/cleanup-demo-employees.ts",
@@ -29,7 +29,8 @@
     "db:studio": "prisma studio",
     "test": "vitest run",
     "test:watch": "vitest",
-    "ci": "npm run lint && npm run test && npm run build"
+    "lint:pii": "bash scripts/check-no-pii.sh",
+    "ci": "npm run lint && npm run lint:pii && npm run test && npm run build"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.7.4",

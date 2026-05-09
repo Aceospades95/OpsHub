@@ -92,7 +92,7 @@ Node serves requests as fast as the event loop drains. **Not a contributor.**
 
 ### 6. Cloudflare / infra
 
-`https://opshub.omnia-house.com` resolves to Cloudflare per the `cf-cache-status`
+The production hostname (redacted) resolves to Cloudflare per the `cf-cache-status`
 + `server: cloudflare` headers (verified earlier in round 3). No
 `wrangler.toml`, `fly.toml`, `vercel.json`, or any other infra config in the
 repo — Cloudflare is a CDN-only proxy for this deploy.

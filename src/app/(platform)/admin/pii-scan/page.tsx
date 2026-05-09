@@ -18,20 +18,28 @@ import { AlertTriangle, ShieldCheck } from "lucide-react";
  * UI (Users, Email Log, SSO, Theme) where the operator can make
  * the call.
  *
- * Flagged patterns are configured here. The list is intentionally
- * conservative — domains the OpsHub team has historically used or
- * accidentally leaked. Add to FLAGGED_PATTERNS as new ones surface.
+ * Flagged patterns are loaded from the PII_FLAG_PATTERNS env var
+ * (comma-separated case-insensitive substrings). This avoids
+ * embedding any specific operator/customer string in source — the
+ * deploying team configures their own watch-list at runtime. If
+ * unset, the page reports no hits.
  */
 
-// Patterns that the team's own real customer / operator data has
-// historically used. Keep this small and explicit — false positives
-// noise the page up; we'd rather miss a row than highlight every
-// gmail address.
-const FLAGGED_PATTERNS = [
-  /wynndalco/i,
-  /jakewright95/i,
-  /omnia-?house/i,
-];
+function loadFlaggedPatterns(): RegExp[] {
+  const raw = process.env.PII_FLAG_PATTERNS ?? "";
+  return raw
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .map((s) => {
+      // Treat each entry as a literal substring (escape regex chars)
+      // so operators don't have to think about regex syntax.
+      const escaped = s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      return new RegExp(escaped, "i");
+    });
+}
+
+const FLAGGED_PATTERNS = loadFlaggedPatterns();
 
 function flagged(text: string | null | undefined): boolean {
   if (!text) return false;
@@ -116,7 +124,8 @@ export default async function PiiScanPage() {
               <p className="font-medium">No flagged rows.</p>
               <p className="text-sm text-muted-foreground mt-1">
                 Nothing in the User, EmailLog, AllowedDomain, or ThemeSetting tables matches the
-                configured flagged patterns. Patterns are sourced from <code>FLAGGED_PATTERNS</code> in this file.
+                configured flagged patterns. Patterns are loaded from the <code>PII_FLAG_PATTERNS</code> env var
+                (comma-separated substrings, case-insensitive). Currently configured: {FLAGGED_PATTERNS.length}.
               </p>
             </div>
           </CardContent>
