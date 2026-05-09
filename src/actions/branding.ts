@@ -3,6 +3,7 @@
 import { requireAuth } from "@/lib/permissions";
 import { uploadFile, deleteFile, blobToBuffer, StorageQuotaExceededError } from "@/lib/storage";
 import { asUploadedFile } from "@/lib/uploaded-file";
+import { sniffUploadType } from "@/lib/upload-validation";
 import {
   setBrandingValue,
   getBranding,
@@ -69,6 +70,15 @@ export async function uploadBrandingImage(
     // Upload the new file first so we have a valid replacement before
     // deleting the old one (no broken state if upload fails)
     const buffer = await blobToBuffer(blob as unknown as Blob);
+
+    // R11-H: server-side magic-byte sniff. Branding is PUBLIC, so SVG
+    // is rejected — a stored <svg> with embedded <script> would
+    // execute on any page that renders the logo (login, marketing).
+    const sniff = sniffUploadType(buffer, blob.type, { blockSvg: true });
+    if (!sniff.ok) {
+      return { success: false, error: sniff.reason };
+    }
+
     let file;
     try {
       file = await uploadFile({

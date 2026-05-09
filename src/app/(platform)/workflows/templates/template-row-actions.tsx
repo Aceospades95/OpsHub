@@ -6,6 +6,7 @@ import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Archive, ArchiveRestore, Trash2 } from "lucide-react";
+import { useConfirm } from "@/components/shared/use-confirm";
 import {
   setWorkflowTemplateActive,
   deleteWorkflowTemplate,
@@ -51,6 +52,7 @@ export function WorkflowTemplateRowActions({
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const { confirm, ConfirmDialog } = useConfirm();
 
   function handleArchiveToggle() {
     setError(null);
@@ -84,11 +86,14 @@ export function WorkflowTemplateRowActions({
     });
   }
 
-  function handleDelete() {
+  async function handleDelete() {
     setError(null);
-    if (!confirm("Permanently delete this template? This can't be undone.")) {
-      return;
-    }
+    const ok = await confirm({
+      title: "Permanently delete this template?",
+      message: "This can't be undone.",
+      confirmLabel: "Delete",
+    });
+    if (!ok) return;
     startTransition(async () => {
       const r = await deleteWorkflowTemplate(templateId);
       if ("error" in r && r.error) {
@@ -151,6 +156,7 @@ export function WorkflowTemplateRowActions({
           {error}
         </span>
       )}
+      <ConfirmDialog />
     </div>
   );
 }

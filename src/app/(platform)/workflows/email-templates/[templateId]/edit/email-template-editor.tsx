@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { RichTextEditor } from "@/components/shared/rich-text-editor";
+import { useConfirm } from "@/components/shared/use-confirm";
 import {
   updateWorkflowEmailTemplate,
   deleteWorkflowEmailTemplate,
@@ -68,6 +69,7 @@ export function EmailTemplateEditor({ template, canDelete }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<Date | null>(null);
   const [pending, startTransition] = useTransition();
+  const { confirm, ConfirmDialog } = useConfirm();
   const subjectRef = useRef<HTMLInputElement | null>(null);
   const [subjectActive, setSubjectActive] = useState(false);
 
@@ -126,14 +128,14 @@ export function EmailTemplateEditor({ template, canDelete }: Props) {
     });
   }
 
-  function handleDelete() {
-    if (
-      !confirm(
-        "Delete this email template? Any workflow steps that reference it will need to be updated."
-      )
-    ) {
-      return;
-    }
+  async function handleDelete() {
+    const ok = await confirm({
+      title: "Delete this email template?",
+      message:
+        "Any workflow steps that reference it will need to be updated.",
+      confirmLabel: "Delete",
+    });
+    if (!ok) return;
     startTransition(async () => {
       const res = await deleteWorkflowEmailTemplate(template.id);
       if ("error" in res) {
@@ -301,6 +303,7 @@ export function EmailTemplateEditor({ template, canDelete }: Props) {
           </Card>
         </div>
       </div>
+      <ConfirmDialog />
     </div>
   );
 }

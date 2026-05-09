@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog } from "@/components/ui/dialog";
 import { Select } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
+import { useConfirm } from "@/components/shared/use-confirm";
 import {
   createWorkflowTrigger,
   updateWorkflowTrigger,
@@ -59,6 +60,7 @@ export function TriggersPanel({
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const { confirm, ConfirmDialog } = useConfirm();
 
   const entityType = subjectEntityType === "EMPLOYEE" ? "User" : "Custom";
 
@@ -92,8 +94,12 @@ export function TriggersPanel({
     );
   }
 
-  function handleDelete(id: string) {
-    if (!confirm("Delete this trigger?")) return;
+  async function handleDelete(id: string) {
+    const ok = await confirm({
+      title: "Delete this trigger?",
+      confirmLabel: "Delete",
+    });
+    if (!ok) return;
     run(() => deleteWorkflowTrigger(id));
   }
 
@@ -220,6 +226,7 @@ export function TriggersPanel({
           onError={setError}
         />
       )}
+      <ConfirmDialog />
     </>
   );
 }

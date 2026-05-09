@@ -5,6 +5,7 @@ import { useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Dialog } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { useConfirm } from "@/components/shared/use-confirm";
 
 interface FormDialogProps {
   open: boolean;
@@ -51,6 +52,7 @@ export function FormDialog({
   const router = useRouter();
   const formRef = useRef<HTMLFormElement>(null);
   const initialSnapshotRef = useRef<string>("");
+  const { confirm, ConfirmDialog } = useConfirm();
 
   // On open, wait for the form to mount and snapshot its initial
   // values. The snapshot is the basis for the cancel-time dirty check.
@@ -74,19 +76,19 @@ export function FormDialog({
     }
   }, [state, onClose, router, navigateTo]);
 
-  const handleCancel = useCallback(() => {
+  const handleCancel = useCallback(async () => {
     const current = snapshotFormValues(formRef.current);
-    if (
-      current !== initialSnapshotRef.current &&
-      typeof window !== "undefined" &&
-      !window.confirm(
-        "You have unsaved changes. Discard them and close the form?"
-      )
-    ) {
-      return;
+    if (current !== initialSnapshotRef.current) {
+      const ok = await confirm({
+        title: "Discard unsaved changes?",
+        message: "You have unsaved changes. Closing the form will lose them.",
+        confirmLabel: "Discard",
+        cancelLabel: "Keep editing",
+      });
+      if (!ok) return;
     }
     onClose();
-  }, [onClose]);
+  }, [onClose, confirm]);
 
   // Round-6 QA: split the form so action buttons live in the
   // dialog's sticky footer slot. The body scrolls; Cancel / Save
@@ -95,29 +97,32 @@ export function FormDialog({
   // still reaches the body's inputs.
   const formId = "form-dialog-form";
   return (
-    <Dialog
-      open={open}
-      onClose={handleCancel}
-      title={title}
-      footer={
-        <div className="flex justify-end gap-2">
-          <Button type="button" variant="outline" onClick={handleCancel}>
-            Cancel
-          </Button>
-          <Button type="submit" form={formId}>
-            {submitLabel}
-          </Button>
-        </div>
-      }
-    >
-      {state?.error && (
-        <div className="mb-4 rounded bg-destructive/10 p-3 text-sm text-destructive">
-          {state.error}
-        </div>
-      )}
-      <form id={formId} ref={formRef} action={formAction} className="space-y-4">
-        {children({ fieldErrors: state?.fieldErrors })}
-      </form>
-    </Dialog>
+    <>
+      <Dialog
+        open={open}
+        onClose={handleCancel}
+        title={title}
+        footer={
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="outline" onClick={handleCancel}>
+              Cancel
+            </Button>
+            <Button type="submit" form={formId}>
+              {submitLabel}
+            </Button>
+          </div>
+        }
+      >
+        {state?.error && (
+          <div className="mb-4 rounded bg-destructive/10 p-3 text-sm text-destructive">
+            {state.error}
+          </div>
+        )}
+        <form id={formId} ref={formRef} action={formAction} className="space-y-4">
+          {children({ fieldErrors: state?.fieldErrors })}
+        </form>
+      </Dialog>
+      <ConfirmDialog />
+    </>
   );
 }

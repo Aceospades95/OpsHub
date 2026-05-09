@@ -13,6 +13,7 @@ import {
 } from "./team-types";
 import { AddAssignmentDialog } from "./add-assignment-dialog";
 import { ManageOfferingsDialog } from "./manage-offerings-dialog";
+import { useConfirm } from "@/components/shared/use-confirm";
 import { updateAssignmentFte, updateAssignmentRole, createProjectRole, createRoleDefinition, deleteProjectRole, updateProjectRole, removeAssignment, quickAssign } from "@/actions/assignments";
 import { pluralize } from "@/lib/pluralize";
 
@@ -104,6 +105,7 @@ type CapacityFilter = AllocationStatus | null;
 
 export function StaffingMatrix({ users, projects, clients, serviceOfferings, roleDefinitions, projectRoles, search, canManage }: StaffingMatrixProps) {
   // Track collapsed groups (inverted: everything starts expanded)
+  const { confirm, ConfirmDialog } = useConfirm();
   const [collapsedOfferings, setCollapsedOfferings] = useState<Set<string>>(new Set());
   const [collapsedClients, setCollapsedClients] = useState<Set<string>>(new Set());
   const [collapsedProjects, setCollapsedProjects] = useState<Set<string>>(new Set());
@@ -191,8 +193,12 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, rol
     });
   };
 
-  const handleRemoveAssignment = (assignmentId: string, employeeName: string) => {
-    if (!confirm(`Remove ${employeeName} from this assignment?`)) return;
+  const handleRemoveAssignment = async (assignmentId: string, employeeName: string) => {
+    const ok = await confirm({
+      title: `Remove ${employeeName} from this assignment?`,
+      confirmLabel: "Remove",
+    });
+    if (!ok) return;
     startTransition(async () => {
       await removeAssignment(assignmentId);
     });
@@ -867,7 +873,14 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, rol
                                             <td className="py-1 px-2">
                                               {canManage && rg.projectRoleId && (
                                                 <button
-                                                  onClick={(e) => { e.stopPropagation(); if (confirm("Delete this role requirement?")) handleDeleteRole(rg.projectRoleId!); }}
+                                                  onClick={async (e) => {
+                                                    e.stopPropagation();
+                                                    const ok = await confirm({
+                                                      title: "Delete this role requirement?",
+                                                      confirmLabel: "Delete",
+                                                    });
+                                                    if (ok) handleDeleteRole(rg.projectRoleId!);
+                                                  }}
                                                   className="p-0.5 rounded hover:bg-destructive/10 text-muted-foreground/40 hover:text-destructive transition-colors"
                                                   title="Remove role requirement"
                                                 >
@@ -1234,6 +1247,7 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, rol
           </div>
         </div>
       )}
+      <ConfirmDialog />
     </div>
   );
 }

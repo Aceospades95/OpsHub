@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { RotateCcw, Trash2 } from "lucide-react";
 
 import { restoreEntity, permanentlyDeleteEntity } from "@/actions/recovery";
+import { useConfirm } from "@/components/shared/use-confirm";
 
 interface Props {
   entityType: string;
@@ -16,9 +17,11 @@ interface Props {
 
 /**
  * Per-row actions on /admin/recovery: Restore + Delete forever.
- * Confirms the destructive Delete forever via window.confirm so an
- * accidental click on the wrong row doesn't bypass the recovery
- * window — that's the whole point of soft-delete in the first place.
+ * Confirms the destructive Delete forever via the in-app accessible
+ * dialog so an accidental click on the wrong row doesn't bypass the
+ * recovery window — that's the whole point of soft-delete in the
+ * first place. (R11-H replaced the previous window.confirm with the
+ * useConfirm hook.)
  */
 export function RecoveryRowActions({
   entityType,
@@ -29,6 +32,7 @@ export function RecoveryRowActions({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const { confirm, ConfirmDialog } = useConfirm();
 
   function handleRestore() {
     setError(null);
@@ -42,15 +46,15 @@ export function RecoveryRowActions({
     });
   }
 
-  function handlePermanent() {
+  async function handlePermanent() {
     setError(null);
-    if (
-      !window.confirm(
-        `Permanently delete ${singularLabel} "${label}"?\n\nThis can't be undone — it skips the 30-day recovery window.`
-      )
-    ) {
-      return;
-    }
+    const ok = await confirm({
+      title: `Permanently delete ${singularLabel} "${label}"?`,
+      message:
+        "This can't be undone — it skips the 30-day recovery window.",
+      confirmLabel: "Delete forever",
+    });
+    if (!ok) return;
     startTransition(async () => {
       const result = await permanentlyDeleteEntity({ entityType, id });
       if ("error" in result) {
@@ -83,6 +87,7 @@ export function RecoveryRowActions({
         Delete forever
       </Button>
       {error && <span className="text-xs text-destructive ml-2">{error}</span>}
+      <ConfirmDialog />
     </div>
   );
 }

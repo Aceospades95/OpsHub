@@ -9,6 +9,7 @@ import { Select } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { ArrowRight, Eye, Trash2, Check } from "lucide-react";
 import { mergeUsers, type MergePreviewItem } from "@/actions/merge-users";
+import { useConfirm } from "@/components/shared/use-confirm";
 
 interface UserOption {
   id: string;
@@ -39,6 +40,7 @@ export function MergeUsersClient({ users }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [committed, setCommitted] = useState(false);
   const [pending, startTransition] = useTransition();
+  const { confirm, ConfirmDialog } = useConfirm();
 
   // Filter the keeper dropdown so the same row can't be picked on both
   // sides. Done in JS to keep the underlying option list stable.
@@ -79,15 +81,23 @@ export function MergeUsersClient({ users }: Props) {
     });
   }
 
-  function handleCommit() {
+  async function handleCommit() {
     if (!preview) return;
-    if (
-      !window.confirm(
-        `Merge "${preview.from.name}" (${preview.from.email}) into "${preview.to.name}" (${preview.to.email})?\n\nThis cannot be undone.`
-      )
-    ) {
-      return;
-    }
+    const ok = await confirm({
+      title: `Merge "${preview.from.name}" into "${preview.to.name}"?`,
+      message: (
+        <>
+          <span className="font-mono text-xs">{preview.from.email}</span>
+          {" → "}
+          <span className="font-mono text-xs">{preview.to.email}</span>
+          <br />
+          <br />
+          This cannot be undone.
+        </>
+      ),
+      confirmLabel: "Merge",
+    });
+    if (!ok) return;
     setError(null);
     startTransition(async () => {
       const result = await mergeUsers({
@@ -237,6 +247,7 @@ export function MergeUsersClient({ users }: Props) {
           </CardContent>
         </Card>
       )}
+      <ConfirmDialog />
     </div>
   );
 }

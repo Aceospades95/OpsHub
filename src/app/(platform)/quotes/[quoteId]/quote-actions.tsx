@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { useConfirm } from "@/components/shared/use-confirm";
 import {
   duplicateQuote,
   deleteQuote,
@@ -41,6 +42,7 @@ export function QuoteActions({
   const [templateOpen, setTemplateOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const { confirm, ConfirmDialog } = useConfirm();
 
   function handleDuplicate() {
     setMenuOpen(false);
@@ -68,8 +70,13 @@ export function QuoteActions({
     });
   }
 
-  function handleDelete() {
-    if (!confirm("Delete this quote? This can't be undone.")) return;
+  async function handleDelete() {
+    const ok = await confirm({
+      title: "Delete this quote?",
+      message: "This can't be undone.",
+      confirmLabel: "Delete",
+    });
+    if (!ok) return;
     setMenuOpen(false);
     setError(null);
     startTransition(async () => {
@@ -175,6 +182,7 @@ export function QuoteActions({
         quoteId={quoteId}
         onClose={() => setTemplateOpen(false)}
       />
+      <ConfirmDialog />
     </>
   );
 }

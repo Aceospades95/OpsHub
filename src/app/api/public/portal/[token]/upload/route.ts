@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { uploadFile, StorageQuotaExceededError } from "@/lib/storage";
 import { asUploadedFile } from "@/lib/uploaded-file";
+import { sniffUploadType } from "@/lib/upload-validation";
 import { getPortalSubject, loadPortalStep } from "@/lib/workflows/portal";
 import { consume, clientIpFromRequest } from "@/lib/rate-limit";
 
@@ -130,6 +131,18 @@ export async function POST(
 
   // Read the file bytes once and hand to the storage layer.
   const buffer = Buffer.from(await file.arrayBuffer());
+
+  // R11-H: server-side magic-byte sniff on top of the prefix-list
+  // gate above. The portal accepts external uploads from anonymous
+  // subjects via a token, so trusting `file.type` alone would let a
+  // renamed binary slip through the prefix check (e.g. .exe labelled
+  // application/pdf). SVG is blocked: portal docs are sometimes
+  // shown back to the workflow operator and a stored <script> would
+  // execute in the operator's session.
+  const sniff = sniffUploadType(buffer, file.type || "", { blockSvg: true });
+  if (!sniff.ok) {
+    return NextResponse.json({ error: sniff.reason }, { status: 415 });
+  }
 
   let stored;
   try {

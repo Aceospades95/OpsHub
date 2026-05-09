@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { requireAuth } from "@/lib/permissions";
 import { uploadFile, deleteFile, blobToBuffer, StorageQuotaExceededError } from "@/lib/storage";
 import { asUploadedFile } from "@/lib/uploaded-file";
+import { sniffUploadType } from "@/lib/upload-validation";
 import { revalidatePath } from "next/cache";
 
 function requireAdmin(role: string): { error: string } | null {
@@ -42,6 +43,16 @@ export async function uploadFileFromForm(
     formData.get("visibility") === "public" ? "public" : "private";
 
   const buffer = await blobToBuffer(blob as unknown as Blob);
+
+  // R11-H: server-side magic-byte sniff. Public uploads block SVG
+  // entirely (XSS risk via inline <script>); private uploads still
+  // sniff the bytes so a renamed-extension binary can't slip in.
+  const sniff = sniffUploadType(buffer, blob.type || "", {
+    blockSvg: visibility === "public",
+  });
+  if (!sniff.ok) {
+    return { success: false, error: sniff.reason };
+  }
 
   let file;
   try {

@@ -13,6 +13,7 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
+import { useConfirm } from "@/components/shared/use-confirm";
 import {
   deleteScheduledTask,
   runScheduledTaskNow,
@@ -52,6 +53,7 @@ export function TaskRowActions({ task, reports }: Props) {
   const [editOpen, setEditOpen] = useState(false);
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const { confirm, ConfirmDialog } = useConfirm();
 
   function run<T>(fn: () => Promise<T>) {
     setError(null);
@@ -123,8 +125,12 @@ export function TaskRowActions({ task, reports }: Props) {
                 )}
               </button>
               <button
-                onClick={() => {
-                  if (!confirm(`Delete "${task.name}"?`)) return;
+                onClick={async () => {
+                  const ok = await confirm({
+                    title: `Delete "${task.name}"?`,
+                    confirmLabel: "Delete",
+                  });
+                  if (!ok) return;
                   run(() => deleteScheduledTask(task.id));
                 }}
                 disabled={pending}
@@ -153,6 +159,7 @@ export function TaskRowActions({ task, reports }: Props) {
           }}
         />
       )}
+      <ConfirmDialog />
     </>
   );
 }

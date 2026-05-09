@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Plus, X, UserPlus, AlertTriangle, MapPin } from "lucide-react";
 import Link from "next/link";
+import { useConfirm } from "@/components/shared/use-confirm";
 import {
   removeAssignment,
   quickAssign,
@@ -55,6 +56,7 @@ export function ProjectStaffingSection({
   const [isPending, startTransition] = useTransition();
   const [addRoleOpen, setAddRoleOpen] = useState(false);
   const [addRoleForm, setAddRoleForm] = useState({ roleDefinitionId: "", newRoleName: "", requiredFte: "1", quantity: "1" });
+  const { confirm, ConfirmDialog } = useConfirm();
   const [quickAssignCtx, setQuickAssignCtx] = useState<{
     projectRoleId?: string;
     roleDefinitionId?: string;
@@ -176,15 +178,23 @@ export function ProjectStaffingSection({
     });
   };
 
-  const handleRemove = (assignmentId: string, employeeName: string) => {
-    if (!confirm(`Remove ${employeeName} from this project?`)) return;
+  const handleRemove = async (assignmentId: string, employeeName: string) => {
+    const ok = await confirm({
+      title: `Remove ${employeeName} from this project?`,
+      confirmLabel: "Remove",
+    });
+    if (!ok) return;
     startTransition(async () => {
       await removeAssignment(assignmentId);
     });
   };
 
-  const handleDeleteRole = (projectRoleId: string) => {
-    if (!confirm("Delete this role requirement?")) return;
+  const handleDeleteRole = async (projectRoleId: string) => {
+    const ok = await confirm({
+      title: "Delete this role requirement?",
+      confirmLabel: "Delete",
+    });
+    if (!ok) return;
     startTransition(async () => {
       await deleteProjectRole(projectRoleId);
     });
@@ -445,6 +455,7 @@ export function ProjectStaffingSection({
           </div>
         </div>
       )}
+      <ConfirmDialog />
     </div>
   );
 }

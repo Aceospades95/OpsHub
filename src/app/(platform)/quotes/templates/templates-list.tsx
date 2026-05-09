@@ -5,6 +5,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { format } from "date-fns";
 import { Trash2, FilePlus2, Download } from "lucide-react";
+import { useConfirm } from "@/components/shared/use-confirm";
 
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
@@ -114,9 +115,16 @@ export function TemplatesList({ templates, clients, canCreate, canDelete }: Prop
 function DeleteButton({ id }: { id: string }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
+  const { confirm, ConfirmDialog } = useConfirm();
 
-  function handle() {
-    if (!confirm("Delete this template? Existing quotes that were created from it are unaffected.")) return;
+  async function handle() {
+    const ok = await confirm({
+      title: "Delete this template?",
+      message:
+        "Existing quotes that were created from it are unaffected.",
+      confirmLabel: "Delete",
+    });
+    if (!ok) return;
     startTransition(async () => {
       const fd = new FormData();
       fd.set("id", id);
@@ -127,14 +135,17 @@ function DeleteButton({ id }: { id: string }) {
   }
 
   return (
-    <button
-      onClick={handle}
-      disabled={pending}
-      className="text-muted-foreground hover:text-destructive p-1"
-      aria-label="Delete template"
-    >
-      <Trash2 className="h-3 w-3" />
-    </button>
+    <>
+      <button
+        onClick={handle}
+        disabled={pending}
+        className="text-muted-foreground hover:text-destructive p-1"
+        aria-label="Delete template"
+      >
+        <Trash2 className="h-3 w-3" />
+      </button>
+      <ConfirmDialog />
+    </>
   );
 }
 

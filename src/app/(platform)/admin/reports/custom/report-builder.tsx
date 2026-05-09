@@ -11,6 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { useConfirm } from "@/components/shared/use-confirm";
 import {
   createCustomReport,
   updateCustomReport,
@@ -67,6 +68,7 @@ export function ReportBuilder({
   const [pending, startTransition] = useTransition();
   const [preview, setPreview] = useState<PreviewOutput | null>(null);
   const [previewing, setPreviewing] = useState(false);
+  const { confirm, ConfirmDialog } = useConfirm();
 
   const entityDef = useMemo(
     () => catalog.find((c) => c.entity === entityType) ?? catalog[0],
@@ -176,9 +178,14 @@ export function ReportBuilder({
     });
   }
 
-  function handleDelete() {
+  async function handleDelete() {
     if (!reportId) return;
-    if (!confirm(`Delete "${name}"? This can't be undone.`)) return;
+    const ok = await confirm({
+      title: `Delete "${name}"?`,
+      message: "This can't be undone.",
+      confirmLabel: "Delete",
+    });
+    if (!ok) return;
     startTransition(async () => {
       const res = await deleteCustomReport(reportId);
       if ("error" in res) {
@@ -558,6 +565,7 @@ export function ReportBuilder({
           </Card>
         </div>
       </div>
+      <ConfirmDialog />
     </div>
   );
 }

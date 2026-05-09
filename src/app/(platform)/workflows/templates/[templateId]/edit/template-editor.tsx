@@ -19,6 +19,7 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
+import { useConfirm } from "@/components/shared/use-confirm";
 import { Dialog } from "@/components/ui/dialog";
 import {
   STEP_TYPE_DEFINITIONS,
@@ -90,6 +91,7 @@ export function TemplateEditor({
   const [showSettings, setShowSettings] = useState(false);
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const { confirm, ConfirmDialog } = useConfirm();
 
   // Sync server-fetched steps into local state when the prop changes
   // (e.g. after a refresh()). Without this, useState's initial-value-only
@@ -141,8 +143,12 @@ export function TemplateEditor({
     });
   }
 
-  function handleDeleteStep(stepId: string) {
-    if (!confirm("Delete this step?")) return;
+  async function handleDeleteStep(stepId: string) {
+    const ok = await confirm({
+      title: "Delete this step?",
+      confirmLabel: "Delete",
+    });
+    if (!ok) return;
     setError(null);
     startTransition(async () => {
       const res = await deleteWorkflowStep(stepId);
@@ -369,6 +375,7 @@ export function TemplateEditor({
           onClose={() => setShowSettings(false)}
         />
       )}
+      <ConfirmDialog />
     </div>
   );
 }
@@ -579,6 +586,7 @@ function TemplateSettingsDialog({
   const [isActive, setIsActive] = useState(template.isActive);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const { confirm, ConfirmDialog } = useConfirm();
 
   function handleSave() {
     setError(null);
@@ -600,8 +608,13 @@ function TemplateSettingsDialog({
     });
   }
 
-  function handleDelete() {
-    if (!confirm("Delete this template? This can't be undone.")) return;
+  async function handleDelete() {
+    const ok = await confirm({
+      title: "Delete this template?",
+      message: "This can't be undone.",
+      confirmLabel: "Delete",
+    });
+    if (!ok) return;
     startTransition(async () => {
       const res = await deleteWorkflowTemplate(template.id);
       if ("error" in res) {
@@ -690,6 +703,7 @@ function TemplateSettingsDialog({
           </div>
         </div>
       </div>
+      <ConfirmDialog />
     </Dialog>
   );
 }
