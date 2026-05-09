@@ -220,6 +220,7 @@ export function ProjectActions({ project, clients, serviceOfferings, allProjects
             onConfirm={runDelete}
             navigateTo="/projects"
             confirmLabel="Delete"
+            successToast="Project deleted"
           />
         </>
       )}

@@ -77,6 +77,7 @@ export function IntranetActions({ resource, canEdit, canDelete }: Props) {
             onConfirm={runDelete}
             navigateTo="/intranet"
             confirmLabel="Delete"
+            successToast="Resource deleted"
           />
         </>
       )}

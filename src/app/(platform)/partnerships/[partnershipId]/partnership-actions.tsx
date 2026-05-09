@@ -184,6 +184,7 @@ export function PartnershipActions({ partnership, users, canEdit, canDelete }: P
             onConfirm={runDelete}
             navigateTo="/partnerships"
             confirmLabel="Delete"
+            successToast="Partnership deleted"
           />
         </>
       )}

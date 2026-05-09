@@ -98,6 +98,7 @@ export function ToolActions({ tool, canEdit, canDelete, canCreate }: Props) {
             onConfirm={runDelete}
             navigateTo="/tools"
             confirmLabel="Delete"
+            successToast="Tool deleted"
           />
         </>
       )}

@@ -2,6 +2,7 @@
 
 import { useId, useRef, useState, useTransition, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import { Dialog } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 
@@ -21,6 +22,15 @@ interface ConfirmDialogProps {
   cancelLabel?: string;
   /** Visual variant for the confirm button — defaults to destructive */
   variant?: "destructive" | "default";
+  /**
+   * Round-10 QA: a successful destructive action used to redirect or
+   * refresh with no feedback — the user clicked Delete and the page
+   * just changed. Pass a `successToast` string to surface
+   * `toast.success(successToast)` BEFORE the navigate/refresh fires
+   * so the affordance lands on the next page. Omit for the rare
+   * confirmation that doesn't warrant a toast.
+   */
+  successToast?: string;
 }
 
 /**
@@ -48,6 +58,7 @@ export function ConfirmDialog({
   confirmLabel = "Confirm",
   cancelLabel = "Cancel",
   variant = "destructive",
+  successToast,
 }: ConfirmDialogProps) {
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -74,8 +85,11 @@ export function ConfirmDialog({
           setError(result.error);
           return;
         }
-        // Success path — close, then navigate or refresh
+        // Success path — close, fire the toast (so it lands on the
+        // next page when navigateTo is set), then navigate or
+        // refresh.
         onClose();
+        if (successToast) toast.success(successToast);
         if (navigateTo) {
           router.push(navigateTo);
         } else {
