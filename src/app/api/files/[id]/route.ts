@@ -3,22 +3,26 @@
  *
  * Flow:
  *   1. Look up File metadata (no bytes loaded yet).
- *   2. Run the auth gate. Public files are served to anyone; private files
- *      require an authenticated session. This MUST happen before we touch
- *      the backing store so unauthorized requests don't trigger an S3 GET.
+ *   2. Run the auth gate.
+ *      - Public files (file.visibility === "public") are served to
+ *        anyone (used for branding logos, public marketing assets).
+ *      - Private files require an authenticated session AND a
+ *        per-entity permission check via checkFileReadPermission —
+ *        the file's parent (project / contract / supplier / etc.)
+ *        must be readable by the caller.
+ *      Both checks happen BEFORE touching the backing store so
+ *      unauthorized reads don't trigger an S3 GET.
  *   3. If the file's driver supports presigned URLs (S3 and friends),
  *      redirect the browser there with a short-lived URL so bytes don't
  *      proxy through the Next.js server.
  *   4. Otherwise (local driver), stream bytes back through the response.
- *
- * No per-entity permission check yet — if you're signed in, you can read
- * any private file. When a feature needs stricter gating, add it here
- * based on file.entityType / file.entityId or the legacy FKs.
  */
 
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
+import { db } from "@/lib/db";
 import { getFileForServing, readFile } from "@/lib/storage";
+import { checkFileReadPermission } from "@/lib/file-authz";
 
 const SIGNED_URL_TTL_SECONDS = 300;
 
@@ -37,6 +41,45 @@ export async function GET(
     const session = await auth();
     if (!session?.user) {
       return new NextResponse("Unauthorized", { status: 401 });
+    }
+
+    // Per-entity authorization. Pull the FK columns separately so the
+    // storage helper can stay focused on driver mechanics.
+    const fkRow = await db.file.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        uploadedById: true,
+        visibility: true,
+        projectId: true,
+        contractId: true,
+        documentId: true,
+        supplierId: true,
+        intranetResourceId: true,
+        certificationId: true,
+        userId: true,
+        subcontractorId: true,
+        partnershipId: true,
+      },
+    });
+    if (!fkRow) {
+      return new NextResponse("File not found", { status: 404 });
+    }
+
+    const decision = await checkFileReadPermission(
+      session.user.id,
+      session.user.role,
+      fkRow
+    );
+    if (!decision.ok) {
+      // Map "every parent FK points at a deleted row" to 404 (the file
+      // is genuinely orphaned, nothing for the user to access). Map
+      // every other denial to 403 so the audit log records the deny.
+      const status = decision.reason === "parent_deleted" ? 404 : 403;
+      return new NextResponse(
+        decision.reason === "parent_deleted" ? "File not found" : "Forbidden",
+        { status }
+      );
     }
   }
 
