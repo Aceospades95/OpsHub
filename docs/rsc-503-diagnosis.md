@@ -1,6 +1,7 @@
 # RSC 503 Storm — Diagnosis
 
-**Status:** Diagnostic only. No runtime code changes in this commit. Fix lands in R11 after review.
+**Status:** R11-G shipped the structural fixes. Synthetic verification + a deploy-time
+re-check still required (see "R11 follow-up" at the bottom of this doc).
 
 ## Symptom
 
@@ -223,3 +224,39 @@ Smoke test after fix:
    Confirm the change appears within ≤60 s (cache window).
 4. Trigger a notification. Reload any page. Confirm the bell badge updates
    immediately (per-user fetch is not cached).
+
+## R11 follow-up
+
+Three structural changes shipped in R11 that target the leading hypotheses
+this doc raised:
+
+- **R11-E (Edge bundle)** — `src/middleware.ts` no longer pulls Prisma /
+  bcryptjs / the Google sign-in helper into Edge. Build output:
+  Middleware = 79 kB, down from 111 kB (-29%). Edge cold-starts are
+  faster; less wall-time spent before the auth check returns.
+- **R11-G (Prisma singleton)** — `src/lib/db.ts` now caches the
+  `PrismaClient` on `globalThis` in production too, not just dev.
+  Defends against any path (workers, instrumentation re-eval, future
+  bundler tweaks) that might otherwise spin up a second engine
+  subprocess.
+- **R11-G (instrumentation)** — `src/instrumentation.ts` exports
+  `onRequestError` so production now logs a structured record on
+  every framework-boundary error: handler path, route type, render
+  source, and the underlying error. Previously the only signal was
+  the bare 503; the next time one fires there's a fingerprint to grep.
+
+What was *not* changed in R11:
+
+- AWS load balancer idle timeout (third hypothesis). Not a code change;
+  needs an infra config audit by whoever owns the deploy.
+- `RSCPrefetchHealing` retry shim. Stays for now; once we have a
+  fingerprinted log of the actual 5xx, we can decide whether the shim
+  is still earning its keep.
+
+Verification after the next deploy:
+
+1. `BASE_URL=<your-deploy> npm run smoke` (the new `scripts/smoke.sh`
+   hits 3 RSC routes 50× each in parallel and asserts zero 5xx).
+2. If a 5xx surfaces, grep the production logs for
+   `instrumentation.requestError` — every record names the route,
+   runtime, and underlying error.
