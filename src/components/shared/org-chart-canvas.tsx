@@ -153,18 +153,20 @@ export default function OrgChartCanvas({
       // computes positions for every node — fixing the "Fit to view
       // stacks all cards at one coordinate" symptom too.
       .data(flat.map((n) => ({ ...n, _expanded: true })))
-      .nodeWidth(() => 240)
-      .nodeHeight(() => 96)
-      .childrenMargin(() => 50)
-      .siblingsMargin(() => 16)
-      .neighbourMargin(() => 40)
+      // R11-H: every layout dimension comes from ORG_CHART_LAYOUT so
+      // the regression test and the runtime use the same value. The
+      // previous code re-declared the literals here and the constants
+      // could drift apart silently.
+      .nodeWidth(() => ORG_CHART_LAYOUT.nodeWidth)
+      .nodeHeight(() => ORG_CHART_LAYOUT.nodeHeight)
+      .childrenMargin(() => ORG_CHART_LAYOUT.childrenMargin)
+      .siblingsMargin(() => ORG_CHART_LAYOUT.siblingsMargin)
+      .neighbourMargin(() => ORG_CHART_LAYOUT.neighbourMargin)
       // Compact margins picked so even when compact mode is ON and
       // d3-org-chart's flex layout is asymmetric, sibling pairs are
       // separated by at least nodeWidth + 50 px of cross-axis gap.
-      // The previous 64 px was less than half a nodeWidth (240) so
-      // overlapping positions visually merged into one cluster.
-      .compactMarginBetween(() => 24)
-      .compactMarginPair(() => 290)
+      .compactMarginBetween(() => ORG_CHART_LAYOUT.compactMarginBetween)
+      .compactMarginPair(() => ORG_CHART_LAYOUT.compactMarginPair)
       .compact(compact)
       .nodeContent((d) => renderCardHtml(d.data, highlightLower))
       .onNodeClick((nodeOrId) => {

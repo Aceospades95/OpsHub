@@ -106,7 +106,7 @@ describe("computeEmployeeFte", () => {
     expect(computeEmployeeFte(user)).toBe(0.75);
   });
 
-  it("ignores ProjectMember rows without matching Assignment (the QA-flagged Jacob Wright bug)", () => {
+  it("ignores ProjectMember rows without matching Assignment (the QA-flagged FTE inflation bug)", () => {
     // Pre-fix this returned 1.5 (0.5 from the assignment + 1.0 from
     // each of the two unmatched ProjectMembers). ProjectMember is an
     // access grant, not a staffing record — we don't count it.

@@ -63,12 +63,15 @@ export function ConfirmDialog({
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const router = useRouter();
-  // Round-10 QA: alertdialog wires aria-describedby at the body so
-  // SR users hear the explanation alongside the title, and the
-  // destructive button gets initial focus so a keyboard user lands
-  // on the action they're confirming.
+  // R10-2 first wired alertdialog + describedby at the body so SR
+  // users hear the explanation alongside the title.
+  // R11-H corrects the initial-focus target: focus lands on the
+  // Cancel button, not the destructive button. A keyboard user who
+  // hits Enter on a re-opened dialog should default to the safe
+  // outcome (cancel), not re-fire a destructive action — same
+  // pattern as the WCAG/ARIA APG alertdialog example.
   const messageId = useId();
-  const confirmButtonRef = useRef<HTMLButtonElement>(null);
+  const cancelButtonRef = useRef<HTMLButtonElement>(null);
 
   function handleClose() {
     if (pending) return;
@@ -112,7 +115,7 @@ export function ConfirmDialog({
       title={title}
       role="alertdialog"
       describedBy={messageId}
-      initialFocusRef={confirmButtonRef}
+      initialFocusRef={cancelButtonRef}
     >
       <div id={messageId} className="text-sm text-muted-foreground mb-4">
         {message}
@@ -123,11 +126,15 @@ export function ConfirmDialog({
         </div>
       )}
       <div className="flex justify-end gap-2">
-        <Button variant="outline" onClick={handleClose} disabled={pending}>
+        <Button
+          ref={cancelButtonRef}
+          variant="outline"
+          onClick={handleClose}
+          disabled={pending}
+        >
           {cancelLabel}
         </Button>
         <Button
-          ref={confirmButtonRef}
           variant={variant}
           onClick={handleConfirm}
           disabled={pending}

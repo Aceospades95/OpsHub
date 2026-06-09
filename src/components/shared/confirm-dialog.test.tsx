@@ -9,14 +9,12 @@ vi.mock("next/navigation", () => ({
 afterEach(() => cleanup());
 
 /**
- * Round-10 QA: the project-delete dialog used to be a plain <div>
- * with no role. Screen-reader users couldn't tell it was a
- * confirmation, the destructive button wasn't focused, and Escape
- * didn't close. ConfirmDialog now layers role="alertdialog",
- * aria-labelledby/describedby, an initial-focus ref, and an
- * Escape-closes handler on top of the shared Dialog. These tests
- * pin those invariants so a future Dialog refactor can't silently
- * regress accessibility.
+ * R10-2 first wired role="alertdialog" + aria-labelledby/describedby
+ * + initial focus + Escape-closes onto the shared Dialog. R11-H
+ * corrects the initial-focus target to the Cancel button so a
+ * keyboard user who hits Enter on a re-opened dialog defaults to
+ * the safe outcome. These tests pin both invariants so a future
+ * Dialog refactor can't silently regress either piece.
  */
 describe("ConfirmDialog", () => {
   function setup(overrides: Partial<React.ComponentProps<typeof ConfirmDialog>> = {}) {
@@ -52,16 +50,16 @@ describe("ConfirmDialog", () => {
     expect(messageNode?.textContent).toContain("Are you sure");
   });
 
-  it("focuses the destructive confirm button on open", async () => {
+  it("focuses the Cancel button (the safe option) on open", async () => {
+    // Keyboard-default to the safe outcome — a user who hits Enter
+    // on a re-opened destructive dialog should NOT confirm. ARIA
+    // APG's alertdialog example uses the same pattern.
     setup();
-    // The Dialog defers focus to the next animation frame so it
-    // beats React's commit phase. Wait a tick so the focus has
-    // landed before we assert.
     await act(async () => {
       await new Promise((resolve) => requestAnimationFrame(() => resolve(null)));
     });
-    const confirm = screen.getByRole("button", { name: "Delete" });
-    expect(document.activeElement).toBe(confirm);
+    const cancel = screen.getByRole("button", { name: "Cancel" });
+    expect(document.activeElement).toBe(cancel);
   });
 
   it("calls onClose when Escape is pressed", () => {

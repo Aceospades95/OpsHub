@@ -4,12 +4,12 @@
  *
  * The QA report flagged two specific entries:
  *
- *   - "Sanya testing"  (email: jakewright95@gmail.com — external Gmail)
+ *   - "Sanya testing"  (email: an external personal address)
  *     No title, no manager, FTE 0, 0 assignments. Sitting under
  *     TOP_OF_ORG.
  *
  *   - "Testing USer"  (sic — the typo is in the seed)
- *     Reports to Jacob Wright. No assignments.
+ *     Reports to a senior user. No assignments.
  *
  * Both look like leftover seed / smoke-test data. This script
  * deactivates them (sets isActive=false) rather than hard-deleting,
@@ -34,8 +34,14 @@ const db = new PrismaClient();
 
 const DRY_RUN = (process.env.DRY_RUN ?? "true").toLowerCase() !== "false";
 
+// Targets are read from env so this script doesn't carry historical
+// real-data fixtures in source. Format: SANYA_TARGET_EMAIL=<email>.
+// If not set, the email-by-name match degrades to name-only.
 const TARGETS = [
-  { name: "Sanya testing", email: "jakewright95@gmail.com" },
+  {
+    name: "Sanya testing",
+    email: process.env.SANYA_TARGET_EMAIL?.trim() || null,
+  },
   { name: "Testing USer", email: null }, // email shape unknown; match by name alone
 ];
 

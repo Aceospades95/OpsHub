@@ -17,6 +17,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
+import { useConfirm } from "@/components/shared/use-confirm";
 import {
   pauseWorkflowInstance,
   resumeWorkflowInstance,
@@ -38,6 +39,7 @@ export function InstanceActions({ instanceId, status, canEdit }: InstanceActions
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const { confirm, ConfirmDialog } = useConfirm();
 
   if (!canEdit) return null;
 
@@ -104,9 +106,14 @@ export function InstanceActions({ instanceId, status, canEdit }: InstanceActions
         <Button
           size="sm"
           variant="destructive"
-          onClick={() => {
-            if (!confirm("Cancel this workflow? Pending steps will be skipped."))
-              return;
+          onClick={async () => {
+            const ok = await confirm({
+              title: "Cancel this workflow?",
+              message: "Pending steps will be skipped.",
+              confirmLabel: "Cancel workflow",
+              cancelLabel: "Keep running",
+            });
+            if (!ok) return;
             run(() => cancelWorkflowInstance(instanceId));
           }}
           disabled={pending}
@@ -116,6 +123,7 @@ export function InstanceActions({ instanceId, status, canEdit }: InstanceActions
         </Button>
       )}
       {error && <span className="text-xs text-destructive">{error}</span>}
+      <ConfirmDialog />
     </div>
   );
 }

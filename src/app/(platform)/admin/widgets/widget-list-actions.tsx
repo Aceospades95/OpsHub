@@ -4,11 +4,13 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { deleteCustomWidget, toggleCustomWidgetPublished } from "@/actions/custom-widgets";
 import { Eye, EyeOff, Trash2, MoreVertical } from "lucide-react";
+import { useConfirm } from "@/components/shared/use-confirm";
 
 export function WidgetListActions({ widgetId, isPublished }: { widgetId: string; isPublished: boolean }) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const router = useRouter();
+  const { confirm, ConfirmDialog } = useConfirm();
 
   async function handleToggle() {
     setLoading(true);
@@ -19,7 +21,12 @@ export function WidgetListActions({ widgetId, isPublished }: { widgetId: string;
   }
 
   async function handleDelete() {
-    if (!confirm("Delete this widget? This cannot be undone.")) return;
+    const ok = await confirm({
+      title: "Delete this widget?",
+      message: "This cannot be undone.",
+      confirmLabel: "Delete",
+    });
+    if (!ok) return;
     setLoading(true);
     await deleteCustomWidget(widgetId);
     setLoading(false);
@@ -58,6 +65,7 @@ export function WidgetListActions({ widgetId, isPublished }: { widgetId: string;
           </div>
         </>
       )}
+      <ConfirmDialog />
     </div>
   );
 }

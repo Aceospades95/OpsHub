@@ -10,6 +10,7 @@ import { Dialog } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
+import { useConfirm } from "@/components/shared/use-confirm";
 import {
   createCatalogItem,
   updateCatalogItem,
@@ -149,9 +150,15 @@ export function CatalogTable({ items, canEdit, canCreate, canDelete }: Props) {
 function ArchiveButton({ id }: { id: string }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
+  const { confirm, ConfirmDialog } = useConfirm();
 
-  function handle() {
-    if (!confirm("Archive this catalog item? Existing quote line items keep working.")) return;
+  async function handle() {
+    const ok = await confirm({
+      title: "Archive this catalog item?",
+      message: "Existing quote line items keep working.",
+      confirmLabel: "Archive",
+    });
+    if (!ok) return;
     startTransition(async () => {
       const fd = new FormData();
       fd.set("id", id);
@@ -162,14 +169,17 @@ function ArchiveButton({ id }: { id: string }) {
   }
 
   return (
-    <button
-      onClick={handle}
-      disabled={pending}
-      className="text-muted-foreground hover:text-destructive p-1 ml-1"
-      aria-label="Archive"
-    >
-      <Archive className="h-3 w-3" />
-    </button>
+    <>
+      <button
+        onClick={handle}
+        disabled={pending}
+        className="text-muted-foreground hover:text-destructive p-1 ml-1"
+        aria-label="Archive"
+      >
+        <Archive className="h-3 w-3" />
+      </button>
+      <ConfirmDialog />
+    </>
   );
 }
 

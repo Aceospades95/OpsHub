@@ -1,5 +1,18 @@
-import { auth } from "@/lib/auth";
+/**
+ * Middleware runs in the Edge Runtime, where Prisma, bcryptjs, and
+ * other Node-only deps are unavailable. This file imports ONLY the
+ * Edge-safe authConfig (src/auth.config.ts), not the full surface
+ * from src/lib/auth.ts. See R11-E for rationale — pre-split, the
+ * middleware bundle hit ~111 kB because it transitively pulled
+ * Prisma + bcrypt + the Google sign-in helper, all of which are
+ * never used here.
+ */
+
+import NextAuth from "next-auth";
+import { authConfig } from "@/auth.config";
 import { NextResponse } from "next/server";
+
+const { auth } = NextAuth(authConfig);
 
 export default auth((req) => {
   const { pathname } = req.nextUrl;

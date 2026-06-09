@@ -1,7 +1,7 @@
 "use server";
 
 import { db } from "@/lib/db";
-import { requireAuth } from "@/lib/permissions";
+import { requireAuth, resolveModulePerms } from "@/lib/permissions";
 import { getUserScope, hasOrgWideManage } from "@/lib/scope";
 
 /**
@@ -9,11 +9,20 @@ import { getUserScope, hasOrgWideManage } from "@/lib/scope";
  *
  * Caps each entity bucket at 5 hits so the palette stays scannable even
  * for vague queries; the user can drill into a list view if they need
- * more. Scope is honored — non-org-wide users only see entities they
- * have access to via getUserScope().
+ * more.
  *
- * Empty / whitespace queries return no results (the palette renders a
- * "type to search…" hint in that state instead of a flood of recents).
+ * Authorization:
+ *  - Module-level canView gate: each bucket is included only if the
+ *    caller has canView for the bucket's module. A user with no
+ *    suppliers permission (e.g. GUEST) never sees a suppliers
+ *    section, even with truncated:false.
+ *  - Entity-scope filter: for entity-scoped modules (clients,
+ *    projects, contracts, quotes), the SQL where-clause also
+ *    restricts results to the IDs in the caller's getUserScope()
+ *    set. The DB does the filtering so timing doesn't leak the
+ *    count of restricted rows.
+ *  - Empty / whitespace queries return no results (the palette
+ *    renders a "type to search…" hint instead of a flood of recents).
  */
 
 export interface SearchHit {
@@ -50,6 +59,30 @@ export async function quickSearch(query: string): Promise<SearchResults> {
   const scope = await getUserScope(user.id, user.role);
   const orgWide = hasOrgWideManage(user.role) || scope.all;
 
+  // Module-level canView for each bucket. A user without canView for
+  // suppliers must not see a suppliers section in the palette,
+  // regardless of scope. Resolve in parallel — these are cached per
+  // request anyway so the cost is one cheap DB roundtrip.
+  const [
+    teamPerms,
+    clientsPerms,
+    projectsPerms,
+    suppliersPerms,
+    contractsPerms,
+    quotesPerms,
+    toolsPerms,
+    intranetPerms,
+  ] = await Promise.all([
+    resolveModulePerms(user.id, user.role, "team"),
+    resolveModulePerms(user.id, user.role, "clients"),
+    resolveModulePerms(user.id, user.role, "projects"),
+    resolveModulePerms(user.id, user.role, "suppliers"),
+    resolveModulePerms(user.id, user.role, "contracts"),
+    resolveModulePerms(user.id, user.role, "quotes"),
+    resolveModulePerms(user.id, user.role, "tools"),
+    resolveModulePerms(user.id, user.role, "intranet"),
+  ]);
+
   // Build scope-aware filters. Each entity type is limited to the rows
   // the viewer can see — same gate the list pages use.
   const projectScope = orgWide
@@ -58,6 +91,9 @@ export async function quickSearch(query: string): Promise<SearchResults> {
   const clientScope = orgWide
     ? {}
     : { id: { in: Array.from(scope.clientIds) } };
+  const toolScope = orgWide
+    ? {}
+    : { id: { in: Array.from(scope.toolIds) } };
 
   const ci = { contains: trimmed, mode: "insensitive" as const };
 
@@ -71,119 +107,138 @@ export async function quickSearch(query: string): Promise<SearchResults> {
     tools,
     intranet,
   ] = await Promise.all([
-    db.user.findMany({
-      where: {
-        isActive: true,
-        OR: [{ name: ci }, { email: ci }, { jobTitle: ci }],
-      },
-      select: { id: true, name: true, jobTitle: true, department: true, email: true },
-      take: PER_BUCKET_LIMIT,
-      orderBy: { name: "asc" },
-    }),
-    db.client.findMany({
-      where: {
-        deletedAt: null,
-        AND: [
-          clientScope,
-          { OR: [{ name: ci }, { industry: ci }] },
-        ],
-      },
-      select: { id: true, name: true, industry: true },
-      take: PER_BUCKET_LIMIT,
-      orderBy: { name: "asc" },
-    }),
-    db.project.findMany({
-      where: {
-        deletedAt: null,
-        AND: [
-          projectScope,
-          { OR: [{ name: ci }, { description: ci }] },
-        ],
-      },
-      select: {
-        id: true,
-        name: true,
-        client: { select: { name: true } },
-      },
-      take: PER_BUCKET_LIMIT,
-      orderBy: { updatedAt: "desc" },
-    }),
-    db.supplier.findMany({
-      where: {
-        deletedAt: null,
-        OR: [{ name: ci }, { contactName: ci }, { category: ci }],
-      },
-      select: { id: true, name: true, category: true },
-      take: PER_BUCKET_LIMIT,
-      orderBy: { name: "asc" },
-    }),
-    db.contract.findMany({
-      where: {
-        deletedAt: null,
-        AND: [
-          orgWide
-            ? {}
-            : {
-                OR: [
-                  { clientId: { in: Array.from(scope.clientIds) } },
-                  { projectId: { in: Array.from(scope.projectIds) } },
-                ],
-              },
-          { OR: [{ title: ci }, { contractNumber: ci }] },
-        ],
-      },
-      select: {
-        id: true,
-        title: true,
-        contractNumber: true,
-        client: { select: { name: true } },
-      },
-      take: PER_BUCKET_LIMIT,
-      orderBy: { updatedAt: "desc" },
-    }),
-    db.quote.findMany({
-      where: {
-        deletedAt: null,
-        AND: [
-          orgWide
-            ? {}
-            : {
-                OR: [
-                  { clientId: { in: Array.from(scope.clientIds) } },
-                  { projectId: { in: Array.from(scope.projectIds) } },
-                ],
-              },
-          { OR: [{ title: ci }, { quoteNumber: ci }] },
-        ],
-      },
-      select: {
-        id: true,
-        title: true,
-        quoteNumber: true,
-        client: { select: { name: true } },
-      },
-      take: PER_BUCKET_LIMIT,
-      orderBy: { updatedAt: "desc" },
-    }),
-    db.tool.findMany({
-      where: {
-        deletedAt: null,
-        OR: [{ name: ci }, { description: ci }, { category: ci }],
-      },
-      select: { id: true, name: true, category: true },
-      take: PER_BUCKET_LIMIT,
-      orderBy: { name: "asc" },
-    }),
-    db.intranetResource.findMany({
-      where: {
-        deletedAt: null,
-        published: true,
-        OR: [{ title: ci }, { description: ci }],
-      },
-      select: { id: true, title: true, category: true },
-      take: PER_BUCKET_LIMIT,
-      orderBy: { updatedAt: "desc" },
-    }),
+    teamPerms.canView
+      ? db.user.findMany({
+          where: {
+            isActive: true,
+            OR: [{ name: ci }, { email: ci }, { jobTitle: ci }],
+          },
+          select: { id: true, name: true, jobTitle: true, department: true, email: true },
+          take: PER_BUCKET_LIMIT,
+          orderBy: { name: "asc" },
+        })
+      : [],
+    clientsPerms.canView
+      ? db.client.findMany({
+          where: {
+            deletedAt: null,
+            AND: [
+              clientScope,
+              { OR: [{ name: ci }, { industry: ci }] },
+            ],
+          },
+          select: { id: true, name: true, industry: true },
+          take: PER_BUCKET_LIMIT,
+          orderBy: { name: "asc" },
+        })
+      : [],
+    projectsPerms.canView
+      ? db.project.findMany({
+          where: {
+            deletedAt: null,
+            AND: [
+              projectScope,
+              { OR: [{ name: ci }, { description: ci }] },
+            ],
+          },
+          select: {
+            id: true,
+            name: true,
+            client: { select: { name: true } },
+          },
+          take: PER_BUCKET_LIMIT,
+          orderBy: { updatedAt: "desc" },
+        })
+      : [],
+    suppliersPerms.canView
+      ? db.supplier.findMany({
+          where: {
+            deletedAt: null,
+            OR: [{ name: ci }, { contactName: ci }, { category: ci }],
+          },
+          select: { id: true, name: true, category: true },
+          take: PER_BUCKET_LIMIT,
+          orderBy: { name: "asc" },
+        })
+      : [],
+    contractsPerms.canView
+      ? db.contract.findMany({
+          where: {
+            deletedAt: null,
+            AND: [
+              orgWide
+                ? {}
+                : {
+                    OR: [
+                      { clientId: { in: Array.from(scope.clientIds) } },
+                      { projectId: { in: Array.from(scope.projectIds) } },
+                    ],
+                  },
+              { OR: [{ title: ci }, { contractNumber: ci }] },
+            ],
+          },
+          select: {
+            id: true,
+            title: true,
+            contractNumber: true,
+            client: { select: { name: true } },
+          },
+          take: PER_BUCKET_LIMIT,
+          orderBy: { updatedAt: "desc" },
+        })
+      : [],
+    quotesPerms.canView
+      ? db.quote.findMany({
+          where: {
+            deletedAt: null,
+            AND: [
+              orgWide
+                ? {}
+                : {
+                    OR: [
+                      { clientId: { in: Array.from(scope.clientIds) } },
+                      { projectId: { in: Array.from(scope.projectIds) } },
+                    ],
+                  },
+              { OR: [{ title: ci }, { quoteNumber: ci }] },
+            ],
+          },
+          select: {
+            id: true,
+            title: true,
+            quoteNumber: true,
+            client: { select: { name: true } },
+          },
+          take: PER_BUCKET_LIMIT,
+          orderBy: { updatedAt: "desc" },
+        })
+      : [],
+    toolsPerms.canView
+      ? db.tool.findMany({
+          where: {
+            deletedAt: null,
+            AND: [
+              toolScope,
+              { OR: [{ name: ci }, { description: ci }, { category: ci }] },
+            ],
+          },
+          select: { id: true, name: true, category: true },
+          take: PER_BUCKET_LIMIT,
+          orderBy: { name: "asc" },
+        })
+      : [],
+    intranetPerms.canView
+      ? db.intranetResource.findMany({
+          where: {
+            deletedAt: null,
+            published: true,
+            OR: [{ title: ci }, { description: ci }],
+          },
+          select: { id: true, title: true, category: true },
+          take: PER_BUCKET_LIMIT,
+          orderBy: { updatedAt: "desc" },
+        })
+      : [],
   ]);
 
   const hits: SearchHit[] = [

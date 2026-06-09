@@ -4,8 +4,8 @@
  * Two scripts call into this:
  *   - prisma/merge-duplicate-users.ts — auto-finds duplicates by email.
  *   - prisma/merge-users-by-id.ts — operator picks `from` and `to` IDs
- *     explicitly (used for the Jacob Wright case where the dupes have
- *     *different* emails and the email-based finder can't help).
+ *     explicitly (used when the dupes have *different* emails and the
+ *     email-based finder can't help).
  *
  * The reassignment recipe is the canonical "every column on every table
  * that points at User.id" map. If you add a new model that references
@@ -90,9 +90,9 @@ export const COMPOSITE_UNIQUE_TABLES = new Set([
  *   - the operator has authorization to merge
  *
  * Pass `targetEmail` to rename the keeper's email AFTER the FK walk,
- * before the source row is deleted. This is how the Jacob Wright merge
- * keeps the canonical j.wright@wynndalco.com email when the keeper is
- * actually the synthetic-email VP row.
+ * before the source row is deleted. This is how the named-pair merge
+ * keeps the canonical email when the keeper is actually the
+ * synthetic-email row.
  */
 export async function executeMerge(
   db: PrismaClient,

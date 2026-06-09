@@ -12,7 +12,7 @@ describe("isSyntheticEmail", () => {
 
   it("rejects regular addresses", () => {
     expect(isSyntheticEmail("alice@example.com")).toBe(false);
-    expect(isSyntheticEmail("j.wright@wynndalco.com")).toBe(false);
+    expect(isSyntheticEmail("alex.admin@example.com")).toBe(false);
   });
 
   it("rejects look-alikes that aren't the actual placeholder shape", () => {

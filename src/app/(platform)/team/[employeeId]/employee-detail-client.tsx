@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { FormDialog } from "@/components/shared/form-dialog";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
+import { useConfirm } from "@/components/shared/use-confirm";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import Link from "next/link";
@@ -110,6 +111,7 @@ export function EmployeeDetailClient({
   const [resetPwPending, setResetPwPending] = useState(false);
   const [addAssignmentOpen, setAddAssignmentOpen] = useState(false);
   const router = useRouter();
+  const { confirm: confirmAction, ConfirmDialog: HookConfirmDialog } = useConfirm();
 
   const canResetPassword =
     isAdmin && employee.hasLoginAccess && employee.authProvider === "credentials";
@@ -231,13 +233,13 @@ export function EmployeeDetailClient({
                       variant="outline"
                       size="sm"
                       onClick={async () => {
-                        if (
-                          !confirm(
-                            `Unlink the Google account from ${employee.name}? They will re-link automatically on their next Google sign-in (assuming login access stays enabled).`
-                          )
-                        ) {
-                          return;
-                        }
+                        const ok = await confirmAction({
+                          title: `Unlink the Google account from ${employee.name}?`,
+                          message:
+                            "They will re-link automatically on their next Google sign-in (assuming login access stays enabled).",
+                          confirmLabel: "Unlink",
+                        });
+                        if (!ok) return;
                         await unlinkGoogleAccount(employee.id);
                         router.refresh();
                       }}
@@ -397,6 +399,7 @@ export function EmployeeDetailClient({
           defaultEmployeeId={employee.id}
         />
       )}
+      <HookConfirmDialog />
     </div>
   );
 }

@@ -112,10 +112,10 @@ export function computeEmployeeFte(user: UserData): number {
   // user had without a matching Assignment — the rationale being
   // "they're on the project so they must be working on it." That's
   // wrong: ProjectMember is an *access* grant (see item 14), not a
-  // staffing record. The QA stress test caught Jacob Wright at 7 FTE
+  // staffing record. The QA stress test caught a senior user at 7 FTE
   // across 5 projects because four of those projects only had
-  // ProjectMember entries (he had access to inspect them) but no
-  // Assignment (he wasn't actually staffed). The 1.0/each fallback
+  // ProjectMember entries (the user had access to inspect them) but
+  // no Assignment (no actual staffing). The 1.0/each fallback
   // double-counted access-only relationships as full-time work.
   return user.assignments.reduce((sum, a) => sum + a.allocationFte, 0);
 }
