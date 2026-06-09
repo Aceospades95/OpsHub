@@ -838,6 +838,31 @@ default formatting handles Dates, booleans, and nulls sensibly.
 | `project-status` | Active portfolio with milestone + task progress |
 | `activity-audit` | ActivityLog events in last 7 days grouped by user |
 
+## Write-gate convention (R12)
+
+Every mutation on a scoped entity (project, client, contract, tool,
+certification — the types in `lib/scope.ts` `ScopeEntityType`) must run
+**three** checks, in order:
+
+1. `requireAuth()` — never raw `auth()`: the JWT caches the sign-in
+   role; requireAuth re-reads the current DB role.
+2. `resolveModulePerms(user.id, user.role, module)` — the module-level
+   flag matching the operation (canEdit / canDelete / canCreate).
+3. `assertManageEntity(user.id, user.role, entityType, entityId)` from
+   `@/lib/entity-authz` — the entity-scope gate. Module flags alone are
+   NOT enough: role defaults give every CONTRIBUTOR module-level
+   canEdit, and without the scope gate they can mutate any entity
+   org-wide by POSTing the action directly.
+
+Sub-entities (milestones, contacts, terms, checklist items, documents,
+attachments) gate on their **parent's** id — look the row up first
+(`findFirst` with `deletedAt: null` where the model is soft-deletable),
+return `{ error: "Not found" }` when missing, then gate.
+
+Multi-step writes go in `db.$transaction`. Role values being written
+are bounded by the actor's own rank (see `USER_ROLE_RANK` in
+`actions/admin.ts` and `ROLE_RANK` in `actions/projects.ts`).
+
 ## How to extend this document
 
 When you add a new module or feature:

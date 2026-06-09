@@ -33,10 +33,13 @@ export default auth((req) => {
   // /register is deliberately NOT in this list — self-registration is
   // disabled (see src/actions/auth.ts:registerAction). Anyone hitting
   // /register gets bounced to /login.
-  const publicPaths = [
-    "/login",
-    "/api/auth",
-    "/api/health",
+  // Prefix entries end with "/" so the match is segment-aligned —
+  // a bare startsWith("/api/health") would also make a hypothetical
+  // /api/health-internal public. Exact entries match the whole path.
+  const publicExact = ["/login", "/api/health"];
+  const publicPrefixes = [
+    "/api/auth/",
+    "/api/health/",
     "/api/jobs/",
     "/api/files/",
     "/portal/",
@@ -47,7 +50,9 @@ export default auth((req) => {
     // pick a password for the user they were invited as.
     "/signup/",
   ];
-  const isPublic = publicPaths.some((p) => pathname.startsWith(p));
+  const isPublic =
+    publicExact.includes(pathname) ||
+    publicPrefixes.some((p) => pathname.startsWith(p));
 
   if (!req.auth && !isPublic) {
     const loginUrl = new URL("/login", req.url);
