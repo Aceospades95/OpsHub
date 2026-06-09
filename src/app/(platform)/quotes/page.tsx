@@ -49,6 +49,8 @@ function orderByForSort(sort: SortKey): Prisma.QuoteOrderByWithRelationInput {
   }
 }
 
+export const metadata = { title: "Quotes · OpsHub" };
+
 export default async function QuotesPage({
   searchParams,
 }: {

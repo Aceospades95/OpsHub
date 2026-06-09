@@ -1,4 +1,4 @@
-import { auth } from "@/lib/auth";
+import { requireAuth } from "@/lib/permissions";
 import { redirect } from "next/navigation";
 import { listCustomWidgets } from "@/actions/custom-widgets";
 import { PageHeader } from "@/components/layout/page-header";
@@ -10,10 +10,11 @@ import Link from "next/link";
 import { formatDistanceToNow } from "date-fns";
 import { WidgetListActions } from "./widget-list-actions";
 
+export const metadata = { title: "Widget Builder · OpsHub" };
+
 export default async function WidgetListPage() {
-  const session = await auth();
-  if (!session?.user) redirect("/login");
-  if (session.user.role !== "ADMIN" && session.user.role !== "DEVELOPER") redirect("/dashboard");
+  const user = await requireAuth();
+  if (user.role !== "ADMIN" && user.role !== "DEVELOPER") redirect("/dashboard");
 
   const widgets = await listCustomWidgets();
 

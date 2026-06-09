@@ -1,4 +1,4 @@
-import { auth } from "@/lib/auth";
+import { requireAuth } from "@/lib/permissions";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { PageHeader } from "@/components/layout/page-header";
@@ -8,10 +8,11 @@ import { formatDistanceToNow, format } from "date-fns";
 import { Mail, AlertCircle, CheckCircle2 } from "lucide-react";
 import { EmailLogActions } from "./email-log-actions";
 
+export const metadata = { title: "Email Log · OpsHub" };
+
 export default async function AdminEmailsPage() {
-  const session = await auth();
-  if (!session?.user) redirect("/login");
-  if (session.user.role !== "ADMIN") redirect("/dashboard");
+  const user = await requireAuth();
+  if (user.role !== "ADMIN") redirect("/dashboard");
 
   const [logs, totals] = await Promise.all([
     db.emailLog.findMany({

@@ -22,6 +22,8 @@ const categoryLabels: Record<string, string> = {
   OTHER: "Other",
 };
 
+export const metadata = { title: "Intranet · OpsHub" };
+
 export default async function IntranetPage() {
   const user = await requireAuth();
 

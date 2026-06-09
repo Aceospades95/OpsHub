@@ -1,4 +1,4 @@
-import { auth } from "@/lib/auth";
+import { requireAuth } from "@/lib/permissions";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { format } from "date-fns";
@@ -12,10 +12,11 @@ import { BarChart3, ArrowRight, Plus } from "lucide-react";
 import { listReports } from "@/lib/reports";
 import { ENTITY_REGISTRY } from "@/lib/reports/custom/entities";
 
+export const metadata = { title: "Reports · OpsHub" };
+
 export default async function AdminReportsPage() {
-  const session = await auth();
-  if (!session?.user) redirect("/login");
-  if (session.user.role !== "ADMIN") redirect("/dashboard");
+  const user = await requireAuth();
+  if (user.role !== "ADMIN") redirect("/dashboard");
 
   const reports = listReports();
   const byModule = reports.reduce<Record<string, typeof reports>>((acc, r) => {

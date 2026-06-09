@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import { requireAuth, resolveModulePerms } from "@/lib/permissions";
+import { getUserScope, canViewEntity } from "@/lib/scope";
 import { AccessDenied } from "@/components/shared/access-denied";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -22,8 +23,11 @@ export default async function DocumentDetailPage({ params }: Props) {
   const perms = await resolveModulePerms(user.id, user.role, "projects");
   if (!perms.canView) return <AccessDenied module="projects" moduleLabel="Projects" moduleDescription="Project portfolio, milestones, staffing, and documents" />;
 
+  // Fetch scoped to the route's project — fetching by documentId alone
+  // let any module-level viewer open documents from projects outside
+  // their scope by guessing IDs (IDOR).
   const document = await db.document.findFirst({
-    where: { id: documentId, deletedAt: null },
+    where: { id: documentId, projectId, deletedAt: null },
     include: {
       versions: { orderBy: { version: "desc" } },
       comments: {
@@ -34,6 +38,13 @@ export default async function DocumentDetailPage({ params }: Props) {
   });
 
   if (!document) notFound();
+
+  // Same entity-scope gate as the parent project page: module canView
+  // alone isn't enough for scoped roles.
+  const scope = await getUserScope(user.id, user.role);
+  if (!canViewEntity(scope, "project", projectId)) {
+    return <AccessDenied module="projects" moduleLabel="Projects" entityType="project" entityId={projectId} />;
+  }
 
   return (
     <div>

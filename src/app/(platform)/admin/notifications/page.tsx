@@ -1,4 +1,4 @@
-import { auth } from "@/lib/auth";
+import { requireAuth } from "@/lib/permissions";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { PageHeader } from "@/components/layout/page-header";
@@ -10,10 +10,11 @@ import Link from "next/link";
 import { NotificationsAdminActions } from "./notifications-admin-actions";
 import { NOTIFICATION_TYPE_LABELS, type NotificationType } from "@/lib/notifications/types";
 
+export const metadata = { title: "Notifications · OpsHub" };
+
 export default async function AdminNotificationsPage() {
-  const session = await auth();
-  if (!session?.user) redirect("/login");
-  if (session.user.role !== "ADMIN") redirect("/dashboard");
+  const user = await requireAuth();
+  if (user.role !== "ADMIN") redirect("/dashboard");
 
   const [notifications, totals, typeStats] = await Promise.all([
     db.notification.findMany({

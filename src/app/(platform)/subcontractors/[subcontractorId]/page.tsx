@@ -60,17 +60,23 @@ export default async function SubcontractorDetailPage({ params }: Props) {
 
   if (!sub) notFound();
 
-  const allProjects = await db.project.findMany({
-    where: { deletedAt: null },
-    select: { id: true, name: true },
-    orderBy: { name: "asc" },
-  });
-
-  const allUsers = await db.user.findMany({
-    where: { isActive: true },
-    select: { id: true, name: true },
-    orderBy: { name: "asc" },
-  });
+  // Edit-dialog dropdowns — read-only viewers don't need the org-wide
+  // project / user name lists (linked project names come from the
+  // included relations above).
+  const [allProjects, allUsers] = perms.canEdit
+    ? await Promise.all([
+        db.project.findMany({
+          where: { deletedAt: null },
+          select: { id: true, name: true },
+          orderBy: { name: "asc" },
+        }),
+        db.user.findMany({
+          where: { isActive: true },
+          select: { id: true, name: true },
+          orderBy: { name: "asc" },
+        }),
+      ])
+    : [[], []];
 
   const now = new Date();
   const totalActiveValue = sub.projects

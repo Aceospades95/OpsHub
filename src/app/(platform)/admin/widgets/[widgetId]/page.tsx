@@ -1,4 +1,4 @@
-import { auth } from "@/lib/auth";
+import { requireAuth } from "@/lib/permissions";
 import { redirect, notFound } from "next/navigation";
 import { getCustomWidget } from "@/actions/custom-widgets";
 import { PageHeader } from "@/components/layout/page-header";
@@ -11,9 +11,8 @@ interface Props {
 
 export default async function EditWidgetPage({ params }: Props) {
   const { widgetId } = await params;
-  const session = await auth();
-  if (!session?.user) redirect("/login");
-  if (session.user.role !== "ADMIN" && session.user.role !== "DEVELOPER") redirect("/dashboard");
+  const user = await requireAuth();
+  if (user.role !== "ADMIN" && user.role !== "DEVELOPER") redirect("/dashboard");
 
   const widget = await getCustomWidget(widgetId);
   if (!widget) notFound();

@@ -1,4 +1,4 @@
-import { auth } from "@/lib/auth";
+import { requireAuth } from "@/lib/permissions";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { PageHeader } from "@/components/layout/page-header";
@@ -11,10 +11,11 @@ import { UserCreateButton } from "./user-create-button";
 import { ToggleActiveButton } from "./toggle-active-button";
 import { ADMIN_SETTING_KEYS, getBooleanAdminSetting } from "@/lib/admin-settings";
 
+export const metadata = { title: "User Management · OpsHub" };
+
 export default async function AdminUsersPage() {
-  const session = await auth();
-  if (!session?.user) redirect("/login");
-  if (session.user.role !== "ADMIN") redirect("/dashboard");
+  const user = await requireAuth();
+  if (user.role !== "ADMIN") redirect("/dashboard");
 
   const [activeUsers, inactiveUsers, allUsers, workflowTemplates, defaultSendWelcomeEmail] = await Promise.all([
     db.user.findMany({

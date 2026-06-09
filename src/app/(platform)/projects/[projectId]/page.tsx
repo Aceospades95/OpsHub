@@ -143,19 +143,23 @@ export default async function ProjectDetailPage({ params }: Props) {
 
   const scope = await getUserScope(user.id, user.role);
   if (!canViewEntity(scope, "project", project.id)) {
-    return <AccessDenied module="projects" moduleLabel="Projects" entityType="project" entityId={project.id} entityLabel={project.name} />;
+    return <AccessDenied module="projects" moduleLabel="Projects" entityType="project" entityId={project.id} />;
   }
 
-  const clients = await db.client.findMany({
-    // Round-4 QA: previously filtered to status:"ACTIVE", which hid
-    // PROSPECT/INACTIVE clients from the project edit picker. Any
-    // non-deleted client should be assignable.
-    where: { deletedAt: null },
-    select: { id: true, name: true },
-    orderBy: { name: "asc" },
-  });
+  // Managers can only manage staffing on projects they're assigned to.
+  const canAssign = await canManageProjectAssignments(
+    user.id,
+    user.role,
+    project.id
+  );
+
+  // Dropdown lists feed the edit/create dialogs and staffing pickers —
+  // read-only viewers don't need org-wide user (incl. email), project,
+  // or tool name lists, so only fetch them for users who can act on them.
+  const needsPickers = perms.canEdit || perms.canCreate;
 
   const [
+    clients,
     allUsers,
     projectTasks,
     allTools,
@@ -165,45 +169,65 @@ export default async function ProjectDetailPage({ params }: Props) {
     allSubcontractors,
     allPartnerships,
   ] = await Promise.all([
-    db.user.findMany({
-      where: { isActive: true },
-      select: { id: true, name: true, email: true, jobTitle: true, location: true },
-      orderBy: { name: "asc" },
-    }),
+    needsPickers
+      ? db.client.findMany({
+          // Round-4 QA: previously filtered to status:"ACTIVE", which hid
+          // PROSPECT/INACTIVE clients from the project edit picker. Any
+          // non-deleted client should be assignable.
+          where: { deletedAt: null },
+          select: { id: true, name: true },
+          orderBy: { name: "asc" },
+        })
+      : Promise.resolve([] as { id: string; name: string }[]),
+    needsPickers || canAssign
+      ? db.user.findMany({
+          where: { isActive: true },
+          select: { id: true, name: true, email: true, jobTitle: true, location: true },
+          orderBy: { name: "asc" },
+        })
+      : Promise.resolve([] as { id: string; name: string; email: string; jobTitle: string | null; location: string | null }[]),
     db.task.findMany({
       where: { projectId: project.id, status: { in: ["TODO", "IN_PROGRESS"] }, deletedAt: null },
       orderBy: [{ priority: "asc" }, { dueDate: "asc" }],
       include: { assignee: { select: { id: true, name: true } } },
       take: 10,
     }),
-    db.tool.findMany({
-      where: { deletedAt: null },
-      select: { id: true, name: true },
-      orderBy: { name: "asc" },
-    }),
-    db.project.findMany({
-      where: { id: { not: project.id }, deletedAt: null },
-      select: { id: true, name: true },
-      orderBy: { name: "asc" },
-    }),
-    db.serviceOffering.findMany({
-      where: { isActive: true },
-      select: { id: true, name: true },
-      orderBy: { name: "asc" },
-    }),
-    db.roleDefinition.findMany({
-      where: { isActive: true },
-      select: { id: true, name: true },
-      orderBy: { name: "asc" },
-    }),
-    subPerms.canView
+    perms.canEdit
+      ? db.tool.findMany({
+          where: { deletedAt: null },
+          select: { id: true, name: true },
+          orderBy: { name: "asc" },
+        })
+      : Promise.resolve([] as { id: string; name: string }[]),
+    needsPickers
+      ? db.project.findMany({
+          where: { id: { not: project.id }, deletedAt: null },
+          select: { id: true, name: true },
+          orderBy: { name: "asc" },
+        })
+      : Promise.resolve([] as { id: string; name: string }[]),
+    perms.canEdit
+      ? db.serviceOffering.findMany({
+          where: { isActive: true },
+          select: { id: true, name: true },
+          orderBy: { name: "asc" },
+        })
+      : Promise.resolve([] as { id: string; name: string }[]),
+    canAssign
+      ? db.roleDefinition.findMany({
+          where: { isActive: true },
+          select: { id: true, name: true },
+          orderBy: { name: "asc" },
+        })
+      : Promise.resolve([] as { id: string; name: string }[]),
+    subPerms.canEdit
       ? db.subcontractor.findMany({
           where: { status: { not: "ARCHIVED" }, deletedAt: null },
           select: { id: true, name: true },
           orderBy: { name: "asc" },
         })
       : Promise.resolve([] as { id: string; name: string }[]),
-    partnerPerms.canView
+    partnerPerms.canEdit
       ? db.partnership.findMany({
           where: { status: { not: "ARCHIVED" }, deletedAt: null },
           select: { id: true, name: true },
@@ -219,12 +243,6 @@ export default async function ProjectDetailPage({ params }: Props) {
   const availableTools = allTools.filter((t) => !linkedToolIds.has(t.id));
 
   const canEditLayout = user.role === "ADMIN" || user.role === "DEVELOPER";
-  // Managers can only manage staffing on projects they're assigned to.
-  const canAssign = await canManageProjectAssignments(
-    user.id,
-    user.role,
-    project.id
-  );
 
   const cardMap: Record<string, React.ReactNode> = {
     "sub-projects": (
@@ -384,7 +402,7 @@ export default async function ProjectDetailPage({ params }: Props) {
             <CheckSquare className="h-5 w-5" />
             Tasks ({projectTasks.length})
           </CardTitle>
-          <Link href={`/tasks?projectId=${project.id}`} className="text-sm text-primary hover:underline">
+          <Link href={`/tasks?project=${project.id}`} className="text-sm text-primary hover:underline">
             View all
           </Link>
         </CardHeader>

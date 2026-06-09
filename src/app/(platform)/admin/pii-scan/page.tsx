@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { auth } from "@/lib/auth";
+import { requireAuth } from "@/lib/permissions";
 import { db } from "@/lib/db";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -73,10 +73,11 @@ interface ThemeHit {
   value: string;
 }
 
+export const metadata = { title: "PII Scan · OpsHub" };
+
 export default async function PiiScanPage() {
-  const session = await auth();
-  if (!session?.user) redirect("/login");
-  if (session.user.role !== "ADMIN") redirect("/dashboard");
+  const user = await requireAuth();
+  if (user.role !== "ADMIN") redirect("/dashboard");
 
   // Gather candidate rows. Each query is small (admin-scoped tables)
   // so we can pull and filter in JS rather than building the regex
@@ -153,6 +154,7 @@ export default async function PiiScanPage() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="p-0">
+                <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead className="bg-muted/30 text-xs uppercase tracking-wide text-muted-foreground">
                     <tr>
@@ -171,6 +173,7 @@ export default async function PiiScanPage() {
                     ))}
                   </tbody>
                 </table>
+                </div>
               </CardContent>
             </Card>
           )}
@@ -184,6 +187,7 @@ export default async function PiiScanPage() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="p-0">
+                <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead className="bg-muted/30 text-xs uppercase tracking-wide text-muted-foreground">
                     <tr>
@@ -208,6 +212,7 @@ export default async function PiiScanPage() {
                     ))}
                   </tbody>
                 </table>
+                </div>
               </CardContent>
             </Card>
           )}
@@ -239,6 +244,7 @@ export default async function PiiScanPage() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
+                <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead className="bg-muted/30 text-xs uppercase tracking-wide text-muted-foreground">
                     <tr>
@@ -255,6 +261,7 @@ export default async function PiiScanPage() {
                     ))}
                   </tbody>
                 </table>
+                </div>
               </CardContent>
             </Card>
           )}

@@ -52,12 +52,23 @@ export default async function ContractDetailPage({ params }: Props) {
 
   const scope = await getUserScope(user.id, user.role);
   if (!canViewEntity(scope, "contract", contract.id)) {
-    return <AccessDenied module="contracts" moduleLabel="Contracts" entityType="contract" entityId={contract.id} entityLabel={contract.title} />;
+    return <AccessDenied module="contracts" moduleLabel="Contracts" entityType="contract" entityId={contract.id} />;
   }
 
-  const clients = await db.client.findMany({ where: { deletedAt: null }, select: { id: true, name: true }, orderBy: { name: "asc" } });
-  const projects = await db.project.findMany({ where: { deletedAt: null }, select: { id: true, name: true }, orderBy: { name: "asc" } });
-  const allContracts = await db.contract.findMany({ where: { deletedAt: null }, select: { id: true, title: true }, orderBy: { title: "asc" } });
+  // Edit/create-dialog dropdowns — read-only viewers don't need the
+  // org-wide client/project/contract name lists.
+  const needsPickers = perms.canEdit || perms.canCreate;
+  const [clients, projects, allContracts] = await Promise.all([
+    needsPickers
+      ? db.client.findMany({ where: { deletedAt: null }, select: { id: true, name: true }, orderBy: { name: "asc" } })
+      : Promise.resolve([]),
+    needsPickers
+      ? db.project.findMany({ where: { deletedAt: null }, select: { id: true, name: true }, orderBy: { name: "asc" } })
+      : Promise.resolve([]),
+    perms.canEdit
+      ? db.contract.findMany({ where: { deletedAt: null }, select: { id: true, title: true }, orderBy: { title: "asc" } })
+      : Promise.resolve([]),
+  ]);
 
   const childNodes: TreeNode[] = contract.childContracts.map((c) => ({
     id: c.id,

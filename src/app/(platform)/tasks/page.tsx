@@ -32,6 +32,8 @@ const statusLabels: Record<string, string> = {
   CANCELLED: "Cancelled",
 };
 
+export const metadata = { title: "Tasks · OpsHub" };
+
 export default async function TasksPage({
   searchParams,
 }: {
@@ -128,6 +130,8 @@ export default async function TasksPage({
         assignee: { select: { id: true, name: true } },
         createdBy: { select: { name: true } },
       },
+      // Cap the unfiltered list — matches the 500-row cap on /quotes.
+      take: 500,
     }),
     db.project.findMany({
       where: { deletedAt: null, ...(scopedProjectIds ? { id: { in: scopedProjectIds } } : {}) },

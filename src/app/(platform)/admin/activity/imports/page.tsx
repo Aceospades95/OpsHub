@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { ArrowLeft, ChevronRight, FileSpreadsheet } from "lucide-react";
 import { format } from "date-fns";
 
-import { auth } from "@/lib/auth";
+import { requireAuth } from "@/lib/permissions";
 import { db } from "@/lib/db";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent } from "@/components/ui/card";
@@ -32,14 +32,15 @@ interface SearchParams {
  * surfacing layer for what we DO have, plus a hook for the richer
  * data when it lands.
  */
+export const metadata = { title: "Import History · OpsHub" };
+
 export default async function ImportActivityPage({
   searchParams,
 }: {
   searchParams: SearchParams;
 }) {
-  const session = await auth();
-  if (!session?.user) redirect("/login");
-  if (session.user.role !== "ADMIN") redirect("/dashboard");
+  const user = await requireAuth();
+  if (user.role !== "ADMIN") redirect("/dashboard");
 
   const importerFilter = searchParams.importer?.trim() || undefined;
 
@@ -119,6 +120,7 @@ export default async function ImportActivityPage({
       ) : (
         <Card className="overflow-hidden">
           <CardContent className="p-0">
+            <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-muted/30 border-b border-border">
                 <tr className="text-left text-[10px] uppercase tracking-wider text-muted-foreground">
@@ -189,6 +191,7 @@ export default async function ImportActivityPage({
                 })}
               </tbody>
             </table>
+            </div>
           </CardContent>
         </Card>
       )}

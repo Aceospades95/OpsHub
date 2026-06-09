@@ -3,7 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { format } from "date-fns";
 
-import { auth } from "@/lib/auth";
+import { requireAuth } from "@/lib/permissions";
 import { db } from "@/lib/db";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -27,9 +27,8 @@ interface Props {
  * — count is enough.
  */
 export default async function ImportLogDetailPage({ params }: Props) {
-  const session = await auth();
-  if (!session?.user) redirect("/login");
-  if (session.user.role !== "ADMIN") redirect("/dashboard");
+  const user = await requireAuth();
+  if (user.role !== "ADMIN") redirect("/dashboard");
 
   const { logId } = await params;
   const log = await db.importLog.findUnique({ where: { id: logId } });
@@ -102,6 +101,7 @@ export default async function ImportLogDetailPage({ params }: Props) {
             </CardTitle>
           </CardHeader>
           <CardContent className="p-0">
+            <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-muted/30 border-y border-border">
                 <tr className="text-left text-[10px] uppercase tracking-wider text-muted-foreground">
@@ -138,6 +138,7 @@ export default async function ImportLogDetailPage({ params }: Props) {
                 ))}
               </tbody>
             </table>
+            </div>
           </CardContent>
         </Card>
       )}

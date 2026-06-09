@@ -13,6 +13,8 @@ import { DownloadCsvButton } from "@/components/shared/download-csv-button";
 import type { Prisma } from "@prisma/client";
 import { pluralize } from "@/lib/pluralize";
 
+export const metadata = { title: "Tools · OpsHub" };
+
 export default async function ToolsPage() {
   const user = await requireAuth();
 

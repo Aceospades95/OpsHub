@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import { requireAuth, resolveModulePerms } from "@/lib/permissions";
+import { getUserScope } from "@/lib/scope";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -20,6 +21,8 @@ import Link from "next/link";
 import { DashboardTaskCheckbox } from "./dashboard-task-checkbox";
 import { PageLayout } from "@/components/shared/page-layout";
 
+export const metadata = { title: "Dashboard · OpsHub" };
+
 export default async function DashboardPage() {
   const user = await requireAuth();
 
@@ -33,9 +36,19 @@ export default async function DashboardPage() {
 
   const canEditLayout = user.role === "ADMIN" || user.role === "DEVELOPER";
 
-  const clientPerms = await resolveModulePerms(userId, role, "clients");
-  const projectPerms = await resolveModulePerms(userId, role, "projects");
-  const contractPerms = await resolveModulePerms(userId, role, "contracts");
+  const [clientPerms, projectPerms, contractPerms, scope] = await Promise.all([
+    resolveModulePerms(userId, role, "clients"),
+    resolveModulePerms(userId, role, "projects"),
+    resolveModulePerms(userId, role, "contracts"),
+    getUserScope(userId, role),
+  ]);
+
+  // Scoped roles (CONTRIBUTOR / VIEWER / GUEST) only see counts, project
+  // lists, and activity within their assigned entities — same filters the
+  // /projects and /clients list pages apply.
+  const clientWhere = scope.all ? {} : { id: { in: Array.from(scope.clientIds) } };
+  const projectWhere = scope.all ? {} : { id: { in: Array.from(scope.projectIds) } };
+  const contractWhere = scope.all ? {} : { id: { in: Array.from(scope.contractIds) } };
 
   // Recently completed window — show tasks the current user has marked done
   // in the last 14 days so there's some sense of recent progress alongside
@@ -58,7 +71,7 @@ export default async function DashboardPage() {
     activeProjects,
     teamMembers,
   ] = await Promise.all([
-    clientPerms.canView ? db.client.count({ where: { deletedAt: null } }) : Promise.resolve(0),
+    clientPerms.canView ? db.client.count({ where: { deletedAt: null, ...clientWhere } }) : Promise.resolve(0),
     // Round-7 QA: the previous "{n} active" sub read as "the
     // remainder are inactive", but in practice a Client row is one
     // of ACTIVE / PROSPECT / INACTIVE / ARCHIVED. Pull the full
@@ -68,25 +81,29 @@ export default async function DashboardPage() {
     clientPerms.canView
       ? db.client.groupBy({
           by: ["status"],
-          where: { deletedAt: null },
+          where: { deletedAt: null, ...clientWhere },
           _count: { _all: true },
         })
       : Promise.resolve([] as { status: string; _count: { _all: number } }[]),
-    projectPerms.canView ? db.project.count({ where: { deletedAt: null } }) : Promise.resolve(0),
+    projectPerms.canView ? db.project.count({ where: { deletedAt: null, ...projectWhere } }) : Promise.resolve(0),
     projectPerms.canView
-      ? db.project.count({ where: { status: "ACTIVE", deletedAt: null } })
+      ? db.project.count({ where: { status: "ACTIVE", deletedAt: null, ...projectWhere } })
       : Promise.resolve(0),
-    contractPerms.canView ? db.contract.count({ where: { status: "ACTIVE", deletedAt: null } }) : Promise.resolve(0),
+    contractPerms.canView ? db.contract.count({ where: { status: "ACTIVE", deletedAt: null, ...contractWhere } }) : Promise.resolve(0),
     contractPerms.canView
       ? db.contract.count({
           where: {
             status: { in: ["EXPIRING_SOON", "EXPIRED"] },
             deletedAt: null,
+            ...contractWhere,
           },
         })
       : Promise.resolve(0),
     db.user.count({ where: { isActive: true } }),
     db.activityLog.findMany({
+      // Scoped users only see their own activity — the global feed leaks
+      // entity names (clients, contracts, …) outside their scope.
+      where: scope.all ? {} : { userId },
       take: 10,
       orderBy: { createdAt: "desc" },
       include: { user: { select: { id: true, name: true } } },
@@ -124,7 +141,7 @@ export default async function DashboardPage() {
     // Active projects with status for overview card
     projectPerms.canView
       ? db.project.findMany({
-          where: { status: { in: ["PLANNING", "ACTIVE", "ON_HOLD"] }, deletedAt: null },
+          where: { status: { in: ["PLANNING", "ACTIVE", "ON_HOLD"] }, deletedAt: null, ...projectWhere },
           take: 8,
           orderBy: { updatedAt: "desc" },
           select: {

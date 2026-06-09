@@ -10,6 +10,8 @@ import { DownloadCsvButton } from "@/components/shared/download-csv-button";
 import { ProjectsPageClient, type ProjectData, type ClientGroup } from "./projects-page-client";
 import type { Prisma } from "@prisma/client";
 
+export const metadata = { title: "Projects · OpsHub" };
+
 export default async function ProjectsPage({
   searchParams,
 }: {

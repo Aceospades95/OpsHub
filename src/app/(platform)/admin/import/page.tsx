@@ -1,4 +1,4 @@
-import { auth } from "@/lib/auth";
+import { requireAuth } from "@/lib/permissions";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { PageHeader } from "@/components/layout/page-header";
@@ -9,10 +9,11 @@ import { formatDistanceToNow } from "date-fns";
 import Link from "next/link";
 import { listImporters } from "@/lib/importers";
 
+export const metadata = { title: "Data Import · OpsHub" };
+
 export default async function AdminImportPage() {
-  const session = await auth();
-  if (!session?.user) redirect("/login");
-  if (session.user.role !== "ADMIN") redirect("/dashboard");
+  const user = await requireAuth();
+  if (user.role !== "ADMIN") redirect("/dashboard");
 
   const importers = listImporters();
 

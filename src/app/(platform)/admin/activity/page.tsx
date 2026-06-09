@@ -1,4 +1,4 @@
-import { auth } from "@/lib/auth";
+import { requireAuth } from "@/lib/permissions";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import type { Prisma } from "@prisma/client";
@@ -170,14 +170,15 @@ interface SearchParams {
   [key: string]: string | undefined;
 }
 
+export const metadata = { title: "Activity Log · OpsHub" };
+
 export default async function AdminActivityPage({
   searchParams,
 }: {
   searchParams: SearchParams;
 }) {
-  const session = await auth();
-  if (!session?.user) redirect("/login");
-  if (session.user.role !== "ADMIN") redirect("/dashboard");
+  const user = await requireAuth();
+  if (user.role !== "ADMIN") redirect("/dashboard");
 
   const where = buildWhere(searchParams);
 

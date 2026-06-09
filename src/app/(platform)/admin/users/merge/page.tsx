@@ -5,6 +5,8 @@ import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { MergeUsersClient } from "./merge-users-client";
 
+export const metadata = { title: "Merge Employees · OpsHub" };
+
 export default async function MergeUsersPage() {
   const user = await requireAuth();
   if (user.role !== "ADMIN") {

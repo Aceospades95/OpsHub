@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
-import { requireAuth } from "@/lib/permissions";
-import { getUserScope, canViewEntity, hasOrgWideManage } from "@/lib/scope";
+import { requireAuth, resolveModulePerms } from "@/lib/permissions";
+import { getUserScope, canViewEntity } from "@/lib/scope";
 import { AccessDenied } from "@/components/shared/access-denied";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -42,8 +42,13 @@ export default async function CertificationDetailPage({ params }: Props) {
   const { certId } = await params;
   const user = await requireAuth();
 
-  if (!hasOrgWideManage(user.role)) {
-    return <AccessDenied module="certifications" moduleLabel="Certifications" moduleDescription="Compliance certifications and expirations (Admin / Developer only)" />;
+  // Module canView like sibling modules — assignees / points of contact
+  // can open the certs that expiry jobs link them to. The per-entity
+  // canViewEntity check below still restricts which certs they can read;
+  // edit / sign-off / revoke stay role-gated.
+  const perms = await resolveModulePerms(user.id, user.role, "certifications");
+  if (!perms.canView) {
+    return <AccessDenied module="certifications" moduleLabel="Certifications" moduleDescription="Compliance certifications and expirations" />;
   }
 
   const cert = await db.certification.findFirst({
@@ -74,21 +79,26 @@ export default async function CertificationDetailPage({ params }: Props) {
 
   const scope = await getUserScope(user.id, user.role);
   if (!canViewEntity(scope, "certification", cert.id)) {
-    return <AccessDenied module="certifications" moduleLabel="Certifications" entityType="certification" entityId={cert.id} entityLabel={cert.name} />;
+    return <AccessDenied module="certifications" moduleLabel="Certifications" entityType="certification" entityId={cert.id} />;
   }
 
-  const [clients, users] = await Promise.all([
-    db.client.findMany({
-      where: { deletedAt: null, ...(scope.all ? {} : { id: { in: Array.from(scope.clientIds) } }) },
-      select: { id: true, name: true },
-      orderBy: { name: "asc" },
-    }),
-    db.user.findMany({
-      where: { isActive: true },
-      select: { id: true, name: true },
-      orderBy: { name: "asc" },
-    }),
-  ]);
+  const canEditCert = user.role === "ADMIN" || user.role === "MANAGER" || user.role === "DEVELOPER";
+
+  // Edit-dialog dropdowns — only fetched for roles that can edit.
+  const [clients, users] = canEditCert
+    ? await Promise.all([
+        db.client.findMany({
+          where: { deletedAt: null, ...(scope.all ? {} : { id: { in: Array.from(scope.clientIds) } }) },
+          select: { id: true, name: true },
+          orderBy: { name: "asc" },
+        }),
+        db.user.findMany({
+          where: { isActive: true },
+          select: { id: true, name: true },
+          orderBy: { name: "asc" },
+        }),
+      ])
+    : [[], []];
 
   const now = new Date();
   const daysUntilExpiry = cert.expirationDate ? differenceInDays(cert.expirationDate, now) : null;
@@ -607,10 +617,10 @@ export default async function CertificationDetailPage({ params }: Props) {
                     <tr key={row.id} className="border-b border-border last:border-0">
                       <td className="py-2">
                         {row.cycleStart
-                          ? format(row.cycleStart, "MMM d, yyyy")
+                          ? formatCalendarDate(row.cycleStart, "MMM d, yyyy")
                           : "—"}
                         {" → "}
-                        {row.cycleEnd ? format(row.cycleEnd, "MMM d, yyyy") : "—"}
+                        {row.cycleEnd ? formatCalendarDate(row.cycleEnd, "MMM d, yyyy") : "—"}
                       </td>
                       <td className="py-2">
                         {row.signedOffBy && row.signedOffAt ? (

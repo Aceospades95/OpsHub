@@ -1,4 +1,4 @@
-import { auth } from "@/lib/auth";
+import { requireAuth } from "@/lib/permissions";
 import { redirect, notFound } from "next/navigation";
 import Link from "next/link";
 import {
@@ -24,9 +24,8 @@ interface Props {
 
 export default async function JobDetailPage({ params }: Props) {
   const { jobKey } = await params;
-  const session = await auth();
-  if (!session?.user) redirect("/login");
-  if (session.user.role !== "ADMIN") redirect("/dashboard");
+  const user = await requireAuth();
+  if (user.role !== "ADMIN") redirect("/dashboard");
 
   const job = getJob(jobKey);
   if (!job) notFound();

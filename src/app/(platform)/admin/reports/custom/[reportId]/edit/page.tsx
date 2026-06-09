@@ -1,4 +1,4 @@
-import { auth } from "@/lib/auth";
+import { requireAuth } from "@/lib/permissions";
 import { notFound, redirect } from "next/navigation";
 
 import { db } from "@/lib/db";
@@ -15,9 +15,8 @@ interface Props {
 
 export default async function EditCustomReportPage({ params }: Props) {
   const { reportId } = await params;
-  const session = await auth();
-  if (!session?.user) redirect("/login");
-  if (session.user.role !== "ADMIN") redirect("/dashboard");
+  const user = await requireAuth();
+  if (user.role !== "ADMIN") redirect("/dashboard");
 
   const report = await db.customReport.findUnique({
     where: { id: reportId },

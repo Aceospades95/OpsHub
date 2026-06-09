@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import { requireAuth, resolveModulePerms } from "@/lib/permissions";
+import { AccessDenied } from "@/components/shared/access-denied";
 import { PageHeader } from "@/components/layout/page-header";
 import { EmployeeDetailClient } from "./employee-detail-client";
 import { StartWorkflowButton } from "./start-workflow-button";
@@ -14,9 +15,34 @@ export default async function EmployeeDetailPage({ params }: Props) {
   const { employeeId } = await params;
   const user = await requireAuth();
 
+  const teamPerms = await resolveModulePerms(user.id, user.role, "team");
+  if (!teamPerms.canView) return <AccessDenied module="team" moduleLabel="Team" moduleDescription="Employees, org chart, and staffing matrix" />;
+
+  const canManage = user.role === "ADMIN" || user.role === "MANAGER";
+  const isAdmin = user.role === "ADMIN";
+
+  // Explicit select of exactly what EmployeeDetailClient renders — the
+  // previous full-row include sent every column (incl. permission rows
+  // and OAuth accounts) to every viewer. The permissions/accounts
+  // relations are only fetched for admins, who are the only viewers the
+  // client shows the Permissions tab (and the linked-account controls) to.
   const employee = await db.user.findUnique({
     where: { id: employeeId },
-    include: {
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      role: true,
+      jobTitle: true,
+      department: true,
+      location: true,
+      phone: true,
+      avatar: true,
+      isActive: true,
+      hasLoginAccess: true,
+      authProvider: true,
+      managerId: true,
+      createdAt: true,
       manager: { select: { id: true, name: true, jobTitle: true, avatar: true } },
       directReports: {
         where: { isActive: true },
@@ -24,24 +50,30 @@ export default async function EmployeeDetailPage({ params }: Props) {
         orderBy: { name: "asc" },
       },
       projectMembers: {
-        include: {
+        select: {
+          id: true,
+          role: true,
+          createdAt: true,
           project: {
             select: { id: true, name: true, status: true, client: { select: { id: true, name: true } } },
           },
         },
       },
       assignments: {
-        include: {
+        select: {
+          id: true,
+          allocationFte: true,
+          status: true,
+          role: true,
+          function: true,
+          notes: true,
+          startDate: true,
+          endDate: true,
+          createdAt: true,
           project: { select: { id: true, name: true, status: true } },
           client: { select: { id: true, name: true } },
           serviceOffering: { select: { id: true, name: true } },
         },
-        orderBy: { createdAt: "desc" },
-      },
-      modulePermissions: true,
-      entityPermissions: true,
-      accounts: {
-        select: { id: true, provider: true, createdAt: true },
         orderBy: { createdAt: "desc" },
       },
     },
@@ -49,10 +81,23 @@ export default async function EmployeeDetailPage({ params }: Props) {
 
   if (!employee) notFound();
 
-  const canManage = user.role === "ADMIN" || user.role === "MANAGER";
-  const isAdmin = user.role === "ADMIN";
+  // Permission rows + OAuth accounts only exist in the UI for admins
+  // (Permissions tab, Google-unlink, reset-password) — don't even query
+  // them for other viewers.
+  const [modulePermissions, entityPermissions, accounts] = isAdmin
+    ? await Promise.all([
+        db.modulePermission.findMany({ where: { userId: employeeId } }),
+        db.entityPermission.findMany({ where: { userId: employeeId } }),
+        db.account.findMany({
+          where: { userId: employeeId },
+          select: { id: true, provider: true, createdAt: true },
+          orderBy: { createdAt: "desc" },
+        }),
+      ])
+    : [[], [], []];
 
-  // Fetch admin-related data
+  // Admin-only data — the client only uses these in the canManage /
+  // isAdmin gated dialogs and the Permissions tab.
   const [recentActivity, allUsers, allClients, allProjects, serviceOfferings, roleDefinitions, customPages] = await Promise.all([
     db.activityLog.findMany({
       where: { userId: employeeId },
@@ -64,26 +109,34 @@ export default async function EmployeeDetailPage({ params }: Props) {
       select: { id: true, name: true },
       orderBy: { name: "asc" },
     }) : Promise.resolve([]),
-    db.client.findMany({ where: { status: "ACTIVE", deletedAt: null }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
-    db.project.findMany({
-      where: { status: { in: ["PLANNING", "ACTIVE", "ON_HOLD"] }, deletedAt: null },
-      select: {
-        id: true, name: true, status: true, clientId: true,
-        serviceOfferingId: true,
-        serviceOffering: { select: { id: true, name: true } },
-      },
-      orderBy: { name: "asc" },
-    }),
-    db.serviceOffering.findMany({
-      where: { isActive: true },
-      select: { id: true, name: true },
-      orderBy: { name: "asc" },
-    }),
-    db.roleDefinition.findMany({
-      where: { isActive: true },
-      select: { id: true, name: true },
-      orderBy: { name: "asc" },
-    }),
+    canManage
+      ? db.client.findMany({ where: { status: "ACTIVE", deletedAt: null }, select: { id: true, name: true }, orderBy: { name: "asc" } })
+      : Promise.resolve([]),
+    canManage
+      ? db.project.findMany({
+          where: { status: { in: ["PLANNING", "ACTIVE", "ON_HOLD"] }, deletedAt: null },
+          select: {
+            id: true, name: true, status: true, clientId: true,
+            serviceOfferingId: true,
+            serviceOffering: { select: { id: true, name: true } },
+          },
+          orderBy: { name: "asc" },
+        })
+      : Promise.resolve([]),
+    canManage
+      ? db.serviceOffering.findMany({
+          where: { isActive: true },
+          select: { id: true, name: true },
+          orderBy: { name: "asc" },
+        })
+      : Promise.resolve([]),
+    canManage
+      ? db.roleDefinition.findMany({
+          where: { isActive: true },
+          select: { id: true, name: true },
+          orderBy: { name: "asc" },
+        })
+      : Promise.resolve([]),
     isAdmin
       ? db.sandboxPage.findMany({
           where: { published: true },
@@ -93,24 +146,25 @@ export default async function EmployeeDetailPage({ params }: Props) {
       : Promise.resolve([]),
   ]);
 
-  // Serialize dates for client component
+  // Serialize dates for client component. Permission rows + OAuth
+  // accounts only go over the wire for admins (the only viewers the
+  // client shows them to); everyone else gets empty arrays.
   const serializedEmployee = {
     ...employee,
-    hashedPassword: undefined, // never send to client
     createdAt: employee.createdAt.toISOString(),
-    updatedAt: employee.updatedAt.toISOString(),
     assignments: employee.assignments.map((a) => ({
       ...a,
       startDate: a.startDate?.toISOString() || null,
       endDate: a.endDate?.toISOString() || null,
       createdAt: a.createdAt.toISOString(),
-      updatedAt: a.updatedAt.toISOString(),
     })),
     projectMembers: employee.projectMembers.map((pm) => ({
       ...pm,
       createdAt: pm.createdAt.toISOString(),
     })),
-    accounts: employee.accounts.map((a) => ({
+    modulePermissions,
+    entityPermissions,
+    accounts: accounts.map((a) => ({
       ...a,
       createdAt: a.createdAt.toISOString(),
     })),

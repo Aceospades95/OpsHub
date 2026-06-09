@@ -1,4 +1,4 @@
-import { auth } from "@/lib/auth";
+import { requireAuth } from "@/lib/permissions";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { db } from "@/lib/db";
@@ -19,10 +19,11 @@ import { JobRunButton } from "./job-run-button";
 import { JobToggleButton } from "./job-toggle-button";
 import { JobCadenceSelect } from "./job-cadence-select";
 
+export const metadata = { title: "Scheduled Jobs · OpsHub" };
+
 export default async function AdminJobsPage() {
-  const session = await auth();
-  if (!session?.user) redirect("/login");
-  if (session.user.role !== "ADMIN") redirect("/dashboard");
+  const user = await requireAuth();
+  if (user.role !== "ADMIN") redirect("/dashboard");
 
   const jobs = listJobs();
   const jobKeys = jobs.map((j) => j.key);
