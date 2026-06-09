@@ -20,6 +20,11 @@ import {
   startInstance,
   tick,
 } from "@/lib/workflows/engine";
+import {
+  ensurePortalToken,
+  revokePortalTokenForSubject,
+} from "@/lib/workflows/portal";
+import { absoluteUrl } from "@/lib/url";
 import { z } from "zod";
 import type { WorkflowSubjectType } from "@prisma/client";
 
@@ -278,4 +283,138 @@ export async function tickWorkflowInstance(instanceId: string) {
   const result = await tick(instanceId);
   revalidateWorkflowInstance(instanceId);
   return { success: true, ...result } as const;
+}
+
+// ─── Portal token management ─────────────────────────────────────────────
+//
+// The portal token is keyed by (subjectType, subjectId), not by
+// instance — both actions take an instanceId because that's where the
+// admin is standing, then operate on the subject's token. Revoking
+// kills the link for EVERY instance the subject has; reissuing mints
+// a replacement.
+
+/**
+ * Kill the subject's portal link immediately. A revoked token resolves
+ * like an expired one, so a leaked link dies now instead of riding out
+ * its 90-day expiry — and it stops granting access to later instances
+ * too, because the engine skips revoked rows and mints fresh.
+ *
+ * No active token (none minted yet, or already revoked) is a no-op
+ * success: the end state the caller asked for already holds.
+ */
+export async function revokePortalToken(instanceId: string) {
+  const gate = await requireInstanceDriver();
+  if (gate.error !== undefined) return { error: gate.error } as const;
+  const instance = await db.workflowInstance.findUnique({
+    where: { id: instanceId },
+    select: { subjectType: true, subjectId: true },
+  });
+  if (!instance) return { error: "Instance not found" } as const;
+
+  const revokedTokenId = await revokePortalTokenForSubject(
+    instance.subjectType,
+    instance.subjectId
+  );
+  if (revokedTokenId) {
+    await logActivity("revoked", "portal-token", revokedTokenId, gate.user.id);
+  }
+  revalidateWorkflowInstance(instanceId, {
+    subjectType: instance.subjectType,
+    subjectId: instance.subjectId,
+  });
+  return { success: true } as const;
+}
+
+/**
+ * Replace the subject's portal link: revoke whatever is active, then
+ * mint a fresh token (same code path the engine uses at instance
+ * create). Returns the new portal URL so the UI can surface it to the
+ * admin straight away.
+ */
+export async function reissuePortalToken(instanceId: string) {
+  const gate = await requireInstanceDriver();
+  if (gate.error !== undefined) return { error: gate.error } as const;
+  const instance = await db.workflowInstance.findUnique({
+    where: { id: instanceId },
+    select: { subjectType: true, subjectId: true },
+  });
+  if (!instance) return { error: "Instance not found" } as const;
+
+  const revokedTokenId = await revokePortalTokenForSubject(
+    instance.subjectType,
+    instance.subjectId
+  );
+  if (revokedTokenId) {
+    await logActivity("revoked", "portal-token", revokedTokenId, gate.user.id);
+  }
+  const token = await ensurePortalToken(
+    instance.subjectType,
+    instance.subjectId
+  );
+  const minted = await db.portalToken.findUnique({
+    where: {
+      subjectType_subjectId: {
+        subjectType: instance.subjectType,
+        subjectId: instance.subjectId,
+      },
+    },
+    select: { id: true },
+  });
+  await logActivity(
+    "reissued",
+    "portal-token",
+    minted?.id ?? instanceId,
+    gate.user.id
+  );
+
+  // Built the same way the engine bakes it into instance contexts
+  // (see buildInstanceContext in lib/workflows/context.ts).
+  const portalUrl = absoluteUrl(`/portal/${token}`);
+
+  // Contexts are intentionally frozen snapshots, but portal.url is the
+  // one field that must track the live token — otherwise every future
+  // {{portal.url}} render (reminder emails, scheduled sends) on the
+  // subject's open instances would carry the dead link we just revoked.
+  await refreshPortalUrlInContexts(
+    instance.subjectType,
+    instance.subjectId,
+    portalUrl
+  );
+
+  revalidateWorkflowInstance(instanceId, {
+    subjectType: instance.subjectType,
+    subjectId: instance.subjectId,
+  });
+  return { success: true, portalUrl } as const;
+}
+
+async function refreshPortalUrlInContexts(
+  subjectType: WorkflowSubjectType,
+  subjectId: string,
+  portalUrl: string
+) {
+  const instances = await db.workflowInstance.findMany({
+    where: {
+      subjectType,
+      subjectId,
+      status: { in: ["PENDING", "IN_PROGRESS", "PAUSED"] },
+      context: { not: null },
+    },
+    select: { id: true, context: true },
+  });
+  for (const inst of instances) {
+    try {
+      const ctx = JSON.parse(inst.context ?? "{}") as {
+        portal?: { url?: string };
+      };
+      ctx.portal = { ...(ctx.portal ?? {}), url: portalUrl };
+      await db.workflowInstance.update({
+        where: { id: inst.id },
+        data: { context: JSON.stringify(ctx) },
+      });
+    } catch {
+      // Malformed context — leave it alone; the engine has its own
+      // fallback for unparseable blobs.
+    }
+  }
 }

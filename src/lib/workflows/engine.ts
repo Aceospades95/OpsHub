@@ -40,19 +40,9 @@
 import { db } from "@/lib/db";
 import { log } from "@/lib/log";
 import { resolveScheduledFor } from "./timing";
-import { randomBytes } from "crypto";
+import { ensurePortalToken } from "./portal";
 import { buildInstanceContext, type WorkflowContext } from "./context";
 import { runStepHandler } from "./handlers";
-
-/**
- * 32-byte CSPRNG token used for portal links. URL-safe (base64url) so
- * it survives copy-paste, link shorteners, and email-quoting. Lives
- * here rather than in a shared util because it's only used once — at
- * instance create — and inlining keeps the dependency graph tight.
- */
-function generatePortalToken(): string {
-  return randomBytes(32).toString("base64url");
-}
 import type {
   WorkflowInstance,
   WorkflowInstanceStep,
@@ -99,35 +89,17 @@ export async function createInstance(
   const startDate = input.startDate ?? new Date();
   const targetDate = input.targetDate ?? null;
 
-  // Look up an existing portal token for this subject so the same link
-  // works across instances. Phase 5's portal owns token rotation.
-  const existingToken = await db.portalToken.findUnique({
-    where: {
-      subjectType_subjectId: {
-        subjectType: input.subjectType,
-        subjectId: input.subjectId,
-      },
-    },
-    select: { token: true },
-  });
-  let portalToken = existingToken?.token ?? null;
-  if (!portalToken) {
-    const tokenValue = generatePortalToken();
-    // 90-day default expiry — long enough for a multi-session
-    // onboarding/offboarding flow but not "forever". The token can
-    // outlive an instance; if a subject needs continued access an
-    // admin can issue a fresh one through the workflow detail page.
-    const expiresAt = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000);
-    await db.portalToken.create({
-      data: {
-        subjectType: input.subjectType,
-        subjectId: input.subjectId,
-        token: tokenValue,
-        expiresAt,
-      },
-    });
-    portalToken = tokenValue;
-  }
+  // Reuse the subject's existing portal token so the same link works
+  // across instances — unless that token has been revoked, in which
+  // case ensurePortalToken() rotates in a fresh one (revoking + starting
+  // a new instance = new link, old link dead). Token generation, the
+  // 90-day expiry, and the revoked-row rotation all live in
+  // lib/workflows/portal.ts so this path and the admin reissue action
+  // can never drift apart.
+  const portalToken = await ensurePortalToken(
+    input.subjectType,
+    input.subjectId
+  );
 
   const instance = await db.workflowInstance.create({
     data: {

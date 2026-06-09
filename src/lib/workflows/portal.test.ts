@@ -2,13 +2,15 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // Mock the Prisma client so we can drive resolution behavior from
 // fixtures rather than a real DB. We keep the surface minimal — only
-// the methods buildPortalView / getPortalSubject / loadPortalStep
-// actually call.
+// the methods buildPortalView / getPortalSubject / loadPortalStep /
+// ensurePortalToken / revokePortalTokenForSubject actually call.
 vi.mock("@/lib/db", () => ({
   db: {
     portalToken: {
       findUnique: vi.fn(),
       update: vi.fn(),
+      updateMany: vi.fn(),
+      create: vi.fn(),
     },
     user: { findUnique: vi.fn() },
     workflowInstance: { findMany: vi.fn(), count: vi.fn() },
@@ -22,12 +24,16 @@ import {
   getPortalSubject,
   buildPortalView,
   loadPortalStep,
+  ensurePortalToken,
+  revokePortalTokenForSubject,
   PORTAL_STEP_TYPES,
 } from "./portal";
 
 const portalToken = db.portalToken as unknown as {
   findUnique: ReturnType<typeof vi.fn>;
   update: ReturnType<typeof vi.fn>;
+  updateMany: ReturnType<typeof vi.fn>;
+  create: ReturnType<typeof vi.fn>;
 };
 const userMock = db.user as unknown as { findUnique: ReturnType<typeof vi.fn> };
 const wfInstanceMock = db.workflowInstance as unknown as {
@@ -77,6 +83,24 @@ describe("getPortalSubject", () => {
     });
     const r = await getPortalSubject("abc");
     expect(r).toBeNull();
+  });
+
+  it("returns null for a revoked token, identically to an expired one", async () => {
+    portalToken.findUnique.mockResolvedValue({
+      id: "tk1",
+      subjectType: "EMPLOYEE",
+      subjectId: "u1",
+      token: "abc",
+      expiresAt: null,
+      revokedAt: new Date(),
+    });
+    const r = await getPortalSubject("abc");
+    expect(r).toBeNull();
+    // Same bail-out as the expired path — the subject is never looked
+    // up and lastUsedAt is never stamped, so there's no timing or
+    // side-effect oracle distinguishing revoked from expired/unknown.
+    expect(userMock.findUnique).not.toHaveBeenCalled();
+    expect(portalToken.update).not.toHaveBeenCalled();
   });
 
   it("returns null when the subject employee row has been deleted", async () => {
@@ -453,5 +477,141 @@ describe("loadPortalStep", () => {
       },
     });
     expect(await loadPortalStep("abc", "step1")).toBeNull();
+  });
+});
+
+describe("ensurePortalToken", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("reuses an existing non-revoked token", async () => {
+    portalToken.findUnique.mockResolvedValue({
+      id: "tk1",
+      token: "existing-token",
+      revokedAt: null,
+    });
+    const t = await ensurePortalToken("EMPLOYEE", "u1");
+    expect(t).toBe("existing-token");
+    expect(portalToken.create).not.toHaveBeenCalled();
+    expect(portalToken.update).not.toHaveBeenCalled();
+  });
+
+  it("mints a fresh token when the subject has none", async () => {
+    portalToken.findUnique.mockResolvedValue(null);
+    portalToken.create.mockResolvedValue({ id: "tk-new" });
+    const t = await ensurePortalToken("EMPLOYEE", "u1");
+    // 32 bytes base64url — long, URL-safe, no padding.
+    expect(t).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(portalToken.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        subjectType: "EMPLOYEE",
+        subjectId: "u1",
+        token: t,
+        expiresAt: expect.any(Date),
+      }),
+    });
+    expect(portalToken.update).not.toHaveBeenCalled();
+  });
+
+  it("rotates a fresh token over a revoked row, leaving the old value dead", async () => {
+    portalToken.findUnique.mockResolvedValue({
+      id: "tk1",
+      token: "old-token",
+      revokedAt: new Date(),
+    });
+    portalToken.update.mockResolvedValue({ id: "tk1" });
+    const t = await ensurePortalToken("EMPLOYEE", "u1");
+    expect(t).not.toBe("old-token");
+    // In-place rotation (the (subjectType, subjectId) unique means one
+    // row per subject): new value + expiry, revocation cleared.
+    expect(portalToken.update).toHaveBeenCalledWith({
+      where: { id: "tk1" },
+      data: expect.objectContaining({
+        token: t,
+        expiresAt: expect.any(Date),
+        revokedAt: null,
+        lastUsedAt: null,
+      }),
+    });
+    expect(portalToken.create).not.toHaveBeenCalled();
+  });
+
+  it("works the same for CUSTOM subjects (token keyed by subjectType + subjectId)", async () => {
+    portalToken.findUnique.mockResolvedValue(null);
+    portalToken.create.mockResolvedValue({ id: "tk-new" });
+    const t = await ensurePortalToken("CUSTOM", "external-7");
+    expect(portalToken.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        subjectType: "CUSTOM",
+        subjectId: "external-7",
+        token: t,
+      }),
+    });
+  });
+});
+
+describe("revokePortalTokenForSubject", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("stamps revokedAt on the active token and returns its id", async () => {
+    portalToken.findUnique.mockResolvedValue({ id: "tk1", revokedAt: null });
+    portalToken.updateMany.mockResolvedValue({ count: 1 });
+    const id = await revokePortalTokenForSubject("EMPLOYEE", "u1");
+    expect(id).toBe("tk1");
+    // Conditional on revokedAt still being null so a concurrent revoke
+    // can't clobber the original timestamp.
+    expect(portalToken.updateMany).toHaveBeenCalledWith({
+      where: { id: "tk1", revokedAt: null },
+      data: { revokedAt: expect.any(Date) },
+    });
+  });
+
+  it("is a no-op returning null when the subject has no token", async () => {
+    portalToken.findUnique.mockResolvedValue(null);
+    expect(await revokePortalTokenForSubject("EMPLOYEE", "u1")).toBeNull();
+    expect(portalToken.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("is a no-op returning null when the token is already revoked", async () => {
+    portalToken.findUnique.mockResolvedValue({
+      id: "tk1",
+      revokedAt: new Date(),
+    });
+    expect(await revokePortalTokenForSubject("EMPLOYEE", "u1")).toBeNull();
+    expect(portalToken.updateMany).not.toHaveBeenCalled();
+  });
+});
+
+describe("reissue flow (revoke, then mint)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("revokes the active token, then the mint pass rotates in a different one", async () => {
+    // Revoke pass sees the active row…
+    portalToken.findUnique.mockResolvedValueOnce({
+      id: "tk1",
+      revokedAt: null,
+    });
+    portalToken.updateMany.mockResolvedValue({ count: 1 });
+    // …mint pass sees that same row now revoked and rotates it.
+    portalToken.findUnique.mockResolvedValueOnce({
+      id: "tk1",
+      token: "old-token",
+      revokedAt: new Date(),
+    });
+    portalToken.update.mockResolvedValue({ id: "tk1" });
+
+    const revokedId = await revokePortalTokenForSubject("EMPLOYEE", "u1");
+    const fresh = await ensurePortalToken("EMPLOYEE", "u1");
+
+    expect(revokedId).toBe("tk1");
+    expect(fresh).not.toBe("old-token");
+    expect(portalToken.updateMany).toHaveBeenCalledTimes(1); // the revoke
+    expect(portalToken.update).toHaveBeenCalledTimes(1); // the rotation
+    expect(portalToken.create).not.toHaveBeenCalled();
   });
 });

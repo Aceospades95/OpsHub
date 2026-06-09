@@ -9,7 +9,7 @@
  * goes through these helpers so the token is validated in one place.
  */
 
-import { createHash } from "crypto";
+import { createHash, randomBytes } from "crypto";
 
 import { db } from "@/lib/db";
 import { consume } from "@/lib/rate-limit";
@@ -20,6 +20,84 @@ import type {
   WorkflowStepType,
   WorkflowSubjectType,
 } from "@prisma/client";
+
+// ─── Token mint / revoke ───────────────────────────────────────────────
+
+/**
+ * 32-byte CSPRNG token used for portal links. URL-safe (base64url) so
+ * it survives copy-paste, link shorteners, and email-quoting.
+ */
+function generatePortalToken(): string {
+  return randomBytes(32).toString("base64url");
+}
+
+/** 90-day default expiry — long enough for a multi-session
+ *  onboarding/offboarding flow but not "forever". */
+export const PORTAL_TOKEN_TTL_MS = 90 * 24 * 60 * 60 * 1000;
+
+/**
+ * Ensure the subject has a usable portal token and return its value.
+ *
+ * Reuses the existing token when one exists and hasn't been revoked,
+ * so the same link keeps working across instances. When the existing
+ * row IS revoked — or no row exists — a fresh token is minted. The
+ * (subjectType, subjectId) unique constraint means "mint fresh" over a
+ * revoked row is an in-place rotation: new token value, new expiry,
+ * revocation cleared. The old link stays dead because the token value
+ * changed; revoking and then starting a new instance therefore yields
+ * a brand-new link.
+ *
+ * This is the single mint path — the engine's createInstance() and the
+ * admin reissue action both call it so token generation never forks.
+ */
+export async function ensurePortalToken(
+  subjectType: WorkflowSubjectType,
+  subjectId: string
+): Promise<string> {
+  const existing = await db.portalToken.findUnique({
+    where: { subjectType_subjectId: { subjectType, subjectId } },
+    select: { id: true, token: true, revokedAt: true },
+  });
+  if (existing && !existing.revokedAt) return existing.token;
+
+  const token = generatePortalToken();
+  const expiresAt = new Date(Date.now() + PORTAL_TOKEN_TTL_MS);
+  if (existing) {
+    await db.portalToken.update({
+      where: { id: existing.id },
+      data: { token, expiresAt, revokedAt: null, lastUsedAt: null },
+    });
+  } else {
+    await db.portalToken.create({
+      data: { subjectType, subjectId, token, expiresAt },
+    });
+  }
+  return token;
+}
+
+/**
+ * Revoke the subject's active portal token, if any. Returns the
+ * revoked row's id, or null when there was nothing to revoke (no
+ * token minted yet, or already revoked) — callers treat that as a
+ * no-op success. The updateMany is conditioned on revokedAt still
+ * being null so a concurrent revoke can't clobber the original
+ * revocation timestamp.
+ */
+export async function revokePortalTokenForSubject(
+  subjectType: WorkflowSubjectType,
+  subjectId: string
+): Promise<string | null> {
+  const existing = await db.portalToken.findUnique({
+    where: { subjectType_subjectId: { subjectType, subjectId } },
+    select: { id: true, revokedAt: true },
+  });
+  if (!existing || existing.revokedAt) return null;
+  const result = await db.portalToken.updateMany({
+    where: { id: existing.id, revokedAt: null },
+    data: { revokedAt: new Date() },
+  });
+  return result.count > 0 ? existing.id : null;
+}
 
 export interface PortalSubjectResolution {
   subjectType: WorkflowSubjectType;
@@ -76,6 +154,9 @@ export async function getPortalSubject(
   const row = await db.portalToken.findUnique({ where: { token } });
   if (!row) return null;
   if (row.expiresAt && row.expiresAt.getTime() < Date.now()) return null;
+  // Revoked tokens behave exactly like expired ones — same null, no
+  // oracle distinguishing "revoked" from "expired" from "never existed".
+  if (row.revokedAt) return null;
 
   let displayName = "(unknown)";
   if (row.subjectType === "EMPLOYEE") {

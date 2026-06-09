@@ -5,6 +5,7 @@ import { formatCalendarDate } from "@/lib/dates";
 
 import { db } from "@/lib/db";
 import { requireAuth, resolveModulePerms } from "@/lib/permissions";
+import { absoluteUrl } from "@/lib/url";
 import { AccessDenied } from "@/components/shared/access-denied";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,6 +14,7 @@ import { describeTiming } from "@/lib/workflows/timing";
 import { STEP_TYPE_DEFINITIONS } from "@/lib/workflows/step-types";
 
 import { InstanceActions, StepActions } from "./instance-actions";
+import { PortalLinkCard } from "./portal-link-card";
 
 const STATUS_VARIANT: Record<string, "default" | "success" | "warning" | "destructive" | "secondary" | "outline"> = {
   PENDING: "outline",
@@ -80,6 +82,24 @@ export default async function WorkflowInstanceDetailPage({ params }: Props) {
     ["COMPLETED", "SKIPPED", "FAILED"].includes(s.status)
   ).length;
   const pct = totalSteps > 0 ? Math.round((terminalSteps / totalSteps) * 100) : 0;
+
+  // Portal link surface — only for users who can drive instances
+  // (mirrors the requireInstanceDriver gate in actions/workflow-
+  // instances.ts). The token is keyed by subject, not instance, so
+  // revoke/reissue affects every workflow this subject has.
+  const canDriveInstances =
+    perms.canManage || (user.role === "MANAGER" && perms.canEdit);
+  const portalTokenRow = canDriveInstances
+    ? await db.portalToken.findUnique({
+        where: {
+          subjectType_subjectId: {
+            subjectType: instance.subjectType,
+            subjectId: instance.subjectId,
+          },
+        },
+        select: { token: true, revokedAt: true, expiresAt: true },
+      })
+    : null;
 
   return (
     <div>
@@ -251,6 +271,19 @@ export default async function WorkflowInstanceDetailPage({ params }: Props) {
               </p>
             </CardContent>
           </Card>
+
+          {canDriveInstances && (
+            <PortalLinkCard
+              instanceId={instance.id}
+              portalUrl={
+                portalTokenRow
+                  ? absoluteUrl(`/portal/${portalTokenRow.token}`)
+                  : null
+              }
+              revoked={!!portalTokenRow?.revokedAt}
+              expiresAt={portalTokenRow?.expiresAt ?? null}
+            />
+          )}
 
           <Card>
             <CardHeader>
