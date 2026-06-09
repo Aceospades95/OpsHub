@@ -20,6 +20,7 @@ import { formatCalendarDate } from "@/lib/dates";
 import Link from "next/link";
 import { DashboardTaskCheckbox } from "./dashboard-task-checkbox";
 import { PageLayout } from "@/components/shared/page-layout";
+import { StatusBadge } from "@/components/shared/status-badge";
 
 export const metadata = { title: "Dashboard · OpsHub" };
 
@@ -222,12 +223,6 @@ export default async function DashboardPage() {
     },
   ];
 
-  const priorityColors: Record<string, string> = {
-    HIGH: "bg-red-100 text-red-800",
-    MEDIUM: "bg-yellow-100 text-yellow-800",
-    LOW: "bg-green-100 text-green-800",
-  };
-
   const cardMap: Record<string, React.ReactNode> = {
     stats: (
       <div className="h-full grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 content-start">
@@ -304,9 +299,7 @@ export default async function DashboardPage() {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
                           <span className="text-sm font-medium truncate" title={task.title}>{task.title}</span>
-                          <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${priorityColors[task.priority]}`}>
-                            {task.priority}
-                          </span>
+                          <StatusBadge status={task.priority} className="text-[10px]" />
                         </div>
                         <div className="flex items-center gap-2 text-xs text-muted-foreground">
                           {task.project && (

@@ -432,13 +432,7 @@ export default async function ProjectDetailPage({ params }: Props) {
                       </div>
                     </div>
                   </div>
-                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                    task.priority === "HIGH" ? "bg-red-100 text-red-800" :
-                    task.priority === "MEDIUM" ? "bg-yellow-100 text-yellow-800" :
-                    "bg-green-100 text-green-800"
-                  }`}>
-                    {task.priority}
-                  </span>
+                  <StatusBadge status={task.priority} className="text-xs" />
                 </div>
               ))}
             </div>
