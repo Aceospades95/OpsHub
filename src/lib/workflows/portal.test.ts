@@ -17,6 +17,7 @@ vi.mock("@/lib/db", () => ({
 }));
 
 import { db } from "@/lib/db";
+import { _testMemoryStorage } from "@/lib/rate-limit";
 import {
   getPortalSubject,
   buildPortalView,
@@ -53,6 +54,9 @@ describe("PORTAL_STEP_TYPES", () => {
 describe("getPortalSubject", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // The brute-force limiter shares one in-memory map per process —
+    // start each test with fresh buckets.
+    _testMemoryStorage.clear?.();
     // Default: update succeeds. Tests can override.
     portalToken.update.mockResolvedValue({ id: "tk1" });
   });
@@ -154,6 +158,18 @@ describe("getPortalSubject", () => {
     const r = await getPortalSubject("abc");
     // Falls through to the "Subject {id}" fallback name.
     expect(r?.displayName).toContain("Subject");
+  });
+
+  it("rate-limits repeated resolutions of one token without leaking an oracle", async () => {
+    portalToken.findUnique.mockResolvedValue(null);
+    // Per-token bucket holds 30; exhaust it.
+    for (let i = 0; i < 30; i++) {
+      expect(await getPortalSubject("brute-force-guess")).toBeNull();
+    }
+    expect(portalToken.findUnique).toHaveBeenCalledTimes(30);
+    // 31st attempt: same null answer, but the DB is never touched.
+    expect(await getPortalSubject("brute-force-guess")).toBeNull();
+    expect(portalToken.findUnique).toHaveBeenCalledTimes(30);
   });
 });
 
@@ -290,6 +306,7 @@ describe("buildPortalView", () => {
 describe("loadPortalStep", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    _testMemoryStorage.clear?.();
     portalToken.update.mockResolvedValue({ id: "tk1" });
   });
 

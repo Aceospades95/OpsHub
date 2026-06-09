@@ -80,9 +80,10 @@ export async function POST(
     );
   }
 
-  // Accept either a free-floating file (will be associated by the caller
-  // later via finalizeWorkflowPortalDocument) or a file + step id pair
-  // that the route can audit on the spot.
+  // Every upload must target a specific open REQUEST_DOCUMENT step on
+  // the token's own instance. Free-floating uploads (no step id) would
+  // be stored unconditionally — unbounded storage with no workflow to
+  // ever claim them.
   let formData: FormData;
   try {
     formData = await req.formData();
@@ -94,6 +95,12 @@ export async function POST(
   const instanceStepId = formData.get("instanceStepId");
   if (!file) {
     return NextResponse.json({ error: "No file provided" }, { status: 400 });
+  }
+  if (typeof instanceStepId !== "string" || instanceStepId.length === 0) {
+    return NextResponse.json(
+      { error: "instanceStepId is required" },
+      { status: 400 }
+    );
   }
   if (file.size > MAX_FILE_SIZE) {
     return NextResponse.json(
@@ -108,26 +115,22 @@ export async function POST(
     );
   }
 
-  // If a step id was supplied, verify it belongs to the subject before
-  // accepting the upload. Without one we still accept the upload — the
-  // caller may want to attach it via finalize after the fact.
-  let resolvedStepId: string | null = null;
-  if (typeof instanceStepId === "string" && instanceStepId.length > 0) {
-    const resolved = await loadPortalStep(token, instanceStepId);
-    if (!resolved) {
-      return NextResponse.json(
-        { error: "Step does not belong to this portal token" },
-        { status: 403 }
-      );
-    }
-    if (resolved.step.workflowStep.stepType !== "REQUEST_DOCUMENT") {
-      return NextResponse.json(
-        { error: "Step is not a document request" },
-        { status: 400 }
-      );
-    }
-    resolvedStepId = resolved.step.id;
+  // loadPortalStep rejects steps that don't belong to the token's
+  // subject, steps already COMPLETED/SKIPPED, and sealed instances.
+  const resolved = await loadPortalStep(token, instanceStepId);
+  if (!resolved) {
+    return NextResponse.json(
+      { error: "Step is not an open step for this portal token" },
+      { status: 400 }
+    );
   }
+  if (resolved.step.workflowStep.stepType !== "REQUEST_DOCUMENT") {
+    return NextResponse.json(
+      { error: "Step is not a document request" },
+      { status: 400 }
+    );
+  }
+  const resolvedStepId = resolved.step.id;
 
   // Read the file bytes once and hand to the storage layer.
   const buffer = Buffer.from(await file.arrayBuffer());
@@ -155,7 +158,14 @@ export async function POST(
       // Tag with the subject user id when EMPLOYEE so the file shows up
       // on the employee profile's Files tab as well.
       userId: subject.subjectType === "EMPLOYEE" ? subject.subjectId : undefined,
-      category: "workflow",
+      // CUSTOM subjects have no User row to own the file, so stamp the
+      // step id into the category tag — finalizeWorkflowPortalDocument
+      // verifies it to reject forged fileIds. (CUSTOM files never show
+      // on an employee Files tab, so the tag is invisible to the UI.)
+      category:
+        subject.subjectType === "EMPLOYEE"
+          ? "workflow"
+          : `workflow:${resolvedStepId}`,
     });
   } catch (err) {
     if (err instanceof StorageQuotaExceededError) {

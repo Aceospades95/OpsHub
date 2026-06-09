@@ -15,15 +15,17 @@
  *   Adds checks for the configured email driver and storage driver so
  *   a deploy smoke-test can catch misconfiguration immediately. Returns
  *   the same 200/503 status, plus a `checks` map with per-service
- *   booleans and (on failure) a one-liner that's intentionally generic.
+ *   booleans.
  *
- *   Verbose mode does not require auth — it returns the SAME info
- *   shape an admin could derive by reading config — but to keep the
- *   endpoint cheap for high-frequency liveness probes the verbose
- *   path runs only when explicitly asked.
+ *   Verbose mode does not require auth, but anonymous callers only get
+ *   the ok/fail boolean per check. Failure *reasons* and the cron check
+ *   (which reveals whether CRON_SECRET is set) are reserved for an
+ *   authenticated ADMIN session — misconfiguration details are useful
+ *   fingerprinting material for anonymous scanners.
  */
 
 import { NextResponse } from "next/server";
+import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { log } from "@/lib/log";
 import { consume, clientIpFromRequest } from "@/lib/rate-limit";
@@ -125,12 +127,43 @@ export async function GET(request: Request) {
     );
   }
 
-  // Verbose: run every check, report a 503 if ANY fail.
+  // Verbose: run every check, report a 503 if ANY fail. Failure reasons
+  // and the cron-posture check are admin-only — re-read the fresh DB role
+  // (the JWT role is stale by design; see requireAuth in @/lib/permissions).
+  let isAdmin = false;
+  const session = await auth();
+  if (session?.user?.id) {
+    const freshUser = await db.user.findUnique({
+      where: { id: session.user.id },
+      select: { role: true },
+    });
+    isAdmin = freshUser?.role === "ADMIN";
+  }
+
+  if (isAdmin) {
+    const checks = {
+      db: dbCheck,
+      email: checkEmailDriver(),
+      storage: checkStorageDriver(),
+      cron: checkCronSecret(),
+    };
+    const allOk = Object.values(checks).every((c) => c.ok);
+    return NextResponse.json(
+      {
+        status: allOk ? "ok" : "error",
+        checks,
+      },
+      { status: allOk ? 200 : 503 }
+    );
+  }
+
+  // Anonymous verbose: booleans only, no reasons, no cron check. The
+  // status reflects only the checks we expose so a 503 can't be used to
+  // infer the hidden cron posture.
   const checks = {
-    db: dbCheck,
-    email: checkEmailDriver(),
-    storage: checkStorageDriver(),
-    cron: checkCronSecret(),
+    db: { ok: dbCheck.ok },
+    email: { ok: checkEmailDriver().ok },
+    storage: { ok: checkStorageDriver().ok },
   };
   const allOk = Object.values(checks).every((c) => c.ok);
   return NextResponse.json(

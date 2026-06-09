@@ -10,6 +10,7 @@
 import { db } from "@/lib/db";
 import { sendFromTemplate } from "@/lib/email";
 import { sendEmail } from "@/lib/email";
+import { log } from "@/lib/log";
 import { absoluteUrl } from "@/lib/url";
 import { getReport } from "@/lib/reports/registry";
 import { renderHtml, renderText } from "@/lib/reports/format";
@@ -220,17 +221,39 @@ export async function runHandler(
 
 // ─── Helpers ────────────────────────────────────────────────────────────
 
+/**
+ * Minimal sanity gate on top of the "contains @" check: control
+ * characters (header-injection vectors), embedded spaces, more than
+ * one "@", and over-long values (RFC 5321 caps the address at 254)
+ * are all rejected rather than passed to the email driver.
+ */
+function isSaneEmailAddress(value: string): boolean {
+  if (value.length > 254) return false;
+  if (/[\r\n\0 ]/.test(value)) return false;
+  if ((value.match(/@/g) ?? []).length !== 1) return false;
+  return true;
+}
+
+function keepValidAddress(v: string): boolean {
+  if (v.length === 0 || !v.includes("@")) return false;
+  if (!isSaneEmailAddress(v)) {
+    log.warn("scheduled-tasks.recipients", "Skipping invalid recipient address", {
+      address: v.slice(0, 80),
+    });
+    return false;
+  }
+  return true;
+}
+
 function parseRecipients(value: unknown): string[] {
   if (Array.isArray(value)) {
-    return value
-      .map((v) => String(v).trim())
-      .filter((v) => v.length > 0 && v.includes("@"));
+    return value.map((v) => String(v).trim()).filter(keepValidAddress);
   }
   if (typeof value === "string") {
     return value
       .split(/[,;\s]+/)
       .map((v) => v.trim())
-      .filter((v) => v.length > 0 && v.includes("@"));
+      .filter(keepValidAddress);
   }
   return [];
 }

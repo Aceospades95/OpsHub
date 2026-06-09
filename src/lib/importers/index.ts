@@ -136,8 +136,16 @@ function guessValue(
  * RFC-4180 CSV field escaping. Quote when a field contains comma, quote,
  * newline, or carriage return; double embedded quotes inside the quoted
  * field. Real-data sample rows can contain any of these.
+ *
+ * Also neutralizes spreadsheet-formula injection: a leading =, +, -, @,
+ * tab, or CR makes Excel/Sheets evaluate the cell as a formula on open,
+ * so we prefix a single quote — except pure numbers (e.g. "-12.5"),
+ * which are safe and must stay numeric for spreadsheets.
  */
 function csvEscape(value: string): string {
+  if (/^[=+\-@\t\r]/.test(value) && !/^-?\d+(\.\d+)?$/.test(value)) {
+    value = `'${value}`;
+  }
   if (/[",\n\r]/.test(value)) {
     return `"${value.replace(/"/g, '""')}"`;
   }

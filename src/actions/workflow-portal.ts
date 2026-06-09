@@ -2,6 +2,7 @@
 
 import { db } from "@/lib/db";
 import { revalidatePath } from "next/cache";
+import { headers } from "next/headers";
 import { z } from "zod";
 
 import { completeStep } from "@/lib/workflows/engine";
@@ -32,22 +33,50 @@ function checkPortalActionRate(token: string):
   };
 }
 
+/**
+ * Resolve the calling client's IP from request headers in a server-action
+ * context. Mirrors clientIpFromRequest() from lib/rate-limit (and
+ * loginClientIp in actions/auth.ts). Never trust a client-supplied ip
+ * value — the signature audit trail records this server-derived one.
+ */
+function portalClientIp(): string {
+  const trustProxy =
+    (process.env.RATE_LIMIT_TRUST_PROXY ?? "true").toLowerCase() !== "false";
+  if (trustProxy) {
+    const h = headers();
+    const xff = h.get("x-forwarded-for");
+    if (xff) {
+      const first = xff.split(",")[0]?.trim();
+      if (first) return first;
+    }
+    const real = h.get("x-real-ip");
+    if (real) return real.trim();
+  }
+  return "remote";
+}
+
 // ─── Schemas ───────────────────────────────────────────────────────────
 
 const submitSignatureSchema = z.object({
   token: z.string().min(1),
   instanceStepId: z.string().min(1),
-  signedName: z.string().min(1, "Type your name to sign"),
-  signatureData: z.string().nullish(),
-  ip: z.string().nullish(),
+  signedName: z.string().min(1, "Type your name to sign").max(200),
+  // Data-URL of the drawn signature. 200k bounds the stored blob — a
+  // reasonable canvas PNG is well under that.
+  signatureData: z.string().max(200_000).nullish(),
 });
+
+/** Per-value size ceiling on form responses — they're attacker-
+ *  controlled and stored verbatim in the step output. */
+const MAX_FORM_RESPONSE_LENGTH = 10_000;
 
 const submitFormSchema = z.object({
   token: z.string().min(1),
   instanceStepId: z.string().min(1),
   /** Form responses keyed by field key. Validation against the field
    *  schema (required/type) happens here — not at the engine level —
-   *  because only the portal knows the user's perspective. */
+   *  because only the portal knows the user's perspective. Keys are
+   *  filtered to the step's configured fields below. */
   responses: z.record(z.unknown()),
 });
 
@@ -96,14 +125,25 @@ export async function finalizeWorkflowPortalDocument(
   // when it writes the row, but we re-check here.
   const file = await db.file.findUnique({
     where: { id: parsed.data.fileId },
-    select: { id: true, userId: true },
+    select: { id: true, userId: true, uploadedById: true, category: true },
   });
   if (!file) return { error: "File not found" } as const;
-  if (
-    resolved.subject.subjectType === "EMPLOYEE" &&
-    file.userId !== resolved.subject.subjectId
-  ) {
-    return { error: "File does not belong to this subject" } as const;
+  if (resolved.subject.subjectType === "EMPLOYEE") {
+    if (file.userId !== resolved.subject.subjectId) {
+      return { error: "File does not belong to this subject" } as const;
+    }
+  } else {
+    // CUSTOM subjects have no User row to own the file. The upload
+    // route stamps their rows uploadedById="system" + the step id in
+    // the category tag — require an exact stamp for THIS step so a
+    // forged fileId can't attach another user's (or another
+    // instance's) file.
+    if (
+      file.uploadedById !== "system" ||
+      file.category !== `workflow:${resolved.step.id}`
+    ) {
+      return { error: "File does not belong to this subject" } as const;
+    }
   }
 
   await db.workflowDocument.create({
@@ -169,12 +209,16 @@ export async function submitWorkflowPortalSignature(
     documentTextSnapshot = null;
   }
 
+  // The signed IP is part of the audit trail — derive it server-side
+  // from request headers; a client-supplied value would be forgeable.
+  const ip = portalClientIp();
+
   await db.workflowSignature.create({
     data: {
       workflowInstanceStepId: resolved.step.id,
       signedName: parsed.data.signedName,
       signatureData: parsed.data.signatureData ?? null,
-      signedIp: parsed.data.ip ?? null,
+      signedIp: ip,
       documentTextSnapshot,
     },
   });
@@ -187,7 +231,7 @@ export async function submitWorkflowPortalSignature(
       metadata: JSON.stringify({
         stepName: resolved.step.workflowStep.name,
         signedName: parsed.data.signedName,
-        ip: parsed.data.ip ?? null,
+        ip,
       }),
     },
   });
@@ -237,9 +281,27 @@ export async function submitWorkflowPortalForm(
   } catch {
     fields = [];
   }
+  // Keep only configured field keys and bound each value's size — the
+  // responses blob is attacker-controlled and stored verbatim, so an
+  // unfiltered record could smuggle arbitrary keys or megabytes of
+  // padding into the step output.
+  const allowedKeys = new Set(fields.map((f) => f.key));
+  const responses: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(parsed.data.responses)) {
+    if (!allowedKeys.has(key)) continue;
+    const size =
+      typeof value === "string"
+        ? value.length
+        : (JSON.stringify(value) ?? "").length;
+    if (size > MAX_FORM_RESPONSE_LENGTH) {
+      return { error: `Response too long for field: ${key}` } as const;
+    }
+    responses[key] = value;
+  }
+
   for (const f of fields) {
     if (!f.required) continue;
-    const v = parsed.data.responses[f.key];
+    const v = responses[f.key];
     if (v === undefined || v === null || (typeof v === "string" && v.trim() === "")) {
       return {
         error: `Required field missing: ${f.label ?? f.key}`,
@@ -259,7 +321,7 @@ export async function submitWorkflowPortalForm(
   });
 
   await completeStep(resolved.step.id, {
-    responses: parsed.data.responses,
+    responses,
     actor: "subject",
   });
 

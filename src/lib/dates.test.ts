@@ -146,6 +146,26 @@ describe("parseCalendarDateString", () => {
     expect(parseCalendarDateString(null)).toBe(null);
     expect(parseCalendarDateString(undefined)).toBe(null);
   });
+
+  it("rejects impossible calendar dates instead of rolling them over", () => {
+    // new Date("2026-02-30") silently becomes Mar 2 — the round-trip
+    // check must catch that.
+    expect(parseCalendarDateString("2026-02-30")).toBe(null);
+    expect(parseCalendarDateString("2026-04-31")).toBe(null);
+    expect(parseCalendarDateString("2025-02-29")).toBe(null); // not a leap year
+    expect(parseCalendarDateString("2026-00-10")).toBe(null);
+    expect(parseCalendarDateString("2026-13-01")).toBe(null);
+    expect(parseCalendarDateString("2026-06-00")).toBe(null);
+  });
+
+  it("still accepts real month-end and leap-day dates", () => {
+    expect(parseCalendarDateString("2024-02-29")?.toISOString()).toBe(
+      "2024-02-29T00:00:00.000Z"
+    );
+    expect(parseCalendarDateString("2026-12-31")?.toISOString()).toBe(
+      "2026-12-31T00:00:00.000Z"
+    );
+  });
 });
 
 describe("round-trip parse → toString", () => {

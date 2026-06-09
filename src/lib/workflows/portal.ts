@@ -9,7 +9,10 @@
  * goes through these helpers so the token is validated in one place.
  */
 
+import { createHash } from "crypto";
+
 import { db } from "@/lib/db";
+import { consume } from "@/lib/rate-limit";
 import type {
   WorkflowInstance,
   WorkflowInstanceStep,
@@ -25,6 +28,30 @@ export interface PortalSubjectResolution {
   displayName: string;
   /** The PortalToken row id — useful for stamping `lastUsedAt`. */
   tokenId: string;
+}
+
+/**
+ * Brute-force throttle on token resolution. Keyed by a short prefix of
+ * the token's hash (caps hammering of a single guessed token) plus a
+ * global backstop bucket (caps a scanner spraying many distinct
+ * guesses, which would otherwise land in fresh per-token buckets).
+ * Lives here — not just in the upload route — so the GET page and
+ * every write action are covered too. Per-token numbers are looser
+ * than the signup-token limiter because a legitimate portal session
+ * resolves the token on every page render AND every action.
+ * On limit the caller behaves exactly like an invalid token.
+ */
+function portalTokenRateLimited(token: string): boolean {
+  const tokenHash = createHash("sha256").update(token).digest("hex");
+  const perToken = consume(`portal-read:${tokenHash.slice(0, 8)}`, {
+    capacity: 30,
+    refillRatePerSec: 0.5, // ~30/min sustained
+  });
+  const global = consume("portal-read:all", {
+    capacity: 300,
+    refillRatePerSec: 5,
+  });
+  return !perToken.allowed || !global.allowed;
 }
 
 /**
@@ -45,6 +72,7 @@ export interface PortalSubjectResolution {
 export async function getPortalSubject(
   token: string
 ): Promise<PortalSubjectResolution | null> {
+  if (portalTokenRateLimited(token)) return null;
   const row = await db.portalToken.findUnique({ where: { token } });
   if (!row) return null;
   if (row.expiresAt && row.expiresAt.getTime() < Date.now()) return null;
