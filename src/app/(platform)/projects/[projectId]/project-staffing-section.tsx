@@ -238,7 +238,7 @@ export function ProjectStaffingSection({
                 </span>
               )}
               {rg.unfilledCount > 0 && (
-                <Badge variant="outline" className="text-[9px] bg-amber-500/15 border-amber-500/50 text-amber-700 dark:text-amber-300 gap-0.5">
+                <Badge variant="outline" className="text-[9px] bg-warning/15 border-warning/50 text-warning gap-0.5">
                   <AlertTriangle className="h-2.5 w-2.5" />
                   {rg.unfilledCount} open
                 </Badge>
@@ -343,7 +343,7 @@ export function ProjectStaffingSection({
                   roleName: rg.roleName,
                   requiredFte: rg.requiredFte || 1,
                 })}
-                className="w-full flex items-center gap-1.5 rounded border border-dashed border-amber-500/50 bg-amber-500/5 px-2 py-1.5 text-xs text-amber-700 dark:text-amber-300 hover:bg-amber-500/10 disabled:cursor-not-allowed disabled:opacity-60"
+                className="w-full flex items-center gap-1.5 rounded border border-dashed border-warning/50 bg-warning/5 px-2 py-1.5 text-xs text-warning hover:bg-warning/10 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 <UserPlus className="h-3 w-3" />
                 <span className="font-medium">Open — click to fill</span>

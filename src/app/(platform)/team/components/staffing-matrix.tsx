@@ -793,7 +793,7 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, rol
                                             ({pluralize(pg.roles.length, "role")} · {pg.filledPositions}/{pg.neededPositions} filled)
                                           </span>
                                           {unfilled > 0 && (
-                                            <Badge variant="outline" className="text-[9px] bg-amber-500/15 border-amber-500/50 text-amber-700 dark:text-amber-300 gap-0.5">
+                                            <Badge variant="outline" className="text-[9px] bg-warning/15 border-warning/50 text-warning gap-0.5">
                                               <AlertTriangle className="h-2.5 w-2.5" />
                                               {unfilled} unfilled
                                             </Badge>
@@ -841,7 +841,7 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, rol
                                                   </span>
                                                 )}
                                                 {rg.unfilledCount > 0 && (
-                                                  <Badge variant="outline" className="text-[9px] bg-amber-500/15 border-amber-500/50 text-amber-700 dark:text-amber-300 gap-0.5">
+                                                  <Badge variant="outline" className="text-[9px] bg-warning/15 border-warning/50 text-warning gap-0.5">
                                                     <AlertTriangle className="h-2.5 w-2.5" />
                                                     {rg.unfilledCount} unfilled
                                                   </Badge>
@@ -994,7 +994,7 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, rol
                                                     {formatFte(row.fte)}
                                                   </button>
                                                 ) : (
-                                                  <span className={`font-bold text-sm ${row.fte > 1 ? "text-red-600" : ""}`}>
+                                                  <span className={`font-bold text-sm ${row.fte > 1 ? "text-destructive" : ""}`}>
                                                     {formatFte(row.fte)}
                                                   </span>
                                                 )}
@@ -1034,7 +1034,7 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, rol
                                         {(showRoleHeader ? isRoleExpanded : true) && rg.unfilledCount > 0 && Array.from({ length: rg.unfilledCount }).map((_, i) => (
                                           <tr
                                             key={`unfilled-${roleExpandKey}-${i}`}
-                                            className={`border-b border-border/10 border-l-4 ${color.border} transition-colors bg-background ${canManage ? "hover:bg-amber-50/50 cursor-pointer" : ""}`}
+                                            className={`border-b border-border/10 border-l-4 ${color.border} transition-colors bg-background ${canManage ? "hover:bg-warning/10 cursor-pointer" : ""}`}
                                             onClick={canManage && pg.projectId ? () => {
                                               const proj = projects.find((p) => p.id === pg.projectId);
                                               setQuickAssignCtx({
@@ -1075,13 +1075,13 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, rol
                                             <td className="py-1.5 px-3 hidden md:table-cell" />
                                             <td className="py-1.5 px-3" />
                                             <td className="py-1.5 px-3">
-                                              <Badge variant="outline" className="text-[10px] font-normal border-dashed border-amber-500/50 text-amber-700 dark:text-amber-300">{rg.role}</Badge>
+                                              <Badge variant="outline" className="text-[10px] font-normal border-dashed border-warning/50 text-warning">{rg.role}</Badge>
                                             </td>
                                             <td className="py-1.5 px-3 text-center">
                                               <span className="text-xs text-muted-foreground">{formatFte(rg.requiredFte)}</span>
                                             </td>
                                             <td className="py-1.5 px-3">
-                                              <div className="flex items-center gap-1.5 text-xs text-amber-600">
+                                              <div className="flex items-center gap-1.5 text-xs text-warning">
                                                 <UserPlus className="h-3.5 w-3.5" />
                                                 <span className="font-medium">Open — click to fill</span>
                                               </div>
@@ -1267,9 +1267,9 @@ function MetricCard({ label, value, variant = "default", active = false, onClick
 }) {
   const colorMap = {
     default: "",
-    success: "text-green-600",
-    warning: "text-yellow-600",
-    destructive: "text-red-600",
+    success: "text-success",
+    warning: "text-warning",
+    destructive: "text-destructive",
   };
   return (
     <button

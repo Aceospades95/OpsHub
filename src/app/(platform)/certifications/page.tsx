@@ -184,8 +184,8 @@ export default async function CertificationsPage({ searchParams }: PageProps) {
               label: "Active",
               count: active.length,
               Icon: CheckCircle2,
-              iconWrap: "bg-green-50",
-              iconColor: "text-green-600",
+              iconWrap: "bg-success/10",
+              iconColor: "text-success",
               activeBorder: "",
             },
             {
@@ -193,8 +193,8 @@ export default async function CertificationsPage({ searchParams }: PageProps) {
               label: "Expiring Soon",
               count: expiringSoon.length,
               Icon: Clock,
-              iconWrap: "bg-yellow-50",
-              iconColor: "text-yellow-600",
+              iconWrap: "bg-warning/15",
+              iconColor: "text-warning",
               activeBorder: expiringSoon.length > 0 ? "border-warning/50" : "",
             },
             {
@@ -202,8 +202,8 @@ export default async function CertificationsPage({ searchParams }: PageProps) {
               label: "Expired",
               count: expired.length,
               Icon: XCircle,
-              iconWrap: "bg-red-50",
-              iconColor: "text-red-600",
+              iconWrap: "bg-destructive/10",
+              iconColor: "text-destructive",
               activeBorder: expired.length > 0 ? "border-destructive/50" : "",
             },
             {
@@ -211,7 +211,7 @@ export default async function CertificationsPage({ searchParams }: PageProps) {
               label: "Pending",
               count: pending.length,
               Icon: RotateCcw,
-              iconWrap: "bg-blue-50",
+              iconWrap: "bg-blue-500/10",
               iconColor: "text-blue-600",
               activeBorder: "",
             },
@@ -389,7 +389,7 @@ export default async function CertificationsPage({ searchParams }: PageProps) {
                         </span>
                       )}
                       {isExpiring && (
-                        <span className="flex items-center gap-1 text-yellow-600 font-medium">
+                        <span className="flex items-center gap-1 text-warning font-medium">
                           <Clock className="h-3 w-3" /> {daysUntilExpiry}d until expiry
                         </span>
                       )}

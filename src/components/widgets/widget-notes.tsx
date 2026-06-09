@@ -3,7 +3,7 @@ import { StickyNote } from "lucide-react";
 
 export async function WidgetNotes({ userId: _userId }: { userId: string }) {
   return (
-    <Card className="h-full bg-yellow-50/50 border-yellow-200/50">
+    <Card className="h-full bg-yellow-500/10 border-yellow-500/20">
       <CardHeader className="pb-2">
         <CardTitle className="text-sm flex items-center gap-2">
           <StickyNote className="h-4 w-4 text-yellow-600" /> Sticky Note

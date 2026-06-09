@@ -118,14 +118,14 @@ export default async function WorkflowAnalyticsPage() {
                         title={`${t.active} active`}
                       />
                       <div
-                        className="h-full bg-emerald-500"
+                        className="h-full bg-success"
                         style={{
                           width: `${(t.completed / Math.max(1, total)) * 100 * (total / maxVolume)}%`,
                         }}
                         title={`${t.completed} completed`}
                       />
                       <div
-                        className="h-full bg-neutral-400"
+                        className="h-full bg-muted-foreground/40"
                         style={{
                           width: `${(t.cancelled / Math.max(1, total)) * 100 * (total / maxVolume)}%`,
                         }}
@@ -233,7 +233,7 @@ function MetricCard({
   tone?: "default" | "warn";
 }) {
   const valueColor =
-    tone === "warn" && value !== "0" ? "text-amber-600" : "text-foreground";
+    tone === "warn" && value !== "0" ? "text-warning" : "text-foreground";
   return (
     <Card>
       <CardContent className="p-5">

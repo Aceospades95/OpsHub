@@ -52,7 +52,7 @@ export function ManageOfferingsDialog({ open, onClose, serviceOfferings }: Props
             <div className="mb-3 rounded bg-destructive/10 p-2 text-sm text-destructive">{state.error}</div>
           )}
           {state && "success" in state && state.success && (
-            <div className="mb-3 rounded bg-green-50 border border-green-200 p-2 text-sm text-green-800">Service offering created.</div>
+            <div className="mb-3 rounded bg-success/10 border border-success/30 p-2 text-sm text-success">Service offering created.</div>
           )}
           <form action={action} className="flex gap-2">
             <input name="name" required placeholder="e.g. End User Device Field Services"

@@ -120,7 +120,7 @@ export default async function PiiScanPage() {
       {totalHits === 0 ? (
         <Card>
           <CardContent className="p-8 flex items-start gap-3">
-            <ShieldCheck className="h-6 w-6 text-green-600 shrink-0 mt-0.5" />
+            <ShieldCheck className="h-6 w-6 text-success shrink-0 mt-0.5" />
             <div>
               <p className="font-medium">No flagged rows.</p>
               <p className="text-sm text-muted-foreground mt-1">
@@ -134,8 +134,8 @@ export default async function PiiScanPage() {
       ) : (
         <div className="space-y-6">
           <Card>
-            <CardContent className="p-4 flex items-start gap-3 bg-amber-500/5 border-amber-500/30">
-              <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+            <CardContent className="p-4 flex items-start gap-3 bg-warning/5 border-warning/30">
+              <AlertTriangle className="h-5 w-5 text-warning shrink-0 mt-0.5" />
               <div className="text-sm">
                 <p className="font-medium">{totalHits} flagged row(s) found.</p>
                 <p className="text-muted-foreground mt-1">

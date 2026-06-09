@@ -95,13 +95,13 @@ export function getAllocationStatus(totalFte: number): AllocationStatus {
 export function getAllocationBadge(status: AllocationStatus): { label: string; className: string } {
   switch (status) {
     case "overallocated":
-      return { label: "Over", className: "bg-red-100 text-red-800 border-red-200" };
+      return { label: "Over", className: "bg-destructive/10 text-destructive border-destructive/30" };
     case "fully-allocated":
-      return { label: "Full", className: "bg-green-100 text-green-800 border-green-200" };
+      return { label: "Full", className: "bg-success/10 text-success border-success/30" };
     case "underallocated":
-      return { label: "Available", className: "bg-yellow-100 text-yellow-800 border-yellow-200" };
+      return { label: "Available", className: "bg-warning/15 text-warning border-warning/30" };
     case "unassigned":
-      return { label: "Unassigned", className: "bg-gray-100 text-gray-600 border-gray-200" };
+      return { label: "Unassigned", className: "bg-muted text-muted-foreground border-border" };
   }
 }
 

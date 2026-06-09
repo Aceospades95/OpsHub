@@ -34,7 +34,7 @@ export function NotificationsAdminActions() {
       {result && (
         <div
           className={`flex items-center gap-1.5 text-xs ${
-            result.success ? "text-emerald-600" : "text-destructive"
+            result.success ? "text-success" : "text-destructive"
           }`}
         >
           {result.success ? (

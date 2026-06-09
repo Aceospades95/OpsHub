@@ -148,7 +148,7 @@ export default async function AdminJobsPage() {
              *  completed" which is wrong. Label as runs so the
              *  number's meaning matches the count. */}
             <div className="text-center">
-              <p className="text-2xl font-semibold text-emerald-600">{completedTotal}</p>
+              <p className="text-2xl font-semibold text-success">{completedTotal}</p>
               <p className="text-xs text-muted-foreground">Completed runs</p>
             </div>
             <div className="text-center">
@@ -258,7 +258,7 @@ export default async function AdminJobsPage() {
                         <span
                           className={
                             lastRun.status === "completed"
-                              ? "text-emerald-600"
+                              ? "text-success"
                               : lastRun.status === "failed"
                                 ? "text-destructive"
                                 : ""
@@ -317,7 +317,7 @@ export default async function AdminJobsPage() {
                   className="flex items-start gap-3 rounded border border-border p-3"
                 >
                   {log.status === "completed" ? (
-                    <CheckCircle2 className="h-4 w-4 text-emerald-600 mt-0.5 shrink-0" />
+                    <CheckCircle2 className="h-4 w-4 text-success mt-0.5 shrink-0" />
                   ) : log.status === "failed" ? (
                     <AlertCircle className="h-4 w-4 text-destructive mt-0.5 shrink-0" />
                   ) : (

@@ -170,7 +170,7 @@ export function ImportWizard({
         <CardContent className="space-y-4">
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
             <div className="rounded border border-border p-4 text-center">
-              <p className="text-3xl font-bold text-emerald-600">{outcome.imported}</p>
+              <p className="text-3xl font-bold text-success">{outcome.imported}</p>
               <p className="text-xs text-muted-foreground mt-1">Created</p>
             </div>
             <div className="rounded border border-border p-4 text-center">
@@ -178,7 +178,7 @@ export function ImportWizard({
               <p className="text-xs text-muted-foreground mt-1">Updated</p>
             </div>
             <div className="rounded border border-border p-4 text-center">
-              <p className="text-3xl font-bold text-amber-600">{outcome.skipped}</p>
+              <p className="text-3xl font-bold text-warning">{outcome.skipped}</p>
               <p className="text-xs text-muted-foreground mt-1">Skipped</p>
             </div>
             <div className="rounded border border-border p-4 text-center">
@@ -198,7 +198,7 @@ export function ImportWizard({
                       className={`text-[10px] shrink-0 ${
                         r.status === "failed"
                           ? "text-destructive border-destructive/50"
-                          : "text-amber-600 border-amber-500/50"
+                          : "text-warning border-warning/50"
                       }`}
                     >
                       Row {r.row}

@@ -1,12 +1,14 @@
 import type { DisplayProps } from "@/lib/widget-builder/widget-config-types";
 
+// Distinct column hues (intentional); mid-tone text on a /10 alpha
+// tint stays readable on both light and dark admin themes.
 const COLUMN_COLORS = [
-  { text: "text-blue-700", bg: "bg-blue-50" },
-  { text: "text-green-700", bg: "bg-green-50" },
-  { text: "text-yellow-700", bg: "bg-yellow-50" },
-  { text: "text-purple-700", bg: "bg-purple-50" },
-  { text: "text-orange-700", bg: "bg-orange-50" },
-  { text: "text-pink-700", bg: "bg-pink-50" },
+  { text: "text-blue-600", bg: "bg-blue-500/10" },
+  { text: "text-green-600", bg: "bg-green-500/10" },
+  { text: "text-yellow-600", bg: "bg-yellow-500/10" },
+  { text: "text-purple-600", bg: "bg-purple-500/10" },
+  { text: "text-orange-600", bg: "bg-orange-500/10" },
+  { text: "text-pink-600", bg: "bg-pink-500/10" },
 ];
 
 export function DisplayStatusBoard({ config, data, fields }: DisplayProps) {

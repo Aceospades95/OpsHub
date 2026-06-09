@@ -4,10 +4,10 @@ import { Kanban } from "lucide-react";
 import Link from "next/link";
 
 const statusConfig: { status: string; label: string; color: string; bg: string }[] = [
-  { status: "PLANNING", label: "Planning", color: "text-blue-700", bg: "bg-blue-50" },
-  { status: "ACTIVE", label: "Active", color: "text-green-700", bg: "bg-green-50" },
-  { status: "ON_HOLD", label: "On Hold", color: "text-yellow-700", bg: "bg-yellow-50" },
-  { status: "COMPLETED", label: "Completed", color: "text-gray-700", bg: "bg-gray-50" },
+  { status: "PLANNING", label: "Planning", color: "text-blue-600", bg: "bg-blue-500/10" },
+  { status: "ACTIVE", label: "Active", color: "text-success", bg: "bg-success/10" },
+  { status: "ON_HOLD", label: "On Hold", color: "text-warning", bg: "bg-warning/15" },
+  { status: "COMPLETED", label: "Completed", color: "text-muted-foreground", bg: "bg-muted" },
 ];
 
 export async function WidgetProjectStatus({ userId: _userId }: { userId: string }) {

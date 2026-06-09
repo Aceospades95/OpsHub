@@ -78,7 +78,7 @@ export function TaskCreateButton({ projects, clients, users }: TaskCreateButtonP
                 onChange={(e) => setDueDate(e.target.value)}
               />
               {isPastDue && (
-                <p className="mt-1 text-xs text-amber-600" role="status">
+                <p className="mt-1 text-xs text-warning" role="status">
                   This due date is in the past — are you sure?
                 </p>
               )}

@@ -87,9 +87,9 @@ export default async function AdminImportPage() {
                     className="flex items-start gap-3 rounded border border-border p-3"
                   >
                     {hasErrors ? (
-                      <AlertCircle className="h-4 w-4 text-amber-600 mt-0.5 shrink-0" />
+                      <AlertCircle className="h-4 w-4 text-warning mt-0.5 shrink-0" />
                     ) : (
-                      <CheckCircle2 className="h-4 w-4 text-emerald-600 mt-0.5 shrink-0" />
+                      <CheckCircle2 className="h-4 w-4 text-success mt-0.5 shrink-0" />
                     )}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">

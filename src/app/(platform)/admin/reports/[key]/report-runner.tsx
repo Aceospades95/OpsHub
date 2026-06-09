@@ -329,7 +329,7 @@ export function ReportRunner({ reportKey, reportName, recipients }: Props) {
             <div
               className={`rounded p-3 text-sm flex items-center gap-2 ${
                 emailStatus.type === "success"
-                  ? "bg-emerald-500/10 text-emerald-700"
+                  ? "bg-success/10 text-success"
                   : "bg-destructive/10 text-destructive"
               }`}
             >

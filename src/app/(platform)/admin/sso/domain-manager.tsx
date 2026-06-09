@@ -43,7 +43,7 @@ export function DomainManager({ domains: initial }: { domains: Domain[] }) {
       </form>
 
       {state && "success" in state && state.success && (
-        <div className="rounded bg-green-500/10 p-3 text-sm text-green-700 dark:text-green-400">
+        <div className="rounded bg-success/10 p-3 text-sm text-success">
           Domain added successfully.
         </div>
       )}

@@ -70,7 +70,7 @@ export function BrandingSection({ branding }: Props) {
             >
               {nameSaved ? (
                 <>
-                  <CheckCircle2 className="h-4 w-4 mr-1.5 text-emerald-500" />
+                  <CheckCircle2 className="h-4 w-4 mr-1.5 text-success" />
                   Saved
                 </>
               ) : (
@@ -188,7 +188,7 @@ function BrandingImageUploader({
         {localResult && (
           <span
             className={`flex items-center gap-1 text-xs ${
-              localResult.success ? "text-emerald-600" : "text-destructive"
+              localResult.success ? "text-success" : "text-destructive"
             }`}
           >
             {localResult.success ? (

@@ -258,13 +258,13 @@ export function EmployeeDetailClient({
             {/* FTE Summary */}
             <div className="text-right shrink-0">
               <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">FTE Allocation</p>
-              <p className={`text-3xl font-bold ${isOver ? "text-red-600" : isFull ? "text-green-600" : ""}`}>{formatFte(totalFte)}</p>
+              <p className={`text-3xl font-bold ${isOver ? "text-destructive" : isFull ? "text-success" : ""}`}>{formatFte(totalFte)}</p>
               <p className="text-xs text-muted-foreground">
                 {remaining > 0 ? `${formatFte(remaining)} available` : remaining < 0 ? `${formatFte(Math.abs(remaining))} over` : "Fully allocated"}
               </p>
               <div className="h-1.5 w-24 bg-muted rounded-full overflow-hidden mt-1 ml-auto">
                 <div
-                  className={`h-full rounded-full ${isOver ? "bg-red-500" : isFull ? "bg-green-500" : totalFte > 0 ? "bg-yellow-500" : "bg-gray-300"}`}
+                  className={`h-full rounded-full ${isOver ? "bg-destructive" : isFull ? "bg-success" : totalFte > 0 ? "bg-warning" : "bg-muted-foreground/30"}`}
                   style={{ width: `${Math.min(totalFte * 100, 100)}%` }}
                 />
               </div>
@@ -442,23 +442,23 @@ function OverviewTab({ employee, totalFte, activeAssignments, canManage, onAddAs
           <CardContent className="space-y-4">
             <div className="flex items-center justify-between">
               <span className="text-sm font-medium">Total Allocation</span>
-              <span className={`text-lg font-bold ${totalFte > 1 ? "text-red-600" : totalFte >= 0.95 ? "text-green-600" : ""}`}>
+              <span className={`text-lg font-bold ${totalFte > 1 ? "text-destructive" : totalFte >= 0.95 ? "text-success" : ""}`}>
                 {formatFte(totalFte)} / 1.0 FTE
               </span>
             </div>
             <div className="h-3 bg-muted rounded-full overflow-hidden">
               <div
-                className={`h-full rounded-full transition-all ${totalFte > 1 ? "bg-red-500" : totalFte >= 0.95 ? "bg-green-500" : totalFte > 0 ? "bg-yellow-500" : "bg-gray-300"}`}
+                className={`h-full rounded-full transition-all ${totalFte > 1 ? "bg-destructive" : totalFte >= 0.95 ? "bg-success" : totalFte > 0 ? "bg-warning" : "bg-muted-foreground/30"}`}
                 style={{ width: `${Math.min(totalFte * 100, 100)}%` }}
               />
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-center">
               <div className="p-3 rounded-lg bg-muted"><p className="text-xs text-muted-foreground">Allocated</p><p className="text-lg font-bold">{formatFte(totalFte)}</p></div>
-              <div className="p-3 rounded-lg bg-muted"><p className="text-xs text-muted-foreground">Available</p><p className={`text-lg font-bold ${remaining < 0 ? "text-red-600" : remaining > 0 ? "text-green-600" : ""}`}>{formatFte(Math.max(remaining, 0))}</p></div>
+              <div className="p-3 rounded-lg bg-muted"><p className="text-xs text-muted-foreground">Available</p><p className={`text-lg font-bold ${remaining < 0 ? "text-destructive" : remaining > 0 ? "text-success" : ""}`}>{formatFte(Math.max(remaining, 0))}</p></div>
               <div className="p-3 rounded-lg bg-muted"><p className="text-xs text-muted-foreground">Assignments</p><p className="text-lg font-bold">{activeAssignments.length}</p></div>
             </div>
             {totalFte > 1 && (
-              <div className="flex items-center gap-2 p-3 rounded-lg bg-red-50 border border-red-200 text-red-800 text-sm">
+              <div className="flex items-center gap-2 p-3 rounded-lg bg-destructive/10 border border-destructive/30 text-destructive text-sm">
                 <AlertTriangle className="h-4 w-4 shrink-0" />
                 <span>Overallocated by {formatFte(totalFte - 1)} FTE.</span>
               </div>
@@ -595,7 +595,7 @@ function AssignmentsTab({ employee, totalFte, canManage, onAddAssignment }: {
               })}
               <div className="flex items-center justify-between pt-3 border-t border-border font-semibold text-sm">
                 <span>Total</span>
-                <span className={totalFte > 1 ? "text-red-600" : ""}>{formatFte(totalFte)} / 1.0 FTE</span>
+                <span className={totalFte > 1 ? "text-destructive" : ""}>{formatFte(totalFte)} / 1.0 FTE</span>
               </div>
             </div>
           )}

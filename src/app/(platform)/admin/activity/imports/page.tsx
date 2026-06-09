@@ -161,13 +161,13 @@ export default async function ImportActivityPage({
                       <td className="px-4 py-2 text-xs">
                         {userById.get(log.triggeredBy) ?? log.triggeredBy}
                       </td>
-                      <td className="px-4 py-2 text-right tabular-nums text-emerald-600 font-medium">
+                      <td className="px-4 py-2 text-right tabular-nums text-success font-medium">
                         {log.imported}
                       </td>
                       <td className="px-4 py-2 text-right tabular-nums text-blue-600 font-medium">
                         {log.updated}
                       </td>
-                      <td className="px-4 py-2 text-right tabular-nums text-amber-600">
+                      <td className="px-4 py-2 text-right tabular-nums text-warning">
                         {log.skipped}
                       </td>
                       <td

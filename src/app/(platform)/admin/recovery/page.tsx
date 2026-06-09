@@ -106,7 +106,7 @@ export default async function RecoveryPage() {
                           {row.daysLeft === 0 ? (
                             <span className="text-destructive">Today</span>
                           ) : row.daysLeft <= 3 ? (
-                            <span className="text-amber-600">
+                            <span className="text-warning">
                               {row.daysLeft} day{row.daysLeft === 1 ? "" : "s"}
                             </span>
                           ) : (

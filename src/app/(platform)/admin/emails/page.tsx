@@ -56,7 +56,7 @@ export default async function AdminEmailsPage() {
           </div>
           <div className="flex gap-4">
             <div className="text-center">
-              <p className="text-2xl font-semibold text-emerald-600">{sentCount}</p>
+              <p className="text-2xl font-semibold text-success">{sentCount}</p>
               <p className="text-xs text-muted-foreground">Sent</p>
             </div>
             <div className="text-center">
@@ -87,7 +87,7 @@ export default async function AdminEmailsPage() {
                   className="flex items-start gap-3 rounded border border-border p-3 hover:bg-muted/30 transition-colors"
                 >
                   {log.status === "sent" ? (
-                    <CheckCircle2 className="h-4 w-4 text-emerald-600 mt-0.5 shrink-0" />
+                    <CheckCircle2 className="h-4 w-4 text-success mt-0.5 shrink-0" />
                   ) : (
                     <AlertCircle className="h-4 w-4 text-destructive mt-0.5 shrink-0" />
                   )}

@@ -125,7 +125,7 @@ export default async function ImportLogDetailPage({ params }: Props) {
                         className={`text-[10px] ${
                           r.status === "failed"
                             ? "text-destructive border-destructive/50"
-                            : "text-amber-600 border-amber-500/50"
+                            : "text-warning border-warning/50"
                         }`}
                       >
                         {r.status}
@@ -157,11 +157,11 @@ function SummaryCard({
 }) {
   const colorClass =
     tone === "success"
-      ? "text-emerald-600"
+      ? "text-success"
       : tone === "info"
         ? "text-blue-600"
         : tone === "warning"
-          ? "text-amber-600"
+          ? "text-warning"
           : tone === "destructive"
             ? "text-destructive"
             : "text-foreground";

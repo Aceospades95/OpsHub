@@ -123,11 +123,11 @@ export function SignupForm({ token, kind }: Props) {
                   strength.score === 1
                     ? "bg-destructive w-1/4"
                     : strength.score === 2
-                    ? "bg-amber-500 w-2/4"
+                    ? "bg-warning w-2/4"
                     : strength.score === 3
-                    ? "bg-emerald-500 w-3/4"
+                    ? "bg-success/80 w-3/4"
                     : strength.score === 4
-                    ? "bg-emerald-600 w-full"
+                    ? "bg-success w-full"
                     : "w-0"
                 }`}
               />
