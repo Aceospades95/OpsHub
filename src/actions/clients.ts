@@ -2,6 +2,7 @@
 
 import { db } from "@/lib/db";
 import { requireAuth, resolveModulePerms } from "@/lib/permissions";
+import { assertManageEntity } from "@/lib/entity-authz";
 import { logActivity } from "@/lib/activity";
 import { revalidateClient } from "@/lib/revalidate-entity";
 import { revalidatePath } from "next/cache";
@@ -68,6 +69,19 @@ export async function updateClient(_prev: unknown, formData: FormData) {
 
   if (!parsed.success) return { error: "Invalid input", fieldErrors: parsed.error.flatten().fieldErrors };
 
+  // Existence + soft-delete guard: a missing id would throw P2025 (→ 500)
+  // and a soft-deleted client must not be editable from a stale form.
+  const existing = await db.client.findFirst({
+    where: { id, deletedAt: null },
+    select: { id: true },
+  });
+  if (!existing) return { error: "Not found" };
+
+  // Entity-scope write gate — module canEdit alone would let any
+  // CONTRIBUTOR mutate arbitrary clients by id.
+  const denied = await assertManageEntity(user.id, user.role, "client", id);
+  if (denied) return { error: denied.error };
+
   await db.client.update({
     where: { id },
     data: {
@@ -91,6 +105,9 @@ export async function deleteClient(_prev: unknown, formData: FormData) {
   if (client.deletedAt) {
     return { error: "Already in the recovery bin" };
   }
+
+  const denied = await assertManageEntity(user.id, user.role, "client", id);
+  if (denied) return { error: denied.error };
 
   await db.client.update({ where: { id }, data: { deletedAt: new Date() } });
   await logActivity("soft-deleted", "client", id, user.id, client.name, { clientId: id });
@@ -126,6 +143,17 @@ export async function createContact(_prev: unknown, formData: FormData) {
 
   if (!parsed.success) return { error: "Invalid input", fieldErrors: parsed.error.flatten().fieldErrors };
 
+  // Contacts hang off a client — verify the parent exists (and isn't
+  // soft-deleted), then gate on it.
+  const parentClient = await db.client.findFirst({
+    where: { id: parsed.data.clientId, deletedAt: null },
+    select: { id: true },
+  });
+  if (!parentClient) return { error: "Not found" };
+
+  const denied = await assertManageEntity(user.id, user.role, "client", parsed.data.clientId);
+  if (denied) return { error: denied.error };
+
   // Unset other primaries if this one is primary
   if (parsed.data.isPrimary) {
     await db.clientContact.updateMany({
@@ -158,6 +186,21 @@ export async function updateContact(_prev: unknown, formData: FormData) {
 
   if (!parsed.success) return { error: "Invalid input", fieldErrors: parsed.error.flatten().fieldErrors };
 
+  // Look up the contact to resolve its real parent client, then gate on
+  // it. If the form re-parents the contact, gate on the new client too.
+  const contact = await db.clientContact.findUnique({
+    where: { id },
+    select: { clientId: true },
+  });
+  if (!contact) return { error: "Not found" };
+
+  const denied = await assertManageEntity(user.id, user.role, "client", contact.clientId);
+  if (denied) return { error: denied.error };
+  if (parsed.data.clientId !== contact.clientId) {
+    const deniedNew = await assertManageEntity(user.id, user.role, "client", parsed.data.clientId);
+    if (deniedNew) return { error: deniedNew.error };
+  }
+
   if (parsed.data.isPrimary) {
     await db.clientContact.updateMany({
       where: { clientId, isPrimary: true, NOT: { id } },
@@ -178,6 +221,9 @@ export async function deleteContact(_prev: unknown, formData: FormData) {
   const id = formData.get("id") as string;
   const contact = await db.clientContact.findUnique({ where: { id } });
   if (!contact) return { error: "Contact not found" };
+
+  const denied = await assertManageEntity(user.id, user.role, "client", contact.clientId);
+  if (denied) return { error: denied.error };
 
   await db.clientContact.delete({ where: { id } });
   revalidatePath(`/clients/${contact.clientId}`);

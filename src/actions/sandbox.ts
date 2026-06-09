@@ -14,6 +14,32 @@ function requireSandboxAccess(role: string): { error: string } | null {
   return null;
 }
 
+/**
+ * Validate the optional project/client links — a forged or stale id
+ * would otherwise hit the FK constraint as a P2003 (→ 500), and a
+ * soft-deleted target shouldn't accept new links.
+ */
+async function validatePageLinks(
+  projectId: string | undefined,
+  clientId: string | undefined
+): Promise<{ error: string } | null> {
+  if (projectId) {
+    const project = await db.project.findFirst({
+      where: { id: projectId, deletedAt: null },
+      select: { id: true },
+    });
+    if (!project) return { error: "Project not found" };
+  }
+  if (clientId) {
+    const client = await db.client.findFirst({
+      where: { id: clientId, deletedAt: null },
+      select: { id: true },
+    });
+    if (!client) return { error: "Client not found" };
+  }
+  return null;
+}
+
 const sandboxPageSchema = z.object({
   title: z.string().min(1, "Title is required"),
   slug: z.string().min(1, "Slug is required").regex(/^[a-z0-9-]+$/, "Slug must be lowercase letters, numbers, and hyphens only"),
@@ -45,22 +71,36 @@ export async function createSandboxPage(_prev: unknown, formData: FormData) {
     return { error: "Invalid input", fieldErrors: parsed.error.flatten().fieldErrors };
   }
 
+  const linkError = await validatePageLinks(parsed.data.projectId, parsed.data.clientId);
+  if (linkError) return { error: linkError.error };
+
   const existing = await db.sandboxPage.findUnique({ where: { slug: parsed.data.slug } });
   if (existing) return { error: "A page with this slug already exists" };
 
-  const page = await db.sandboxPage.create({
-    data: {
-      title: parsed.data.title,
-      slug: parsed.data.slug,
-      description: parsed.data.description || null,
-      content: parsed.data.content || null,
-      layout: parsed.data.layout,
-      icon: parsed.data.icon || null,
-      projectId: parsed.data.projectId || null,
-      clientId: parsed.data.clientId || null,
-      createdById: user.id,
-    },
-  });
+  let page;
+  try {
+    page = await db.sandboxPage.create({
+      data: {
+        title: parsed.data.title,
+        slug: parsed.data.slug,
+        description: parsed.data.description || null,
+        content: parsed.data.content || null,
+        layout: parsed.data.layout,
+        icon: parsed.data.icon || null,
+        projectId: parsed.data.projectId || null,
+        clientId: parsed.data.clientId || null,
+        createdById: user.id,
+      },
+    });
+  } catch (err) {
+    // The pre-check above is check-then-write: a concurrent create can
+    // still win the race, so map the unique-constraint failure to the
+    // same friendly error instead of a 500.
+    if ((err as { code?: string })?.code === "P2002") {
+      return { error: "A page with this slug already exists" };
+    }
+    throw err;
+  }
 
   await logActivity("created", "sandboxPage", page.id, user.id, page.title);
   revalidatePath("/sandbox");
@@ -95,24 +135,36 @@ export async function updateSandboxPage(_prev: unknown, formData: FormData) {
     return { error: "Invalid input", fieldErrors: parsed.error.flatten().fieldErrors };
   }
 
+  const linkError = await validatePageLinks(parsed.data.projectId, parsed.data.clientId);
+  if (linkError) return { error: linkError.error };
+
   const slugConflict = await db.sandboxPage.findUnique({ where: { slug: parsed.data.slug } });
   if (slugConflict && slugConflict.id !== id) {
     return { error: "A page with this slug already exists" };
   }
 
-  await db.sandboxPage.update({
-    where: { id },
-    data: {
-      title: parsed.data.title,
-      slug: parsed.data.slug,
-      description: parsed.data.description || null,
-      content: parsed.data.content || null,
-      layout: parsed.data.layout,
-      icon: parsed.data.icon || null,
-      projectId: parsed.data.projectId || null,
-      clientId: parsed.data.clientId || null,
-    },
-  });
+  try {
+    await db.sandboxPage.update({
+      where: { id },
+      data: {
+        title: parsed.data.title,
+        slug: parsed.data.slug,
+        description: parsed.data.description || null,
+        content: parsed.data.content || null,
+        layout: parsed.data.layout,
+        icon: parsed.data.icon || null,
+        projectId: parsed.data.projectId || null,
+        clientId: parsed.data.clientId || null,
+      },
+    });
+  } catch (err) {
+    // Same race as create: the slug pre-check can lose to a concurrent
+    // writer, so map P2002 to the friendly error instead of a 500.
+    if ((err as { code?: string })?.code === "P2002") {
+      return { error: "A page with this slug already exists" };
+    }
+    throw err;
+  }
 
   await logActivity("updated", "sandboxPage", id, user.id, parsed.data.title);
   revalidatePath(`/sandbox/${id}`);

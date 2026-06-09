@@ -66,6 +66,14 @@ export async function updateIntranetResource(_prev: unknown, formData: FormData)
 
   if (!parsed.success) return { error: "Invalid input", fieldErrors: parsed.error.flatten().fieldErrors };
 
+  // Existence + soft-delete guard: a missing id would throw P2025 (→ 500)
+  // and a soft-deleted resource must not be editable from a stale form.
+  const existing = await db.intranetResource.findFirst({
+    where: { id, deletedAt: null },
+    select: { id: true },
+  });
+  if (!existing) return { error: "Not found" };
+
   await db.intranetResource.update({ where: { id }, data: parsed.data });
   await logActivity("updated", "intranet", id, user.id, parsed.data.title);
   revalidatePath(`/intranet/${id}`);

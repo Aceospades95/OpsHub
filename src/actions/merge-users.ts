@@ -6,6 +6,7 @@ import { logActivity } from "@/lib/activity";
 import { revalidatePath } from "next/cache";
 import { revalidateUser } from "@/lib/revalidate-entity";
 import { executeMerge, REASSIGNMENTS } from "@/lib/merge-users-fk";
+import { z } from "zod";
 
 /**
  * Server action backing the back-office "Merge Employees" admin UI.
@@ -123,6 +124,12 @@ export async function mergeUsers(
   if (!fromId || !toId) {
     return { ok: false, error: "Both source and keeper users are required" };
   }
+  if (targetEmail) {
+    const parsedEmail = z.string().email().safeParse(targetEmail);
+    if (!parsedEmail.success) {
+      return { ok: false, error: "Target email is not a valid email address" };
+    }
+  }
   if (fromId === toId) {
     return { ok: false, error: "Source and keeper must be different users" };
   }
@@ -188,6 +195,9 @@ export async function mergeUsers(
   // The keeper inherits the source's role/title/department implicitly
   // through the FK walk — refresh every page that shows a User row.
   revalidateUser(toId);
+  // The source row was hard-deleted by the merge — invalidate the pages
+  // that listed it, skipping its own (now-404) detail path.
+  revalidateUser(fromId, { deleted: true });
   revalidatePath("/admin/users");
 
   return { ok: true, preview, committed: true };

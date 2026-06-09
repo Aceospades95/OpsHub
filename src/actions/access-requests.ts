@@ -3,6 +3,7 @@
 import { requireAuth } from "@/lib/permissions";
 import { notify } from "@/lib/notifications";
 import { db } from "@/lib/db";
+import { log } from "@/lib/log";
 import { getPermissionedModules } from "@/lib/modules";
 import { revalidatePath } from "next/cache";
 
@@ -90,14 +91,20 @@ export async function requestAccess(params: RequestAccessParams) {
 
   if (admins.length > 0) {
     const entityDesc = entityLabel ? ` — ${entityType}: "${entityLabel}"` : "";
-    await notify({
-      recipientId: admins.map((a) => a.id),
-      type: "system",
-      title: `Access request: ${moduleLabel}${entityDesc}`,
-      body: `${user.name || user.email} is requesting access.`,
-      href: `/admin/access-requests`,
-      actorId: user.id,
-    });
+    // Best-effort: the request row is already committed; a notification
+    // hiccup must not surface as a failed request to the user.
+    try {
+      await notify({
+        recipientId: admins.map((a) => a.id),
+        type: "system",
+        title: `Access request: ${moduleLabel}${entityDesc}`,
+        body: `${user.name || user.email} is requesting access.`,
+        href: `/admin/access-requests`,
+        actorId: user.id,
+      });
+    } catch (err) {
+      log.warn("access-requests", "Admin notification failed", { err: String(err) });
+    }
   }
 
   return { success: true, requestId: request.id };
@@ -118,62 +125,72 @@ export async function approveAccessRequest(requestId: string) {
     return { error: "Request is not pending" } as const;
   }
 
-  await db.accessRequest.update({
-    where: { id: requestId },
-    data: { status: "APPROVED", reviewerId: admin.id, reviewedAt: new Date() },
-  });
+  // Status flip + permission grant are one logical unit — an "approved"
+  // request whose grant never landed would strand the requester.
+  await db.$transaction(async (tx) => {
+    await tx.accessRequest.update({
+      where: { id: requestId },
+      data: { status: "APPROVED", reviewerId: admin.id, reviewedAt: new Date() },
+    });
 
-  if (request.entityType && request.entityId) {
-    await db.entityPermission.upsert({
-      where: {
-        userId_entityType_entityId: {
+    if (request.entityType && request.entityId) {
+      await tx.entityPermission.upsert({
+        where: {
+          userId_entityType_entityId: {
+            userId: request.requesterId,
+            entityType: request.entityType,
+            entityId: request.entityId,
+          },
+        },
+        create: {
           userId: request.requesterId,
           entityType: request.entityType,
           entityId: request.entityId,
+          canView: true,
+          canComment: true,
         },
-      },
-      create: {
-        userId: request.requesterId,
-        entityType: request.entityType,
-        entityId: request.entityId,
-        canView: true,
-        canComment: true,
-      },
-      update: {
-        canView: true,
-        canComment: true,
-      },
-    });
-  } else if (request.module) {
-    await db.modulePermission.upsert({
-      where: {
-        userId_module: {
+        update: {
+          canView: true,
+          canComment: true,
+        },
+      });
+    } else if (request.module) {
+      await tx.modulePermission.upsert({
+        where: {
+          userId_module: {
+            userId: request.requesterId,
+            module: request.module,
+          },
+        },
+        create: {
           userId: request.requesterId,
           module: request.module,
+          canView: true,
+          canComment: true,
         },
-      },
-      create: {
-        userId: request.requesterId,
-        module: request.module,
-        canView: true,
-        canComment: true,
-      },
-      update: {
-        canView: true,
-        canComment: true,
-      },
-    });
-  }
-
-  await notify({
-    recipientId: request.requesterId,
-    type: "system",
-    title: `Access granted: ${request.entityLabel || request.module}`,
-    body: `${admin.name || "An admin"} approved your access request.`,
-    href: request.entityType && request.entityId
-      ? `/${request.module}/${request.entityId}`
-      : `/${request.module}`,
+        update: {
+          canView: true,
+          canComment: true,
+        },
+      });
+    }
   });
+
+  // Best-effort: the approval is committed; a notification hiccup must
+  // not make the action report failure after the fact.
+  try {
+    await notify({
+      recipientId: request.requesterId,
+      type: "system",
+      title: `Access granted: ${request.entityLabel || request.module}`,
+      body: `${admin.name || "An admin"} approved your access request.`,
+      href: request.entityType && request.entityId
+        ? `/${request.module}/${request.entityId}`
+        : `/${request.module}`,
+    });
+  } catch (err) {
+    log.warn("access-requests", "Approval notification failed", { err: String(err) });
+  }
 
   revalidatePath("/admin/access-requests");
   return { success: true };
@@ -199,12 +216,18 @@ export async function denyAccessRequest(requestId: string) {
     data: { status: "DENIED", reviewerId: admin.id, reviewedAt: new Date() },
   });
 
-  await notify({
-    recipientId: request.requesterId,
-    type: "system",
-    title: `Access request denied: ${request.entityLabel || request.module}`,
-    body: `${admin.name || "An admin"} denied your access request.`,
-  });
+  // Best-effort: the denial is committed; a notification hiccup must
+  // not make the action report failure after the fact.
+  try {
+    await notify({
+      recipientId: request.requesterId,
+      type: "system",
+      title: `Access request denied: ${request.entityLabel || request.module}`,
+      body: `${admin.name || "An admin"} denied your access request.`,
+    });
+  } catch (err) {
+    log.warn("access-requests", "Denial notification failed", { err: String(err) });
+  }
 
   revalidatePath("/admin/access-requests");
   return { success: true };
