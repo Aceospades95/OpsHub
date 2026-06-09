@@ -30,7 +30,15 @@ const documentSchema = z.object({
   projectId: z.string().optional(),
 });
 
-export async function createDocument(_prev: unknown, formData: FormData) {
+export async function createDocument(
+  _prev: unknown,
+  formData: FormData
+): Promise<{
+  success?: true;
+  error?: string;
+  fieldErrors?: Record<string, string[] | undefined>;
+  documentId?: string;
+}> {
   const user = await requireAuth();
   const perms = await resolveModulePerms(user.id, user.role, "projects");
   if (!perms.canCreate) return { error: "Permission denied" };

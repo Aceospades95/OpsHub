@@ -2,6 +2,7 @@ import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import type { Role } from "@prisma/client";
+import { getVisibleModules, canAccessSandbox } from "@/lib/permissions";
 import { getSidebarConfig } from "@/actions/sidebar";
 import { getBellUnreadCount, getUserNotifications } from "@/lib/notifications";
 import { getBranding } from "@/lib/branding";
@@ -42,16 +43,25 @@ export async function PlatformShell({ children }: { children: React.ReactNode })
   });
   if (freshUser) session.user.role = freshUser.role as Role;
 
-  const [sidebarConfig, customPages, unreadCount, recentNotifications, branding] = await Promise.all([
+  const role = (freshUser?.role ?? session.user.role) as Role;
+
+  const [sidebarConfig, customPages, unreadCount, recentNotifications, branding, visibleModules] = await Promise.all([
     getSidebarConfig(),
-    db.sandboxPage.findMany({
-      where: { published: true },
-      select: { id: true, title: true, slug: true },
-      orderBy: { title: "asc" },
-    }),
+    // Sandbox custom pages are ADMIN / DEVELOPER tooling — don't ship the
+    // list (titles + slugs) to roles that can't open /sandbox at all.
+    canAccessSandbox(role)
+      ? db.sandboxPage.findMany({
+          where: { published: true },
+          select: { id: true, title: true, slug: true },
+          orderBy: { title: "asc" },
+        })
+      : Promise.resolve([]),
     getBellUnreadCount(session.user.id, freshUser?.role ?? session.user.role),
     getUserNotifications(session.user.id, { limit: 10 }),
     getBranding(),
+    // Permission-aware module list — the sidebar only renders permissioned
+    // modules whose key is in here.
+    getVisibleModules(session.user.id, role),
   ]);
 
   const serializedNotifications = recentNotifications.map((n) => ({
@@ -68,6 +78,7 @@ export async function PlatformShell({ children }: { children: React.ReactNode })
     <div className="flex h-screen overflow-hidden">
       <Sidebar
         userRole={session.user.role}
+        visibleModules={visibleModules}
         customPages={customPages}
         sidebarConfig={sidebarConfig}
         companyName={branding.companyName}

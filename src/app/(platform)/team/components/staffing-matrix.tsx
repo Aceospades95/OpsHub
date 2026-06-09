@@ -595,7 +595,13 @@ export function StaffingMatrix({ users, projects, clients, serviceOfferings, rol
           <span className="text-muted-foreground">Filtering by:</span>
           <Badge variant="secondary" className="gap-1">
             {capacityFilter === "fully-allocated" ? "Fully Allocated" : capacityFilter.charAt(0).toUpperCase() + capacityFilter.slice(1)}
-            <button onClick={() => setCapacityFilter(null)} className="ml-1 hover:text-destructive"><X className="h-3 w-3" /></button>
+            <button
+              onClick={() => setCapacityFilter(null)}
+              aria-label="Clear capacity filter"
+              className="ml-1 hover:text-destructive"
+            >
+              <X className="h-3 w-3" />
+            </button>
           </Badge>
         </div>
       )}

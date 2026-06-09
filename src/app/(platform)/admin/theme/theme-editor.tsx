@@ -1,8 +1,10 @@
 "use client";
 
 import { useFormState } from "react-dom";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
+import { useConfirm } from "@/components/shared/use-confirm";
 import {
   saveThemeSettings,
   resetThemeToDefaults,
@@ -81,6 +83,8 @@ export function ThemeEditor({ currentTheme, customPresets }: ThemeEditorProps) {
   const [saving, setSaving] = useState(false);
   const [saveState, saveAction] = useFormState(saveThemeSettings, null);
   const [resetState, resetAction] = useFormState(resetThemeToDefaults, null);
+  const [isDeleting, startDeleteTransition] = useTransition();
+  const { confirm, ConfirmDialog } = useConfirm();
   const formRef = useRef<HTMLFormElement>(null);
   const router = useRouter();
 
@@ -141,9 +145,22 @@ export function ThemeEditor({ currentTheme, customPresets }: ThemeEditorProps) {
     router.refresh();
   }
 
-  async function handleDeletePreset(presetId: string) {
-    await deleteCustomPreset(presetId);
-    router.refresh();
+  async function handleDeletePreset(presetId: string, presetName: string) {
+    const ok = await confirm({
+      title: `Delete template "${presetName}"?`,
+      message: "This can't be undone.",
+      confirmLabel: "Delete",
+    });
+    if (!ok) return;
+    startDeleteTransition(async () => {
+      const result = await deleteCustomPreset(presetId);
+      if (result && "error" in result && result.error) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success("Template deleted");
+      router.refresh();
+    });
   }
 
   const lightPresets = getLightPresets();
@@ -197,7 +214,8 @@ export function ThemeEditor({ currentTheme, customPresets }: ThemeEditorProps) {
                     preset={preset}
                     isActive={activePreset === preset.id}
                     onClick={() => handleApplyPreset(preset)}
-                    onDelete={() => handleDeletePreset(preset.id)}
+                    onDelete={() => handleDeletePreset(preset.id, preset.name)}
+                    deleteDisabled={isDeleting}
                   />
                 ))}
               </div>
@@ -228,7 +246,8 @@ export function ThemeEditor({ currentTheme, customPresets }: ThemeEditorProps) {
                     preset={preset}
                     isActive={activePreset === preset.id}
                     onClick={() => handleApplyPreset(preset)}
-                    onDelete={() => handleDeletePreset(preset.id)}
+                    onDelete={() => handleDeletePreset(preset.id, preset.name)}
+                    deleteDisabled={isDeleting}
                   />
                 ))}
               </div>
@@ -243,7 +262,12 @@ export function ThemeEditor({ currentTheme, customPresets }: ThemeEditorProps) {
           <CardHeader>
             <div className="flex items-center justify-between">
               <CardTitle>Save as Template</CardTitle>
-              <Button variant="ghost" size="sm" onClick={() => setShowSaveDialog(false)}>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowSaveDialog(false)}
+                aria-label="Close save-as-template panel"
+              >
                 <X className="h-4 w-4" />
               </Button>
             </div>
@@ -354,6 +378,7 @@ export function ThemeEditor({ currentTheme, customPresets }: ThemeEditorProps) {
           </div>
         </div>
       </div>
+      <ConfirmDialog />
     </div>
   );
 }
@@ -363,11 +388,13 @@ function PresetCard({
   isActive,
   onClick,
   onDelete,
+  deleteDisabled = false,
 }: {
   preset: ThemePreset;
   isActive: boolean;
   onClick: () => void;
   onDelete?: () => void;
+  deleteDisabled?: boolean;
 }) {
   return (
     <div className="relative group">
@@ -408,7 +435,9 @@ function PresetCard({
         <button
           type="button"
           onClick={(e) => { e.stopPropagation(); onDelete(); }}
-          className="absolute -top-2 -right-2 h-6 w-6 rounded-full bg-destructive text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-sm"
+          disabled={deleteDisabled}
+          aria-label={`Delete template "${preset.name}"`}
+          className="absolute -top-2 -right-2 h-6 w-6 rounded-full bg-destructive text-white flex items-center justify-center opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity shadow-sm disabled:pointer-events-none"
           title="Delete template"
         >
           <Trash2 className="h-3 w-3" />

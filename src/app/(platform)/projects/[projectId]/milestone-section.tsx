@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -10,6 +11,7 @@ import { Avatar } from "@/components/ui/avatar";
 import { Dialog } from "@/components/ui/dialog";
 import { Select } from "@/components/ui/select";
 import { FormDialog } from "@/components/shared/form-dialog";
+import { useConfirm } from "@/components/shared/use-confirm";
 import {
   createMilestone,
   toggleMilestone,
@@ -47,33 +49,70 @@ interface Props {
 export function MilestoneSection({ milestones, projectId, allUsers, canEdit, canCreate, canDelete }: Props) {
   const [createOpen, setCreateOpen] = useState(false);
   const [assignOpen, setAssignOpen] = useState<string | null>(null);
+  const [isPending, startTransition] = useTransition();
+  const { confirm, ConfirmDialog } = useConfirm();
   const router = useRouter();
 
-  async function handleToggle(id: string) {
-    const fd = new FormData();
-    fd.set("id", id);
-    await toggleMilestone(null, fd);
-    router.refresh();
+  function handleToggle(id: string) {
+    startTransition(async () => {
+      const fd = new FormData();
+      fd.set("id", id);
+      const result = await toggleMilestone(null, fd);
+      if (result && "error" in result && result.error) {
+        toast.error(result.error);
+        return;
+      }
+      router.refresh();
+    });
   }
 
-  async function handleDeleteMilestone(id: string) {
-    const fd = new FormData();
-    fd.set("id", id);
-    await deleteMilestone(null, fd);
-    router.refresh();
+  async function handleDeleteMilestone(id: string, title: string) {
+    const ok = await confirm({
+      title: "Delete this milestone?",
+      message: `"${title}" and its assignee list will be permanently removed.`,
+      confirmLabel: "Delete",
+    });
+    if (!ok) return;
+    startTransition(async () => {
+      const fd = new FormData();
+      fd.set("id", id);
+      const result = await deleteMilestone(null, fd);
+      if (result && "error" in result && result.error) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success("Milestone deleted");
+      router.refresh();
+    });
   }
 
   async function handleAssign(formData: FormData) {
-    await addMilestoneAssignee(null, formData);
+    const result = await addMilestoneAssignee(null, formData);
+    if (result && "error" in result && result.error) {
+      toast.error(result.error);
+      return;
+    }
     setAssignOpen(null);
     router.refresh();
   }
 
-  async function handleUnassign(id: string) {
-    const fd = new FormData();
-    fd.set("id", id);
-    await removeMilestoneAssignee(null, fd);
-    router.refresh();
+  async function handleUnassign(id: string, userName: string) {
+    const ok = await confirm({
+      title: `Remove ${userName} from this milestone?`,
+      confirmLabel: "Remove",
+    });
+    if (!ok) return;
+    startTransition(async () => {
+      const fd = new FormData();
+      fd.set("id", id);
+      const result = await removeMilestoneAssignee(null, fd);
+      if (result && "error" in result && result.error) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success("Assignee removed");
+      router.refresh();
+    });
   }
 
   return (
@@ -86,7 +125,16 @@ export function MilestoneSection({ milestones, projectId, allUsers, canEdit, can
         <div key={ms.id} className={`rounded border border-border bg-muted p-3 ${ms.completed ? "opacity-60" : ""}`}>
           <div className="flex items-start gap-3">
             {canEdit ? (
-              <button onClick={() => handleToggle(ms.id)} className="mt-0.5">
+              <button
+                onClick={() => handleToggle(ms.id)}
+                disabled={isPending}
+                aria-label={
+                  ms.completed
+                    ? `Mark milestone "${ms.title}" as incomplete`
+                    : `Mark milestone "${ms.title}" as complete`
+                }
+                className="mt-0.5 disabled:opacity-50"
+              >
                 {ms.completed ? (
                   <CheckCircle2 className="h-5 w-5 text-success" />
                 ) : (
@@ -116,7 +164,12 @@ export function MilestoneSection({ milestones, projectId, allUsers, canEdit, can
                         <Avatar name={a.user.name} size="xs" />
                       </Link>
                       {canEdit && (
-                        <button onClick={() => handleUnassign(a.id)} className="text-muted-foreground hover:text-destructive">
+                        <button
+                          onClick={() => handleUnassign(a.id, a.user.name)}
+                          disabled={isPending}
+                          aria-label={`Remove ${a.user.name} from milestone "${ms.title}"`}
+                          className="text-muted-foreground hover:text-destructive disabled:opacity-50"
+                        >
                           <X className="h-2.5 w-2.5" />
                         </button>
                       )}
@@ -125,6 +178,7 @@ export function MilestoneSection({ milestones, projectId, allUsers, canEdit, can
                   {canEdit && (
                     <button
                       onClick={() => setAssignOpen(ms.id)}
+                      aria-label={`Assign a user to milestone "${ms.title}"`}
                       className="rounded p-0.5 text-muted-foreground hover:text-primary"
                     >
                       <UserPlus className="h-3.5 w-3.5" />
@@ -135,8 +189,10 @@ export function MilestoneSection({ milestones, projectId, allUsers, canEdit, can
             </div>
             {canDelete && (
               <button
-                onClick={() => handleDeleteMilestone(ms.id)}
-                className="text-muted-foreground hover:text-destructive"
+                onClick={() => handleDeleteMilestone(ms.id, ms.title)}
+                disabled={isPending}
+                aria-label={`Delete milestone "${ms.title}"`}
+                className="text-muted-foreground hover:text-destructive disabled:opacity-50"
               >
                 <Trash2 className="h-4 w-4" />
               </button>
@@ -186,6 +242,7 @@ export function MilestoneSection({ milestones, projectId, allUsers, canEdit, can
           </form>
         </Dialog>
       )}
+      <ConfirmDialog />
     </div>
   );
 }

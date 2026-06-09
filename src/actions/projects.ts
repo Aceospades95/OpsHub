@@ -607,7 +607,10 @@ export async function removeMilestoneAssignee(_prev: unknown, formData: FormData
 }
 
 // Tools
-export async function linkToolToProject(_prev: unknown, formData: FormData) {
+export async function linkToolToProject(
+  _prev: unknown,
+  formData: FormData
+): Promise<{ success?: true; error?: string }> {
   const user = await requireAuth();
   const perms = await resolveModulePerms(user.id, user.role, "projects");
   if (!perms.canEdit) return { error: "Permission denied" };

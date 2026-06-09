@@ -1,6 +1,6 @@
 "use client";
 
-import { forwardRef, type InputHTMLAttributes } from "react";
+import { forwardRef, useId, type InputHTMLAttributes } from "react";
 
 interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
   label?: string;
@@ -9,7 +9,11 @@ interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
 
 const Input = forwardRef<HTMLInputElement, InputProps>(
   ({ className = "", label, error, id, ...props }, ref) => {
-    const inputId = id || label?.toLowerCase().replace(/\s+/g, "-");
+    // Auto-generate a unique id (React useId is SSR-stable) instead of
+    // deriving one from the label text — two fields labeled "Name" on
+    // the same page used to collide and mis-wire their <label>s.
+    const autoId = useId();
+    const inputId = id || autoId;
     return (
       <div className="space-y-1">
         {label && (

@@ -1,6 +1,6 @@
 "use client";
 
-import { forwardRef, type TextareaHTMLAttributes } from "react";
+import { forwardRef, useId, type TextareaHTMLAttributes } from "react";
 
 interface TextareaProps extends TextareaHTMLAttributes<HTMLTextAreaElement> {
   label?: string;
@@ -9,7 +9,9 @@ interface TextareaProps extends TextareaHTMLAttributes<HTMLTextAreaElement> {
 
 const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
   ({ className = "", label, error, id, ...props }, ref) => {
-    const inputId = id || label?.toLowerCase().replace(/\s+/g, "-");
+    // useId instead of label-derived ids — duplicate labels collided.
+    const autoId = useId();
+    const inputId = id || autoId;
     return (
       <div className="space-y-1">
         {label && (

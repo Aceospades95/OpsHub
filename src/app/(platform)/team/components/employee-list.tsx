@@ -23,14 +23,6 @@ interface EmployeeListProps {
 type SortField = "name" | "department" | "location" | "manager" | "role" | "totalFte" | "projects";
 type SortDir = "asc" | "desc";
 
-const ROLE_COLORS: Record<string, string> = {
-  ADMIN: "bg-purple-100 text-purple-800",
-  MANAGER: "bg-blue-100 text-blue-800",
-  DEVELOPER: "bg-green-100 text-green-800",
-  CONTRIBUTOR: "bg-yellow-100 text-yellow-800",
-  VIEWER: "bg-gray-100 text-gray-800",
-};
-
 export function EmployeeList({ users, inactiveUsers, search }: EmployeeListProps) {
   const [deptFilter, setDeptFilter] = useState("");
   const [roleFilter, setRoleFilter] = useState("");
@@ -133,7 +125,12 @@ export function EmployeeList({ users, inactiveUsers, search }: EmployeeListProps
         >
           <td className="py-3 px-4">
             <div className="flex items-center gap-3">
-              <button onClick={() => setExpandedId(isExpanded ? null : user.id)} className="text-muted-foreground hover:text-foreground shrink-0">
+              <button
+                onClick={() => setExpandedId(isExpanded ? null : user.id)}
+                aria-expanded={isExpanded}
+                aria-label={`${isExpanded ? "Collapse" : "Expand"} details for ${user.name}`}
+                className="text-muted-foreground hover:text-foreground shrink-0"
+              >
                 {isExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
               </button>
               <Avatar name={user.name} size="sm" />

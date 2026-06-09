@@ -46,15 +46,29 @@ function TreeItem({ node, level = 0 }: { node: TreeNode; level: number }) {
           className={`flex items-center gap-2 flex-1 min-w-0 ${hasChildren ? "cursor-pointer" : ""}`}
           onClick={toggle}
         >
-          {/* Expand/collapse icon */}
+          {/* Expand/collapse icon — a real <button> so keyboard users
+              can toggle the branch (the surrounding divs stay click
+              targets for pointer convenience, but aren't focusable).
+              stopPropagation prevents the wrapping div's onClick from
+              firing a second toggle that would undo this one. */}
           {hasChildren ? (
-            <span className="shrink-0" style={{ color: levelColor }}>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                toggle();
+              }}
+              aria-expanded={expanded}
+              aria-label={`${expanded ? "Collapse" : "Expand"} ${node.label}`}
+              className="shrink-0 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+              style={{ color: levelColor }}
+            >
               {expanded ? (
                 <ChevronDown className="h-5 w-5" />
               ) : (
                 <ChevronRight className="h-5 w-5" />
               )}
-            </span>
+            </button>
           ) : (
             <span className="w-6 shrink-0 flex justify-center">
               <span

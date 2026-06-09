@@ -1,7 +1,10 @@
 "use client";
 
+import { useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import { ExternalLink, Trash2, Link2, Code2 } from "lucide-react";
+import { useConfirm } from "@/components/shared/use-confirm";
 import { deleteExternalLink, deleteEmbed } from "@/actions/attachments";
 
 interface LinkItem {
@@ -37,19 +40,47 @@ interface FileListProps {
 
 export function FileList({ links = [], embeds = [], canDelete, emptyLabel = "No attachments" }: FileListProps) {
   const router = useRouter();
+  const [isPending, startTransition] = useTransition();
+  const { confirm, ConfirmDialog } = useConfirm();
 
-  async function handleDeleteLink(id: string) {
-    const fd = new FormData();
-    fd.set("id", id);
-    await deleteExternalLink(null, fd);
-    router.refresh();
+  async function handleDeleteLink(id: string, title: string) {
+    const ok = await confirm({
+      title: `Delete link "${title}"?`,
+      message: "This can't be undone.",
+      confirmLabel: "Delete",
+    });
+    if (!ok) return;
+    startTransition(async () => {
+      const fd = new FormData();
+      fd.set("id", id);
+      const result = await deleteExternalLink(null, fd);
+      if (result && "error" in result && result.error) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success("Link deleted");
+      router.refresh();
+    });
   }
 
-  async function handleDeleteEmbed(id: string) {
-    const fd = new FormData();
-    fd.set("id", id);
-    await deleteEmbed(null, fd);
-    router.refresh();
+  async function handleDeleteEmbed(id: string, title: string) {
+    const ok = await confirm({
+      title: `Delete embed "${title}"?`,
+      message: "This can't be undone.",
+      confirmLabel: "Delete",
+    });
+    if (!ok) return;
+    startTransition(async () => {
+      const fd = new FormData();
+      fd.set("id", id);
+      const result = await deleteEmbed(null, fd);
+      if (result && "error" in result && result.error) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success("Embed deleted");
+      router.refresh();
+    });
   }
 
   const hasContent = links.length > 0 || embeds.length > 0;
@@ -74,10 +105,11 @@ export function FileList({ links = [], embeds = [], canDelete, emptyLabel = "No 
           </div>
           {canDelete && (
             <button
-              onClick={() => handleDeleteLink(link.id)}
+              onClick={() => handleDeleteLink(link.id, link.title)}
+              disabled={isPending}
               aria-label={`Delete link "${link.title}"`}
               title="Delete link"
-              className="rounded p-1 text-muted-foreground hover:text-destructive"
+              className="rounded p-1 text-muted-foreground hover:text-destructive disabled:opacity-50"
             >
               <Trash2 className="h-3 w-3" />
             </button>
@@ -97,10 +129,11 @@ export function FileList({ links = [], embeds = [], canDelete, emptyLabel = "No 
             </div>
             {canDelete && (
               <button
-                onClick={() => handleDeleteEmbed(embed.id)}
+                onClick={() => handleDeleteEmbed(embed.id, embed.title)}
+                disabled={isPending}
                 aria-label={`Delete embed "${embed.title}"`}
                 title="Delete embed"
-                className="rounded p-1 text-muted-foreground hover:text-destructive"
+                className="rounded p-1 text-muted-foreground hover:text-destructive disabled:opacity-50"
               >
                 <Trash2 className="h-3 w-3" />
               </button>
@@ -116,6 +149,7 @@ export function FileList({ links = [], embeds = [], canDelete, emptyLabel = "No 
           />
         </div>
       ))}
+      <ConfirmDialog />
     </div>
   );
 }

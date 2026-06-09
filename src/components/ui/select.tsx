@@ -1,6 +1,6 @@
 "use client";
 
-import { forwardRef, type SelectHTMLAttributes } from "react";
+import { forwardRef, useId, type SelectHTMLAttributes } from "react";
 
 interface SelectOption {
   label: string;
@@ -16,7 +16,9 @@ interface SelectProps extends SelectHTMLAttributes<HTMLSelectElement> {
 
 const Select = forwardRef<HTMLSelectElement, SelectProps>(
   ({ className = "", label, error, options, placeholder, id, ...props }, ref) => {
-    const selectId = id || label?.toLowerCase().replace(/\s+/g, "-");
+    // useId instead of label-derived ids — duplicate labels collided.
+    const autoId = useId();
+    const selectId = id || autoId;
     return (
       <div className="space-y-1">
         {label && (

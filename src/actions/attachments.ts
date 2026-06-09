@@ -177,6 +177,13 @@ async function revalidateHost(
   }
 }
 
+/**
+ * Loose result shape shared by the actions below — consumers probe
+ * result.success / result.error without narrowing, so every branch
+ * must carry both keys as optionals.
+ */
+type AttachmentActionResult = { success?: true; error?: string };
+
 const linkSchema = z.object({
   entityType: z.enum(LINK_ENTITY_TYPES),
   entityId: z.string().min(1),
@@ -186,7 +193,10 @@ const linkSchema = z.object({
   source: z.string().max(100).optional(),
 });
 
-export async function addExternalLink(_prev: unknown, formData: FormData) {
+export async function addExternalLink(
+  _prev: unknown,
+  formData: FormData
+): Promise<AttachmentActionResult> {
   const user = await requireAuth();
   const parsed = linkSchema.safeParse({
     entityType: formData.get("entityType"),
@@ -215,7 +225,10 @@ export async function addExternalLink(_prev: unknown, formData: FormData) {
   return { success: true };
 }
 
-export async function deleteExternalLink(_prev: unknown, formData: FormData) {
+export async function deleteExternalLink(
+  _prev: unknown,
+  formData: FormData
+): Promise<AttachmentActionResult> {
   const user = await requireAuth();
   const id = formData.get("id") as string;
 
@@ -262,7 +275,10 @@ const embedSchema = z.object({
   height: z.string().max(20).optional(),
 });
 
-export async function addEmbed(_prev: unknown, formData: FormData) {
+export async function addEmbed(
+  _prev: unknown,
+  formData: FormData
+): Promise<AttachmentActionResult> {
   const user = await requireAuth();
   const parsed = embedSchema.safeParse({
     entityType: formData.get("entityType"),
@@ -293,7 +309,10 @@ export async function addEmbed(_prev: unknown, formData: FormData) {
   return { success: true };
 }
 
-export async function deleteEmbed(_prev: unknown, formData: FormData) {
+export async function deleteEmbed(
+  _prev: unknown,
+  formData: FormData
+): Promise<AttachmentActionResult> {
   const user = await requireAuth();
   const id = formData.get("id") as string;
 

@@ -5,15 +5,10 @@ import Link from "next/link";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
+import { StatusBadge } from "@/components/shared/status-badge";
 import { TaskCheckbox } from "./task-checkbox";
 import { TaskDrawer, type TaskDrawerTask } from "./task-drawer";
 import { formatCalendarDate } from "@/lib/dates";
-
-const priorityColors: Record<string, string> = {
-  HIGH: "bg-red-100 text-red-800",
-  MEDIUM: "bg-yellow-100 text-yellow-800",
-  LOW: "bg-green-100 text-green-800",
-};
 
 const statusBadgeVariant: Record<string, "default" | "success" | "warning" | "destructive" | "secondary" | "outline"> = {
   TODO: "outline",
@@ -139,13 +134,7 @@ function TaskRow({
               >
                 {task.title}
               </span>
-              {!completed && (
-                <span
-                  className={`text-xs px-2 py-0.5 rounded-full font-medium ${priorityColors[task.priority]}`}
-                >
-                  {task.priority}
-                </span>
-              )}
+              {!completed && <StatusBadge status={task.priority} />}
               {task.status === "IN_PROGRESS" && (
                 <Badge variant="default" className="text-xs">
                   In Progress

@@ -1,11 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { FormDialog } from "@/components/shared/form-dialog";
+import { useConfirm } from "@/components/shared/use-confirm";
 import { Badge } from "@/components/ui/badge";
 import { createContact, updateContact, deleteContact } from "@/actions/clients";
 import { Plus, Pencil, Trash2, Mail, Phone, Star } from "lucide-react";
@@ -29,13 +31,28 @@ interface Props {
 export function ContactSection({ contacts, clientId, canEdit }: Props) {
   const [createOpen, setCreateOpen] = useState(false);
   const [editContact, setEditContact] = useState<Contact | null>(null);
+  const [isPending, startTransition] = useTransition();
+  const { confirm, ConfirmDialog } = useConfirm();
   const router = useRouter();
 
-  async function handleDelete(id: string) {
-    const fd = new FormData();
-    fd.set("id", id);
-    await deleteContact(null, fd);
-    router.refresh();
+  async function handleDelete(id: string, name: string) {
+    const ok = await confirm({
+      title: `Delete contact "${name}"?`,
+      message: "This can't be undone.",
+      confirmLabel: "Delete",
+    });
+    if (!ok) return;
+    startTransition(async () => {
+      const fd = new FormData();
+      fd.set("id", id);
+      const result = await deleteContact(null, fd);
+      if (result && "error" in result && result.error) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success("Contact deleted");
+      router.refresh();
+    });
   }
 
   return (
@@ -65,13 +82,16 @@ export function ContactSection({ contacts, clientId, canEdit }: Props) {
               <div className="flex gap-1">
                 <button
                   onClick={() => setEditContact(contact)}
+                  aria-label={`Edit contact ${contact.name}`}
                   className="rounded p-1 text-muted-foreground hover:text-foreground"
                 >
                   <Pencil className="h-3 w-3" />
                 </button>
                 <button
-                  onClick={() => handleDelete(contact.id)}
-                  className="rounded p-1 text-muted-foreground hover:text-destructive"
+                  onClick={() => handleDelete(contact.id, contact.name)}
+                  disabled={isPending}
+                  aria-label={`Delete contact ${contact.name}`}
+                  className="rounded p-1 text-muted-foreground hover:text-destructive disabled:opacity-50"
                 >
                   <Trash2 className="h-3 w-3" />
                 </button>
@@ -154,6 +174,7 @@ export function ContactSection({ contacts, clientId, canEdit }: Props) {
           )}
         </>
       )}
+      <ConfirmDialog />
     </div>
   );
 }

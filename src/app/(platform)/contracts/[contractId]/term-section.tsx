@@ -1,12 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select } from "@/components/ui/select";
 import { FormDialog } from "@/components/shared/form-dialog";
+import { useConfirm } from "@/components/shared/use-confirm";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { Badge } from "@/components/ui/badge";
 import { createContractTerm, deleteContractTerm } from "@/actions/contracts";
@@ -31,13 +33,28 @@ interface Props {
 
 export function TermSection({ terms, contractId, canEdit, canDelete }: Props) {
   const [createOpen, setCreateOpen] = useState(false);
+  const [isPending, startTransition] = useTransition();
+  const { confirm, ConfirmDialog } = useConfirm();
   const router = useRouter();
 
-  async function handleDelete(id: string) {
-    const fd = new FormData();
-    fd.set("id", id);
-    await deleteContractTerm(null, fd);
-    router.refresh();
+  async function handleDelete(id: string, title: string) {
+    const ok = await confirm({
+      title: `Delete term "${title}"?`,
+      message: "This can't be undone.",
+      confirmLabel: "Delete",
+    });
+    if (!ok) return;
+    startTransition(async () => {
+      const fd = new FormData();
+      fd.set("id", id);
+      const result = await deleteContractTerm(null, fd);
+      if (result && "error" in result && result.error) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success("Term deleted");
+      router.refresh();
+    });
   }
 
   return (
@@ -52,7 +69,12 @@ export function TermSection({ terms, contractId, canEdit, canDelete }: Props) {
               {term.priority && <StatusBadge status={term.priority} />}
             </div>
             {canDelete && (
-              <button onClick={() => handleDelete(term.id)} className="text-muted-foreground hover:text-destructive">
+              <button
+                onClick={() => handleDelete(term.id, term.title)}
+                disabled={isPending}
+                aria-label={`Delete term "${term.title}"`}
+                className="text-muted-foreground hover:text-destructive disabled:opacity-50"
+              >
                 <Trash2 className="h-4 w-4" />
               </button>
             )}
@@ -94,6 +116,7 @@ export function TermSection({ terms, contractId, canEdit, canDelete }: Props) {
           </FormDialog>
         </>
       )}
+      <ConfirmDialog />
     </div>
   );
 }

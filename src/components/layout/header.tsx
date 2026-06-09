@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Search, LogOut, User, Settings } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
@@ -37,6 +37,7 @@ export function Header({
 }: HeaderProps) {
   const [showMenu, setShowMenu] = useState(false);
   const [isMac, setIsMac] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   const isAdmin = userRole === "ADMIN";
 
@@ -47,6 +48,26 @@ export function Header({
     if (typeof navigator === "undefined") return;
     setIsMac(/Mac|iPhone|iPad/.test(navigator.platform));
   }, []);
+
+  // Close the user menu on outside click or Escape — same dismissal
+  // contract as the notification bell's dropdown next to it.
+  useEffect(() => {
+    if (!showMenu) return;
+    const clickHandler = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setShowMenu(false);
+      }
+    };
+    const keyHandler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setShowMenu(false);
+    };
+    document.addEventListener("mousedown", clickHandler);
+    document.addEventListener("keydown", keyHandler);
+    return () => {
+      document.removeEventListener("mousedown", clickHandler);
+      document.removeEventListener("keydown", keyHandler);
+    };
+  }, [showMenu]);
 
   return (
     <header className="flex h-16 items-center border-b border-border bg-card px-4 sm:px-6 gap-4">
@@ -85,9 +106,12 @@ export function Header({
           initialNotifications={recentNotifications}
         />
 
-        <div className="relative">
+        <div className="relative" ref={menuRef}>
           <button
             onClick={() => setShowMenu(!showMenu)}
+            aria-haspopup="true"
+            aria-expanded={showMenu}
+            aria-label="Open user menu"
             className="flex items-center gap-2 sm:gap-3 rounded px-2 py-1 hover:bg-muted transition-colors"
           >
             <div className="text-right hidden sm:block">
