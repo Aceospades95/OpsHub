@@ -11,7 +11,10 @@
   --secondary-foreground: #15583e;
   --accent: #22885a;
   --muted: #e8eaec;
-  --muted-foreground: #6b7c6b;
+  /* #5a695a: ≥4.5:1 on both --background and white cards (the old
+     #6b7c6b sat at 3.9:1 — an AA failure on the app's most-used
+     text color). */
+  --muted-foreground: #5a695a;
   --border: #d5d8dc;
   --input: #d5d8dc;
   --destructive: #ef4444;
@@ -21,6 +24,32 @@
   --card-foreground: #0a0a0a;
   --card-border: #c9ced4;
   --radius: 0.5rem;
+
+  /* RGB-triplet twins of every color token above. Tailwind utilities
+     are defined as rgb(var(--x-rgb) / <alpha-value>) in
+     tailwind.config.ts so opacity modifiers (bg-primary/10,
+     text-muted-foreground/70, …) actually compile — against the plain
+     hex vars Tailwind silently dropped every such class. The hex vars
+     stay for non-Tailwind CSS (grid handles below, email previews)
+     and for the admin theme editor's color inputs. ThemeProvider
+     keeps both sets in sync when an admin applies a theme. */
+  --background-rgb: 238 240 243;
+  --foreground-rgb: 10 10 10;
+  --primary-rgb: 21 88 62;
+  --primary-foreground-rgb: 255 255 255;
+  --secondary-rgb: 228 237 232;
+  --secondary-foreground-rgb: 21 88 62;
+  --accent-rgb: 34 136 90;
+  --muted-rgb: 232 234 236;
+  --muted-foreground-rgb: 90 105 90;
+  --border-rgb: 213 216 220;
+  --input-rgb: 213 216 220;
+  --destructive-rgb: 239 68 68;
+  --success-rgb: 22 163 74;
+  --warning-rgb: 245 158 11;
+  --card-rgb: 255 255 255;
+  --card-foreground-rgb: 10 10 10;
+  --card-border-rgb: 201 206 212;
 }
 
 * {
