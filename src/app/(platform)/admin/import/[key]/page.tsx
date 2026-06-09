@@ -1,4 +1,4 @@
-import { auth } from "@/lib/auth";
+import { requireAuth } from "@/lib/permissions";
 import { redirect, notFound } from "next/navigation";
 import { PageHeader } from "@/components/layout/page-header";
 import Link from "next/link";
@@ -12,9 +12,8 @@ interface Props {
 
 export default async function ImporterDetailPage({ params }: Props) {
   const { key } = await params;
-  const session = await auth();
-  if (!session?.user) redirect("/login");
-  if (session.user.role !== "ADMIN") redirect("/dashboard");
+  const user = await requireAuth();
+  if (user.role !== "ADMIN") redirect("/dashboard");
 
   const importer = getImporter(key);
   if (!importer) notFound();

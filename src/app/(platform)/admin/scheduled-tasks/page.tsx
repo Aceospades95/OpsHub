@@ -1,4 +1,4 @@
-import { auth } from "@/lib/auth";
+import { requireAuth } from "@/lib/permissions";
 import { redirect } from "next/navigation";
 import { format, formatDistanceToNowStrict } from "date-fns";
 
@@ -19,10 +19,11 @@ const TYPE_LABEL: Record<string, string> = {
   EMAIL_MESSAGE: "Broadcast a message",
 };
 
+export const metadata = { title: "Scheduled Tasks · OpsHub" };
+
 export default async function ScheduledTasksPage() {
-  const session = await auth();
-  if (!session?.user) redirect("/login");
-  if (session.user.role !== "ADMIN") redirect("/dashboard");
+  const user = await requireAuth();
+  if (user.role !== "ADMIN") redirect("/dashboard");
 
   const tasks = await db.scheduledTask.findMany({
     orderBy: [{ isActive: "desc" }, { name: "asc" }],

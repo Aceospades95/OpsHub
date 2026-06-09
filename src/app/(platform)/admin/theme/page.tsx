@@ -6,6 +6,8 @@ import { PageHeader } from "@/components/layout/page-header";
 import { ThemeEditor } from "./theme-editor";
 import { BrandingSection } from "./branding-section";
 
+export const metadata = { title: "Theme Settings · OpsHub" };
+
 export default async function AdminThemePage() {
   const user = await requireAuth();
   if (user.role !== "ADMIN") {

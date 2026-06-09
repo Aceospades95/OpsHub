@@ -78,7 +78,7 @@ export function RichTextEditor({
       Placeholder.configure({
         placeholder: placeholder ?? "Hi {{subject.firstName}}, …",
         emptyEditorClass:
-          "before:content-[attr(data-placeholder)] before:float-left before:text-neutral-400 before:pointer-events-none",
+          "before:content-[attr(data-placeholder)] before:float-left before:text-muted-foreground/60 before:pointer-events-none",
       }),
       Mention.configure({
         HTMLAttributes: {

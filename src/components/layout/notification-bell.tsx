@@ -75,7 +75,7 @@ export function NotificationBell({ initialUnreadCount, initialNotifications }: P
     });
   }, [open]);
 
-  // Close dropdown when clicking outside
+  // Close dropdown when clicking outside or pressing Escape
   useEffect(() => {
     if (!open) return;
     const handler = (e: MouseEvent) => {
@@ -83,8 +83,15 @@ export function NotificationBell({ initialUnreadCount, initialNotifications }: P
         setOpen(false);
       }
     };
+    const keyHandler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
     document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
+    document.addEventListener("keydown", keyHandler);
+    return () => {
+      document.removeEventListener("mousedown", handler);
+      document.removeEventListener("keydown", keyHandler);
+    };
   }, [open]);
 
   const handleMarkRead = (id: string) => {
@@ -122,6 +129,8 @@ export function NotificationBell({ initialUnreadCount, initialNotifications }: P
       <button
         onClick={() => setOpen((v) => !v)}
         className="relative flex items-center justify-center h-9 w-9 rounded hover:bg-muted transition-colors"
+        aria-haspopup="true"
+        aria-expanded={open}
         aria-label={
           unreadCount > 0
             ? `${unreadCount} unread notifications`
@@ -139,7 +148,7 @@ export function NotificationBell({ initialUnreadCount, initialNotifications }: P
                 interrupting other speech. */}
             <span
               aria-live="polite"
-              className="absolute -top-1 -right-1 flex h-5 min-w-[20px] items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold text-destructive-foreground ring-2 ring-background shadow-sm"
+              className="absolute -top-1 -right-1 flex h-5 min-w-[20px] items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold text-white ring-2 ring-background shadow-sm"
             >
               {unreadCount > 99 ? "99+" : unreadCount}
             </span>
@@ -212,6 +221,7 @@ export function NotificationBell({ initialUnreadCount, initialNotifications }: P
                             handleMarkRead(n.id);
                           }}
                           title="Mark read"
+                          aria-label={`Mark notification "${n.title}" as read`}
                           className="p-0.5 rounded hover:bg-muted text-muted-foreground/60 hover:text-primary"
                         >
                           <Check className="h-3 w-3" />
@@ -224,6 +234,7 @@ export function NotificationBell({ initialUnreadCount, initialNotifications }: P
                           handleDelete(n.id);
                         }}
                         title="Delete"
+                        aria-label={`Delete notification "${n.title}"`}
                         className="p-0.5 rounded hover:bg-destructive/10 text-muted-foreground/60 hover:text-destructive"
                       >
                         <Trash2 className="h-3 w-3" />

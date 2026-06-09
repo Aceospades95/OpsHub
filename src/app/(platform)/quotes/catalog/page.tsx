@@ -51,28 +51,28 @@ export default async function CatalogPage() {
           title="No catalog items yet"
           description="Add your most-used services and products so they autocomplete inside quotes"
         />
-      ) : null}
-
-      <Card>
-        <CardContent className="p-0">
-          <CatalogTable
-            items={items.map((i) => ({
-              id: i.id,
-              name: i.name,
-              description: i.description,
-              defaultUnitPrice: i.defaultUnitPrice,
-              defaultUnit: i.defaultUnit,
-              category: i.category,
-              isRecurring: i.isRecurring,
-              isActive: i.isActive,
-              priceLabel: formatCurrency(i.defaultUnitPrice),
-            }))}
-            canEdit={perms.canEdit}
-            canCreate={perms.canCreate}
-            canDelete={perms.canDelete}
-          />
-        </CardContent>
-      </Card>
+      ) : (
+        <Card>
+          <CardContent className="p-0">
+            <CatalogTable
+              items={items.map((i) => ({
+                id: i.id,
+                name: i.name,
+                description: i.description,
+                defaultUnitPrice: i.defaultUnitPrice,
+                defaultUnit: i.defaultUnit,
+                category: i.category,
+                isRecurring: i.isRecurring,
+                isActive: i.isActive,
+                priceLabel: formatCurrency(i.defaultUnitPrice),
+              }))}
+              canEdit={perms.canEdit}
+              canCreate={perms.canCreate}
+              canDelete={perms.canDelete}
+            />
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

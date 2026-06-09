@@ -2,7 +2,6 @@ import { db } from "@/lib/db";
 import { requireAuth, resolveModulePerms } from "@/lib/permissions";
 import { getUserScope } from "@/lib/scope";
 import { AccessDenied } from "@/components/shared/access-denied";
-import { hasOrgWideManage } from "@/lib/scope";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatusBadge } from "@/components/shared/status-badge";
@@ -48,11 +47,19 @@ interface PageProps {
   }>;
 }
 
+export const metadata = { title: "Certifications · OpsHub" };
+
 export default async function CertificationsPage({ searchParams }: PageProps) {
   const user = await requireAuth();
 
-  if (!hasOrgWideManage(user.role)) {
-    return <AccessDenied module="certifications" moduleLabel="Certifications" moduleDescription="Compliance certifications and expirations (Admin / Developer only)" />;
+  // Module canView, like sibling modules. Assignees / points of contact
+  // get canView through their cert scope (resolveModulePerms grants it
+  // when scope.certIds is non-empty) so expiry-notification links work;
+  // the scope filter below restricts the list to those certs. Writes stay
+  // role-gated via canCreate further down.
+  const perms = await resolveModulePerms(user.id, user.role, "certifications");
+  if (!perms.canView) {
+    return <AccessDenied module="certifications" moduleLabel="Certifications" moduleDescription="Compliance certifications and expirations" />;
   }
 
   const sp = await searchParams;
@@ -66,11 +73,14 @@ export default async function CertificationsPage({ searchParams }: PageProps) {
     ? (sp.status as StatusBucket)
     : null;
 
-  const _perms = await resolveModulePerms(user.id, user.role, "certifications");
-
   const scope = await getUserScope(user.id, user.role);
   const scopedCertIds = scope.all ? null : Array.from(scope.certIds);
   const scopedClientIds = scope.all ? null : Array.from(scope.clientIds);
+
+  const canCreate =
+    user.role === "ADMIN" ||
+    user.role === "MANAGER" ||
+    user.role === "DEVELOPER";
 
   const [certifications, clients, users] = await Promise.all([
     db.certification.findMany({
@@ -87,16 +97,21 @@ export default async function CertificationsPage({ searchParams }: PageProps) {
         pointOfContact: { select: { id: true, name: true } },
       },
     }),
-    db.client.findMany({
-      where: { deletedAt: null, ...(scopedClientIds ? { id: { in: scopedClientIds } } : {}) },
-      select: { id: true, name: true },
-      orderBy: { name: "asc" },
-    }),
-    db.user.findMany({
-      where: { isActive: true },
-      select: { id: true, name: true },
-      orderBy: { name: "asc" },
-    }),
+    // Create-dialog dropdowns — only needed by users who can create.
+    canCreate
+      ? db.client.findMany({
+          where: { deletedAt: null, ...(scopedClientIds ? { id: { in: scopedClientIds } } : {}) },
+          select: { id: true, name: true },
+          orderBy: { name: "asc" },
+        })
+      : Promise.resolve([]),
+    canCreate
+      ? db.user.findMany({
+          where: { isActive: true },
+          select: { id: true, name: true },
+          orderBy: { name: "asc" },
+        })
+      : Promise.resolve([]),
   ]);
 
   const now = new Date();
@@ -127,11 +142,6 @@ export default async function CertificationsPage({ searchParams }: PageProps) {
   const expired = buckets.expired;
   const pending = buckets.pending;
   const visibleCerts = statusFilter ? buckets[statusFilter] : certifications;
-
-  const canCreate =
-    user.role === "ADMIN" ||
-    user.role === "MANAGER" ||
-    user.role === "DEVELOPER";
 
   const buildHref = (overrides: {
     jurisdiction?: string | null;
@@ -174,8 +184,8 @@ export default async function CertificationsPage({ searchParams }: PageProps) {
               label: "Active",
               count: active.length,
               Icon: CheckCircle2,
-              iconWrap: "bg-green-50",
-              iconColor: "text-green-600",
+              iconWrap: "bg-success/10",
+              iconColor: "text-success",
               activeBorder: "",
             },
             {
@@ -183,8 +193,8 @@ export default async function CertificationsPage({ searchParams }: PageProps) {
               label: "Expiring Soon",
               count: expiringSoon.length,
               Icon: Clock,
-              iconWrap: "bg-yellow-50",
-              iconColor: "text-yellow-600",
+              iconWrap: "bg-warning/15",
+              iconColor: "text-warning",
               activeBorder: expiringSoon.length > 0 ? "border-warning/50" : "",
             },
             {
@@ -192,8 +202,8 @@ export default async function CertificationsPage({ searchParams }: PageProps) {
               label: "Expired",
               count: expired.length,
               Icon: XCircle,
-              iconWrap: "bg-red-50",
-              iconColor: "text-red-600",
+              iconWrap: "bg-destructive/10",
+              iconColor: "text-destructive",
               activeBorder: expired.length > 0 ? "border-destructive/50" : "",
             },
             {
@@ -201,7 +211,7 @@ export default async function CertificationsPage({ searchParams }: PageProps) {
               label: "Pending",
               count: pending.length,
               Icon: RotateCcw,
-              iconWrap: "bg-blue-50",
+              iconWrap: "bg-blue-500/10",
               iconColor: "text-blue-600",
               activeBorder: "",
             },
@@ -379,7 +389,7 @@ export default async function CertificationsPage({ searchParams }: PageProps) {
                         </span>
                       )}
                       {isExpiring && (
-                        <span className="flex items-center gap-1 text-yellow-600 font-medium">
+                        <span className="flex items-center gap-1 text-warning font-medium">
                           <Clock className="h-3 w-3" /> {daysUntilExpiry}d until expiry
                         </span>
                       )}

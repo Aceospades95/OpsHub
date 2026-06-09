@@ -2,6 +2,7 @@
 
 import { db } from "@/lib/db";
 import { requireAuth, resolveModulePerms } from "@/lib/permissions";
+import { assertManageEntity } from "@/lib/entity-authz";
 import { logActivity } from "@/lib/activity";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
@@ -55,6 +56,19 @@ export async function updateTool(_prev: unknown, formData: FormData) {
 
   if (!parsed.success) return { error: "Invalid input", fieldErrors: parsed.error.flatten().fieldErrors };
 
+  // Existence + soft-delete guard: a missing id would throw P2025 (→ 500)
+  // and a soft-deleted tool must not be editable from a stale form.
+  const existing = await db.tool.findFirst({
+    where: { id, deletedAt: null },
+    select: { id: true },
+  });
+  if (!existing) return { error: "Not found" };
+
+  // Entity-scope write gate — module canEdit alone would let any
+  // CONTRIBUTOR mutate arbitrary tools by id.
+  const denied = await assertManageEntity(user.id, user.role, "tool", id);
+  if (denied) return { error: denied.error };
+
   await db.tool.update({ where: { id }, data: parsed.data });
   await logActivity("updated", "tool", id, user.id, parsed.data.name);
   revalidatePath(`/tools/${id}`);
@@ -73,6 +87,9 @@ export async function deleteTool(_prev: unknown, formData: FormData) {
   if (tool.deletedAt) {
     return { error: "Already in the recovery bin" };
   }
+
+  const denied = await assertManageEntity(user.id, user.role, "tool", id);
+  if (denied) return { error: denied.error };
 
   await db.tool.update({ where: { id }, data: { deletedAt: new Date() } });
   await logActivity("soft-deleted", "tool", id, user.id, tool.name);
@@ -93,32 +110,38 @@ export async function cloneTool(_prev: unknown, formData: FormData) {
 
   if (!original) return { error: "Tool not found" };
 
-  const clone = await db.tool.create({
-    data: {
-      name: `${original.name} (Copy)`,
-      description: original.description,
-      category: original.category,
-      toolUrl: original.toolUrl,
-      toolType: original.toolType,
-      isGlobal: original.isGlobal,
-      clonedFromId: original.id,
-    },
-  });
-
-  // Clone embeds
-  for (const embed of original.embeds) {
-    await db.embed.create({
+  // Clone + embeds atomically — a failure partway through must not leave
+  // a half-cloned tool with missing embeds.
+  const clone = await db.$transaction(async (tx) => {
+    const created = await tx.tool.create({
       data: {
-        title: embed.title,
-        embedUrl: embed.embedUrl,
-        embedType: embed.embedType,
-        description: embed.description,
-        width: embed.width,
-        height: embed.height,
-        toolId: clone.id,
+        name: `${original.name} (Copy)`,
+        description: original.description,
+        category: original.category,
+        toolUrl: original.toolUrl,
+        toolType: original.toolType,
+        isGlobal: original.isGlobal,
+        clonedFromId: original.id,
       },
     });
-  }
+
+    // Clone embeds
+    if (original.embeds.length > 0) {
+      await tx.embed.createMany({
+        data: original.embeds.map((embed) => ({
+          title: embed.title,
+          embedUrl: embed.embedUrl,
+          embedType: embed.embedType,
+          description: embed.description,
+          width: embed.width,
+          height: embed.height,
+          toolId: created.id,
+        })),
+      });
+    }
+
+    return created;
+  });
 
   await logActivity("created", "tool", clone.id, user.id, `Cloned from ${original.name}`);
   revalidatePath("/tools");
@@ -133,6 +156,16 @@ export async function assignToolToProject(_prev: unknown, formData: FormData) {
   const toolId = formData.get("toolId") as string;
   const projectId = formData.get("projectId") as string;
 
+  // Both ends of the link must exist (and not be soft-deleted).
+  const [tool, project] = await Promise.all([
+    db.tool.findFirst({ where: { id: toolId, deletedAt: null }, select: { id: true } }),
+    db.project.findFirst({ where: { id: projectId, deletedAt: null }, select: { id: true } }),
+  ]);
+  if (!tool || !project) return { error: "Not found" };
+
+  const denied = await assertManageEntity(user.id, user.role, "tool", toolId);
+  if (denied) return { error: denied.error };
+
   const existing = await db.projectTool.findUnique({
     where: { projectId_toolId: { projectId, toolId } },
   });
@@ -140,6 +173,7 @@ export async function assignToolToProject(_prev: unknown, formData: FormData) {
 
   await db.projectTool.create({ data: { projectId, toolId } });
   revalidatePath(`/tools/${toolId}`);
+  revalidatePath(`/projects/${projectId}`);
   return { success: true };
 }
 
@@ -149,7 +183,21 @@ export async function removeToolFromProject(_prev: unknown, formData: FormData) 
   if (!perms.canEdit) return { error: "Permission denied" };
 
   const id = formData.get("id") as string;
+  // Look up the link first — a stale double-submit would otherwise throw
+  // P2025 (→ 500), and we need the toolId/projectId for the gate and
+  // revalidation anyway.
+  const link = await db.projectTool.findUnique({
+    where: { id },
+    select: { toolId: true, projectId: true },
+  });
+  if (!link) return { error: "Not found" };
+
+  const denied = await assertManageEntity(user.id, user.role, "tool", link.toolId);
+  if (denied) return { error: denied.error };
+
   await db.projectTool.delete({ where: { id } });
   revalidatePath("/tools");
+  revalidatePath(`/tools/${link.toolId}`);
+  revalidatePath(`/projects/${link.projectId}`);
   return { success: true };
 }

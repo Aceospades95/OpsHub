@@ -179,6 +179,7 @@ export default async function QuoteDetailPage({ params }: Props) {
                   )}
                 </p>
               ) : (
+                <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="text-xs uppercase tracking-wide text-muted-foreground">
@@ -230,6 +231,7 @@ export default async function QuoteDetailPage({ params }: Props) {
                     ))}
                   </tbody>
                 </table>
+                </div>
               )}
             </CardContent>
           </Card>

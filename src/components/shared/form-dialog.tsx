@@ -1,7 +1,7 @@
 "use client";
 
-import { useFormState } from "react-dom";
-import { useEffect, useRef, useCallback } from "react";
+import { useFormState, useFormStatus } from "react-dom";
+import { useEffect, useRef, useCallback, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Dialog } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -15,6 +15,30 @@ interface FormDialogProps {
   children: (state: { fieldErrors?: Record<string, string[]> }) => React.ReactNode;
   submitLabel?: string;
   navigateTo?: string;
+}
+
+/**
+ * The footer submit button lives in the Dialog's sticky footer —
+ * OUTSIDE the <form> element (wired via the `form` attribute) — so
+ * it can't call useFormStatus itself (that only reads the nearest
+ * ancestor form). This zero-render bridge sits inside the form and
+ * reports the action's pending state up so the footer can disable
+ * its buttons and swap the label to "Saving…" while the server
+ * action runs.
+ */
+function FormPendingBridge({
+  onPendingChange,
+}: {
+  onPendingChange: (pending: boolean) => void;
+}) {
+  const { pending } = useFormStatus();
+  useEffect(() => {
+    onPendingChange(pending);
+    // Reset on unmount so a dialog closed mid-flight doesn't reopen
+    // with its buttons stuck disabled.
+    return () => onPendingChange(false);
+  }, [pending, onPendingChange]);
+  return null;
 }
 
 /**
@@ -49,6 +73,7 @@ export function FormDialog({
   navigateTo,
 }: FormDialogProps) {
   const [state, formAction] = useFormState(action, null);
+  const [pending, setPending] = useState(false);
   const router = useRouter();
   const formRef = useRef<HTMLFormElement>(null);
   const initialSnapshotRef = useRef<string>("");
@@ -77,6 +102,9 @@ export function FormDialog({
   }, [state, onClose, router, navigateTo]);
 
   const handleCancel = useCallback(async () => {
+    // Don't allow closing mid-submit — the action may still land and
+    // the success effect would fire against an unmounted dialog.
+    if (pending) return;
     const current = snapshotFormValues(formRef.current);
     if (current !== initialSnapshotRef.current) {
       const ok = await confirm({
@@ -88,7 +116,7 @@ export function FormDialog({
       if (!ok) return;
     }
     onClose();
-  }, [onClose, confirm]);
+  }, [onClose, confirm, pending]);
 
   // Round-6 QA: split the form so action buttons live in the
   // dialog's sticky footer slot. The body scrolls; Cancel / Save
@@ -104,11 +132,16 @@ export function FormDialog({
         title={title}
         footer={
           <div className="flex justify-end gap-2">
-            <Button type="button" variant="outline" onClick={handleCancel}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleCancel}
+              disabled={pending}
+            >
               Cancel
             </Button>
-            <Button type="submit" form={formId}>
-              {submitLabel}
+            <Button type="submit" form={formId} disabled={pending}>
+              {pending ? "Saving…" : submitLabel}
             </Button>
           </div>
         }
@@ -119,6 +152,7 @@ export function FormDialog({
           </div>
         )}
         <form id={formId} ref={formRef} action={formAction} className="space-y-4">
+          <FormPendingBridge onPendingChange={setPending} />
           {children({ fieldErrors: state?.fieldErrors })}
         </form>
       </Dialog>

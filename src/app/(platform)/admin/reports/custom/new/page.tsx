@@ -1,4 +1,4 @@
-import { auth } from "@/lib/auth";
+import { requireAuth } from "@/lib/permissions";
 import { redirect } from "next/navigation";
 
 import { db } from "@/lib/db";
@@ -7,9 +7,8 @@ import { ReportBuilder } from "../report-builder";
 import type { EntityCatalogEntry } from "../shared-types";
 
 export default async function NewCustomReportPage() {
-  const session = await auth();
-  if (!session?.user) redirect("/login");
-  if (session.user.role !== "ADMIN") redirect("/dashboard");
+  const user = await requireAuth();
+  if (user.role !== "ADMIN") redirect("/dashboard");
 
   const catalog = projectCatalog();
   const first = catalog[0];

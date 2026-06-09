@@ -5,7 +5,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 vi.mock("@/lib/db", () => ({
   db: {
     quote: {
-      findFirst: vi.fn(),
+      findMany: vi.fn(),
     },
   },
 }));
@@ -13,7 +13,7 @@ vi.mock("@/lib/db", () => ({
 import { db } from "@/lib/db";
 import { nextQuoteNumber } from "./numbering";
 
-const findFirst = db.quote.findFirst as ReturnType<typeof vi.fn>;
+const findMany = db.quote.findMany as ReturnType<typeof vi.fn>;
 
 describe("nextQuoteNumber", () => {
   beforeEach(() => {
@@ -21,7 +21,7 @@ describe("nextQuoteNumber", () => {
   });
 
   it("uses the first word of the client name only — respects word boundaries", async () => {
-    findFirst.mockResolvedValue(null);
+    findMany.mockResolvedValue([]);
     const number = await nextQuoteNumber(
       "Acme Corp",
       null,
@@ -31,7 +31,7 @@ describe("nextQuoteNumber", () => {
   });
 
   it("includes the project slug (first word) when one is supplied", async () => {
-    findFirst.mockResolvedValue(null);
+    findMany.mockResolvedValue([]);
     const number = await nextQuoteNumber(
       "Acme",
       "Marketing Site",
@@ -41,7 +41,7 @@ describe("nextQuoteNumber", () => {
   });
 
   it("caps each slug at 20 characters even when the first word is long", async () => {
-    findFirst.mockResolvedValue(null);
+    findMany.mockResolvedValue([]);
     const number = await nextQuoteNumber(
       "Antidisestablishmentarianism Holdings",
       null,
@@ -52,7 +52,7 @@ describe("nextQuoteNumber", () => {
   });
 
   it("avoids the mid-word truncation case (regression: GLOBALTECHSO)", async () => {
-    findFirst.mockResolvedValue(null);
+    findMany.mockResolvedValue([]);
     const number = await nextQuoteNumber(
       "GlobalTech Solutions",
       null,
@@ -63,8 +63,8 @@ describe("nextQuoteNumber", () => {
     expect(number).toBe("GLOBALTECH-2026-0001");
   });
 
-  it("increments the trailing counter by parsing the latest year quote", async () => {
-    findFirst.mockResolvedValue({ quoteNumber: "ACME-2026-0042" });
+  it("increments the trailing counter by parsing the year quotes", async () => {
+    findMany.mockResolvedValue([{ quoteNumber: "ACME-2026-0042" }]);
     const number = await nextQuoteNumber(
       "Acme",
       null,
@@ -74,7 +74,7 @@ describe("nextQuoteNumber", () => {
   });
 
   it("counter is global across clients (Beta starts above Acme's last)", async () => {
-    findFirst.mockResolvedValue({ quoteNumber: "ACME-2026-0007" });
+    findMany.mockResolvedValue([{ quoteNumber: "ACME-2026-0007" }]);
     const number = await nextQuoteNumber(
       "Beta",
       null,
@@ -83,8 +83,41 @@ describe("nextQuoteNumber", () => {
     expect(number).toBe("BETA-2026-0008");
   });
 
+  it("takes the max suffix regardless of row order (regression: back-dated quote shadowed the true max)", async () => {
+    // A restored / back-dated quote used to win the orderBy-createdAt
+    // race and reset the counter below the real max, producing a
+    // duplicate caught only by the unique constraint.
+    findMany.mockResolvedValue([
+      { quoteNumber: "ACME-2026-0050" },
+      { quoteNumber: "BETA-2026-0007" }, // back-dated but most recent createdAt
+      { quoteNumber: "GAMMA-2026-0031" },
+    ]);
+    const number = await nextQuoteNumber(
+      "Acme",
+      null,
+      new Date(Date.UTC(2026, 5, 15))
+    );
+    expect(number).toBe("ACME-2026-0051");
+  });
+
+  it("anchors the counter on the year segment — digit runs in a slug never parse as the counter", async () => {
+    findMany.mockResolvedValue([
+      // "1234" here is part of the slug, not a counter. An unanchored
+      // /-(\d{4,})$/ on a number missing the year segment would
+      // mis-parse rows like this.
+      { quoteNumber: "PROJ-1234" },
+      { quoteNumber: "ACME-2026-0002" },
+    ]);
+    const number = await nextQuoteNumber(
+      "Acme",
+      null,
+      new Date(Date.UTC(2026, 5, 15))
+    );
+    expect(number).toBe("ACME-2026-0003");
+  });
+
   it("isolates numbering by year (2027 starts fresh at 0001)", async () => {
-    findFirst.mockResolvedValueOnce(null);
+    findMany.mockResolvedValueOnce([]);
     const a = await nextQuoteNumber(
       "Acme",
       null,
@@ -94,7 +127,7 @@ describe("nextQuoteNumber", () => {
   });
 
   it("falls back to a placeholder slug when the name has no alphanumerics", async () => {
-    findFirst.mockResolvedValue(null);
+    findMany.mockResolvedValue([]);
     const number = await nextQuoteNumber(
       "🎉🎉🎉",
       null,
@@ -104,7 +137,7 @@ describe("nextQuoteNumber", () => {
   });
 
   it("zero-pads to four digits and grows past 9999", async () => {
-    findFirst.mockResolvedValue({ quoteNumber: "ACME-2026-9999" });
+    findMany.mockResolvedValue([{ quoteNumber: "ACME-2026-9999" }]);
     const number = await nextQuoteNumber(
       "Acme",
       null,

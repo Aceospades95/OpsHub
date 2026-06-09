@@ -23,14 +23,6 @@ interface EmployeeListProps {
 type SortField = "name" | "department" | "location" | "manager" | "role" | "totalFte" | "projects";
 type SortDir = "asc" | "desc";
 
-const ROLE_COLORS: Record<string, string> = {
-  ADMIN: "bg-purple-100 text-purple-800",
-  MANAGER: "bg-blue-100 text-blue-800",
-  DEVELOPER: "bg-green-100 text-green-800",
-  CONTRIBUTOR: "bg-yellow-100 text-yellow-800",
-  VIEWER: "bg-gray-100 text-gray-800",
-};
-
 export function EmployeeList({ users, inactiveUsers, search }: EmployeeListProps) {
   const [deptFilter, setDeptFilter] = useState("");
   const [roleFilter, setRoleFilter] = useState("");
@@ -129,11 +121,16 @@ export function EmployeeList({ users, inactiveUsers, search }: EmployeeListProps
     return (
       <React.Fragment key={user.id}>
         <tr
-          className={`border-b border-border/50 hover:bg-muted/30 transition-colors ${isInactive ? "opacity-60" : ""} ${allocStatus === "overallocated" ? "bg-red-50/20" : ""}`}
+          className={`border-b border-border/50 hover:bg-muted/30 transition-colors ${isInactive ? "opacity-60" : ""} ${allocStatus === "overallocated" ? "bg-destructive/5" : ""}`}
         >
           <td className="py-3 px-4">
             <div className="flex items-center gap-3">
-              <button onClick={() => setExpandedId(isExpanded ? null : user.id)} className="text-muted-foreground hover:text-foreground shrink-0">
+              <button
+                onClick={() => setExpandedId(isExpanded ? null : user.id)}
+                aria-expanded={isExpanded}
+                aria-label={`${isExpanded ? "Collapse" : "Expand"} details for ${user.name}`}
+                className="text-muted-foreground hover:text-foreground shrink-0"
+              >
                 {isExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
               </button>
               <Avatar name={user.name} size="sm" />
@@ -178,7 +175,7 @@ export function EmployeeList({ users, inactiveUsers, search }: EmployeeListProps
           </td>
           <td className="py-3 px-4 text-center">
             <div className="flex flex-col items-center gap-0.5">
-              <span className={`font-bold text-sm ${allocStatus === "overallocated" ? "text-red-600" : ""}`}>
+              <span className={`font-bold text-sm ${allocStatus === "overallocated" ? "text-destructive" : ""}`}>
                 {formatFte(totalFte)}
               </span>
               <span className={`inline-flex text-[9px] px-1.5 py-0 rounded-full border font-medium ${badge.className}`}>
@@ -211,9 +208,9 @@ export function EmployeeList({ users, inactiveUsers, search }: EmployeeListProps
       <div className="flex items-center gap-4 text-sm flex-wrap">
         <span className="font-medium">{stats.total} employees</span>
         <span className="text-muted-foreground">·</span>
-        <span className="text-green-600">{stats.full} fully allocated</span>
-        <span className="text-yellow-600">{stats.under} available</span>
-        {stats.over > 0 && <span className="text-red-600">{stats.over} overallocated</span>}
+        <span className="text-success">{stats.full} fully allocated</span>
+        <span className="text-warning">{stats.under} available</span>
+        {stats.over > 0 && <span className="text-destructive">{stats.over} overallocated</span>}
         {stats.unassigned > 0 && <span className="text-muted-foreground">{stats.unassigned} unassigned</span>}
       </div>
 
@@ -342,8 +339,8 @@ function EmployeeExpandedDetail({ user }: { user: UserData }) {
         {user.department && <span>Department: <span className="text-foreground font-medium">{user.department}</span></span>}
         {user.manager && <span>Manager: <Link href={`/team/${user.manager.id}`} className="text-primary hover:underline">{user.manager.name}</Link></span>}
         {user.directReports.length > 0 && <span>Direct Reports: <span className="text-foreground font-medium">{user.directReports.length}</span></span>}
-        <span>Total FTE: <span className={`font-bold ${totalFte > 1 ? "text-red-600" : "text-foreground"}`}>{formatFte(totalFte)}</span></span>
-        <span>Remaining: <span className={`font-bold ${remaining < 0 ? "text-red-600" : remaining > 0 ? "text-green-600" : "text-foreground"}`}>{formatFte(remaining)}</span></span>
+        <span>Total FTE: <span className={`font-bold ${totalFte > 1 ? "text-destructive" : "text-foreground"}`}>{formatFte(totalFte)}</span></span>
+        <span>Remaining: <span className={`font-bold ${remaining < 0 ? "text-destructive" : remaining > 0 ? "text-success" : "text-foreground"}`}>{formatFte(remaining)}</span></span>
       </div>
 
       {/* Assignments */}
@@ -380,12 +377,12 @@ function EmployeeExpandedDetail({ user }: { user: UserData }) {
         </div>
         <div className="h-2 bg-muted rounded-full overflow-hidden">
           <div
-            className={`h-full rounded-full transition-all ${totalFte > 1 ? "bg-red-500" : totalFte >= 0.95 ? "bg-green-500" : totalFte > 0 ? "bg-yellow-500" : "bg-gray-300"}`}
+            className={`h-full rounded-full transition-all ${totalFte > 1 ? "bg-destructive" : totalFte >= 0.95 ? "bg-success" : totalFte > 0 ? "bg-warning" : "bg-muted-foreground/30"}`}
             style={{ width: `${Math.min(totalFte * 100, 100)}%` }}
           />
         </div>
         {totalFte > 1 && (
-          <p className="text-[10px] text-red-600 mt-0.5">Overallocated by {formatFte(totalFte - 1)} FTE</p>
+          <p className="text-[10px] text-destructive mt-0.5">Overallocated by {formatFte(totalFte - 1)} FTE</p>
         )}
       </div>
     </div>

@@ -39,7 +39,7 @@ export function JobRunButton({ jobKey }: { jobKey: string }) {
         <div
           className={`flex items-center gap-1 text-xs ${
             result.status === "completed"
-              ? "text-emerald-600"
+              ? "text-success"
               : result.status === "failed"
                 ? "text-destructive"
                 : "text-muted-foreground"

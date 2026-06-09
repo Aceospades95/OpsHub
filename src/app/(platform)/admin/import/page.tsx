@@ -1,4 +1,4 @@
-import { auth } from "@/lib/auth";
+import { requireAuth } from "@/lib/permissions";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { PageHeader } from "@/components/layout/page-header";
@@ -9,10 +9,11 @@ import { formatDistanceToNow } from "date-fns";
 import Link from "next/link";
 import { listImporters } from "@/lib/importers";
 
+export const metadata = { title: "Data Import · OpsHub" };
+
 export default async function AdminImportPage() {
-  const session = await auth();
-  if (!session?.user) redirect("/login");
-  if (session.user.role !== "ADMIN") redirect("/dashboard");
+  const user = await requireAuth();
+  if (user.role !== "ADMIN") redirect("/dashboard");
 
   const importers = listImporters();
 
@@ -86,9 +87,9 @@ export default async function AdminImportPage() {
                     className="flex items-start gap-3 rounded border border-border p-3"
                   >
                     {hasErrors ? (
-                      <AlertCircle className="h-4 w-4 text-amber-600 mt-0.5 shrink-0" />
+                      <AlertCircle className="h-4 w-4 text-warning mt-0.5 shrink-0" />
                     ) : (
-                      <CheckCircle2 className="h-4 w-4 text-emerald-600 mt-0.5 shrink-0" />
+                      <CheckCircle2 className="h-4 w-4 text-success mt-0.5 shrink-0" />
                     )}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">

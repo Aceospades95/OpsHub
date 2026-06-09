@@ -1,7 +1,11 @@
 "use server";
 
 import { db } from "@/lib/db";
-import { requireAuth, resolveModulePerms } from "@/lib/permissions";
+import {
+  requireAuth,
+  resolveModulePerms,
+  type PermissionFlags,
+} from "@/lib/permissions";
 import { logActivity } from "@/lib/activity";
 import { revalidateWorkflowEmailTemplate } from "@/lib/revalidate-entity";
 import { SUGGESTED_VARIABLES } from "@/lib/workflows/step-types";
@@ -20,12 +24,24 @@ function normalizeOptional(v: string | null | undefined): string | null {
   return t.length === 0 ? null : t;
 }
 
+/**
+ * Email templates feed raw HTML into outbound mail, so authoring them
+ * is a management operation — role defaults hand every CONTRIBUTOR
+ * canEdit/canCreate on the workflows module, which must not be enough
+ * here. Mirrors canDriveInstances in workflow-instances.ts.
+ */
+function canAuthorEmailTemplates(role: string, perms: PermissionFlags): boolean {
+  return perms.canManage || (role === "MANAGER" && perms.canEdit);
+}
+
 export async function createWorkflowEmailTemplate(
   input: z.infer<typeof emailTemplateSchema>
 ) {
   const user = await requireAuth();
   const perms = await resolveModulePerms(user.id, user.role, "workflows");
-  if (!perms.canCreate) return { error: "Permission denied" } as const;
+  if (!canAuthorEmailTemplates(user.role, perms)) {
+    return { error: "Permission denied" } as const;
+  }
 
   const parsed = emailTemplateSchema.safeParse(input);
   if (!parsed.success) {
@@ -58,7 +74,9 @@ export async function updateWorkflowEmailTemplate(
 ) {
   const user = await requireAuth();
   const perms = await resolveModulePerms(user.id, user.role, "workflows");
-  if (!perms.canEdit) return { error: "Permission denied" } as const;
+  if (!canAuthorEmailTemplates(user.role, perms)) {
+    return { error: "Permission denied" } as const;
+  }
 
   const parsed = emailTemplateSchema.safeParse(input);
   if (!parsed.success) {
@@ -67,6 +85,12 @@ export async function updateWorkflowEmailTemplate(
       fieldErrors: parsed.error.flatten().fieldErrors,
     } as const;
   }
+
+  const existing = await db.workflowEmailTemplate.findUnique({
+    where: { id: input.id },
+    select: { id: true },
+  });
+  if (!existing) return { error: "Template not found" } as const;
 
   const tpl = await db.workflowEmailTemplate.update({
     where: { id: input.id },
@@ -85,7 +109,9 @@ export async function updateWorkflowEmailTemplate(
 export async function deleteWorkflowEmailTemplate(id: string) {
   const user = await requireAuth();
   const perms = await resolveModulePerms(user.id, user.role, "workflows");
-  if (!perms.canDelete) return { error: "Permission denied" } as const;
+  if (!canAuthorEmailTemplates(user.role, perms)) {
+    return { error: "Permission denied" } as const;
+  }
 
   // Phase 4 will need to refuse delete when a step references the
   // template — for now we just delete and let the FK on the step's

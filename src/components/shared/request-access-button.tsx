@@ -28,7 +28,7 @@ export function RequestAccessButton({ module, moduleLabel, entityType, entityId,
 
   if (sent) {
     return (
-      <p className="text-sm text-green-600 dark:text-green-400">
+      <p className="text-sm text-success">
         Access request sent to your admin.
       </p>
     );

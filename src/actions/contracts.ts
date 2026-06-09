@@ -2,6 +2,7 @@
 
 import { db } from "@/lib/db";
 import { requireAuth, resolveModulePerms } from "@/lib/permissions";
+import { assertManageEntity } from "@/lib/entity-authz";
 import { logActivity } from "@/lib/activity";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
@@ -119,11 +120,19 @@ export async function updateContract(_prev: unknown, formData: FormData) {
   if (!parsed.success) return { error: "Invalid input", fieldErrors: parsed.error.flatten().fieldErrors };
 
   // Look up previous clientId/projectId so we can revalidate the old pages too
-  // if those links changed.
-  const previous = await db.contract.findUnique({
-    where: { id },
+  // if those links changed. Doubles as the existence + soft-delete guard:
+  // a missing id would throw P2025 (→ 500) and a soft-deleted contract
+  // must not be editable from a stale form.
+  const previous = await db.contract.findFirst({
+    where: { id, deletedAt: null },
     select: { clientId: true, projectId: true },
   });
+  if (!previous) return { error: "Not found" };
+
+  // Entity-scope write gate — module canEdit alone would let any
+  // CONTRIBUTOR mutate arbitrary contracts by id.
+  const denied = await assertManageEntity(user.id, user.role, "contract", id);
+  if (denied) return { error: denied.error };
 
   await db.contract.update({
     where: { id },
@@ -169,6 +178,9 @@ export async function deleteContract(_prev: unknown, formData: FormData) {
     return { error: "Already in the recovery bin" };
   }
 
+  const denied = await assertManageEntity(user.id, user.role, "contract", id);
+  if (denied) return { error: denied.error };
+
   await db.contract.update({ where: { id }, data: { deletedAt: new Date() } });
   await logActivity("soft-deleted", "contract", id, user.id, contract.title, {
     clientId: contract.clientId,
@@ -207,6 +219,17 @@ export async function createContractTerm(_prev: unknown, formData: FormData) {
 
   if (!parsed.success) return { error: "Invalid input", fieldErrors: parsed.error.flatten().fieldErrors };
 
+  // Terms hang off a contract — verify the parent exists (and isn't
+  // soft-deleted), then gate on it.
+  const parent = await db.contract.findFirst({
+    where: { id: parsed.data.contractId, deletedAt: null },
+    select: { id: true },
+  });
+  if (!parent) return { error: "Not found" };
+
+  const denied = await assertManageEntity(user.id, user.role, "contract", parsed.data.contractId);
+  if (denied) return { error: denied.error };
+
   await db.contractTerm.create({
     data: {
       ...parsed.data,
@@ -226,6 +249,9 @@ export async function deleteContractTerm(_prev: unknown, formData: FormData) {
   const id = formData.get("id") as string;
   const term = await db.contractTerm.findUnique({ where: { id } });
   if (!term) return { error: "Not found" };
+
+  const denied = await assertManageEntity(user.id, user.role, "contract", term.contractId);
+  if (denied) return { error: denied.error };
 
   await db.contractTerm.delete({ where: { id } });
   revalidatePath(`/contracts/${term.contractId}`);

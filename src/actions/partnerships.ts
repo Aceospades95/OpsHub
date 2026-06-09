@@ -138,6 +138,14 @@ export async function updatePartnership(_prev: unknown, formData: FormData) {
     return { error: "Invalid input", fieldErrors: parsed.error.flatten().fieldErrors };
   }
 
+  // Existence + soft-delete guard: a missing id would throw P2025 (→ 500)
+  // and a soft-deleted partnership must not be editable from a stale form.
+  const existing = await db.partnership.findFirst({
+    where: { id, deletedAt: null },
+    select: { id: true },
+  });
+  if (!existing) return { error: "Not found" };
+
   await db.partnership.update({ where: { id }, data: toDb(parsed.data) });
   await logActivity("updated", "partnership", id, user.id, parsed.data.name);
   revalidatePartnership(id);
@@ -321,6 +329,21 @@ export async function linkPartnershipProject(_prev: unknown, formData: FormData)
   return { success: true };
 }
 
+const linkUpdateSchema = z.object({
+  role: z.enum([
+    "REFERRER",
+    "CO_DELIVERY",
+    "JOINT_OWNERSHIP",
+    "RESELLER",
+    "INTEGRATION",
+    "SUBCONTRACTED",
+    "OTHER",
+  ]).optional(),
+  notes: z.string().optional(),
+  referralValue: z.coerce.number().min(0).optional(),
+  currency: z.string().optional(),
+});
+
 export async function updatePartnershipProject(_prev: unknown, formData: FormData) {
   const user = await requireAuth();
   const perms = await resolveModulePerms(user.id, user.role, "partnerships");
@@ -330,22 +353,25 @@ export async function updatePartnershipProject(_prev: unknown, formData: FormDat
   const link = await db.partnershipProject.findUnique({ where: { id } });
   if (!link) return { error: "Not found" };
 
+  // Validate instead of casting — a forged POST used to be able to write
+  // arbitrary strings into the role enum and NaN into referralValue.
+  const parsed = linkUpdateSchema.safeParse({
+    role: formData.get("role") || undefined,
+    notes: formData.get("notes") || undefined,
+    referralValue: formData.get("referralValue") || undefined,
+    currency: formData.get("currency") || undefined,
+  });
+  if (!parsed.success) {
+    return { error: "Invalid input", fieldErrors: parsed.error.flatten().fieldErrors };
+  }
+
   await db.partnershipProject.update({
     where: { id },
     data: {
-      role: (formData.get("role") as
-        | "REFERRER"
-        | "CO_DELIVERY"
-        | "JOINT_OWNERSHIP"
-        | "RESELLER"
-        | "INTEGRATION"
-        | "SUBCONTRACTED"
-        | "OTHER") || link.role,
-      notes: (formData.get("notes") as string) || null,
-      referralValue: formData.get("referralValue")
-        ? Number(formData.get("referralValue"))
-        : null,
-      currency: (formData.get("currency") as string) || "USD",
+      role: parsed.data.role ?? link.role,
+      notes: parsed.data.notes || null,
+      referralValue: parsed.data.referralValue ?? null,
+      currency: parsed.data.currency || "USD",
     },
   });
 

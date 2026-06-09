@@ -15,6 +15,8 @@ import { ClientCreateButton } from "./client-create-button";
 import { ClientFilters } from "./client-filters";
 import { Prisma } from "@prisma/client";
 
+export const metadata = { title: "Clients · OpsHub" };
+
 export default async function ClientsPage({
   searchParams,
 }: {

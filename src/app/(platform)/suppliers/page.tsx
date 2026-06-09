@@ -32,6 +32,8 @@ function titleCase(s: string): string {
     .join(" ");
 }
 
+export const metadata = { title: "Suppliers · OpsHub" };
+
 export default async function SuppliersPage() {
   const user = await requireAuth();
 

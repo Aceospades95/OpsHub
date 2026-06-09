@@ -2,16 +2,12 @@
 
 import { db } from "@/lib/db";
 import { requireAuth } from "@/lib/permissions";
+import { assertManageEntity } from "@/lib/entity-authz";
 import { logActivity } from "@/lib/activity";
 import { deriveActivityScope } from "@/lib/activity-scope";
 import { revalidatePath } from "next/cache";
 import { isValidCalendarRange } from "@/lib/dates";
-import type {
-  CertificationStatus,
-  CertificationType,
-  JurisdictionLevel,
-  CertEngagementType,
-} from "@prisma/client";
+import { z } from "zod";
 
 // ─── Helpers ───────────────────────────────────────────
 
@@ -39,38 +35,68 @@ function parseReminderOffsets(raw: string | null): number[] | undefined {
   return Array.from(new Set(clean)).sort((a, b) => b - a);
 }
 
+/**
+ * Validated subset of the cert form. These fields used to be cast
+ * straight from the raw form strings (`as CertificationStatus` etc.) so
+ * a forged POST could write arbitrary enum values, NaN numbers, or junk
+ * email/url strings. Values must match the Prisma enums in
+ * prisma/schema.prisma exactly.
+ */
+const certFieldsSchema = z.object({
+  status: z.enum(["ACTIVE", "EXPIRING_SOON", "EXPIRED", "PENDING", "SUSPENDED", "REVOKED"]),
+  type: z.enum(["INDUSTRY", "COMPLIANCE", "SAFETY", "PROFESSIONAL", "QUALITY", "SECURITY", "ENVIRONMENTAL", "VENDOR", "OTHER"]),
+  engagementType: z.enum(["SUBSCRIPTION", "CERTIFICATION"]),
+  jurisdictionLevel: z.enum(["FEDERAL", "STATE", "COUNTY", "CITY", "AGENCY", "PRIVATE", "OTHER"]),
+  renewalLeadDays: z.coerce.number().int().min(0).max(3650),
+  renewalCost: z.coerce.number().min(0).max(1_000_000_000).nullable(),
+  agencyContactEmail: z.string().email("Invalid email address").nullable(),
+  agencyWebsiteUrl: z.string().url("Invalid URL (include https://)").nullable(),
+});
+
 function extractCertData(formData: FormData) {
+  const parsed = certFieldsSchema.safeParse({
+    status: str(formData, "status") || "PENDING",
+    type: str(formData, "type") || "OTHER",
+    engagementType: str(formData, "engagementType") || "CERTIFICATION",
+    jurisdictionLevel: str(formData, "jurisdictionLevel") || "OTHER",
+    renewalLeadDays: str(formData, "renewalLeadDays") ?? 90,
+    renewalCost: str(formData, "renewalCost"),
+    agencyContactEmail: str(formData, "agencyContactEmail"),
+    agencyWebsiteUrl: str(formData, "agencyWebsiteUrl"),
+  });
+  if (!parsed.success) {
+    return {
+      error: "Invalid input" as const,
+      fieldErrors: parsed.error.flatten().fieldErrors as Record<string, string[]>,
+    };
+  }
+
   const reminderOffsetsDays = parseReminderOffsets(str(formData, "reminderOffsetsDays"));
   return {
-    description: str(formData, "description"),
-    plainEnglishSummary: str(formData, "plainEnglishSummary"),
-    certNumber: str(formData, "certNumber"),
-    status: (str(formData, "status") || "PENDING") as CertificationStatus,
-    type: (str(formData, "type") || "OTHER") as CertificationType,
-    engagementType: (str(formData, "engagementType") || "CERTIFICATION") as CertEngagementType,
-    jurisdictionLevel: (str(formData, "jurisdictionLevel") || "OTHER") as JurisdictionLevel,
-    jurisdictionName: str(formData, "jurisdictionName"),
-    issuingBody: str(formData, "issuingBody"),
-    agencyWebsiteUrl: str(formData, "agencyWebsiteUrl"),
-    agencyContactName: str(formData, "agencyContactName"),
-    agencyContactEmail: str(formData, "agencyContactEmail"),
-    agencyContactPhone: str(formData, "agencyContactPhone"),
-    issuedDate: parseDate(formData, "issuedDate"),
-    submittedDate: parseDate(formData, "submittedDate"),
-    expirationDate: parseDate(formData, "expirationDate"),
-    renewalDate: parseDate(formData, "renewalDate"),
-    renewalLeadDays: str(formData, "renewalLeadDays") ? Number(formData.get("renewalLeadDays")) : 90,
-    ...(reminderOffsetsDays ? { reminderOffsetsDays } : {}),
-    autoRenew: formData.get("autoRenew") === "true" || formData.get("autoRenew") === "on",
-    renewalCost: str(formData, "renewalCost") ? Number(formData.get("renewalCost")) : null,
-    currency: str(formData, "currency") || "USD",
-    renewalRequirements: str(formData, "renewalRequirements"),
-    renewalNotes: str(formData, "renewalNotes"),
-    documentUrl: str(formData, "documentUrl"),
-    completedCertUrl: str(formData, "completedCertUrl"),
-    clientId: str(formData, "clientId"),
-    assigneeId: str(formData, "assigneeId"),
-    pointOfContactId: str(formData, "pointOfContactId"),
+    data: {
+      description: str(formData, "description"),
+      plainEnglishSummary: str(formData, "plainEnglishSummary"),
+      certNumber: str(formData, "certNumber"),
+      jurisdictionName: str(formData, "jurisdictionName"),
+      issuingBody: str(formData, "issuingBody"),
+      agencyContactName: str(formData, "agencyContactName"),
+      agencyContactPhone: str(formData, "agencyContactPhone"),
+      issuedDate: parseDate(formData, "issuedDate"),
+      submittedDate: parseDate(formData, "submittedDate"),
+      expirationDate: parseDate(formData, "expirationDate"),
+      renewalDate: parseDate(formData, "renewalDate"),
+      ...(reminderOffsetsDays ? { reminderOffsetsDays } : {}),
+      autoRenew: formData.get("autoRenew") === "true" || formData.get("autoRenew") === "on",
+      currency: str(formData, "currency") || "USD",
+      renewalRequirements: str(formData, "renewalRequirements"),
+      renewalNotes: str(formData, "renewalNotes"),
+      documentUrl: str(formData, "documentUrl"),
+      completedCertUrl: str(formData, "completedCertUrl"),
+      clientId: str(formData, "clientId"),
+      assigneeId: str(formData, "assigneeId"),
+      pointOfContactId: str(formData, "pointOfContactId"),
+      ...parsed.data,
+    },
   };
 }
 
@@ -137,8 +163,11 @@ export async function createCertification(_prev: unknown, formData: FormData) {
   const dateError = validateCertDates(formData);
   if (dateError) return dateError;
 
+  const extracted = extractCertData(formData);
+  if ("error" in extracted) return { error: extracted.error, fieldErrors: extracted.fieldErrors };
+
   const cert = await db.certification.create({
-    data: { name, ...extractCertData(formData) },
+    data: { name, ...extracted.data },
   });
 
   await logActivity("created", "certification", cert.id, user.id, cert.name, {
@@ -162,9 +191,26 @@ export async function updateCertification(_prev: unknown, formData: FormData) {
   const dateError = validateCertDates(formData);
   if (dateError) return dateError;
 
+  const extracted = extractCertData(formData);
+  if ("error" in extracted) return { error: extracted.error, fieldErrors: extracted.fieldErrors };
+
+  // Existence + soft-delete guard: a missing id would throw P2025 (→ 500)
+  // and a soft-deleted cert must not be editable from a stale form.
+  const existing = await db.certification.findFirst({
+    where: { id, deletedAt: null },
+    select: { id: true },
+  });
+  if (!existing) return { error: "Not found" };
+
+  // Entity-scope write gate. Trivially true while requireCertAdmin
+  // restricts mutations to ADMIN, but kept as defense-in-depth should
+  // that gate ever loosen.
+  const denied = await assertManageEntity(user.id, user.role, "certification", id);
+  if (denied) return { error: denied.error };
+
   const updated = await db.certification.update({
     where: { id },
-    data: { name, ...extractCertData(formData) },
+    data: { name, ...extracted.data },
     select: { clientId: true },
   });
 
@@ -189,6 +235,9 @@ export async function deleteCertification(_prev: unknown, formData: FormData) {
   if (cert.deletedAt) {
     return { error: "Already in the recovery bin" };
   }
+
+  const denied = await assertManageEntity(user.id, user.role, "certification", id);
+  if (denied) return { error: denied.error };
 
   await db.certification.update({ where: { id }, data: { deletedAt: new Date() } });
 
@@ -226,6 +275,11 @@ export async function signOffCertification(_prev: unknown, formData: FormData) {
     },
   });
   if (!cert) return { error: "Not found" };
+
+  // Entity-scope write gate: MANAGER passes the role check above but
+  // must still be assigned to (or granted) this specific cert.
+  const denied = await assertManageEntity(user.id, user.role, "certification", id);
+  if (denied) return { error: denied.error };
 
   await db.$transaction([
     db.certification.update({
@@ -318,7 +372,19 @@ export async function addChecklistItem(_prev: unknown, formData: FormData) {
   const label = (formData.get("label") as string | null)?.trim();
   if (!certId || !label) return { error: "Missing fields" };
 
+  // Verify the parent cert exists and isn't soft-deleted before
+  // attaching items to it (canModifyChecklist skips the lookup for
+  // admin/manager/developer roles).
+  const parent = await db.certification.findFirst({
+    where: { id: certId, deletedAt: null },
+    select: { id: true },
+  });
+  if (!parent) return { error: "Not found" };
+
   if (!(await canModifyChecklist(certId, user))) return { error: "Permission denied" };
+
+  const denied = await assertManageEntity(user.id, user.role, "certification", certId);
+  if (denied) return { error: denied.error };
 
   const required = formData.get("required") === "true" || formData.get("required") === "on";
 
@@ -356,6 +422,9 @@ export async function toggleChecklistItem(_prev: unknown, formData: FormData) {
     return { error: "Permission denied" };
   }
 
+  const denied = await assertManageEntity(user.id, user.role, "certification", item.certificationId);
+  if (denied) return { error: denied.error };
+
   const nextCompleted = !item.completed;
   await db.certificationRenewalChecklistItem.update({
     where: { id: itemId },
@@ -392,6 +461,9 @@ export async function removeChecklistItem(_prev: unknown, formData: FormData) {
   if (!(await canModifyChecklist(item.certificationId, user))) {
     return { error: "Permission denied" };
   }
+
+  const denied = await assertManageEntity(user.id, user.role, "certification", item.certificationId);
+  if (denied) return { error: denied.error };
 
   // Derive scope BEFORE the delete so the cert lookup still works.
   const scope = await deriveActivityScope("certification", item.certificationId);

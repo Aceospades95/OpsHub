@@ -36,22 +36,25 @@ export async function nextQuoteNumber(
 
   // Counter is global per year (across all clients / projects) so a
   // single "highest seen this year" lookup keeps the suffix monotonic
-  // and the unique-constraint check effective. We pull the latest
-  // quote from the current year regardless of prefix and increment
-  // its trailing N.
-  const lastForYear = await db.quote.findFirst({
+  // and the unique-constraint check effective. Fetch every quote
+  // number for the year (bounded: one short string column) and take
+  // the max parsed suffix in JS — ordering by createdAt would let a
+  // back-dated or restored quote shadow the true max and produce a
+  // duplicate.
+  const yearQuotes = await db.quote.findMany({
     where: { quoteNumber: { contains: `-${year}-` } },
-    orderBy: { createdAt: "desc" },
     select: { quoteNumber: true },
   });
 
+  // Anchor on the `-{year}-` segment so a digit run inside a slugified
+  // client/project name can never be parsed as the counter.
+  const suffixRe = new RegExp(`-${year}-(\\d+)$`);
   let next = 1;
-  if (lastForYear) {
-    const m = lastForYear.quoteNumber.match(/-(\d{4,})$/);
-    if (m) {
-      const parsed = parseInt(m[1], 10);
-      if (Number.isFinite(parsed)) next = parsed + 1;
-    }
+  for (const q of yearQuotes) {
+    const m = q.quoteNumber.match(suffixRe);
+    if (!m) continue;
+    const parsed = parseInt(m[1], 10);
+    if (Number.isFinite(parsed) && parsed >= next) next = parsed + 1;
   }
 
   return `${yearPrefix}${String(next).padStart(4, "0")}`;

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { X, Save, ExternalLink } from "lucide-react";
@@ -49,6 +49,19 @@ interface Props {
   onClose: () => void;
 }
 
+// Same focusable-elements selector the shared <Dialog> uses for its
+// focus trap (R10-2). The drawer can't reuse <Dialog> directly — it's
+// a centered max-w-lg modal, not a full-height side panel — so it
+// mirrors the trap implementation instead.
+const FOCUSABLE_SELECTOR = [
+  "a[href]",
+  "button:not([disabled])",
+  "textarea:not([disabled])",
+  "input:not([disabled]):not([type='hidden'])",
+  "select:not([disabled])",
+  "[tabindex]:not([tabindex='-1'])",
+].join(",");
+
 export function TaskDrawer({ task, projects, clients, users, onClose }: Props) {
   const router = useRouter();
   const [title, setTitle] = useState("");
@@ -61,6 +74,10 @@ export function TaskDrawer({ task, projects, clients, users, onClose }: Props) {
   const [assigneeId, setAssigneeId] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const panelRef = useRef<HTMLElement>(null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const previouslyFocusedRef = useRef<HTMLElement | null>(null);
+  const open = !!task;
 
   // Re-seed local state when the drawer opens for a different task.
   useEffect(() => {
@@ -75,6 +92,62 @@ export function TaskDrawer({ task, projects, clients, users, onClose }: Props) {
     setAssigneeId(task.assignee?.id ?? "");
     setError(null);
   }, [task]);
+
+  // Focus management — mirror of the shared <Dialog>'s R10-2 behavior:
+  // snapshot the trigger on open, move focus into the drawer, restore
+  // focus to the trigger on close.
+  useEffect(() => {
+    if (!open) return;
+    previouslyFocusedRef.current = document.activeElement as HTMLElement | null;
+    const id = requestAnimationFrame(() => {
+      closeButtonRef.current?.focus();
+    });
+    return () => {
+      cancelAnimationFrame(id);
+      const prev = previouslyFocusedRef.current;
+      if (prev && document.contains(prev)) {
+        prev.focus();
+      }
+    };
+  }, [open]);
+
+  // Escape closes; Tab cycles focus inside the panel (basic focus trap).
+  useEffect(() => {
+    if (!open) return;
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        onClose();
+        return;
+      }
+      if (e.key !== "Tab") return;
+      const panel = panelRef.current;
+      if (!panel) return;
+      const focusable = Array.from(
+        panel.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)
+      );
+      if (focusable.length === 0) {
+        e.preventDefault();
+        return;
+      }
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      const active = document.activeElement as HTMLElement | null;
+      if (e.shiftKey) {
+        if (active === first || !panel.contains(active)) {
+          e.preventDefault();
+          last.focus();
+        }
+      } else {
+        if (active === last || !panel.contains(active)) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
+    };
+    document.addEventListener("keydown", handleKey);
+    return () => document.removeEventListener("keydown", handleKey);
+  }, [open, onClose]);
 
   if (!task) return null;
 
@@ -118,8 +191,10 @@ export function TaskDrawer({ task, projects, clients, users, onClose }: Props) {
         onClick={onClose}
       />
       <aside
+        ref={panelRef}
         className="fixed top-0 right-0 z-50 h-full w-full max-w-md bg-card border-l border-border shadow-xl flex flex-col"
         role="dialog"
+        aria-modal="true"
         aria-label={`Edit task: ${task.title}`}
       >
         <header className="flex items-center justify-between px-4 py-3 border-b border-border">
@@ -130,10 +205,11 @@ export function TaskDrawer({ task, projects, clients, users, onClose }: Props) {
             <h2 className="text-lg font-semibold truncate">{task.title}</h2>
           </div>
           <button
+            ref={closeButtonRef}
             type="button"
             onClick={onClose}
             className="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground"
-            aria-label="Close"
+            aria-label="Close task drawer"
           >
             <X className="h-4 w-4" />
           </button>
@@ -183,7 +259,7 @@ export function TaskDrawer({ task, projects, clients, users, onClose }: Props) {
               onChange={(e) => setDueDate(e.target.value)}
             />
             {isPastDue && (
-              <p className="mt-1 text-xs text-amber-600" role="status">
+              <p className="mt-1 text-xs text-warning" role="status">
                 This due date is in the past — are you sure?
               </p>
             )}

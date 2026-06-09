@@ -1,9 +1,29 @@
 import { db } from "@/lib/db";
 import { sendEmail } from "@/lib/email";
+import { log } from "@/lib/log";
 import { resolveRoleEmail } from "../context";
 import { substituteVariables } from "../step-types";
 import type { StepHandler } from "./index";
 import type { SendEmailConfig } from "../step-types";
+
+/**
+ * Minimal sanity gate on the admin-entered custom recipient: control
+ * characters (header-injection vectors), embedded spaces, more than
+ * one "@", and over-long values (RFC 5321 caps the address at 254)
+ * are rejected rather than passed to the email driver. Returns the
+ * trimmed address, or null (logged) when it fails the gate.
+ */
+function sanitizeCustomEmail(value: string | undefined | null): string | null {
+  const v = (value ?? "").trim();
+  if (v.length === 0 || v.length > 254) return null;
+  if (/[\r\n\0 ]/.test(v) || (v.match(/@/g) ?? []).length !== 1) {
+    log.warn("workflows.send-email", "Skipping invalid custom recipient address", {
+      address: v.slice(0, 80),
+    });
+    return null;
+  }
+  return v;
+}
 
 /**
  * SEND_EMAIL step — looks up the user-editable WorkflowEmailTemplate,
@@ -37,7 +57,7 @@ export const sendEmailHandler: StepHandler = async ({
 
   const recipient =
     c.toRecipient === "custom"
-      ? c.customEmail ?? null
+      ? sanitizeCustomEmail(c.customEmail)
       : resolveRoleEmail(context, c.toRecipient);
   if (!recipient) {
     throw new Error(

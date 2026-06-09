@@ -1845,6 +1845,13 @@ model PortalToken {
   token       String              @unique
   expiresAt   DateTime?
   lastUsedAt  DateTime?
+  /// Set when an admin revokes the link. A revoked token resolves
+  /// exactly like an expired one (same null result — no oracle), so a
+  /// leaked link dies immediately instead of riding out its 90-day
+  /// expiry. The engine's mint path skips revoked rows and rotates in
+  /// a fresh token, so revoking + starting a new instance (or
+  /// reissuing) yields a new link while the old one stays dead.
+  revokedAt   DateTime?
   createdAt   DateTime            @default(now())
 
   @@unique([subjectType, subjectId])

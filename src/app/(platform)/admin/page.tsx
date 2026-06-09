@@ -1,4 +1,4 @@
-import { auth } from "@/lib/auth";
+import { requireAuth } from "@/lib/permissions";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { PageHeader } from "@/components/layout/page-header";
@@ -64,10 +64,11 @@ const SETTINGS_SECTIONS = [
   },
 ];
 
+export const metadata = { title: "Settings · OpsHub" };
+
 export default async function SettingsPage() {
-  const session = await auth();
-  if (!session?.user) redirect("/login");
-  if (session.user.role !== "ADMIN") redirect("/dashboard");
+  const user = await requireAuth();
+  if (user.role !== "ADMIN") redirect("/dashboard");
 
   return (
     <div>

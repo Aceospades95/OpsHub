@@ -18,8 +18,14 @@
  * fields are simply lost. Hand-merge those before running if needed.
  */
 
-import type { PrismaClient } from "@prisma/client";
+import type { Prisma, PrismaClient } from "@prisma/client";
 import type { DynamicDelegateMap } from "@/lib/dynamic-delegate";
+
+/**
+ * The merge runs inside an interactive transaction so the helpers accept
+ * either the root client or the transaction client.
+ */
+type MergeClient = Prisma.TransactionClient;
 
 /**
  * Per-table reassignment recipe. Each entry produces one updateMany
@@ -104,45 +110,57 @@ export async function executeMerge(
     throw new Error("merge-users: from and to are the same id");
   }
 
-  // Composite-unique tables first — they need per-row reassignment.
-  await reassignWithCompositeUnique(db, "modulePermission", "userId", ["userId", "module"], fromId, toId);
-  await reassignWithCompositeUnique(db, "entityPermission", "userId", ["userId", "entityType", "entityId"], fromId, toId);
-  await reassignWithCompositeUnique(db, "projectMember", "userId", ["userId", "projectId"], fromId, toId);
-  await reassignWithCompositeUnique(db, "milestoneAssignee", "userId", ["milestoneId", "userId"], fromId, toId);
+  // The whole walk runs in ONE transaction: ~30 updateMany calls plus a
+  // final delete. A crash partway through used to leave the two users
+  // half-merged (some FKs re-pointed, the source row still present)
+  // with no way to tell which tables were done. The generous timeout
+  // covers large datasets — the per-row composite-unique loops are the
+  // slow part.
+  await db.$transaction(
+    async (tx) => {
+      // Composite-unique tables first — they need per-row reassignment.
+      await reassignWithCompositeUnique(tx, "modulePermission", "userId", ["userId", "module"], fromId, toId);
+      await reassignWithCompositeUnique(tx, "entityPermission", "userId", ["userId", "entityType", "entityId"], fromId, toId);
+      await reassignWithCompositeUnique(tx, "projectMember", "userId", ["userId", "projectId"], fromId, toId);
+      await reassignWithCompositeUnique(tx, "milestoneAssignee", "userId", ["milestoneId", "userId"], fromId, toId);
 
-  // Bulk reassignments for everything else.
-  for (const { model, column } of REASSIGNMENTS) {
-    if (COMPOSITE_UNIQUE_TABLES.has(model)) continue; // already handled
+      // Bulk reassignments for everything else.
+      for (const { model, column } of REASSIGNMENTS) {
+        if (COMPOSITE_UNIQUE_TABLES.has(model)) continue; // already handled
 
-    // Self-reference: skip moving the keeper's own managerId.
-    // (The bulk update where: { managerId: fromId } targets dependents
-    // of `from`, which is the desired direction; this is a sanity
-    // check in case the keeper's manager somehow was the merged-in
-    // row.)
-    const delegate = (db as unknown as DynamicDelegateMap)[model];
-    if (!delegate?.updateMany) {
-      console.warn(`  [skip] ${model}.updateMany not found on PrismaClient`);
-      continue;
-    }
-    await delegate.updateMany({
-      where: { [column]: fromId },
-      data: { [column]: toId },
-    });
-  }
+        // Self-reference: skip moving the keeper's own managerId.
+        // (The bulk update where: { managerId: fromId } targets dependents
+        // of `from`, which is the desired direction; this is a sanity
+        // check in case the keeper's manager somehow was the merged-in
+        // row.)
+        const delegate = (tx as unknown as DynamicDelegateMap)[model];
+        if (!delegate?.updateMany) {
+          console.warn(`  [skip] ${model}.updateMany not found on PrismaClient`);
+          continue;
+        }
+        await delegate.updateMany({
+          where: { [column]: fromId },
+          data: { [column]: toId },
+        });
+      }
 
-  // Optional rename of the keeper's email. Done AFTER the FK walk so
-  // an early failure leaves the original email intact.
-  if (opts.targetEmail) {
-    await db.user.update({
-      where: { id: toId },
-      data: { email: opts.targetEmail.trim().toLowerCase() },
-    });
-  }
+      // Optional rename of the keeper's email. Done AFTER the FK walk so
+      // an early failure leaves the original email intact.
+      if (opts.targetEmail) {
+        await tx.user.update({
+          where: { id: toId },
+          data: { email: opts.targetEmail.trim().toLowerCase() },
+        });
+      }
 
-  // Finally, delete the merged-in User row. All FKs have been
-  // re-pointed; if anything was missed, this raises a FK violation
-  // rather than silently leaving an orphan.
-  await db.user.delete({ where: { id: fromId } });
+      // Finally, delete the merged-in User row. All FKs have been
+      // re-pointed; if anything was missed, this raises a FK violation
+      // rather than silently leaving an orphan — and now rolls the whole
+      // merge back instead of stranding it half-done.
+      await tx.user.delete({ where: { id: fromId } });
+    },
+    { timeout: 60_000 }
+  );
 }
 
 /**
@@ -153,7 +171,7 @@ export async function executeMerge(
  * running if the merged-in row carried fresher data).
  */
 async function reassignWithCompositeUnique(
-  db: PrismaClient,
+  db: MergeClient,
   model: string,
   fkColumn: string,
   scope: string[],

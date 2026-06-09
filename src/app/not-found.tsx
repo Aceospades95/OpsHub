@@ -40,17 +40,13 @@ function NotFoundBody() {
           be a typo, or the page may have been moved or removed.
         </p>
         <div className="flex justify-center gap-2 pt-2">
+          {/* No "Open Settings" shortcut here — this boundary can't know
+              the viewer's role, and /admin is ADMIN/DEVELOPER-only. */}
           <Link
             href="/dashboard"
             className="inline-flex h-9 items-center rounded border border-primary bg-primary px-3 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
           >
             Go to dashboard
-          </Link>
-          <Link
-            href="/admin"
-            className="inline-flex h-9 items-center rounded border border-border bg-card px-3 text-sm font-medium hover:bg-muted/40 transition-colors"
-          >
-            Open Settings
           </Link>
         </div>
       </div>

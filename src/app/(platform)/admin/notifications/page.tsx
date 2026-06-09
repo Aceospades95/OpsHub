@@ -1,4 +1,4 @@
-import { auth } from "@/lib/auth";
+import { requireAuth } from "@/lib/permissions";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { PageHeader } from "@/components/layout/page-header";
@@ -10,10 +10,11 @@ import Link from "next/link";
 import { NotificationsAdminActions } from "./notifications-admin-actions";
 import { NOTIFICATION_TYPE_LABELS, type NotificationType } from "@/lib/notifications/types";
 
+export const metadata = { title: "Notifications · OpsHub" };
+
 export default async function AdminNotificationsPage() {
-  const session = await auth();
-  if (!session?.user) redirect("/login");
-  if (session.user.role !== "ADMIN") redirect("/dashboard");
+  const user = await requireAuth();
+  if (user.role !== "ADMIN") redirect("/dashboard");
 
   const [notifications, totals, typeStats] = await Promise.all([
     db.notification.findMany({
@@ -72,7 +73,7 @@ export default async function AdminNotificationsPage() {
               <p className="text-xs text-muted-foreground">Unread</p>
             </div>
             <div className="text-center">
-              <p className="text-2xl font-semibold text-emerald-600">{readTotal}</p>
+              <p className="text-2xl font-semibold text-success">{readTotal}</p>
               <p className="text-xs text-muted-foreground">Read</p>
             </div>
           </div>
@@ -125,7 +126,7 @@ export default async function AdminNotificationsPage() {
                   className="flex items-start gap-3 rounded border border-border p-3 hover:bg-muted/30 transition-colors"
                 >
                   {n.readAt ? (
-                    <CheckCircle2 className="h-4 w-4 text-emerald-600 mt-0.5 shrink-0" />
+                    <CheckCircle2 className="h-4 w-4 text-success mt-0.5 shrink-0" />
                   ) : (
                     <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-primary" />
                   )}

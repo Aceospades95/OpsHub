@@ -1,13 +1,15 @@
 import type { DisplayProps } from "@/lib/widget-builder/widget-config-types";
 
+// Distinct data-series hues (intentional); mid-tone text on a /10 alpha
+// tint stays readable on both light and dark admin themes.
 const COLORS = [
-  "text-blue-600 bg-blue-50",
-  "text-green-600 bg-green-50",
-  "text-yellow-600 bg-yellow-50",
-  "text-purple-600 bg-purple-50",
-  "text-orange-600 bg-orange-50",
-  "text-pink-600 bg-pink-50",
-  "text-cyan-600 bg-cyan-50",
+  "text-blue-600 bg-blue-500/10",
+  "text-green-600 bg-green-500/10",
+  "text-yellow-600 bg-yellow-500/10",
+  "text-purple-600 bg-purple-500/10",
+  "text-orange-600 bg-orange-500/10",
+  "text-pink-600 bg-pink-500/10",
+  "text-cyan-600 bg-cyan-500/10",
 ];
 
 export function DisplayCounterRow({ data }: DisplayProps) {

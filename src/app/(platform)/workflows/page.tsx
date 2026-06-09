@@ -11,6 +11,8 @@ import { BarChart3, FileText, Mail, PlayCircle, Workflow } from "lucide-react";
 // templates, email templates, and (Phase 4) running instances. We keep
 // this lightweight so adding a future surface (analytics, integrations)
 // is just one new card.
+export const metadata = { title: "Workflows · OpsHub" };
+
 export default async function WorkflowsLandingPage() {
   const user = await requireAuth();
   const perms = await resolveModulePerms(user.id, user.role, "workflows");

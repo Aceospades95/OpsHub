@@ -51,13 +51,6 @@ export default function PlatformError({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
-  if (
-    error.message === "NEXT_REDIRECT" ||
-    error.message === "NEXT_NOT_FOUND"
-  ) {
-    throw error;
-  }
-
   const router = useRouter();
   // Track auto-recovery so a legitimately-broken page doesn't loop.
   const [autoRecoveryAttempted, setAutoRecoveryAttempted] = useState(false);
@@ -75,6 +68,16 @@ export default function PlatformError({
       return () => clearTimeout(t);
     }
   }, [error, autoRecoveryAttempted, router, reset]);
+
+  // Rethrow AFTER the hooks above — a conditional return/throw before
+  // hook calls violates the rules of hooks (hook count would differ
+  // between renders).
+  if (
+    error.message === "NEXT_REDIRECT" ||
+    error.message === "NEXT_NOT_FOUND"
+  ) {
+    throw error;
+  }
 
   // While the auto-recovery is in flight, render nothing so the user
   // never sees the "Something went wrong" toast for a transient hiccup.

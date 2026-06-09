@@ -1,4 +1,4 @@
-import { auth } from "@/lib/auth";
+import { requireAuth } from "@/lib/permissions";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { PageHeader } from "@/components/layout/page-header";
@@ -36,9 +36,11 @@ async function resolveEntityName(entityType: string, entityId: string): Promise<
   }
 }
 
+export const metadata = { title: "Access Requests · OpsHub" };
+
 export default async function AccessRequestsPage() {
-  const session = await auth();
-  if (!session?.user || session.user.role !== "ADMIN") redirect("/dashboard");
+  const user = await requireAuth();
+  if (user.role !== "ADMIN") redirect("/dashboard");
 
   const [pending, resolved] = await Promise.all([
     db.accessRequest.findMany({

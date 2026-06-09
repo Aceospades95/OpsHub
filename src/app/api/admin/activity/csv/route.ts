@@ -11,6 +11,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
+import { parseCalendarDateString } from "@/lib/dates";
 
 /**
  * Hard ceiling on a single CSV export. Tight filters return well under
@@ -26,10 +27,22 @@ const MAX_EXPORT_ROWS = 100_000;
 export async function GET(request: Request) {
   const session = await auth();
   if (!session?.user) return new NextResponse("Unauthorized", { status: 401 });
-  if (session.user.role !== "ADMIN") return new NextResponse("Forbidden", { status: 403 });
+  // The JWT caches the role from sign-in time (see requireAuth in
+  // @/lib/permissions) — a demoted admin would keep export access until
+  // token expiry. Re-read the fresh role before gating the export.
+  const freshUser = await db.user.findUnique({
+    where: { id: session.user.id },
+    select: { role: true },
+  });
+  if (freshUser?.role !== "ADMIN") return new NextResponse("Forbidden", { status: 403 });
 
   const url = new URL(request.url);
   const where = buildWhere(url.searchParams);
+  if (!where) {
+    return new NextResponse("Invalid 'from' or 'to' date; use YYYY-MM-DD", {
+      status: 400,
+    });
+  }
 
   const rows = await db.activityLog.findMany({
     where,
@@ -87,7 +100,9 @@ export async function GET(request: Request) {
   return new NextResponse(csv, { status: 200, headers });
 }
 
-function buildWhere(qp: URLSearchParams) {
+// Returns null when `from` / `to` are present but not valid YYYY-MM-DD
+// dates — `new Date("garbage")` is NaN and makes Prisma throw a 500.
+function buildWhere(qp: URLSearchParams): Record<string, unknown> | null {
   const where: Record<string, unknown> = {};
   const actor = qp.get("actor");
   const entityType = qp.get("entityType");
@@ -102,9 +117,14 @@ function buildWhere(qp: URLSearchParams) {
   if (clientId) where.clientId = clientId;
   if (from || to) {
     const range: Record<string, Date> = {};
-    if (from) range.gte = new Date(from);
+    if (from) {
+      const start = parseCalendarDateString(from);
+      if (!start) return null;
+      range.gte = start;
+    }
     if (to) {
-      const end = new Date(to);
+      const end = parseCalendarDateString(to);
+      if (!end) return null;
       end.setUTCHours(23, 59, 59, 999);
       range.lte = end;
     }
@@ -114,6 +134,13 @@ function buildWhere(qp: URLSearchParams) {
 }
 
 function csvEscape(value: string): string {
+  // Spreadsheet-formula injection guard: a leading =, +, -, @, tab, or
+  // CR makes Excel/Sheets evaluate the cell as a formula on open.
+  // Prefix a single quote to neutralize — except pure numbers (e.g.
+  // "-12.5"), which are safe and must stay numeric for spreadsheets.
+  if (/^[=+\-@\t\r]/.test(value) && !/^-?\d+(\.\d+)?$/.test(value)) {
+    value = `'${value}`;
+  }
   // Quote if the field contains comma, quote, newline, or carriage return.
   // Inside quoted fields, escape embedded quotes by doubling them.
   if (/[",\n\r]/.test(value)) {

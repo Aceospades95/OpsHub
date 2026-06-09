@@ -1,12 +1,18 @@
 import { db } from "@/lib/db";
-import { requireAuth } from "@/lib/permissions";
+import { requireAuth, resolveModulePerms } from "@/lib/permissions";
+import { AccessDenied } from "@/components/shared/access-denied";
 import { PageHeader } from "@/components/layout/page-header";
 import { TeamPageClient } from "./team-page-client";
 import { AddEmployeeButton } from "./add-employee-button";
 import { ADMIN_SETTING_KEYS, getBooleanAdminSetting } from "@/lib/admin-settings";
 
+export const metadata = { title: "Team · OpsHub" };
+
 export default async function TeamPage() {
   const user = await requireAuth();
+
+  const perms = await resolveModulePerms(user.id, user.role, "team");
+  if (!perms.canView) return <AccessDenied module="team" moduleLabel="Team" moduleDescription="Employees, org chart, and staffing matrix" />;
 
   const canManage = user.role === "ADMIN" || user.role === "MANAGER";
 

@@ -59,12 +59,18 @@ export const cleanupOldEmailLogs: JobDefinition = {
     });
 
     // Scrub bodies on rows older than `bodyDays` but newer than
-    // `fullDays`. Skip rows already scrubbed (bodyHtml === sentinel)
-    // so we don't repeatedly write the same sentinel.
+    // `fullDays`. Only touch rows that still carry a body: skip rows
+    // already scrubbed (bodyHtml === sentinel) AND rows whose bodies
+    // are legitimately empty/null — rewriting those would mislabel
+    // them as scrubbed when nothing was ever stored. (bodyHtml is a
+    // non-nullable column, so its empty state is "".)
     const scrubbed = await db.emailLog.updateMany({
       where: {
         sentAt: { lt: bodyCutoff },
-        NOT: { bodyHtml: SCRUB_SENTINEL },
+        OR: [
+          { bodyHtml: { notIn: ["", SCRUB_SENTINEL] } },
+          { bodyText: { not: null } },
+        ],
       },
       data: {
         bodyHtml: SCRUB_SENTINEL,

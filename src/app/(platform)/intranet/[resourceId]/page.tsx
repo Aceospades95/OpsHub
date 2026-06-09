@@ -22,10 +22,13 @@ export default async function IntranetDetailPage({ params }: Props) {
 
   // Round-8 QA: resolve by slug-or-id (slug is the canonical href
   // for new records; cuid still works for old bookmarks).
+  // Drafts are only visible to users who can edit — mirrors the
+  // published filter on the /intranet list page.
   const resource = await db.intranetResource.findFirst({
     where: {
       OR: [{ id: resourceId }, { slug: resourceId }],
       deletedAt: null,
+      ...(perms.canEdit ? {} : { published: true }),
     },
     include: { links: true, embeds: true },
   });

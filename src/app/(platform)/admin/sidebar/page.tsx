@@ -1,4 +1,4 @@
-import { auth } from "@/lib/auth";
+import { requireAuth } from "@/lib/permissions";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { getSidebarConfig } from "@/actions/sidebar";
@@ -6,10 +6,11 @@ import { PageHeader } from "@/components/layout/page-header";
 import { SidebarEditor } from "./sidebar-editor";
 import Link from "next/link";
 
+export const metadata = { title: "Sidebar Layout · OpsHub" };
+
 export default async function AdminSidebarPage() {
-  const session = await auth();
-  if (!session?.user) redirect("/login");
-  if (session.user.role !== "ADMIN") redirect("/dashboard");
+  const user = await requireAuth();
+  if (user.role !== "ADMIN") redirect("/dashboard");
 
   const [config, customPages] = await Promise.all([
     getSidebarConfig(),

@@ -45,10 +45,17 @@ export function formatCell(
 
 /**
  * Escape a single CSV value. Wraps values containing commas, quotes,
- * or newlines in double-quotes and doubles internal quotes.
+ * or newlines in double-quotes and doubles internal quotes. Also
+ * neutralizes spreadsheet-formula injection: a leading =, +, -, @,
+ * tab, or CR makes Excel/Sheets evaluate the cell as a formula on
+ * open, so we prefix a single quote — except pure numbers (e.g.
+ * "-12.5"), which are safe and must stay numeric for spreadsheets.
  */
 function csvEscape(value: string): string {
   if (value === "") return "";
+  if (/^[=+\-@\t\r]/.test(value) && !/^-?\d+(\.\d+)?$/.test(value)) {
+    value = `'${value}`;
+  }
   if (/[",\n\r]/.test(value)) {
     return `"${value.replace(/"/g, '""')}"`;
   }

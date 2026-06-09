@@ -1,12 +1,11 @@
 "use server";
 
-import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { log } from "@/lib/log";
 import { revalidateTask } from "@/lib/revalidate-entity";
 import { notify } from "@/lib/notifications";
 import { absoluteUrl } from "@/lib/url";
-import { resolveModulePerms } from "@/lib/permissions";
+import { requireAuth, resolveModulePerms } from "@/lib/permissions";
 import type { Role } from "@prisma/client";
 import { z } from "zod";
 import { nameField } from "@/lib/validation";
@@ -139,8 +138,17 @@ const taskSchema = z.object({
 });
 
 export async function createTask(_prevState: unknown, formData: FormData) {
-  const session = await auth();
-  if (!session?.user) return { error: "Unauthorized" };
+  // requireAuth (not raw auth()) so the role check below sees the
+  // current DB role, not the sign-in-time JWT snapshot.
+  const user = await requireAuth();
+
+  // GUEST role defaults grant canView on tasks but nothing else —
+  // without this gate any authenticated session could create tasks,
+  // assign them to anyone, and trigger assignment emails.
+  const perms = await resolveModulePerms(user.id, user.role, "tasks");
+  if (!perms.canCreate) {
+    return { error: "You don't have permission to create tasks." };
+  }
 
   const raw = {
     title: formData.get("title") as string,
@@ -173,7 +181,7 @@ export async function createTask(_prevState: unknown, formData: FormData) {
       projectId: data.projectId || null,
       clientId: data.clientId || null,
       assigneeId: data.assigneeId || null,
-      createdById: session.user.id,
+      createdById: user.id,
     },
   });
 
@@ -183,7 +191,7 @@ export async function createTask(_prevState: unknown, formData: FormData) {
       entityType: "task",
       entityId: task.id,
       details: data.title,
-      userId: session.user.id,
+      userId: user.id,
     },
   });
 
@@ -197,7 +205,7 @@ export async function createTask(_prevState: unknown, formData: FormData) {
     await notifyTaskAssigned({
       taskId: task.id,
       assigneeId: task.assigneeId,
-      actorId: session.user.id,
+      actorId: user.id,
       title: task.title,
       projectId: task.projectId,
     });
@@ -206,12 +214,20 @@ export async function createTask(_prevState: unknown, formData: FormData) {
   return { success: true };
 }
 
+const TASK_STATUSES = ["TODO", "IN_PROGRESS", "DONE", "CANCELLED"] as const;
+type TaskStatus = (typeof TASK_STATUSES)[number];
+
 export async function updateTaskStatus(taskId: string, status: string) {
-  const session = await auth();
-  if (!session?.user) return { error: "Unauthorized" };
+  const user = await requireAuth();
+
+  // Validate against the closed enum before the cast — an arbitrary
+  // string here used to reach Prisma and throw a raw 500.
+  if (!TASK_STATUSES.includes(status as TaskStatus)) {
+    return { error: `Invalid status "${status}"` };
+  }
 
   const denied = await authorizeTaskMutation(
-    { id: session.user.id, role: session.user.role },
+    { id: user.id, role: user.role },
     taskId
   );
   if (denied) return denied;
@@ -221,7 +237,7 @@ export async function updateTaskStatus(taskId: string, status: string) {
   const task = await db.task.update({
     where: { id: taskId },
     data: {
-      status: status as "TODO" | "IN_PROGRESS" | "DONE" | "CANCELLED",
+      status: status as TaskStatus,
       completedAt,
     },
   });
@@ -235,12 +251,11 @@ export async function updateTaskStatus(taskId: string, status: string) {
 }
 
 export async function updateTask(_prevState: unknown, formData: FormData) {
-  const session = await auth();
-  if (!session?.user) return { error: "Unauthorized" };
+  const user = await requireAuth();
 
   const taskId = formData.get("taskId") as string;
   const denied = await authorizeTaskMutation(
-    { id: session.user.id, role: session.user.role },
+    { id: user.id, role: user.role },
     taskId
   );
   if (denied) return denied;
@@ -310,7 +325,7 @@ export async function updateTask(_prevState: unknown, formData: FormData) {
     await notifyTaskAssigned({
       taskId: updated.id,
       assigneeId: updated.assigneeId,
-      actorId: session.user.id,
+      actorId: user.id,
       title: updated.title,
       projectId: updated.projectId,
     });
@@ -320,11 +335,10 @@ export async function updateTask(_prevState: unknown, formData: FormData) {
 }
 
 export async function deleteTask(taskId: string) {
-  const session = await auth();
-  if (!session?.user) return { error: "Unauthorized" };
+  const user = await requireAuth();
 
   const denied = await authorizeTaskMutation(
-    { id: session.user.id, role: session.user.role },
+    { id: user.id, role: user.role },
     taskId
   );
   if (denied) return denied;
@@ -347,7 +361,7 @@ export async function deleteTask(taskId: string) {
       entityType: "task",
       entityId: taskId,
       details: task.title,
-      userId: session.user.id,
+      userId: user.id,
       projectId: task.projectId,
       clientId: task.clientId,
     },

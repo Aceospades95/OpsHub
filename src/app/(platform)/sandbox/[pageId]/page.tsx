@@ -21,8 +21,10 @@ export default async function SandboxDetailPage({ params }: Props) {
   if (!session?.user) redirect("/login");
   if (!canAccessSandbox(session.user.role as Role)) redirect("/dashboard");
 
-  const page = await db.sandboxPage.findUnique({
-    where: { id: pageId },
+  // Resolve by slug-or-id — the sidebar / detail UI display /sandbox/<slug>
+  // URLs while old links use the cuid. Mirrors the intranet detail page.
+  const page = await db.sandboxPage.findFirst({
+    where: { OR: [{ id: pageId }, { slug: pageId }] },
     include: {
       createdBy: { select: { id: true, name: true } },
       project: { select: { id: true, name: true } },

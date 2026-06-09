@@ -25,6 +25,8 @@ const TIER_VARIANTS: Record<string, "outline" | "warning" | "success" | "seconda
   STANDARD: "outline",
 };
 
+export const metadata = { title: "Partnerships · OpsHub" };
+
 export default async function PartnershipsPage({ searchParams }: Props) {
   const user = await requireAuth();
 

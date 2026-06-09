@@ -32,11 +32,21 @@ function buildContractTreeNodes(contracts: ContractWithRelations[]): TreeNode[] 
   }));
 }
 
-export default async function ContractsPage() {
+export const metadata = { title: "Contracts · OpsHub" };
+
+export default async function ContractsPage({
+  searchParams,
+}: {
+  searchParams: { client?: string };
+}) {
   const user = await requireAuth();
 
   const perms = await resolveModulePerms(user.id, user.role, "contracts");
   if (!perms.canView) return <AccessDenied module="contracts" moduleLabel="Contracts" moduleDescription="Contracts, SOWs, amendments, and renewals" />;
+
+  // Optional ?client=<id> filter — used by the client detail page's
+  // "Create one →" link so the tree opens scoped to that client.
+  const clientFilter = searchParams.client;
 
   const scope = await getUserScope(user.id, user.role);
   const scopedContractIds = scope.all ? null : Array.from(scope.contractIds);
@@ -67,6 +77,7 @@ export default async function ContractsPage() {
       deletedAt: null,
       parentContractId: null,
       ...(scopedContractIds ? { id: { in: scopedContractIds } } : {}),
+      ...(clientFilter ? { clientId: clientFilter } : {}),
     },
     orderBy: { updatedAt: "desc" },
     include: {

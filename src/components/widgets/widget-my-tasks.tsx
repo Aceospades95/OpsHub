@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { StatusBadge } from "@/components/shared/status-badge";
 import { CheckSquare, Clock } from "lucide-react";
 import { formatCalendarDate } from "@/lib/dates";
 import Link from "next/link";
@@ -14,12 +15,6 @@ export async function WidgetMyTasks({ userId }: { userId: string }) {
       client: { select: { id: true, name: true } },
     },
   });
-
-  const priorityColors: Record<string, string> = {
-    HIGH: "bg-red-100 text-red-800",
-    MEDIUM: "bg-yellow-100 text-yellow-800",
-    LOW: "bg-green-100 text-green-800",
-  };
 
   return (
     <Card className="h-full">
@@ -41,9 +36,7 @@ export async function WidgetMyTasks({ userId }: { userId: string }) {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
                     <span className="text-sm font-medium truncate">{task.title}</span>
-                    <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${priorityColors[task.priority]}`}>
-                      {task.priority}
-                    </span>
+                    <StatusBadge status={task.priority} />
                   </div>
                   <div className="flex items-center gap-2 text-xs text-muted-foreground">
                     {task.project && (

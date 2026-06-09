@@ -67,16 +67,13 @@ export default async function SearchPage({ searchParams }: Props) {
   const clientScope = orgWide
     ? {}
     : { id: { in: Array.from(scope.clientIds) } };
-  // Contracts are scoped via the parent client/project relation
-  // (matching how the Contracts list page filters).
+  // Contracts use the precomputed contractIds set (matching how the
+  // Contracts list + detail pages filter). Fanning out via clientIds was
+  // wider than the contracts pages allow — seeing a client doesn't grant
+  // access to every contract under it.
   const contractScope = orgWide
     ? {}
-    : {
-        OR: [
-          { clientId: { in: Array.from(scope.clientIds) } },
-          { projectId: { in: Array.from(scope.projectIds) } },
-        ],
-      };
+    : { id: { in: Array.from(scope.contractIds) } };
   // Tasks are scoped via the parent project. A non-org-wide user
   // sees their assigned-or-created tasks, plus tasks on projects
   // they have scope on. Tasks with no project (org-wide tasks) are

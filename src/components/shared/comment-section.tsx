@@ -1,14 +1,16 @@
 "use client";
 
 import { useFormState } from "react-dom";
-import { useRef, useEffect, useState, Fragment } from "react";
+import { useRef, useEffect, useState, useTransition, Fragment } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { toast } from "sonner";
 import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Trash2 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { addComment, deleteComment } from "@/actions/comments";
+import { useConfirm } from "./use-confirm";
 import { MentionTextarea } from "./mention-textarea";
 import { segmentMentions } from "@/lib/mentions";
 
@@ -104,12 +106,27 @@ export function CommentSection({
   currentUserId,
 }: CommentSectionProps) {
   const router = useRouter();
+  const [isPending, startTransition] = useTransition();
+  const { confirm, ConfirmDialog } = useConfirm();
 
   async function handleDelete(commentId: string) {
-    const formData = new FormData();
-    formData.set("commentId", commentId);
-    await deleteComment(null, formData);
-    router.refresh();
+    const ok = await confirm({
+      title: "Delete this comment?",
+      message: "This can't be undone.",
+      confirmLabel: "Delete",
+    });
+    if (!ok) return;
+    startTransition(async () => {
+      const formData = new FormData();
+      formData.set("commentId", commentId);
+      const result = await deleteComment(null, formData);
+      if (result && "error" in result && result.error) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success("Comment deleted");
+      router.refresh();
+    });
   }
 
   // Display comments chronologically with oldest at top and newest at bottom,
@@ -149,9 +166,10 @@ export function CommentSection({
                 {(canDelete || comment.author.id === currentUserId) && (
                   <button
                     onClick={() => handleDelete(comment.id)}
+                    disabled={isPending}
                     aria-label="Delete comment"
                     title="Delete comment"
-                    className="rounded p-1 text-muted-foreground hover:text-destructive hover:bg-muted transition-colors"
+                    className="rounded p-1 text-muted-foreground hover:text-destructive hover:bg-muted transition-colors disabled:opacity-50"
                   >
                     <Trash2 className="h-3 w-3" />
                   </button>
@@ -164,6 +182,7 @@ export function CommentSection({
       </div>
 
       {canComment && <AddCommentForm entityType={entityType} entityId={entityId} />}
+      <ConfirmDialog />
     </div>
   );
 }

@@ -3,6 +3,12 @@
 import { db } from "@/lib/db";
 import { log } from "@/lib/log";
 import { requireAuth, resolveModulePerms } from "@/lib/permissions";
+import {
+  getUserScope,
+  canViewEntity,
+  hasOrgWideScope,
+  type ScopeEntityType,
+} from "@/lib/scope";
 import { logActivity } from "@/lib/activity";
 import { deriveActivityScope } from "@/lib/activity-scope";
 import { notify } from "@/lib/notifications";
@@ -11,6 +17,7 @@ import {
   stripMentionFormatting,
 } from "@/lib/mentions";
 import { absoluteUrl } from "@/lib/url";
+import { revalidateComment } from "@/lib/revalidate-entity";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { rejectHtmlChars, HTML_CHARS_MESSAGE } from "@/lib/validation";
@@ -50,6 +57,44 @@ type CommentEntityType =
   | "certification"
   | "subcontractor"
   | "partnership";
+
+/**
+ * Comment host types that participate in the per-entity visibility scope
+ * (src/lib/scope.ts). Mentions on these hosts are filtered per recipient
+ * so a mention can't leak the existence/name of an entity the recipient
+ * can't view. The remaining host types (supplier, document, subcontractor,
+ * partnership) aren't scoped — module-level perms are their only gate.
+ */
+const SCOPED_COMMENT_HOSTS: Partial<Record<CommentEntityType, ScopeEntityType>> = {
+  client: "client",
+  project: "project",
+  contract: "contract",
+  certification: "certification",
+};
+
+/**
+ * Invalidate every page where the comment's host entity shows comments.
+ * revalidateComment() covers most host types; supplier + certification
+ * aren't in its union, so mirror its behavior (detail page + dashboard +
+ * author profile) for those two.
+ */
+function revalidateCommentHost(
+  entityType: CommentEntityType,
+  entityId: string,
+  authorId?: string | null
+) {
+  if (entityType === "supplier" || entityType === "certification") {
+    revalidatePath(
+      entityType === "supplier"
+        ? `/suppliers/${entityId}`
+        : `/certifications/${entityId}`
+    );
+    revalidatePath("/dashboard");
+    if (authorId) revalidatePath(`/team/${authorId}`);
+    return;
+  }
+  revalidateComment({ entityType, entityId, authorId });
+}
 
 const addCommentSchema = z.object({
   entityType: z.enum([
@@ -139,6 +184,8 @@ async function notifyMentions(opts: {
   authorName: string;
   entityType: CommentEntityType;
   entityId: string;
+  /** Pre-resolved host entity (addComment already looked it up). */
+  entity?: { name: string; href: string } | null;
 }) {
   const mentionedIds = extractMentionedUserIds(opts.content)
     // Don't notify the author when they mention themselves
@@ -150,13 +197,32 @@ async function notifyMentions(opts: {
     // Drop ids that don't belong to active login users. Tracked-only
     // employees can't sign in to see an in-app notification, so a mention
     // on them is effectively a dead link.
-    const activeRecipients = await db.user.findMany({
+    let activeRecipients = await db.user.findMany({
       where: { id: { in: mentionedIds }, isActive: true, hasLoginAccess: true },
-      select: { id: true, name: true },
+      select: { id: true, name: true, role: true },
     });
     if (activeRecipients.length === 0) return;
 
-    const entity = await resolveCommentEntity(opts.entityType, opts.entityId);
+    // For scoped host types, drop recipients who can't view the entity —
+    // the notification title/body would otherwise leak its name to users
+    // outside its visibility scope. Mentioned users are few, so a
+    // per-recipient scope computation is acceptable; view-all roles skip
+    // the query entirely.
+    const scopedType = SCOPED_COMMENT_HOSTS[opts.entityType];
+    if (scopedType) {
+      const canView = await Promise.all(
+        activeRecipients.map(async (u) => {
+          if (hasOrgWideScope(u.role)) return true;
+          const scope = await getUserScope(u.id, u.role);
+          return canViewEntity(scope, scopedType, opts.entityId);
+        })
+      );
+      activeRecipients = activeRecipients.filter((_, i) => canView[i]);
+      if (activeRecipients.length === 0) return;
+    }
+
+    const entity =
+      opts.entity ?? (await resolveCommentEntity(opts.entityType, opts.entityId));
     if (!entity) return;
 
     const label = entityLabel[opts.entityType] || opts.entityType;
@@ -212,6 +278,12 @@ export async function addComment(_prev: unknown, formData: FormData) {
     return { error: "You don't have permission to comment" };
   }
 
+  // Verify the host entity actually exists (and isn't soft-deleted)
+  // before the dynamic `[entityType]Id` write — otherwise a forged
+  // entityId would create an orphaned comment (or 500 on the FK).
+  const hostEntity = await resolveCommentEntity(entityType, entityId);
+  if (!hostEntity) return { error: "Not found" };
+
   const data: Record<string, unknown> = {
     content,
     authorId: user.id,
@@ -230,9 +302,10 @@ export async function addComment(_prev: unknown, formData: FormData) {
     authorName: user.name,
     entityType,
     entityId,
+    entity: hostEntity,
   });
 
-  revalidatePath("/");
+  revalidateCommentHost(entityType, entityId, user.id);
   return { success: true };
 }
 
@@ -292,23 +365,35 @@ export async function deleteComment(_prev: unknown, formData: FormData) {
   const comment = await db.comment.findUnique({ where: { id: commentId } });
   if (!comment) return { error: "Comment not found" };
 
+  // Resolve the host entity from whichever FK is set — used for both the
+  // permission check and the targeted revalidation below.
+  const entityType: CommentEntityType = comment.clientId
+    ? "client"
+    : comment.projectId
+      ? "project"
+      : comment.contractId
+        ? "contract"
+        : comment.documentId
+          ? "document"
+          : comment.certificationId
+            ? "certification"
+            : comment.subcontractorId
+              ? "subcontractor"
+              : comment.partnershipId
+                ? "partnership"
+                : "supplier";
+  const entityId =
+    comment.clientId ??
+    comment.projectId ??
+    comment.contractId ??
+    comment.documentId ??
+    comment.certificationId ??
+    comment.subcontractorId ??
+    comment.partnershipId ??
+    comment.supplierId;
+
   // Allow delete if user is author or has delete permission
   if (comment.authorId !== user.id) {
-    const entityType = comment.clientId
-      ? "client"
-      : comment.projectId
-        ? "project"
-        : comment.contractId
-          ? "contract"
-          : comment.documentId
-            ? "document"
-            : comment.certificationId
-              ? "certification"
-              : comment.subcontractorId
-                ? "subcontractor"
-                : comment.partnershipId
-                  ? "partnership"
-                  : "supplier";
     const moduleName = entityModuleMap[entityType];
     const perms = await resolveModulePerms(user.id, user.role, moduleName);
     if (!perms.canDelete) {
@@ -317,6 +402,11 @@ export async function deleteComment(_prev: unknown, formData: FormData) {
   }
 
   await db.comment.delete({ where: { id: commentId } });
-  revalidatePath("/");
+  if (entityId) {
+    revalidateCommentHost(entityType, entityId, comment.authorId);
+  } else {
+    // Degenerate row with no host FK — fall back to the old broad sweep.
+    revalidatePath("/");
+  }
   return { success: true };
 }

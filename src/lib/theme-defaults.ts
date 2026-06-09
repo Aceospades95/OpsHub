@@ -7,7 +7,9 @@ export const DEFAULT_THEME: Record<string, string> = {
   background: "#eef0f3",
   foreground: "#0a0a0a",
   muted: "#e8eaec",
-  "muted-foreground": "#6b7c6b",
+  // Darkened from #6b7c6b (3.9:1 on --background — AA failure) to
+  // clear 4.5:1 on both the page background and white cards.
+  "muted-foreground": "#5a695a",
   border: "#d5d8dc",
   input: "#d5d8dc",
   card: "#ffffff",

@@ -24,6 +24,12 @@ export async function uploadFileFromForm(
   formData: FormData
 ): Promise<{ success: boolean; error?: string; fileId?: string }> {
   const user = await requireAuth();
+  // ADMIN-only like the sibling actions in this file. Without the gate,
+  // any authenticated session (including GUEST) could upload arbitrary
+  // 10MB public-visibility files — served unauthenticated from
+  // /api/files/{id} — and burn through the storage quota.
+  const gate = requireAdmin(user.role);
+  if (gate) return { success: false, error: gate.error };
 
   const blob = asUploadedFile(formData.get("file"));
   if (!blob) {

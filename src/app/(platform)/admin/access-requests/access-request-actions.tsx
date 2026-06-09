@@ -49,7 +49,7 @@ export function AccessRequestActions({ requestId }: Props) {
 
   if (resolved) {
     return (
-      <span className={`text-xs font-medium ${resolved === "APPROVED" ? "text-green-600" : "text-red-600"}`}>
+      <span className={`text-xs font-medium ${resolved === "APPROVED" ? "text-success" : "text-destructive"}`}>
         {resolved === "APPROVED" ? "Approved" : "Denied"}
       </span>
     );

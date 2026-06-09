@@ -23,6 +23,7 @@ vi.mock("bcryptjs", () => ({
 }));
 
 import { db } from "@/lib/db";
+import { _testMemoryStorage } from "./rate-limit";
 import {
   issueSignupToken,
   peekSignupToken,
@@ -78,6 +79,9 @@ describe("issueSignupToken", () => {
 describe("peekSignupToken", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // The brute-force limiter shares one in-memory map per process —
+    // start each test with fresh buckets.
+    _testMemoryStorage.clear?.();
   });
 
   it("returns ok=true with kind + user info for a valid token", async () => {
@@ -131,11 +135,30 @@ describe("peekSignupToken", () => {
   it("returns 'missing' for empty / non-string input", async () => {
     expect(await peekSignupToken("")).toEqual({ ok: false, reason: "missing" });
   });
+
+  it("rate-limits repeated lookups of one token without leaking an oracle", async () => {
+    findUnique.mockResolvedValue(null);
+    // Per-token bucket holds 10; exhaust it.
+    for (let i = 0; i < 10; i++) {
+      expect(await peekSignupToken("b".repeat(64))).toEqual({
+        ok: false,
+        reason: "missing",
+      });
+    }
+    expect(findUnique).toHaveBeenCalledTimes(10);
+    // 11th attempt: same "missing" answer, but the DB is never touched.
+    expect(await peekSignupToken("b".repeat(64))).toEqual({
+      ok: false,
+      reason: "missing",
+    });
+    expect(findUnique).toHaveBeenCalledTimes(10);
+  });
 });
 
 describe("consumeSignupToken", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    _testMemoryStorage.clear?.();
     transaction.mockImplementation(async (fn: (tx: unknown) => unknown) =>
       fn({
         signupToken: { updateMany },
@@ -184,6 +207,7 @@ describe("consumeSignupToken", () => {
       userId: "user-1",
       expiresAt: new Date(Date.now() + 60_000),
       usedAt: null,
+      user: { email: "alice@example.com" },
     });
     updateMany.mockResolvedValue({ count: 1 });
     userUpdate.mockResolvedValue({ id: "user-1", email: "alice@example.com" });
@@ -209,6 +233,7 @@ describe("consumeSignupToken", () => {
       userId: "user-1",
       expiresAt: new Date(Date.now() + 60_000),
       usedAt: null,
+      user: { email: "alice@example.com" },
     });
     // Simulate a concurrent caller having already claimed the token.
     updateMany.mockResolvedValue({ count: 0 });
@@ -216,6 +241,43 @@ describe("consumeSignupToken", () => {
     const result = await consumeSignupToken("a".repeat(64), "valid-pw-1234");
     expect(result).toEqual({ ok: false, reason: "used" });
     expect(userUpdate).not.toHaveBeenCalled();
+  });
+
+  it("rejects a password equal to the email local part (case-insensitive)", async () => {
+    findUnique.mockResolvedValue({
+      id: "tok-1",
+      userId: "user-1",
+      expiresAt: new Date(Date.now() + 60_000),
+      usedAt: null,
+      user: { email: "christopher@example.com" },
+    });
+
+    expect(await consumeSignupToken("a".repeat(64), "christopher")).toEqual({
+      ok: false,
+      reason: "weak",
+    });
+    expect(await consumeSignupToken("a".repeat(64), "ChRiStOpHeR")).toEqual({
+      ok: false,
+      reason: "weak",
+    });
+    // Token never gets consumed for a weak password.
+    expect(updateMany).not.toHaveBeenCalled();
+  });
+
+  it("rate-limits repeated consume attempts of one token like an invalid token", async () => {
+    findUnique.mockResolvedValue(null);
+    for (let i = 0; i < 10; i++) {
+      expect(await consumeSignupToken("c".repeat(64), "valid-pw-1234")).toEqual(
+        { ok: false, reason: "missing" }
+      );
+    }
+    expect(findUnique).toHaveBeenCalledTimes(10);
+    // 11th attempt: same "missing" answer, but the DB is never touched.
+    expect(await consumeSignupToken("c".repeat(64), "valid-pw-1234")).toEqual({
+      ok: false,
+      reason: "missing",
+    });
+    expect(findUnique).toHaveBeenCalledTimes(10);
   });
 });
 

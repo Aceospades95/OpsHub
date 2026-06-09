@@ -128,7 +128,19 @@ export function parseCalendarDateString(
   // accidentally accept a local-time ISO timestamp.
   if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
   const date = new Date(s);
-  return Number.isNaN(date.getTime()) ? null : date;
+  if (Number.isNaN(date.getTime())) return null;
+  // `new Date("2026-02-30")` silently rolls over to Mar 2 instead of
+  // failing — verify the round-trip so impossible calendar dates are
+  // rejected rather than shifted.
+  const [y, m, d] = s.split("-").map(Number);
+  if (
+    date.getUTCFullYear() !== y ||
+    date.getUTCMonth() + 1 !== m ||
+    date.getUTCDate() !== d
+  ) {
+    return null;
+  }
+  return date;
 }
 
 /**

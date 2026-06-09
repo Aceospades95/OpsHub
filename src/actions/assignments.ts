@@ -39,11 +39,16 @@ async function notifyAssignmentChange(opts: {
         : Promise.resolve(null),
       db.user.findUnique({
         where: { id: opts.employeeId },
-        select: { name: true, hasLoginAccess: true },
+        select: { name: true, hasLoginAccess: true, isActive: true },
       }),
     ]);
 
     if (!employee) return;
+    // Tracked-only employees (synthetic nologin-…@internal.local rows)
+    // can never read an in-app notification, and "assignment-created"
+    // emails would go to a placeholder address. Same for deactivated
+    // accounts. Mirrors the filter in comments.ts notifyMentions.
+    if (!employee.hasLoginAccess || !employee.isActive) return;
 
     const projectName = project?.name || "an internal assignment";
     const heading =
@@ -134,6 +139,26 @@ async function requireManageForAssignment(
 // Local alias for the central helper to keep existing call sites short.
 function revalidateAssignmentPaths(employeeId?: string | null, projectId?: string | null) {
   revalidateAssignment({ employeeId, projectId });
+}
+
+/**
+ * Per-row gate for inline staffing-matrix edits: load the assignment,
+ * then require manage rights on the project it currently belongs to.
+ * Without this, the inline actions only applied the coarse role gate —
+ * any MANAGER could edit any project's staffing rows org-wide.
+ */
+async function gateAssignmentById(
+  userId: string,
+  role: string,
+  assignmentId: string
+): Promise<{ error: string } | null> {
+  if (!assignmentId) return { error: "Assignment ID is required" };
+  const existing = await db.assignment.findUnique({
+    where: { id: assignmentId },
+    select: { projectId: true },
+  });
+  if (!existing) return { error: "Assignment not found" };
+  return requireManageForAssignment(userId, role, existing.projectId);
 }
 
 const assignmentSchema = z.object({
@@ -254,13 +279,20 @@ export async function updateAssignment(_prev: unknown, formData: FormData) {
 
   if (!parsed.success) return { error: "Invalid input", fieldErrors: parsed.error.flatten().fieldErrors };
 
-  const projectGate = await requireManageForAssignment(user.id, user.role, parsed.data.projectId);
-  if (projectGate) return projectGate;
-
   const previous = await db.assignment.findUnique({
     where: { id },
-    select: { status: true },
+    select: { status: true, employeeId: true, projectId: true },
   });
+  if (!previous) return { error: "Assignment not found" };
+
+  // Gate on the assignment's CURRENT project first — checking only the
+  // submitted projectId would let a manager on project A hijack any
+  // assignment org-wide by posting projectId=A. Then gate the
+  // destination project too.
+  const currentGate = await requireManageForAssignment(user.id, user.role, previous.projectId);
+  if (currentGate) return currentGate;
+  const projectGate = await requireManageForAssignment(user.id, user.role, parsed.data.projectId);
+  if (projectGate) return projectGate;
 
   await db.assignment.update({
     where: { id },
@@ -274,16 +306,30 @@ export async function updateAssignment(_prev: unknown, formData: FormData) {
   // Status transitions out of ACTIVE/PLANNED (e.g. -> COMPLETED / ON_HOLD)
   // can remove the assignment from the user's scope; trigger the demotion
   // check in that case.
-  const wasActive = previous?.status === "ACTIVE" || previous?.status === "PLANNED";
+  const wasActive = previous.status === "ACTIVE" || previous.status === "PLANNED";
   const isActive = parsed.data.status === "ACTIVE" || parsed.data.status === "PLANNED";
   if (wasActive && !isActive) await maybeDemoteUserRole(parsed.data.employeeId);
   else if (!wasActive && isActive) await maybePromoteUserRole(parsed.data.employeeId);
+
+  // Reassignment to a different employee removes the previous one's
+  // grant — run their demotion check and refresh their profile page.
+  if (previous.employeeId !== parsed.data.employeeId) {
+    await maybeDemoteUserRole(previous.employeeId);
+  }
 
   await logActivity("updated", "assignment", id, user.id, undefined, {
     projectId: parsed.data.projectId,
     clientId: parsed.data.clientId,
   });
   revalidateAssignmentPaths(parsed.data.employeeId, parsed.data.projectId);
+  // Entity-map rule 4: when FKs change, the pages the assignment moved
+  // AWAY from need revalidating too.
+  if (
+    previous.employeeId !== parsed.data.employeeId ||
+    previous.projectId !== (parsed.data.projectId ?? null)
+  ) {
+    revalidateAssignmentPaths(previous.employeeId, previous.projectId);
+  }
   return { success: true };
 }
 
@@ -366,6 +412,16 @@ export async function quickAssign(data: {
   if (gate) return gate;
 
   if (!data.employeeId || !data.projectId) return { error: "Employee and project are required" };
+  // Same bounds as assignmentSchema / updateAssignmentFte — quickAssign
+  // used to be the one path with no FTE validation.
+  if (
+    typeof data.allocationFte !== "number" ||
+    Number.isNaN(data.allocationFte) ||
+    data.allocationFte < 0 ||
+    data.allocationFte > 2
+  ) {
+    return { error: "FTE must be between 0 and 2" };
+  }
   const projectGate = await requireManageForAssignment(user.id, user.role, data.projectId);
   if (projectGate) return projectGate;
 
@@ -424,6 +480,8 @@ export async function updateAssignmentNotes(assignmentId: string, notes: string)
   const user = await requireAuth();
   const gate = requireAssignmentManager(user.role);
   if (gate) return gate;
+  const rowGate = await gateAssignmentById(user.id, user.role, assignmentId);
+  if (rowGate) return rowGate;
 
   const updated = await db.assignment.update({
     where: { id: assignmentId },
@@ -443,6 +501,8 @@ export async function updateAssignmentRole(assignmentId: string, role: string, r
   const user = await requireAuth();
   const gate = requireAssignmentManager(user.role);
   if (gate) return gate;
+  const rowGate = await gateAssignmentById(user.id, user.role, assignmentId);
+  if (rowGate) return rowGate;
 
   // Look up the assignment's project so we can re-link projectRoleId
   // to a matching ProjectRole on the same project (if one exists).
@@ -485,6 +545,8 @@ export async function updateAssignmentFte(assignmentId: string, allocationFte: n
   if (gate) return gate;
 
   if (allocationFte < 0 || allocationFte > 2) return { error: "FTE must be between 0 and 2" };
+  const rowGate = await gateAssignmentById(user.id, user.role, assignmentId);
+  if (rowGate) return rowGate;
 
   const updated = await db.assignment.update({
     where: { id: assignmentId },
@@ -504,6 +566,14 @@ export async function updateProjectOffering(projectId: string, serviceOfferingId
   const user = await requireAuth();
   const gate = requireAssignmentManager(user.role);
   if (gate) return gate;
+  const projectGate = await requireManageForAssignment(user.id, user.role, projectId);
+  if (projectGate) return projectGate;
+
+  const project = await db.project.findFirst({
+    where: { id: projectId, deletedAt: null },
+    select: { id: true },
+  });
+  if (!project) return { error: "Project not found" };
 
   await db.project.update({
     where: { id: projectId },
@@ -543,6 +613,8 @@ export async function createProjectRole(projectId: string, roleDefinitionId: str
   if (!projectId || !roleDefinitionId) return { error: "Project and role are required" };
   if (requiredFte < 0 || requiredFte > 2) return { error: "FTE must be between 0 and 2" };
   if (quantity < 1 || quantity > 50) return { error: "Quantity must be between 1 and 50" };
+  const projectGate = await requireManageForAssignment(user.id, user.role, projectId);
+  if (projectGate) return projectGate;
 
   const pr = await db.projectRole.create({
     data: { projectId, roleDefinitionId, requiredFte, quantity },
@@ -556,6 +628,16 @@ export async function updateProjectRole(id: string, requiredFte: number, quantit
   const user = await requireAuth();
   const gate = requireAssignmentManager(user.role);
   if (gate) return gate;
+  if (requiredFte < 0 || requiredFte > 2) return { error: "FTE must be between 0 and 2" };
+  if (quantity < 1 || quantity > 50) return { error: "Quantity must be between 1 and 50" };
+
+  const existing = await db.projectRole.findUnique({
+    where: { id },
+    select: { projectId: true },
+  });
+  if (!existing) return { error: "Role not found" };
+  const projectGate = await requireManageForAssignment(user.id, user.role, existing.projectId);
+  if (projectGate) return projectGate;
 
   const updated = await db.projectRole.update({
     where: { id },
@@ -575,9 +657,15 @@ export async function deleteProjectRole(id: string) {
   if (gate) return gate;
 
   const pr = await db.projectRole.findUnique({ where: { id }, select: { projectId: true } });
-  // Unlink assignments from this project role before deleting
-  await db.assignment.updateMany({ where: { projectRoleId: id }, data: { projectRoleId: null } });
-  await db.projectRole.delete({ where: { id } });
+  if (!pr) return { error: "Role not found" };
+  const projectGate = await requireManageForAssignment(user.id, user.role, pr.projectId);
+  if (projectGate) return projectGate;
+  // Unlink assignments from this project role before deleting, atomically
+  // with the delete so a failure can't leave rows pointing at a gone role.
+  await db.$transaction([
+    db.assignment.updateMany({ where: { projectRoleId: id }, data: { projectRoleId: null } }),
+    db.projectRole.delete({ where: { id } }),
+  ]);
   await logActivity("deleted", "projectRole", id, user.id, undefined, {
     projectId: pr?.projectId,
   });

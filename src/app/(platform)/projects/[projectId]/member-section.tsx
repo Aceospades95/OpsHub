@@ -1,12 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Dialog } from "@/components/ui/dialog";
+import { useConfirm } from "@/components/shared/use-confirm";
 import { addProjectMember, removeProjectMember } from "@/actions/projects";
 import { Plus, X } from "lucide-react";
 import Link from "next/link";
@@ -44,6 +46,8 @@ interface Props {
 
 export function MemberSection({ members, projectId, allUsers, canEdit }: Props) {
   const [addOpen, setAddOpen] = useState(false);
+  const [isPending, startTransition] = useTransition();
+  const { confirm, ConfirmDialog } = useConfirm();
   const router = useRouter();
 
   const memberUserIds = new Set(members.map((m) => m.user.id));
@@ -51,16 +55,33 @@ export function MemberSection({ members, projectId, allUsers, canEdit }: Props) 
 
   async function handleAdd(formData: FormData) {
     formData.set("projectId", projectId);
-    await addProjectMember(null, formData);
+    const result = await addProjectMember(null, formData);
+    if (result && "error" in result && result.error) {
+      toast.error(result.error);
+      return;
+    }
     setAddOpen(false);
     router.refresh();
   }
 
-  async function handleRemove(id: string) {
-    const fd = new FormData();
-    fd.set("id", id);
-    await removeProjectMember(null, fd);
-    router.refresh();
+  async function handleRemove(id: string, userName: string) {
+    const ok = await confirm({
+      title: `Remove ${userName} from this project?`,
+      message: "They will lose their project-scoped access immediately.",
+      confirmLabel: "Remove",
+    });
+    if (!ok) return;
+    startTransition(async () => {
+      const fd = new FormData();
+      fd.set("id", id);
+      const result = await removeProjectMember(null, fd);
+      if (result && "error" in result && result.error) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success("Member removed");
+      router.refresh();
+    });
   }
 
   return (
@@ -77,7 +98,12 @@ export function MemberSection({ members, projectId, allUsers, canEdit }: Props) 
             </Badge>
           </span>
           {canEdit && (
-            <button onClick={() => handleRemove(member.id)} className="text-muted-foreground hover:text-destructive">
+            <button
+              onClick={() => handleRemove(member.id, member.user.name)}
+              disabled={isPending}
+              aria-label={`Remove ${member.user.name} from this project`}
+              className="text-muted-foreground hover:text-destructive disabled:opacity-50"
+            >
               <X className="h-3 w-3" />
             </button>
           )}
@@ -120,6 +146,7 @@ export function MemberSection({ members, projectId, allUsers, canEdit }: Props) 
           </Dialog>
         </>
       )}
+      <ConfirmDialog />
     </div>
   );
 }

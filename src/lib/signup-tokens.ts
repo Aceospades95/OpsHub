@@ -22,6 +22,7 @@ import { createHash, randomBytes } from "crypto";
 import { hash } from "bcryptjs";
 
 import { db } from "@/lib/db";
+import { consume } from "@/lib/rate-limit";
 
 /** 24h is the conventional invite-link lifetime — long enough that
  *  a recipient can act on it after a long flight, short enough that
@@ -35,6 +36,27 @@ export const RESET_TOKEN_TTL_MS = 24 * 60 * 60 * 1000;
 const BCRYPT_COST = 12;
 
 export type SignupTokenKind = "invite" | "reset";
+
+/**
+ * Brute-force throttle on token validation. Keyed by a short prefix of
+ * the token hash (caps hammering of a single guessed token) plus a
+ * global backstop bucket (caps a scanner spraying many distinct
+ * guesses, which would otherwise land in fresh per-token buckets).
+ * Lives here rather than in the page/action so every lookup path is
+ * covered. On limit the caller behaves exactly like an invalid token —
+ * no oracle distinguishing "throttled" from "miss".
+ */
+function signupTokenRateLimited(tokenHash: string): boolean {
+  const perToken = consume(`signup:${tokenHash.slice(0, 8)}`, {
+    capacity: 10,
+    refillRatePerSec: 1 / 60,
+  });
+  const global = consume("signup:all", {
+    capacity: 100,
+    refillRatePerSec: 1,
+  });
+  return !perToken.allowed || !global.allowed;
+}
 
 export interface IssuedToken {
   /** The raw token value the user receives in their email URL. */
@@ -91,6 +113,9 @@ export async function peekSignupToken(rawToken: string): Promise<PeekResult> {
     return { ok: false, reason: "missing" };
   }
   const tokenHash = createHash("sha256").update(rawToken).digest("hex");
+  if (signupTokenRateLimited(tokenHash)) {
+    return { ok: false, reason: "missing" };
+  }
   const row = await db.signupToken.findUnique({
     where: { tokenHash },
     include: { user: { select: { id: true, name: true, email: true } } },
@@ -118,8 +143,9 @@ export type ConsumeResult =
  * a crash mid-way never leaves a half-set password with a still-valid
  * token.
  *
- * `password` is validated minimally here (length floor) — the UI is
- * expected to enforce stricter rules with feedback before posting.
+ * `password` is validated minimally here (length floor + not the email
+ * local part) — the UI is expected to enforce stricter rules with
+ * feedback before posting.
  */
 export async function consumeSignupToken(
   rawToken: string,
@@ -130,17 +156,34 @@ export async function consumeSignupToken(
   }
 
   const tokenHash = createHash("sha256").update(rawToken).digest("hex");
+  if (signupTokenRateLimited(tokenHash)) {
+    return { ok: false, reason: "missing" };
+  }
 
   // Pre-flight check OUTSIDE the transaction so we can return a clean
   // failure code before doing the bcrypt hash.
   const existing = await db.signupToken.findUnique({
     where: { tokenHash },
-    select: { id: true, userId: true, expiresAt: true, usedAt: true },
+    select: {
+      id: true,
+      userId: true,
+      expiresAt: true,
+      usedAt: true,
+      user: { select: { email: true } },
+    },
   });
   if (!existing) return { ok: false, reason: "missing" };
   if (existing.usedAt) return { ok: false, reason: "used" };
   if (existing.expiresAt.getTime() < Date.now()) {
     return { ok: false, reason: "expired" };
+  }
+
+  // Reject a password equal to the email local part ("alice" for
+  // alice@example.com) — the most common weak choice that still clears
+  // a pure length floor.
+  const localPart = existing.user?.email.split("@")[0] ?? "";
+  if (localPart && password.toLowerCase() === localPart.toLowerCase()) {
+    return { ok: false, reason: "weak" };
   }
 
   const hashed = await hash(password, BCRYPT_COST);

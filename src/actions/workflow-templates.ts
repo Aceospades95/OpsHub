@@ -323,6 +323,20 @@ export async function updateWorkflowStep(
     } as const;
   }
 
+  // The step must actually belong to the supplied template — the cycle
+  // check below and the revalidation both key off
+  // parsed.data.workflowTemplateId, so a crafted payload pairing a step
+  // id with a different template id could set afterStepId across
+  // templates and corrupt both templates' step ordering.
+  const existingStep = await db.workflowStep.findUnique({
+    where: { id: input.id },
+    select: { workflowTemplateId: true },
+  });
+  if (!existingStep) return { error: "Step not found" } as const;
+  if (existingStep.workflowTemplateId !== parsed.data.workflowTemplateId) {
+    return { error: "Step does not belong to this template" } as const;
+  }
+
   // Round-8 QA: edit-modal Save uses strict per-step-type schemas so
   // a step can't be persisted with blank required fields (e.g. an
   // ASSIGN_TASK_TO_SUBJECT with no title, which would later spawn a

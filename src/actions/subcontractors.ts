@@ -138,6 +138,14 @@ export async function updateSubcontractor(_prev: unknown, formData: FormData) {
     return { error: "Invalid input", fieldErrors: parsed.error.flatten().fieldErrors };
   }
 
+  // Existence + soft-delete guard: a missing id would throw P2025 (→ 500)
+  // and a soft-deleted subcontractor must not be editable from a stale form.
+  const existing = await db.subcontractor.findFirst({
+    where: { id, deletedAt: null },
+    select: { id: true },
+  });
+  if (!existing) return { error: "Not found" };
+
   await db.subcontractor.update({ where: { id }, data: toDb(parsed.data) });
   await logActivity("updated", "subcontractor", id, user.id, parsed.data.name);
   revalidateSubcontractor(id);
@@ -328,6 +336,18 @@ export async function linkSubcontractorProject(_prev: unknown, formData: FormDat
   return { success: true };
 }
 
+const linkUpdateSchema = z.object({
+  scope: z.string().optional(),
+  role: z.string().optional(),
+  status: z.enum(["ACTIVE", "PLANNED", "COMPLETED", "ON_HOLD", "TERMINATED"]).optional(),
+  startDate: z.string().optional(),
+  endDate: z.string().optional(),
+  contractValue: z.coerce.number().min(0).optional(),
+  rate: z.coerce.number().min(0).optional(),
+  rateUnit: z.string().optional(),
+  notes: z.string().optional(),
+});
+
 export async function updateSubcontractorProject(_prev: unknown, formData: FormData) {
   const user = await requireAuth();
   const perms = await resolveModulePerms(user.id, user.role, "subcontractors");
@@ -337,23 +357,35 @@ export async function updateSubcontractorProject(_prev: unknown, formData: FormD
   const link = await db.subcontractorProject.findUnique({ where: { id } });
   if (!link) return { error: "Not found" };
 
+  // Validate instead of casting — a forged POST used to be able to write
+  // arbitrary strings into the status enum and NaN into the numbers.
+  const parsed = linkUpdateSchema.safeParse({
+    scope: formData.get("scope") || undefined,
+    role: formData.get("role") || undefined,
+    status: formData.get("status") || undefined,
+    startDate: formData.get("startDate") || undefined,
+    endDate: formData.get("endDate") || undefined,
+    contractValue: formData.get("contractValue") || undefined,
+    rate: formData.get("rate") || undefined,
+    rateUnit: formData.get("rateUnit") || undefined,
+    notes: formData.get("notes") || undefined,
+  });
+  if (!parsed.success) {
+    return { error: "Invalid input", fieldErrors: parsed.error.flatten().fieldErrors };
+  }
+
   await db.subcontractorProject.update({
     where: { id },
     data: {
-      scope: (formData.get("scope") as string) || null,
-      role: (formData.get("role") as string) || null,
-      status: (formData.get("status") as
-        | "ACTIVE"
-        | "PLANNED"
-        | "COMPLETED"
-        | "ON_HOLD"
-        | "TERMINATED") || link.status,
-      startDate: formData.get("startDate") ? new Date(formData.get("startDate") as string) : null,
-      endDate: formData.get("endDate") ? new Date(formData.get("endDate") as string) : null,
-      contractValue: formData.get("contractValue") ? Number(formData.get("contractValue")) : null,
-      rate: formData.get("rate") ? Number(formData.get("rate")) : null,
-      rateUnit: (formData.get("rateUnit") as string) || null,
-      notes: (formData.get("notes") as string) || null,
+      scope: parsed.data.scope || null,
+      role: parsed.data.role || null,
+      status: parsed.data.status ?? link.status,
+      startDate: parsed.data.startDate ? new Date(parsed.data.startDate) : null,
+      endDate: parsed.data.endDate ? new Date(parsed.data.endDate) : null,
+      contractValue: parsed.data.contractValue ?? null,
+      rate: parsed.data.rate ?? null,
+      rateUnit: parsed.data.rateUnit || null,
+      notes: parsed.data.notes || null,
     },
   });
 

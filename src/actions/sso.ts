@@ -47,8 +47,13 @@ export async function removeAllowedDomain(id: string) {
   const gate = requireAdmin(user.role);
   if (gate) return gate;
 
-  await db.allowedDomain.delete({ where: { id } });
+  // deleteMany doesn't throw P2025 on a missing id (stale double-click),
+  // so a no-op delete surfaces as a friendly error instead of a 500.
+  const { count } = await db.allowedDomain.deleteMany({ where: { id } });
+  if (count === 0) return { error: "Not found" };
+
   revalidatePath("/admin/sso");
+  return { success: true };
 }
 
 export async function getAllowedDomains() {
@@ -56,5 +61,9 @@ export async function getAllowedDomains() {
   const gate = requireAdmin(user.role);
   if (gate) return gate;
 
-  return db.allowedDomain.findMany({ orderBy: { createdAt: "asc" } });
+  // Consistent shape with the gate branch above: always an object, with
+  // either `error` or `domains` set — callers can't accidentally iterate
+  // the `{ error }` object as a list.
+  const domains = await db.allowedDomain.findMany({ orderBy: { createdAt: "asc" } });
+  return { domains };
 }

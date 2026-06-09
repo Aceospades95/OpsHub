@@ -6,6 +6,7 @@ import { logActivity } from "@/lib/activity";
 import { revalidateQuote, revalidateProject } from "@/lib/revalidate-entity";
 import { computeQuoteTotals } from "@/lib/quotes/totals";
 import { nextQuoteNumber } from "@/lib/quotes/numbering";
+import { slugify, ensureUniqueSlug } from "@/lib/slug";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import type { Prisma } from "@prisma/client";
@@ -574,46 +575,66 @@ export async function convertQuoteToProject(id: string) {
     .filter(Boolean)
     .join("\n\n");
 
-  const project = await db.project.create({
-    data: {
-      name: quote.title,
-      description: description || null,
-      clientId: quote.clientId,
-      status: "PLANNING",
-    },
+  // URL-friendly slug, same as createProject in src/actions/projects.ts —
+  // converted projects shouldn't be the odd ones out with cuid URLs.
+  const slug = await ensureUniqueSlug(slugify(quote.title), async (s) => {
+    const taken = await db.project.findUnique({ where: { slug: s }, select: { id: true } });
+    return taken !== null;
   });
 
-  // Link the quote back to the new project so the embedded card on
-  // /projects/[id] shows it under "Quotes".
-  await db.quote.update({
-    where: { id: quote.id },
-    data: { projectId: project.id },
-  });
-
-  // Generate one milestone per non-optional, non-recurring line item so
-  // delivery has a starting punch list. Recurring items are MRR
-  // commitments rather than one-time deliverables, so they're skipped.
-  const milestoneSeed = quote.lineItems.filter(
-    (li) => (!li.isOptional || li.isSelected) && !li.isRecurring
-  );
-  if (milestoneSeed.length > 0) {
-    await db.milestone.createMany({
-      data: milestoneSeed.map((li) => ({
-        title: li.name,
-        description: li.description,
-        projectId: project.id,
-      })),
+  // Project create + quote link + member seed + milestone seed are one
+  // logical unit — a failure partway through must not leave a project
+  // with no linked quote (or vice versa).
+  const project = await db.$transaction(async (tx) => {
+    const created = await tx.project.create({
+      data: {
+        name: quote.title,
+        description: description || null,
+        clientId: quote.clientId,
+        status: "PLANNING",
+        slug,
+      },
     });
-  }
 
-  await db.quoteEvent.create({
-    data: {
-      quoteId: quote.id,
-      eventType: "converted_to_project",
-      actorType: "user",
-      actorId: user.id,
-      metadata: JSON.stringify({ projectId: project.id }),
-    },
+    // Auto-add creator as a member, mirroring createProject.
+    await tx.projectMember.create({
+      data: { userId: user.id, projectId: created.id, role: user.role },
+    });
+
+    // Link the quote back to the new project so the embedded card on
+    // /projects/[id] shows it under "Quotes".
+    await tx.quote.update({
+      where: { id: quote.id },
+      data: { projectId: created.id },
+    });
+
+    // Generate one milestone per non-optional, non-recurring line item so
+    // delivery has a starting punch list. Recurring items are MRR
+    // commitments rather than one-time deliverables, so they're skipped.
+    const milestoneSeed = quote.lineItems.filter(
+      (li) => (!li.isOptional || li.isSelected) && !li.isRecurring
+    );
+    if (milestoneSeed.length > 0) {
+      await tx.milestone.createMany({
+        data: milestoneSeed.map((li) => ({
+          title: li.name,
+          description: li.description,
+          projectId: created.id,
+        })),
+      });
+    }
+
+    await tx.quoteEvent.create({
+      data: {
+        quoteId: quote.id,
+        eventType: "converted_to_project",
+        actorType: "user",
+        actorId: user.id,
+        metadata: JSON.stringify({ projectId: created.id }),
+      },
+    });
+
+    return created;
   });
   await logActivity("created", "project", project.id, user.id, project.name, {
     clientId: project.clientId,
@@ -674,5 +695,11 @@ export async function listQuotes(filters: QuoteListFilters = {}) {
     },
   });
 
-  return { success: true, quotes } as const;
+  // internalNotes is exactly that — internal. Don't hand it to every
+  // caller with mere canView; only canManage holders get it.
+  const rows = perms.canManage
+    ? quotes
+    : quotes.map(({ internalNotes: _internalNotes, ...rest }) => rest);
+
+  return { success: true, quotes: rows } as const;
 }

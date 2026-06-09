@@ -23,8 +23,18 @@
  * interpret HTTP statuses for individual job failures.
  */
 
+import { createHash, timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import { runJob, runAllJobs } from "@/lib/jobs";
+
+// Constant-time secret comparison. Hash both sides first so the buffers
+// always have equal length — timingSafeEqual throws on a length mismatch,
+// and bailing early on length would itself leak timing information.
+function secretsMatch(provided: string, expected: string): boolean {
+  const a = createHash("sha256").update(provided).digest();
+  const b = createHash("sha256").update(expected).digest();
+  return timingSafeEqual(a, b);
+}
 
 function isAuthorized(request: Request): boolean {
   const secret = process.env.CRON_SECRET;
@@ -33,10 +43,10 @@ function isAuthorized(request: Request): boolean {
   if (!secret) return false;
 
   const headerSecret = request.headers.get("x-cron-secret");
-  if (headerSecret && headerSecret === secret) return true;
+  if (headerSecret && secretsMatch(headerSecret, secret)) return true;
 
   const authHeader = request.headers.get("authorization");
-  if (authHeader && authHeader === `Bearer ${secret}`) return true;
+  if (authHeader && secretsMatch(authHeader, `Bearer ${secret}`)) return true;
 
   return false;
 }
@@ -58,8 +68,11 @@ export async function POST(request: Request) {
   return NextResponse.json({ results });
 }
 
-// Allow GET for health checks / human visits — same auth, same behavior.
-// Useful when an admin wants to test the endpoint with a browser bookmark.
-export async function GET(request: Request) {
-  return POST(request);
+// Jobs are state-changing, so they must be triggered via POST. A GET
+// (browser bookmark, link prefetcher, crawler) must never run jobs.
+export async function GET() {
+  return new NextResponse("Method Not Allowed — trigger jobs via POST", {
+    status: 405,
+    headers: { Allow: "POST" },
+  });
 }

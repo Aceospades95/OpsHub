@@ -146,21 +146,45 @@ export async function saveCustomPreset(name: string, mode: "light" | "dark", col
   const gate = requireAdmin(user.role);
   if (gate) return gate;
 
-  const id = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  // Validate before persisting — these args arrive straight from the
+  // client, so the name needs bounds and every color must be a real key
+  // with a real hex value (the preset JSON is parsed and applied later).
+  const trimmedName = name?.trim() ?? "";
+  if (!trimmedName || trimmedName.length > 50) {
+    return { error: "Preset name must be 1-50 characters" };
+  }
+  if (mode !== "light" && mode !== "dark") {
+    return { error: "Invalid theme mode" };
+  }
+  for (const [colorKey, value] of Object.entries(colors)) {
+    if (!VALID_KEYS.includes(colorKey)) {
+      return { error: `Unknown theme color "${colorKey}"` };
+    }
+    if (typeof value !== "string" || !HEX_COLOR_RE.test(value)) {
+      return { error: `Invalid color value for "${colorKey}": ${value}` };
+    }
+  }
+
+  const id = trimmedName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  // An all-punctuation name slugs down to nothing, which would produce
+  // the bare prefix as the storage key.
+  if (!id) {
+    return { error: "Preset name must include at least one letter or number" };
+  }
   const key = `${CUSTOM_PRESET_PREFIX}${id}`;
 
   await db.themeSetting.upsert({
     where: { key },
     create: {
       key,
-      value: JSON.stringify({ name, mode, description: `Custom ${mode} theme`, colors }),
+      value: JSON.stringify({ name: trimmedName, mode, description: `Custom ${mode} theme`, colors }),
     },
     update: {
-      value: JSON.stringify({ name, mode, description: `Custom ${mode} theme`, colors }),
+      value: JSON.stringify({ name: trimmedName, mode, description: `Custom ${mode} theme`, colors }),
     },
   });
 
-  await logActivity("created", "theme-preset", id, user.id, `Saved custom theme "${name}"`);
+  await logActivity("created", "theme-preset", id, user.id, `Saved custom theme "${trimmedName}"`);
   revalidatePath("/admin/theme");
   return { success: true, id };
 }

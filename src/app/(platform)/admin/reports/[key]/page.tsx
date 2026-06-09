@@ -1,4 +1,4 @@
-import { auth } from "@/lib/auth";
+import { requireAuth } from "@/lib/permissions";
 import { redirect, notFound } from "next/navigation";
 import Link from "next/link";
 import { PageHeader } from "@/components/layout/page-header";
@@ -11,9 +11,8 @@ export default async function AdminReportDetailPage({
 }: {
   params: Promise<{ key: string }>;
 }) {
-  const session = await auth();
-  if (!session?.user) redirect("/login");
-  if (session.user.role !== "ADMIN") redirect("/dashboard");
+  const user = await requireAuth();
+  if (user.role !== "ADMIN") redirect("/dashboard");
 
   const { key } = await params;
   const report = getReport(key);

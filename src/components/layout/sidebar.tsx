@@ -25,7 +25,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import type { SidebarConfig, SidebarItemConfig } from "@/lib/sidebar-config";
-import { SYSTEM_MODULES } from "@/lib/modules";
+import { SYSTEM_MODULES, getPermissionedModuleKeys } from "@/lib/modules";
 import { SafeImg } from "@/components/ui/safe-img";
 
 interface CustomPage {
@@ -36,6 +36,12 @@ interface CustomPage {
 
 interface SidebarProps {
   userRole?: string;
+  /**
+   * Keys of permissioned modules the user may see, computed server-side by
+   * getVisibleModules(). When provided, permissioned modules not in this
+   * list are hidden. Undefined = no permission filtering (legacy behavior).
+   */
+  visibleModules?: string[];
   customPages?: CustomPage[];
   sidebarConfig?: SidebarConfig;
   /** Company name override (defaults to "OpsHub") */
@@ -65,15 +71,20 @@ const ICON_MAP: Record<string, LucideIcon> = {
 // are no divergent hardcoded lists. Use a local alias for readability.
 const SYSTEM_DEFAULTS = SYSTEM_MODULES;
 
-// Modules that require specific roles to appear in the sidebar at all
+// Modules that require specific roles to appear in the sidebar at all.
+// Permissioned modules (clients, projects, contracts, …) are driven by the
+// server-computed `visibleModules` list instead — see shouldShowItem.
 const ROLE_GATED: Record<string, (role: string) => boolean> = {
   settings: (role) => role === "ADMIN",
-  certifications: (role) => role === "ADMIN" || role === "DEVELOPER",
-  contracts: (role) => role === "ADMIN" || role === "DEVELOPER" || role === "MANAGER",
 };
+
+// Keys that participate in per-user permission gating; everything else
+// (dashboard, tasks, intranet, settings) is role-/always-on.
+const PERMISSIONED_KEYS = new Set(getPermissionedModuleKeys());
 
 export function Sidebar({
   userRole = "",
+  visibleModules,
   customPages = [],
   sidebarConfig,
   companyName,
@@ -89,6 +100,7 @@ export function Sidebar({
 
   // Build a map of custom pages for quick lookup
   const customPageMap = new Map(customPages.map((p) => [`custom-${p.id}`, p]));
+  const visibleModuleSet = visibleModules ? new Set(visibleModules) : null;
 
   function shouldShowItem(item: SidebarItemConfig): boolean {
     if (!item.visible) return false;
@@ -103,6 +115,11 @@ export function Sidebar({
     // Role-gated modules (e.g. admin settings)
     if (ROLE_GATED[key]) {
       return ROLE_GATED[key](userRole);
+    }
+
+    // Permissioned modules: only show what getVisibleModules() allowed.
+    if (visibleModuleSet && PERMISSIONED_KEYS.has(key)) {
+      return visibleModuleSet.has(key);
     }
 
     return true;

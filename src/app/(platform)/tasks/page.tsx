@@ -13,17 +13,12 @@ import { TaskCheckbox } from "./task-checkbox";
 import { TaskFilters } from "./task-filters";
 import { TasksListClient } from "./tasks-list-client";
 import { DownloadCsvButton } from "@/components/shared/download-csv-button";
+import { StatusBadge } from "@/components/shared/status-badge";
 import { Suspense } from "react";
 import { formatCalendarDate } from "@/lib/dates";
 import Link from "next/link";
 import type { Prisma } from "@prisma/client";
 import { pluralize } from "@/lib/pluralize";
-
-const priorityColors: Record<string, string> = {
-  HIGH: "bg-red-100 text-red-800",
-  MEDIUM: "bg-yellow-100 text-yellow-800",
-  LOW: "bg-green-100 text-green-800",
-};
 
 const statusLabels: Record<string, string> = {
   TODO: "To Do",
@@ -31,6 +26,8 @@ const statusLabels: Record<string, string> = {
   DONE: "Done",
   CANCELLED: "Cancelled",
 };
+
+export const metadata = { title: "Tasks · OpsHub" };
 
 export default async function TasksPage({
   searchParams,
@@ -128,6 +125,8 @@ export default async function TasksPage({
         assignee: { select: { id: true, name: true } },
         createdBy: { select: { name: true } },
       },
+      // Cap the unfiltered list — matches the 500-row cap on /quotes.
+      take: 500,
     }),
     db.project.findMany({
       where: { deletedAt: null, ...(scopedProjectIds ? { id: { in: scopedProjectIds } } : {}) },
@@ -343,9 +342,7 @@ function ProjectGroupedTasks({ tasks }: { tasks: TaskRow[] }) {
                             {task.title}
                           </span>
                           {!isDone && (
-                            <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${priorityColors[task.priority]}`}>
-                              {task.priority}
-                            </span>
+                            <StatusBadge status={task.priority} className="text-[10px]" />
                           )}
                           {task.status === "IN_PROGRESS" && (
                             <Badge variant="default" className="text-[10px]">In Progress</Badge>

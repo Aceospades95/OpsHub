@@ -37,8 +37,14 @@ export default async function SupplierDetailPage({ params }: Props) {
 
   if (!supplier) notFound();
 
+  // The full project list is only needed for the link-project picker
+  // (canEdit). Read-only viewers just need the names of the projects
+  // already linked to this supplier.
   const allProjects = await db.project.findMany({
-    where: { deletedAt: null },
+    where: {
+      deletedAt: null,
+      ...(perms.canEdit ? {} : { id: { in: supplier.projects.map((sp) => sp.projectId) } }),
+    },
     select: { id: true, name: true },
     orderBy: { name: "asc" },
   });

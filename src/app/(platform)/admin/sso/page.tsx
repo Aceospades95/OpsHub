@@ -1,4 +1,4 @@
-import { auth } from "@/lib/auth";
+import { requireAuth } from "@/lib/permissions";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { PageHeader } from "@/components/layout/page-header";
@@ -7,10 +7,11 @@ import { Badge } from "@/components/ui/badge";
 import { Globe, Info } from "lucide-react";
 import { DomainManager } from "./domain-manager";
 
+export const metadata = { title: "Single Sign-On · OpsHub" };
+
 export default async function AdminSsoPage() {
-  const session = await auth();
-  if (!session?.user) redirect("/login");
-  if (session.user.role !== "ADMIN") redirect("/dashboard");
+  const user = await requireAuth();
+  if (user.role !== "ADMIN") redirect("/dashboard");
 
   const domains = await db.allowedDomain.findMany({
     orderBy: { createdAt: "asc" },

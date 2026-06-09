@@ -40,6 +40,52 @@ function requireAdmin(role: string): { error: string } | null {
   return null;
 }
 
+/**
+ * Ranks for the "a MANAGER cannot mint or touch accounts more privileged
+ * than their own" checks below. DEVELOPER ranks with ADMIN here because
+ * the role carries org-wide manage (see lib/scope.ts hasOrgWideManage) —
+ * letting a MANAGER create DEVELOPER accounts would be privilege
+ * escalation by proxy, exactly the hole requireAdmin() on the permission
+ * editors exists to close.
+ */
+const USER_ROLE_RANK: Record<string, number> = {
+  ADMIN: 4,
+  DEVELOPER: 4,
+  MANAGER: 3,
+  CONTRIBUTOR: 2,
+  VIEWER: 1,
+  GUEST: 0,
+};
+
+/** Can the actor assign `targetRole` to an account? ADMIN can assign
+ * anything; everyone else is capped at their own rank. */
+function assertRoleGrant(
+  actorRole: string,
+  targetRole: string
+): { error: string } | null {
+  if (actorRole === "ADMIN") return null;
+  if ((USER_ROLE_RANK[targetRole] ?? 99) > (USER_ROLE_RANK[actorRole] ?? 0)) {
+    return { error: "You cannot assign a role more privileged than your own" };
+  }
+  return null;
+}
+
+/** Can the actor modify / delete / deactivate an account that currently
+ * holds `targetCurrentRole`? Blocks a MANAGER from editing or removing
+ * an ADMIN / DEVELOPER account. */
+function assertCanModifyUser(
+  actorRole: string,
+  targetCurrentRole: string
+): { error: string } | null {
+  if (actorRole === "ADMIN") return null;
+  if ((USER_ROLE_RANK[targetCurrentRole] ?? 99) > (USER_ROLE_RANK[actorRole] ?? 0)) {
+    return {
+      error: "You cannot modify a user with a more privileged role than your own",
+    };
+  }
+  return null;
+}
+
 const createUserSchema = z.object({
   name: nameField({ label: "Name", min: 2 }),
   email: z.string().email("Invalid email").optional(),
@@ -80,6 +126,11 @@ export async function createUser(_prev: unknown, formData: FormData) {
   });
 
   if (!parsed.success) return { error: "Invalid input", fieldErrors: parsed.error.flatten().fieldErrors };
+
+  // A MANAGER must not be able to mint accounts above their own rank
+  // (ADMIN or DEVELOPER) — that would be a self-service admin promotion.
+  const roleGate = assertRoleGrant(admin.role, parsed.data.role);
+  if (roleGate) return roleGate;
 
   // Generate placeholder email for no-login users
   const email = parsed.data.email || `nologin-${Date.now()}@internal.local`;
@@ -429,6 +480,20 @@ export async function updateUser(_prev: unknown, formData: FormData) {
 
   if (!parsed.success) return { error: "Invalid input", fieldErrors: parsed.error.flatten().fieldErrors };
 
+  // Look up the target before any writes: a MANAGER may not edit an
+  // account that outranks them (e.g. demote an ADMIN), nor assign a role
+  // above their own rank. Also turns a missing id into a clean error
+  // instead of a P2025 500.
+  const target = await db.user.findUnique({
+    where: { id },
+    select: { role: true },
+  });
+  if (!target) return { error: "User not found" };
+  const modifyGate = assertCanModifyUser(admin.role, target.role);
+  if (modifyGate) return modifyGate;
+  const roleGate = assertRoleGrant(admin.role, parsed.data.role);
+  if (roleGate) return roleGate;
+
   // Validate no circular manager chain
   if (managerId) {
     if (managerId === id) {
@@ -487,6 +552,10 @@ export async function deleteUser(_prev: unknown, formData: FormData) {
 
   const user = await db.user.findUnique({ where: { id } });
   if (!user) return { error: "User not found" };
+
+  // A MANAGER can't delete an account that outranks them.
+  const modifyGate = assertCanModifyUser(admin.role, user.role);
+  if (modifyGate) return modifyGate;
 
   // Hard delete fails when the user is referenced by a record we don't
   // cascade-delete from (Comment.author, ActivityLog.user, SandboxPage
@@ -556,11 +625,23 @@ export async function toggleUserActive(_prev: unknown, formData: FormData) {
   const user = await db.user.findUnique({ where: { id } });
   if (!user) return { error: "Not found" };
 
+  // A MANAGER can't deactivate an account that outranks them — locking
+  // out every ADMIN would be a denial-of-administration.
+  const modifyGate = assertCanModifyUser(admin.role, user.role);
+  if (modifyGate) return modifyGate;
+
   await db.user.update({
     where: { id },
     data: { isActive: !user.isActive },
   });
 
+  await logActivity(
+    user.isActive ? "deactivated" : "activated",
+    "user",
+    id,
+    admin.id,
+    user.name
+  );
   revalidateUser(id, { managerId: user.managerId });
   return { success: true };
 }

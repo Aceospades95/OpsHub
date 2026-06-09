@@ -1,4 +1,4 @@
-import { auth } from "@/lib/auth";
+import { requireAuth } from "@/lib/permissions";
 import { redirect, notFound } from "next/navigation";
 import Link from "next/link";
 import {
@@ -24,9 +24,8 @@ interface Props {
 
 export default async function JobDetailPage({ params }: Props) {
   const { jobKey } = await params;
-  const session = await auth();
-  if (!session?.user) redirect("/login");
-  if (session.user.role !== "ADMIN") redirect("/dashboard");
+  const user = await requireAuth();
+  if (user.role !== "ADMIN") redirect("/dashboard");
 
   const job = getJob(jobKey);
   if (!job) notFound();
@@ -77,7 +76,7 @@ export default async function JobDetailPage({ params }: Props) {
           <Stat
             label="Completed"
             value={completedTotal.toLocaleString()}
-            valueClass="text-emerald-600"
+            valueClass="text-success"
           />
           <Stat
             label="Failed"
@@ -88,7 +87,7 @@ export default async function JobDetailPage({ params }: Props) {
       </Card>
 
       {!isEnabled && (
-        <div className="mb-6 rounded border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-xs text-amber-700">
+        <div className="mb-6 rounded border border-warning/30 bg-warning/10 px-4 py-3 text-xs text-warning">
           This job is paused. Cron will skip it until you re-enable it. You can
           still trigger it manually with <strong>Run now</strong>; that bypasses
           the pause for one-off testing.
@@ -123,7 +122,7 @@ export default async function JobDetailPage({ params }: Props) {
                   className="flex items-start gap-3 rounded border border-border p-3"
                 >
                   {log.status === "completed" ? (
-                    <CheckCircle2 className="h-4 w-4 text-emerald-600 mt-0.5 shrink-0" />
+                    <CheckCircle2 className="h-4 w-4 text-success mt-0.5 shrink-0" />
                   ) : log.status === "failed" ? (
                     <AlertCircle className="h-4 w-4 text-destructive mt-0.5 shrink-0" />
                   ) : (

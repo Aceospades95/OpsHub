@@ -17,6 +17,8 @@ interface Props {
   searchParams: { status?: string; type?: string; compliance?: string };
 }
 
+export const metadata = { title: "Subcontractors · OpsHub" };
+
 export default async function SubcontractorsPage({ searchParams }: Props) {
   const user = await requireAuth();
 

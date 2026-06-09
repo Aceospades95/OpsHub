@@ -65,7 +65,7 @@ export default async function ClientDetailPage({ params }: Props) {
 
   const scope = await getUserScope(user.id, user.role);
   if (!canViewEntity(scope, "client", client.id)) {
-    return <AccessDenied module="clients" moduleLabel="Clients" entityType="client" entityId={client.id} entityLabel={client.name} />;
+    return <AccessDenied module="clients" moduleLabel="Clients" entityType="client" entityId={client.id} />;
   }
 
   // Get tasks associated with this client
@@ -166,7 +166,7 @@ export default async function ClientDetailPage({ params }: Props) {
             <div className="text-sm text-muted-foreground">
               No contracts yet.{" "}
               {perms.canCreate && (
-                <Link href={`/contracts?clientId=${client.id}`} className="text-primary hover:underline">
+                <Link href={`/contracts?client=${client.id}`} className="text-primary hover:underline">
                   Create one →
                 </Link>
               )}
@@ -258,7 +258,7 @@ export default async function ClientDetailPage({ params }: Props) {
               <CheckSquare className="h-4 w-4" />
               Tasks
             </CardTitle>
-            <Link href={`/tasks?clientId=${client.id}`} className="text-xs text-primary hover:underline">
+            <Link href={`/tasks?client=${client.id}`} className="text-xs text-primary hover:underline">
               View all
             </Link>
           </div>

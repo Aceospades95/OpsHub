@@ -2,10 +2,25 @@
 
 import { db } from "@/lib/db";
 import { requireAuth, resolveModulePerms } from "@/lib/permissions";
+import { assertManageEntity } from "@/lib/entity-authz";
 import { logActivity } from "@/lib/activity";
 import { deriveActivityScope } from "@/lib/activity-scope";
 import { revalidatePath } from "next/cache";
+import type { Role } from "@prisma/client";
 import { z } from "zod";
+
+/**
+ * Documents inherit their parent project's write scope: a CONTRIBUTOR
+ * with module-level canEdit may still only touch documents on projects
+ * in their assigned set (lib/entity-authz.ts).
+ */
+async function gateDocumentProject(
+  user: { id: string; role: Role },
+  projectId: string | null | undefined
+): Promise<{ error: string } | null> {
+  if (!projectId) return null;
+  return assertManageEntity(user.id, user.role, "project", projectId);
+}
 
 const documentSchema = z.object({
   title: z.string().min(1, "Title is required"),
@@ -15,7 +30,15 @@ const documentSchema = z.object({
   projectId: z.string().optional(),
 });
 
-export async function createDocument(_prev: unknown, formData: FormData) {
+export async function createDocument(
+  _prev: unknown,
+  formData: FormData
+): Promise<{
+  success?: true;
+  error?: string;
+  fieldErrors?: Record<string, string[] | undefined>;
+  documentId?: string;
+}> {
   const user = await requireAuth();
   const perms = await resolveModulePerms(user.id, user.role, "projects");
   if (!perms.canCreate) return { error: "Permission denied" };
@@ -30,9 +53,19 @@ export async function createDocument(_prev: unknown, formData: FormData) {
 
   if (!parsed.success) return { error: "Invalid input", fieldErrors: parsed.error.flatten().fieldErrors };
 
+  if (parsed.data.projectId) {
+    const project = await db.project.findFirst({
+      where: { id: parsed.data.projectId, deletedAt: null },
+      select: { id: true },
+    });
+    if (!project) return { error: "Project not found" };
+  }
+  const scopeGate = await gateDocumentProject(user, parsed.data.projectId);
+  if (scopeGate) return scopeGate;
+
   const doc = await db.document.create({ data: parsed.data });
   await logActivity("created", "document", doc.id, user.id, doc.title, await deriveActivityScope("document", doc.id));
-  revalidatePath(`/projects/${parsed.data.projectId}`);
+  if (parsed.data.projectId) revalidatePath(`/projects/${parsed.data.projectId}`);
   return { success: true, documentId: doc.id };
 }
 
@@ -46,6 +79,8 @@ export async function updateDocument(_prev: unknown, formData: FormData) {
 
   const existing = await db.document.findFirst({ where: { id, deletedAt: null } });
   if (!existing) return { error: "Not found" };
+  const scopeGate = await gateDocumentProject(user, existing.projectId);
+  if (scopeGate) return scopeGate;
 
   const parsed = documentSchema.safeParse({
     title: formData.get("title"),
@@ -57,25 +92,28 @@ export async function updateDocument(_prev: unknown, formData: FormData) {
 
   if (!parsed.success) return { error: "Invalid input", fieldErrors: parsed.error.flatten().fieldErrors };
 
-  // If content changed, save previous version
+  // If content changed, save the previous version atomically with the
+  // update — concurrent edits could otherwise duplicate version rows or
+  // lose the increment.
   const contentChanged = existing.content !== (parsed.data.content || null);
-  if (contentChanged && existing.content) {
-    await db.documentVersion.create({
+  await db.$transaction(async (tx) => {
+    if (contentChanged && existing.content) {
+      await tx.documentVersion.create({
+        data: {
+          version: existing.version,
+          content: existing.content,
+          changelog,
+          documentId: id,
+        },
+      });
+    }
+    await tx.document.update({
+      where: { id },
       data: {
-        version: existing.version,
-        content: existing.content,
-        changelog,
-        documentId: id,
+        ...parsed.data,
+        version: contentChanged ? existing.version + 1 : existing.version,
       },
     });
-  }
-
-  await db.document.update({
-    where: { id },
-    data: {
-      ...parsed.data,
-      version: contentChanged ? existing.version + 1 : existing.version,
-    },
   });
 
   await logActivity("updated", "document", id, user.id, parsed.data.title, await deriveActivityScope("document", id));
@@ -96,6 +134,8 @@ export async function deleteDocument(_prev: unknown, formData: FormData) {
   if (doc.deletedAt) {
     return { error: "Already in the recovery bin" };
   }
+  const scopeGate = await gateDocumentProject(user, doc.projectId);
+  if (scopeGate) return scopeGate;
 
   // Snapshot the project scope so the activity-log entry carries it
   // even after the cron eventually purges the document row.
@@ -111,7 +151,7 @@ export async function deleteDocument(_prev: unknown, formData: FormData) {
     : {};
   await db.document.update({ where: { id }, data: { deletedAt: new Date() } });
   await logActivity("soft-deleted", "document", id, user.id, doc.title, scope);
-  revalidatePath(`/projects/${doc.projectId}`);
+  if (doc.projectId) revalidatePath(`/projects/${doc.projectId}`);
   return { success: true };
 }
 
@@ -125,28 +165,36 @@ export async function restoreDocumentVersion(_prev: unknown, formData: FormData)
 
   const doc = await db.document.findFirst({ where: { id: documentId, deletedAt: null } });
   if (!doc) return { error: "Document not found" };
+  const scopeGate = await gateDocumentProject(user, doc.projectId);
+  if (scopeGate) return scopeGate;
 
   const version = await db.documentVersion.findUnique({ where: { id: versionId } });
-  if (!version) return { error: "Version not found" };
-
-  // Save current content as a version before restoring
-  if (doc.content) {
-    await db.documentVersion.create({
-      data: {
-        version: doc.version,
-        content: doc.content,
-        changelog: `Before restoring to v${version.version}`,
-        documentId,
-      },
-    });
+  // The version must belong to THIS document — a versionId from another
+  // document would otherwise exfiltrate that document's content into
+  // one the caller can view (or corrupt this one with foreign content).
+  if (!version || version.documentId !== documentId) {
+    return { error: "Version not found" };
   }
 
-  await db.document.update({
-    where: { id: documentId },
-    data: {
-      content: version.content,
-      version: doc.version + 1,
-    },
+  await db.$transaction(async (tx) => {
+    // Save current content as a version before restoring
+    if (doc.content) {
+      await tx.documentVersion.create({
+        data: {
+          version: doc.version,
+          content: doc.content,
+          changelog: `Before restoring to v${version.version}`,
+          documentId,
+        },
+      });
+    }
+    await tx.document.update({
+      where: { id: documentId },
+      data: {
+        content: version.content,
+        version: doc.version + 1,
+      },
+    });
   });
 
   await logActivity("updated", "document", documentId, user.id, `Restored to v${version.version}`, await deriveActivityScope("document", documentId));
