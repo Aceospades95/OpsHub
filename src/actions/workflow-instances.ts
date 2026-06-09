@@ -2,7 +2,11 @@
 
 import { db } from "@/lib/db";
 import { log } from "@/lib/log";
-import { requireAuth, resolveModulePerms } from "@/lib/permissions";
+import {
+  requireAuth,
+  resolveModulePerms,
+  type PermissionFlags,
+} from "@/lib/permissions";
 import { logActivity } from "@/lib/activity";
 import { revalidateWorkflowInstance } from "@/lib/revalidate-entity";
 import {
@@ -36,6 +40,33 @@ function parseDate(v: string | null | undefined): Date | null {
   if (!v) return null;
   const d = new Date(v);
   return isNaN(d.getTime()) ? null : d;
+}
+
+/**
+ * Lifecycle + approval actions are management operations, not general
+ * edits: role defaults hand every CONTRIBUTOR canEdit on the workflows
+ * module, but completing another employee's onboarding steps, approving
+ * gates, or cancelling instances must stay with managers. An explicit
+ * module-permission row granting canManage is the intended escape hatch
+ * for delegating this to a specific user.
+ */
+function canDriveInstances(
+  role: string,
+  perms: PermissionFlags
+): boolean {
+  return perms.canManage || (role === "MANAGER" && perms.canEdit);
+}
+
+async function requireInstanceDriver(): Promise<
+  | { error: string; user?: undefined }
+  | { user: Awaited<ReturnType<typeof requireAuth>>; error?: undefined }
+> {
+  const user = await requireAuth();
+  const perms = await resolveModulePerms(user.id, user.role, "workflows");
+  if (!canDriveInstances(user.role, perms)) {
+    return { error: "Permission denied" };
+  }
+  return { user };
 }
 
 // ─── Lifecycle actions ──────────────────────────────────────────────────
@@ -105,36 +136,32 @@ export async function createWorkflowInstance(
 }
 
 export async function startWorkflowInstance(instanceId: string) {
-  const user = await requireAuth();
-  const perms = await resolveModulePerms(user.id, user.role, "workflows");
-  if (!perms.canEdit) return { error: "Permission denied" } as const;
+  const gate = await requireInstanceDriver();
+  if (gate.error) return { error: gate.error } as const;
   await startInstance(instanceId);
   revalidateWorkflowInstance(instanceId);
   return { success: true } as const;
 }
 
 export async function pauseWorkflowInstance(instanceId: string) {
-  const user = await requireAuth();
-  const perms = await resolveModulePerms(user.id, user.role, "workflows");
-  if (!perms.canEdit) return { error: "Permission denied" } as const;
+  const gate = await requireInstanceDriver();
+  if (gate.error) return { error: gate.error } as const;
   await pauseInstance(instanceId);
   revalidateWorkflowInstance(instanceId);
   return { success: true } as const;
 }
 
 export async function resumeWorkflowInstance(instanceId: string) {
-  const user = await requireAuth();
-  const perms = await resolveModulePerms(user.id, user.role, "workflows");
-  if (!perms.canEdit) return { error: "Permission denied" } as const;
+  const gate = await requireInstanceDriver();
+  if (gate.error) return { error: gate.error } as const;
   await resumeInstance(instanceId);
   revalidateWorkflowInstance(instanceId);
   return { success: true } as const;
 }
 
 export async function cancelWorkflowInstance(instanceId: string) {
-  const user = await requireAuth();
-  const perms = await resolveModulePerms(user.id, user.role, "workflows");
-  if (!perms.canEdit) return { error: "Permission denied" } as const;
+  const gate = await requireInstanceDriver();
+  if (gate.error) return { error: gate.error } as const;
   await cancelInstance(instanceId);
   revalidateWorkflowInstance(instanceId);
   return { success: true } as const;
@@ -144,9 +171,9 @@ export async function completeWorkflowInstanceStep(
   instanceStepId: string,
   output?: unknown
 ) {
-  const user = await requireAuth();
-  const perms = await resolveModulePerms(user.id, user.role, "workflows");
-  if (!perms.canEdit) return { error: "Permission denied" } as const;
+  const gate = await requireInstanceDriver();
+  if (gate.error !== undefined) return { error: gate.error } as const;
+  const user = gate.user;
   const step = await db.workflowInstanceStep.findUnique({
     where: { id: instanceStepId },
     select: { workflowInstanceId: true },
@@ -161,9 +188,8 @@ export async function skipWorkflowInstanceStep(
   instanceStepId: string,
   reason?: string
 ) {
-  const user = await requireAuth();
-  const perms = await resolveModulePerms(user.id, user.role, "workflows");
-  if (!perms.canEdit) return { error: "Permission denied" } as const;
+  const gate = await requireInstanceDriver();
+  if (gate.error) return { error: gate.error } as const;
   const step = await db.workflowInstanceStep.findUnique({
     where: { id: instanceStepId },
     select: { workflowInstanceId: true },
@@ -178,9 +204,8 @@ export async function failWorkflowInstanceStep(
   instanceStepId: string,
   error: string
 ) {
-  const user = await requireAuth();
-  const perms = await resolveModulePerms(user.id, user.role, "workflows");
-  if (!perms.canEdit) return { error: "Permission denied" } as const;
+  const gate = await requireInstanceDriver();
+  if (gate.error) return { error: gate.error } as const;
   const step = await db.workflowInstanceStep.findUnique({
     where: { id: instanceStepId },
     select: { workflowInstanceId: true },
@@ -204,7 +229,6 @@ export async function decideApprovalStep(
 ) {
   const user = await requireAuth();
   const perms = await resolveModulePerms(user.id, user.role, "workflows");
-  if (!perms.canEdit) return { error: "Permission denied" } as const;
 
   const step = await db.workflowInstanceStep.findUnique({
     where: { id: instanceStepId },
@@ -213,6 +237,25 @@ export async function decideApprovalStep(
   if (!step) return { error: "Step not found" } as const;
   if (step.workflowStep.stepType !== "APPROVAL") {
     return { error: "Step is not an approval gate" } as const;
+  }
+
+  // The decision belongs to the approver the handler resolved on entry
+  // (stored in the step output), or to someone with instance-driver
+  // rights. Plain canEdit isn't enough — that would let any
+  // CONTRIBUTOR approve gates configured for their manager.
+  let configuredApproverId: string | null = null;
+  if (step.output) {
+    try {
+      const out = JSON.parse(step.output) as { approverId?: string | null };
+      configuredApproverId = out.approverId ?? null;
+    } catch {
+      // Malformed output — fall through to the driver check.
+    }
+  }
+  const isConfiguredApprover =
+    configuredApproverId !== null && configuredApproverId === user.id;
+  if (!isConfiguredApprover && !canDriveInstances(user.role, perms)) {
+    return { error: "Permission denied" } as const;
   }
 
   if (approve) {
@@ -230,9 +273,8 @@ export async function decideApprovalStep(
 
 /** Manual force-tick from admin UI. Useful for nudging stuck instances. */
 export async function tickWorkflowInstance(instanceId: string) {
-  const user = await requireAuth();
-  const perms = await resolveModulePerms(user.id, user.role, "workflows");
-  if (!perms.canEdit) return { error: "Permission denied" } as const;
+  const gate = await requireInstanceDriver();
+  if (gate.error) return { error: gate.error } as const;
   const result = await tick(instanceId);
   revalidateWorkflowInstance(instanceId);
   return { success: true, ...result } as const;

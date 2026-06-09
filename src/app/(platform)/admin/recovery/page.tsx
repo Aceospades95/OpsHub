@@ -21,13 +21,19 @@ import { RecoveryRowActions } from "./recovery-row-actions";
  * override for the 30-day window). The PURGE_SOFT_DELETED scheduled
  * task hard-deletes anything past the retention window automatically.
  */
+export const metadata = { title: "Recovery Bin · OpsHub" };
+
 export default async function RecoveryPage() {
   const user = await requireAuth();
   if (user.role !== "ADMIN") {
     redirect("/admin");
   }
 
-  const rows = await listSoftDeletedRows();
+  const result = await listSoftDeletedRows();
+  // The action re-checks ADMIN itself (it's a publicly POSTable server
+  // action); with the page-level redirect above the error branch never
+  // renders here in practice.
+  const rows = Array.isArray(result) ? result : [];
   const retentionLabel = `${DEFAULT_RETENTION_DAYS} days`;
 
   // Group by entity type so the page reads as
@@ -70,6 +76,7 @@ export default async function RecoveryPage() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="p-0">
+                <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead className="bg-muted/30 border-y border-border">
                     <tr className="text-left text-[10px] uppercase tracking-wider text-muted-foreground">
@@ -120,6 +127,7 @@ export default async function RecoveryPage() {
                     ))}
                   </tbody>
                 </table>
+                </div>
               </CardContent>
             </Card>
           ))}

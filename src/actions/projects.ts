@@ -3,6 +3,7 @@
 import { db } from "@/lib/db";
 import { log } from "@/lib/log";
 import { requireAuth, resolveModulePerms, canManageProjectAssignments } from "@/lib/permissions";
+import { assertManageEntity } from "@/lib/entity-authz";
 import { maybePromoteUserRole, maybeDemoteUserRole } from "@/lib/auto-role";
 import { logActivity } from "@/lib/activity";
 import { revalidatePath } from "next/cache";
@@ -35,16 +36,18 @@ export async function createProject(_prev: unknown, formData: FormData) {
   const perms = await resolveModulePerms(user.id, user.role, "projects");
   if (!perms.canCreate) return { error: "Permission denied" };
 
-  // Handle inline client creation
-  let clientId = formData.get("clientId") as string;
+  // Inline client creation is deferred until after validation succeeds
+  // (it used to run first, leaving an orphan client when the project
+  // form failed validation) and requires create rights on the clients
+  // module — the projects form must not be a side door around it.
+  const clientIdRaw = formData.get("clientId") as string;
   const newClientName = (formData.get("newClientName") as string)?.trim();
-
-  if (!clientId && newClientName) {
-    const newClient = await db.client.create({
-      data: { name: newClientName, status: "ACTIVE" },
-    });
-    clientId = newClient.id;
-    await logActivity("created", "client", newClient.id, user.id, newClient.name, { clientId: newClient.id });
+  const wantsInlineClient = !clientIdRaw && !!newClientName;
+  if (wantsInlineClient) {
+    const clientPerms = await resolveModulePerms(user.id, user.role, "clients");
+    if (!clientPerms.canCreate) {
+      return { error: "You don't have permission to create clients" };
+    }
   }
 
   // Handle inline service offering creation — same pattern as inline client.
@@ -79,7 +82,9 @@ export async function createProject(_prev: unknown, formData: FormData) {
     status: formData.get("status") || "PLANNING",
     startDate: formData.get("startDate") || undefined,
     endDate: formData.get("endDate") || undefined,
-    clientId,
+    // Sentinel keeps the required-clientId rule satisfied while the
+    // real id is minted inside the transaction below.
+    clientId: clientIdRaw || (wantsInlineClient ? "__inline__" : ""),
     parentProjectId: formData.get("parentProjectId") || undefined,
     serviceOfferingId: serviceOfferingId || undefined,
   });
@@ -95,33 +100,58 @@ export async function createProject(_prev: unknown, formData: FormData) {
     return taken !== null;
   });
 
-  const data = {
-    ...parsed.data,
-    slug,
-    startDate: parsed.data.startDate ? new Date(parsed.data.startDate) : undefined,
-    endDate: parsed.data.endDate ? new Date(parsed.data.endDate) : undefined,
-    parentProjectId: parsed.data.parentProjectId || undefined,
-  };
+  const relatedIds = formData.getAll("relatedProjectIds") as string[];
 
-  const project = await db.project.create({ data });
+  // Client + project + creator-membership + relations are one logical
+  // create — a mid-way failure used to leave orphans (client with no
+  // project, project with no member row).
+  const project = await db.$transaction(async (tx) => {
+    let clientId = clientIdRaw;
+    if (wantsInlineClient) {
+      const clientSlug = await ensureUniqueSlug(
+        slugify(newClientName),
+        async (s) => {
+          const taken = await tx.client.findUnique({ where: { slug: s }, select: { id: true } });
+          return taken !== null;
+        }
+      );
+      const newClient = await tx.client.create({
+        data: { name: newClientName, status: "ACTIVE", slug: clientSlug },
+      });
+      clientId = newClient.id;
+    }
 
-  // Auto-add creator as a member
-  await db.projectMember.create({
-    data: { userId: user.id, projectId: project.id, role: user.role },
+    const created = await tx.project.create({
+      data: {
+        ...parsed.data,
+        clientId,
+        slug,
+        startDate: parsed.data.startDate ? new Date(parsed.data.startDate) : undefined,
+        endDate: parsed.data.endDate ? new Date(parsed.data.endDate) : undefined,
+        parentProjectId: parsed.data.parentProjectId || undefined,
+      },
+    });
+
+    // Auto-add creator as a member
+    await tx.projectMember.create({
+      data: { userId: user.id, projectId: created.id, role: user.role },
+    });
+
+    if (relatedIds.length > 0) {
+      await tx.projectRelation.createMany({
+        data: relatedIds.map((relatedProjectId) => ({
+          projectId: created.id,
+          relatedProjectId,
+        })),
+        skipDuplicates: true,
+      });
+    }
+    return created;
   });
 
-  // Create related project links
-  const relatedIds = formData.getAll("relatedProjectIds") as string[];
-  if (relatedIds.length > 0) {
-    await db.projectRelation.createMany({
-      data: relatedIds.map((relatedProjectId) => ({
-        projectId: project.id,
-        relatedProjectId,
-      })),
-      skipDuplicates: true,
-    });
+  if (wantsInlineClient) {
+    await logActivity("created", "client", project.clientId, user.id, newClientName, { clientId: project.clientId });
   }
-
   await logActivity("created", "project", project.id, user.id, project.name, {
     projectId: project.id,
     clientId: project.clientId,
@@ -174,10 +204,16 @@ export async function updateProject(_prev: unknown, formData: FormData) {
 
   // Look up the previous clientId so we can revalidate the old client's page too
   // if the client changed (the old client's project list needs to drop this project).
-  const previous = await db.project.findUnique({
-    where: { id },
+  const previous = await db.project.findFirst({
+    where: { id, deletedAt: null },
     select: { clientId: true },
   });
+  if (!previous) return { error: "Project not found" };
+
+  // Module canEdit alone isn't enough — a CONTRIBUTOR may only edit
+  // projects in their assigned scope (lib/entity-authz.ts).
+  const scopeGate = await assertManageEntity(user.id, user.role, "project", id);
+  if (scopeGate) return scopeGate;
 
   await db.project.update({
     where: { id },
@@ -249,6 +285,8 @@ export async function deleteProject(_prev: unknown, formData: FormData) {
   if (project.deletedAt) {
     return { error: "Already in the recovery bin" };
   }
+  const scopeGate = await assertManageEntity(user.id, user.role, "project", id);
+  if (scopeGate) return scopeGate;
 
   // Soft-delete: stamp deletedAt = now() instead of running a real
   // db.project.delete(). The row stays in the DB for the 30-day
@@ -435,6 +473,14 @@ export async function createMilestone(_prev: unknown, formData: FormData) {
 
   if (!parsed.success) return { error: "Invalid input", fieldErrors: parsed.error.flatten().fieldErrors };
 
+  const project = await db.project.findFirst({
+    where: { id: parsed.data.projectId, deletedAt: null },
+    select: { id: true },
+  });
+  if (!project) return { error: "Project not found" };
+  const scopeGate = await assertManageEntity(user.id, user.role, "project", parsed.data.projectId);
+  if (scopeGate) return scopeGate;
+
   await db.milestone.create({
     data: {
       ...parsed.data,
@@ -454,6 +500,8 @@ export async function toggleMilestone(_prev: unknown, formData: FormData) {
   const id = formData.get("id") as string;
   const milestone = await db.milestone.findUnique({ where: { id } });
   if (!milestone) return { error: "Not found" };
+  const scopeGate = await assertManageEntity(user.id, user.role, "project", milestone.projectId);
+  if (scopeGate) return scopeGate;
 
   await db.milestone.update({
     where: { id },
@@ -475,6 +523,8 @@ export async function deleteMilestone(_prev: unknown, formData: FormData) {
   const id = formData.get("id") as string;
   const milestone = await db.milestone.findUnique({ where: { id } });
   if (!milestone) return { error: "Not found" };
+  const scopeGate = await assertManageEntity(user.id, user.role, "project", milestone.projectId);
+  if (scopeGate) return scopeGate;
 
   await db.milestone.delete({ where: { id } });
   revalidatePath(`/projects/${milestone.projectId}`);
@@ -489,14 +539,9 @@ export async function addMilestoneAssignee(_prev: unknown, formData: FormData) {
   const milestoneId = formData.get("milestoneId") as string;
   const userId = formData.get("userId") as string;
 
-  const existing = await db.milestoneAssignee.findUnique({
-    where: { milestoneId_userId: { milestoneId, userId } },
-  });
-  if (existing) return { error: "Already assigned" };
-
-  await db.milestoneAssignee.create({ data: { milestoneId, userId } });
-  // Look up the milestone (including project + title) so we can revalidate
-  // the right pages and notify the new assignee with useful context.
+  // Load the milestone BEFORE writing — a bogus milestoneId used to hit
+  // the FK constraint as a raw 500, and the scope gate needs the
+  // parent project anyway.
   const milestone = await db.milestone.findUnique({
     where: { id: milestoneId },
     select: {
@@ -505,11 +550,21 @@ export async function addMilestoneAssignee(_prev: unknown, formData: FormData) {
       project: { select: { name: true } },
     },
   });
-  if (milestone?.projectId) revalidatePath(`/projects/${milestone.projectId}`);
+  if (!milestone) return { error: "Milestone not found" };
+  const scopeGate = await assertManageEntity(user.id, user.role, "project", milestone.projectId);
+  if (scopeGate) return scopeGate;
+
+  const existing = await db.milestoneAssignee.findUnique({
+    where: { milestoneId_userId: { milestoneId, userId } },
+  });
+  if (existing) return { error: "Already assigned" };
+
+  await db.milestoneAssignee.create({ data: { milestoneId, userId } });
+  if (milestone.projectId) revalidatePath(`/projects/${milestone.projectId}`);
   revalidateUser(userId);
 
   // Notify the new assignee (skip self-assignment)
-  if (milestone && userId !== user.id) {
+  if (userId !== user.id) {
     try {
       await notify({
         recipientId: userId,
@@ -541,9 +596,13 @@ export async function removeMilestoneAssignee(_prev: unknown, formData: FormData
     where: { id },
     select: { userId: true, milestone: { select: { projectId: true } } },
   });
+  if (!assignee) return { error: "Not found" };
+  const scopeGate = await assertManageEntity(user.id, user.role, "project", assignee.milestone.projectId);
+  if (scopeGate) return scopeGate;
+
   await db.milestoneAssignee.delete({ where: { id } });
-  if (assignee?.milestone?.projectId) revalidatePath(`/projects/${assignee.milestone.projectId}`);
-  if (assignee?.userId) revalidateUser(assignee.userId);
+  if (assignee.milestone.projectId) revalidatePath(`/projects/${assignee.milestone.projectId}`);
+  if (assignee.userId) revalidateUser(assignee.userId);
   return { success: true };
 }
 
@@ -557,6 +616,14 @@ export async function linkToolToProject(_prev: unknown, formData: FormData) {
   const toolId = formData.get("toolId") as string;
 
   if (!projectId || !toolId) return { error: "Project and tool are required" };
+
+  const project = await db.project.findFirst({
+    where: { id: projectId, deletedAt: null },
+    select: { id: true },
+  });
+  if (!project) return { error: "Project not found" };
+  const scopeGate = await assertManageEntity(user.id, user.role, "project", projectId);
+  if (scopeGate) return scopeGate;
 
   const existing = await db.projectTool.findUnique({
     where: { projectId_toolId: { projectId, toolId } },

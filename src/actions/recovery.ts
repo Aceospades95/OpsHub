@@ -13,6 +13,26 @@ import {
 import type { DynamicDelegateMap } from "@/lib/dynamic-delegate";
 
 /**
+ * Restored / purged rows must reappear (or vanish) on their module's
+ * cached list + detail pages, not just /admin/recovery (entity-map.md
+ * rule 3). The registry's hrefForId gives us the detail path; the list
+ * path is its first segment. revalidating both plus /dashboard covers
+ * every page a recovered entity can surface on without wiring a
+ * per-entity helper for each of the nine soft-deletable models.
+ */
+function revalidateRecoveredEntity(
+  entity: { hrefForId(id: string): string },
+  id: string
+) {
+  const detailPath = entity.hrefForId(id);
+  const listPath = "/" + detailPath.split("/").filter(Boolean)[0];
+  revalidatePath(detailPath);
+  revalidatePath(listPath);
+  revalidatePath("/dashboard");
+  revalidatePath("/admin/recovery");
+}
+
+/**
  * Server actions backing /admin/recovery.
  *
  * Listing: handled inline in the page (Server Component pulls every
@@ -38,7 +58,7 @@ export async function restoreEntity(
 
   try {
     const result = await restoreRow(entity, input.id, user.id);
-    revalidatePath("/admin/recovery");
+    revalidateRecoveredEntity(entity, input.id);
     return { success: true, label: result.label };
   } catch (err) {
     return { error: err instanceof Error ? err.message : "Restore failed" };
@@ -59,7 +79,7 @@ export async function permanentlyDeleteEntity(
     if (!result.deleted) {
       return { error: "Row not found (already purged?)" };
     }
-    revalidatePath("/admin/recovery");
+    revalidateRecoveredEntity(entity, input.id);
     return { success: true };
   } catch (err) {
     return { error: err instanceof Error ? err.message : "Permanent delete failed" };
@@ -76,6 +96,8 @@ export async function permanentlyDeleteEntity(
 export async function listSoftDeletedRows(
   retentionDays = DEFAULT_RETENTION_DAYS
 ): Promise<
+  | { error: string }
+  |
   {
     entityType: string;
     pluralLabel: string;
@@ -87,6 +109,13 @@ export async function listSoftDeletedRows(
     href: string;
   }[]
 > {
+  // Same gate as restore / permanent-delete above. This is an exported
+  // server action (publicly POSTable endpoint), and it enumerates the
+  // id + label of every soft-deleted row across the org — without the
+  // check, any authenticated user could read the recycle bin.
+  const user = await requireAuth();
+  if (user.role !== "ADMIN") return { error: "Admin access required" };
+
   const out: {
     entityType: string;
     pluralLabel: string;

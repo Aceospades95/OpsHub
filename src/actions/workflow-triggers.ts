@@ -33,6 +33,12 @@ export async function createWorkflowTrigger(input: z.infer<typeof upsertSchema>)
     } as const;
   }
 
+  const template = await db.workflowTemplate.findUnique({
+    where: { id: parsed.data.workflowTemplateId },
+    select: { id: true },
+  });
+  if (!template) return { error: "Template not found" } as const;
+
   const created = await db.workflowTrigger.create({
     data: {
       workflowTemplateId: parsed.data.workflowTemplateId,
@@ -58,6 +64,18 @@ export async function updateWorkflowTrigger(
       error: "Invalid input",
       fieldErrors: parsed.error.flatten().fieldErrors,
     } as const;
+  }
+
+  // The trigger must exist and belong to the supplied template id —
+  // revalidation keys off the template, and a mismatched pair would
+  // also turn a missing row into a raw P2025 500.
+  const existing = await db.workflowTrigger.findUnique({
+    where: { id: input.id },
+    select: { workflowTemplateId: true },
+  });
+  if (!existing) return { error: "Trigger not found" } as const;
+  if (existing.workflowTemplateId !== parsed.data.workflowTemplateId) {
+    return { error: "Trigger does not belong to this template" } as const;
   }
 
   await db.workflowTrigger.update({

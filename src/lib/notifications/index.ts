@@ -82,11 +82,12 @@ export async function notify<K extends TemplateKey = TemplateKey>(
   // Deduplicate — a broadcast shouldn't spam the same person twice
   const uniqueRecipients = Array.from(new Set(recipients));
 
-  // Write one row per recipient. We use createMany for speed, then
-  // fetch back the resulting rows by a short window so we can return
-  // them to the caller.
+  // Write one row per recipient. createManyAndReturn gives us the
+  // created rows directly — the previous createMany + re-fetch by
+  // (recipient, type, title, createdAt >= now) was racy under
+  // concurrent identical notifications.
   const now = new Date();
-  await db.notification.createMany({
+  const created = await db.notification.createManyAndReturn({
     data: uniqueRecipients.map((recipientId) => ({
       recipientId,
       type: params.type,
@@ -98,17 +99,6 @@ export async function notify<K extends TemplateKey = TemplateKey>(
       actorId: params.actorId || null,
       createdAt: now,
     })),
-  });
-
-  const created = await db.notification.findMany({
-    where: {
-      recipientId: { in: uniqueRecipients },
-      type: params.type,
-      title: params.title,
-      createdAt: { gte: now },
-    },
-    orderBy: { createdAt: "desc" },
-    take: uniqueRecipients.length,
   });
 
   // Revalidate the affected users' notifications page + the global

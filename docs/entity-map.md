@@ -292,47 +292,19 @@ Legacy `File` rows with just a `url` column continue to work — the route
 handler only serves files with `storageDriver` set, and other code paths
 can keep reading `file.url` directly.
 
-### Admin page
+### Admin surface
 
-`/admin/files` shows:
-- Active driver badge + explanation
-- Total file count and cumulative size
-- Per-driver breakdown (when multiple drivers are in use)
-- Most recent 50 uploads with filename link, MIME type, size, uploader,
-  and the driver-specific storage key
-- An inline **"Upload test file"** form (public/private toggle) so admins
-  can verify the pipeline end-to-end
-
-Module registered as `files` in the registry, gated to ADMIN.
-
-### Employee profile files
-
-The `File` model has two additional columns for employee profile uploads:
-
-- `userId` — target employee id (nullable; one File row still references
-  exactly one parent entity)
-- `category` — freeform tag used by the UI; bounded by the
-  `EMPLOYEE_FILE_CATEGORIES` constant in `src/actions/employee-files.ts`
-  to `resume | id | certification | training | contract | other`
-
-The `uploadFile()` storage helper accepts `userId` + `category` alongside
-the existing per-entity FKs. Employee uploads go through the dedicated
-server actions in `src/actions/employee-files.ts`:
-
-- `uploadEmployeeFile(formData)` — validates MIME type (PDF, Word,
-  Excel, PowerPoint, text, common images), 10MB cap, permission gate
-- `deleteEmployeeFile(fileId)` — looks up the file's userId and
-  applies the same permission gate
-
-**Permission gate**: employees can manage their own files, ADMIN and
-MANAGER can manage anyone's, everyone else has no access at all. The
-server action and the server component that fetches files both apply
-the same check so file metadata isn't leaked to unauthorized viewers.
-
-**UI**: new "Files" tab on `/team/[employeeId]` driven by
-`employee-files-tab.tsx`. Groups files by category, shows size + uploader
-+ timestamp, supports upload (with category picker) and delete. Tab only
-appears when the viewer passes `canViewFiles`.
+> **Doc-drift note (R12):** earlier revisions of this document described
+> an `/admin/files` admin page, a `files` module-registry entry, and an
+> employee-profile Files tab (`src/actions/employee-files.ts`,
+> `employee-files-tab.tsx`). None of those shipped — the storage layer
+> exists and is consumed by branding uploads, the workflow portal, and
+> `/api/files/{id}` serving (with per-entity authz via
+> `src/lib/file-authz.ts`), but there is currently no admin file browser
+> and no per-employee file UI. The server-action upload reference
+> (`uploadFileFromForm` in `src/actions/files.ts`) is ADMIN-gated and
+> not wired to any page. If you build these features, restore the spec
+> from git history (R6 era) and re-document here.
 
 ## Notifications infrastructure
 

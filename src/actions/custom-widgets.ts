@@ -13,7 +13,11 @@ import type { WidgetConfig } from "@/lib/widget-builder/widget-config-types";
 // not public.
 
 export async function listCustomWidgets() {
-  await requireAuth();
+  const user = await requireAuth();
+  // Unpublished widgets (and their full query configs) are builder
+  // internals — only the roles that can author widgets may list them.
+  // Dashboards consume listPublishedCustomWidgets below instead.
+  if (user.role !== "ADMIN" && user.role !== "DEVELOPER") return [];
   try {
     return await db.customWidget.findMany({
       orderBy: { updatedAt: "desc" },
@@ -38,7 +42,8 @@ export async function listPublishedCustomWidgets() {
 }
 
 export async function getCustomWidget(id: string) {
-  await requireAuth();
+  const user = await requireAuth();
+  if (user.role !== "ADMIN" && user.role !== "DEVELOPER") return null;
   return db.customWidget.findUnique({
     where: { id },
     include: { createdBy: { select: { name: true } } },

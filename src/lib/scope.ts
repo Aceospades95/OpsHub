@@ -199,7 +199,7 @@ export async function getUserScope(
   };
 }
 
-type ScopeEntityType = "project" | "client" | "contract" | "tool" | "certification";
+export type ScopeEntityType = "project" | "client" | "contract" | "tool" | "certification";
 
 function scopeSetFor(scope: UserScope, entityType: ScopeEntityType): Set<string> {
   switch (entityType) {
