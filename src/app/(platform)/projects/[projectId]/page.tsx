@@ -24,6 +24,8 @@ import { PageLayout } from "@/components/shared/page-layout";
 import { TaskCheckbox } from "@/app/(platform)/tasks/task-checkbox";
 import { QuotesCard } from "@/components/quotes/quotes-card";
 import { ProjectSubcontractorsCard } from "./project-subcontractors-card";
+import { ProjectContractsCard } from "./project-contracts-card";
+import { ProjectRelationsCard } from "./project-relations-card";
 import { ProjectPartnershipsCard } from "./project-partnerships-card";
 import { RecentlyViewedTracker } from "@/components/shared/recently-viewed-tracker";
 
@@ -58,6 +60,9 @@ export default async function ProjectDetailPage({ params }: Props) {
   // their cards only when the user has at least canView on those modules.
   const subPerms = await resolveModulePerms(user.id, user.role, "subcontractors");
   const partnerPerms = await resolveModulePerms(user.id, user.role, "partnerships");
+  // Linking an existing contract mutates the contract's projectId, so
+  // the contract card's link control needs contracts-module edit rights.
+  const contractPerms = await resolveModulePerms(user.id, user.role, "contracts");
 
   // Round-8 QA: resolve by slug-or-id (slug is the canonical href
   // for new records; cuid still works for old bookmarks).
@@ -112,11 +117,21 @@ export default async function ProjectDetailPage({ params }: Props) {
       tools: { include: { tool: true } },
       links: true,
       embeds: true,
-      // Existing related-project links so the Edit dialog can seed the
-      // checkbox state on open. Schema name is `relations` —
-      // the back-relation `relatedRelations` is the inverse direction.
+      // Related-project links. `relations` is the outgoing direction
+      // (this project supports / references those) — the Edit dialog
+      // seeds its checkbox state from relatedProjectId, and the Related
+      // Projects card renders the joined project. `relatedRelations` is
+      // the inverse: projects that reference THIS one ("Referenced by").
       relations: {
-        select: { relatedProjectId: true },
+        select: {
+          relatedProjectId: true,
+          relatedProject: { select: { id: true, name: true, status: true } },
+        },
+      },
+      relatedRelations: {
+        select: {
+          project: { select: { id: true, name: true, status: true } },
+        },
       },
       comments: {
         include: { author: { select: { id: true, name: true } } },
@@ -168,6 +183,7 @@ export default async function ProjectDetailPage({ params }: Props) {
     roleDefinitions,
     allSubcontractors,
     allPartnerships,
+    availableContracts,
   ] = await Promise.all([
     needsPickers
       ? db.client.findMany({
@@ -234,6 +250,26 @@ export default async function ProjectDetailPage({ params }: Props) {
           orderBy: { name: "asc" },
         })
       : Promise.resolve([] as { id: string; name: string }[]),
+    // Contracts of THIS project's client that aren't already on this
+    // project — the link picker. Same-client only (a contract is owned
+    // by a client); we surface the current project so a move is explicit.
+    contractPerms.canEdit
+      ? db.contract.findMany({
+          where: {
+            clientId: project.clientId,
+            deletedAt: null,
+            OR: [{ projectId: null }, { projectId: { not: project.id } }],
+          },
+          select: {
+            id: true,
+            title: true,
+            project: { select: { name: true } },
+          },
+          orderBy: { updatedAt: "desc" },
+        })
+      : Promise.resolve(
+          [] as { id: string; title: string; project: { name: string } | null }[]
+        ),
   ]);
 
   const treeNodes = buildTree(project.childProjects as Parameters<typeof buildTree>[0]);
@@ -241,6 +277,29 @@ export default async function ProjectDetailPage({ params }: Props) {
   // Filter out tools already linked to this project
   const linkedToolIds = new Set(project.tools.map((pt) => pt.toolId));
   const availableTools = allTools.filter((t) => !linkedToolIds.has(t.id));
+
+  // Related projects, both directions, for the Related Projects card.
+  // relatedProject / project are required relations, so they're never
+  // null; map to plain string status for the client component.
+  const relatedProjects = project.relations.map((r) => ({
+    id: r.relatedProject.id,
+    name: r.relatedProject.name,
+    status: r.relatedProject.status as string,
+  }));
+  const referencedByProjects = project.relatedRelations.map((r) => ({
+    id: r.project.id,
+    name: r.project.name,
+    status: r.project.status as string,
+  }));
+  // Don't offer projects already linked in either direction. allProjects
+  // already excludes this project itself.
+  const linkedRelationIds = new Set([
+    ...relatedProjects.map((p) => p.id),
+    ...referencedByProjects.map((p) => p.id),
+  ]);
+  const availableRelationProjects = allProjects.filter(
+    (p) => !linkedRelationIds.has(p.id)
+  );
 
   const canEditLayout = user.role === "ADMIN" || user.role === "DEVELOPER";
 
@@ -320,31 +379,42 @@ export default async function ProjectDetailPage({ params }: Props) {
         </CardContent>
       </Card>
     ),
-    contracts: project.contracts.length > 0 ? (
+    contracts: (
       <Card className="h-full">
         <CardHeader>
           <CardTitle>Contracts</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="space-y-2">
-            {project.contracts.map((contract) => (
-              <Link
-                key={contract.id}
-                href={`/contracts/${contract.id}`}
-                className="flex items-center justify-between rounded border border-border bg-muted p-3 hover:border-primary transition-colors"
-              >
-                <p className="text-sm font-medium">{contract.title}</p>
-                <StatusBadge status={contract.status} />
-              </Link>
-            ))}
-          </div>
+          <ProjectContractsCard
+            projectId={project.id}
+            contracts={project.contracts.map((c) => ({
+              id: c.id,
+              title: c.title,
+              status: c.status,
+            }))}
+            availableContracts={availableContracts.map((c) => ({
+              id: c.id,
+              title: c.title,
+              currentProjectName: c.project?.name ?? null,
+            }))}
+            canEdit={contractPerms.canEdit && perms.canEdit}
+          />
         </CardContent>
       </Card>
-    ) : (
+    ),
+    "related-projects": (
       <Card className="h-full">
-        <CardHeader><CardTitle>Contracts</CardTitle></CardHeader>
+        <CardHeader>
+          <CardTitle>Related Projects</CardTitle>
+        </CardHeader>
         <CardContent>
-          <p className="text-sm text-muted-foreground">No contracts linked to this project</p>
+          <ProjectRelationsCard
+            projectId={project.id}
+            related={relatedProjects}
+            referencedBy={referencedByProjects}
+            availableProjects={availableRelationProjects}
+            canEdit={perms.canEdit}
+          />
         </CardContent>
       </Card>
     ),

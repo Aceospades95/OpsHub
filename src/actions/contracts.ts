@@ -193,6 +193,96 @@ export async function deleteContract(_prev: unknown, formData: FormData) {
   return { success: true };
 }
 
+/**
+ * Attach an existing contract to a project (sets Contract.projectId).
+ * Invoked from the project detail page's Contracts card. The contract
+ * must belong to the same client as the project — a contract is owned
+ * by a client, and the project's client is fixed, so cross-client
+ * linking would be a data-integrity bug. If the contract is currently
+ * on another project this moves it (both project pages revalidate).
+ *
+ * Gated on BOTH the contract and the project: the actor must be able to
+ * manage the contract (whose FK changes) and the project it's joining.
+ */
+export async function linkContractToProject(
+  contractId: string,
+  projectId: string
+): Promise<{ success: true } | { error: string }> {
+  const user = await requireAuth();
+  const contractPerms = await resolveModulePerms(user.id, user.role, "contracts");
+  if (!contractPerms.canEdit) return { error: "Permission denied" };
+  const projectPerms = await resolveModulePerms(user.id, user.role, "projects");
+  if (!projectPerms.canEdit) return { error: "Permission denied" };
+
+  const contract = await db.contract.findFirst({
+    where: { id: contractId, deletedAt: null },
+    select: { id: true, title: true, clientId: true, projectId: true },
+  });
+  if (!contract) return { error: "Contract not found" };
+
+  const project = await db.project.findFirst({
+    where: { id: projectId, deletedAt: null },
+    select: { id: true, clientId: true },
+  });
+  if (!project) return { error: "Project not found" };
+
+  if (contract.clientId !== project.clientId) {
+    return { error: "Contract belongs to a different client than this project" };
+  }
+  if (contract.projectId === projectId) {
+    return { error: "Contract is already linked to this project" };
+  }
+
+  const contractGate = await assertManageEntity(user.id, user.role, "contract", contractId);
+  if (contractGate) return { error: contractGate.error };
+  const projectGate = await assertManageEntity(user.id, user.role, "project", projectId);
+  if (projectGate) return { error: projectGate.error };
+
+  const previousProjectId = contract.projectId;
+  await db.contract.update({ where: { id: contractId }, data: { projectId } });
+  await logActivity("linked", "contract", contractId, user.id, contract.title, {
+    clientId: contract.clientId,
+    projectId,
+  });
+
+  revalidatePath(`/contracts/${contractId}`);
+  revalidatePath(`/projects/${projectId}`);
+  // The contract left its previous project's card.
+  if (previousProjectId) revalidatePath(`/projects/${previousProjectId}`);
+  return { success: true };
+}
+
+/** Detach a contract from its project (clears Contract.projectId). The
+ * contract itself is untouched and remains under its client. */
+export async function unlinkContractFromProject(
+  contractId: string
+): Promise<{ success: true } | { error: string }> {
+  const user = await requireAuth();
+  const perms = await resolveModulePerms(user.id, user.role, "contracts");
+  if (!perms.canEdit) return { error: "Permission denied" };
+
+  const contract = await db.contract.findFirst({
+    where: { id: contractId, deletedAt: null },
+    select: { id: true, title: true, clientId: true, projectId: true },
+  });
+  if (!contract) return { error: "Contract not found" };
+  if (!contract.projectId) return { error: "Contract is not linked to a project" };
+
+  const gate = await assertManageEntity(user.id, user.role, "contract", contractId);
+  if (gate) return { error: gate.error };
+
+  const previousProjectId = contract.projectId;
+  await db.contract.update({ where: { id: contractId }, data: { projectId: null } });
+  await logActivity("unlinked", "contract", contractId, user.id, contract.title, {
+    clientId: contract.clientId,
+    projectId: previousProjectId,
+  });
+
+  revalidatePath(`/contracts/${contractId}`);
+  revalidatePath(`/projects/${previousProjectId}`);
+  return { success: true };
+}
+
 // Contract Terms
 const termSchema = z.object({
   type: z.enum(["SLA", "OBLIGATION", "DEADLINE", "DELIVERABLE", "ESCALATION", "RENEWAL", "BILLING", "PENALTY", "OTHER"]).optional(),

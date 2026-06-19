@@ -72,8 +72,9 @@ export const PAGE_CARDS: Record<string, CardDefinition[]> = {
     { id: "subcontractors", label: "Subcontractors", defaultGrid: { x: 0, y: 28, w: 6, h: 10, minW: 3, minH: 4 } },
     { id: "partnerships", label: "Partners", defaultGrid: { x: 6, y: 28, w: 6, h: 10, minW: 3, minH: 4 } },
     { id: "contracts", label: "Contracts", defaultGrid: { x: 0, y: 38, w: 6, h: 9, minW: 3, minH: 4 } },
-    { id: "attachments", label: "Attachments", defaultGrid: { x: 6, y: 38, w: 6, h: 9, minW: 3, minH: 4 } },
-    { id: "quotes", label: "Quotes", defaultGrid: { x: 0, y: 47, w: 12, h: 9, minW: 4, minH: 4 } },
+    { id: "related-projects", label: "Related Projects", defaultGrid: { x: 6, y: 38, w: 6, h: 9, minW: 3, minH: 4 } },
+    { id: "attachments", label: "Attachments", defaultGrid: { x: 0, y: 47, w: 6, h: 9, minW: 3, minH: 4 } },
+    { id: "quotes", label: "Quotes", defaultGrid: { x: 6, y: 47, w: 6, h: 9, minW: 4, minH: 4 } },
     { id: "comments", label: "Comments", defaultGrid: { x: 0, y: 56, w: 12, h: 10, minW: 4, minH: 4 } },
   ],
   "contract-detail": [
