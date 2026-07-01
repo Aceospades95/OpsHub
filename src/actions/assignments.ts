@@ -298,9 +298,6 @@ export async function updateAssignment(_prev: unknown, formData: FormData) {
     },
   });
 
-  // Status transitions out of ACTIVE/PLANNED (e.g. -> COMPLETED / ON_HOLD)
-  // can remove the assignment from the user's scope; trigger the demotion
-  // check in that case.
   await logActivity("updated", "assignment", id, user.id, undefined, {
     projectId: parsed.data.projectId,
     clientId: parsed.data.clientId,
