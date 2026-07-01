@@ -9,8 +9,9 @@ import { nextQuoteNumber } from "@/lib/quotes/numbering";
 import { slugify, ensureUniqueSlug } from "@/lib/slug";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import type { Prisma } from "@prisma/client";
+import type { Prisma, Role } from "@prisma/client";
 import { rejectHtmlChars, HTML_CHARS_MESSAGE } from "@/lib/validation";
+import { canAccessQuote, canSeeAllQuotes, ownQuotesWhere } from "@/lib/quotes/access";
 
 // ─── Validation ──────────────────────────────────────────────────────────
 
@@ -104,6 +105,27 @@ async function logQuoteEvent(
       metadata: metadata ? JSON.stringify(metadata) : null,
     },
   });
+}
+
+/**
+ * Per-quote gate for actions that touch an EXISTING quote. Module perms
+ * alone aren't enough for non-org-wide roles — a field account that was
+ * explicitly granted the quotes module may only work with quotes it
+ * created or is assigned to, never the org's full pricing history.
+ * Returns "Quote not found" (not a permission error) so quote ids can't
+ * be probed via direct POSTs.
+ */
+async function assertQuoteAccess(
+  user: { id: string; role: Role },
+  quoteId: string
+): Promise<{ error: string } | null> {
+  if (canSeeAllQuotes(user.role)) return null;
+  const quote = await db.quote.findFirst({
+    where: { id: quoteId, deletedAt: null },
+    select: { createdById: true, assignedToId: true },
+  });
+  if (!quote || !canAccessQuote(user, quote)) return { error: "Quote not found" };
+  return null;
 }
 
 async function persistQuoteWithItems(
@@ -255,6 +277,9 @@ export async function createQuote(opts: CreateQuoteOptions = {}) {
       include: { lineItems: { orderBy: { position: "asc" } } },
     });
     if (!src) return { error: "Source quote not found" } as const;
+    // Duplicating copies the source's pricing — same per-quote gate as
+    // reading it.
+    if (!canAccessQuote(user, src)) return { error: "Source quote not found" } as const;
     seedClientId = src.clientId;
     seedProjectId = src.projectId;
     seedTitle = `Copy of ${src.title}`;
@@ -417,6 +442,9 @@ export async function updateQuote(input: { id: string } & QuoteUpsertInput) {
   const perms = await resolveModulePerms(user.id, user.role, "quotes");
   if (!perms.canEdit) return { error: "Permission denied" } as const;
 
+  const denied = await assertQuoteAccess(user, input.id);
+  if (denied) return { error: denied.error } as const;
+
   const parsed = quoteUpsertSchema.safeParse(input);
   if (!parsed.success) {
     return {
@@ -459,6 +487,9 @@ export async function deleteQuote(id: string) {
   const perms = await resolveModulePerms(user.id, user.role, "quotes");
   if (!perms.canDelete) return { error: "Permission denied" } as const;
 
+  const denied = await assertQuoteAccess(user, id);
+  if (denied) return { error: denied.error } as const;
+
   const quote = await db.quote.findUnique({
     where: { id },
     select: { id: true, status: true, clientId: true, projectId: true, title: true, deletedAt: true },
@@ -498,6 +529,7 @@ export async function saveQuoteAsTemplate(input: { id: string; name: string; des
     include: { lineItems: { orderBy: { position: "asc" } } },
   });
   if (!quote) return { error: "Quote not found" } as const;
+  if (!canAccessQuote(user, quote)) return { error: "Quote not found" } as const;
 
   const tpl = await db.quoteTemplate.create({
     data: {
@@ -555,6 +587,7 @@ export async function convertQuoteToProject(id: string) {
     },
   });
   if (!quote) return { error: "Quote not found" } as const;
+  if (!canAccessQuote(user, quote)) return { error: "Quote not found" } as const;
   if (quote.project) {
     return {
       error: "This quote is already linked to a project",
@@ -674,6 +707,8 @@ export async function listQuotes(filters: QuoteListFilters = {}) {
   if (!perms.canView) return { error: "Permission denied" } as const;
 
   const where: Prisma.QuoteWhereInput = { deletedAt: null };
+  // Non-org-wide roles only ever list their own quotes.
+  if (!canSeeAllQuotes(user.role)) where.AND = ownQuotesWhere(user.id);
   if (filters.clientId) where.clientId = filters.clientId;
   if (filters.projectId) where.projectId = filters.projectId;
   if (filters.assignedToId) where.assignedToId = filters.assignedToId;

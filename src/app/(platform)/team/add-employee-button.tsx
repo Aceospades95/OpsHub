@@ -6,8 +6,8 @@ import { useFormState } from "react-dom";
 import { createUser } from "@/actions/admin";
 import { Button } from "@/components/ui/button";
 import { UserPlus, Copy, Check } from "lucide-react";
+import { roleOptionsFor } from "@/lib/roles";
 
-const ROLES = ["VIEWER", "CONTRIBUTOR", "DEVELOPER", "MANAGER", "ADMIN"];
 
 export function AddEmployeeButton({
   managers,
@@ -157,8 +157,8 @@ export function AddEmployeeButton({
                 </div>
                 <div>
                   <label className="text-sm font-medium">System Role</label>
-                  <select name="role" defaultValue="VIEWER" className="w-full mt-1 px-3 py-2 text-sm border border-input rounded-md bg-background">
-                    {ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
+                  <select name="role" defaultValue="CONTRIBUTOR" className="w-full mt-1 px-3 py-2 text-sm border border-input rounded-md bg-background">
+                    {roleOptionsFor().map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
                   </select>
                 </div>
               </div>

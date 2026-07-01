@@ -28,6 +28,7 @@ import { AddAssignmentDialog } from "../components/add-assignment-dialog";
 import type { UserData } from "../components/team-types";
 import { getPermissionedModules, ALL_PERMISSION_FLAGS, PERMISSION_FLAG_LABELS } from "@/lib/modules";
 import { getRoleDefaults } from "@/lib/permissions";
+import { roleOptionsFor } from "@/lib/roles";
 
 interface Assignment {
   id: string;
@@ -310,7 +311,7 @@ export function EmployeeDetailClient({
               <input type="hidden" name="id" value={employee.id} />
               <Input name="name" label="Name" defaultValue={employee.name} required error={fieldErrors?.name?.[0]} />
               <Input name="email" label="Email" type="email" defaultValue={employee.email} required error={fieldErrors?.email?.[0]} />
-              <Select name="role" label="Role" defaultValue={employee.role} options={[{label:"Guest",value:"GUEST"},{label:"Viewer",value:"VIEWER"},{label:"Contributor",value:"CONTRIBUTOR"},{label:"Developer",value:"DEVELOPER"},{label:"Manager",value:"MANAGER"},{label:"Admin",value:"ADMIN"}]} />
+              <Select name="role" label="Role" defaultValue={employee.role} options={roleOptionsFor(employee.role)} />
               <div className="grid grid-cols-2 gap-3">
                 <Input name="department" label="Department" defaultValue={employee.department || ""} />
                 <Input name="jobTitle" label="Job Title" defaultValue={employee.jobTitle || ""} />
@@ -712,8 +713,11 @@ function PermissionsTab({ employee, allClients, allProjects, customPages }: {
   const modules = getPermissionedModules();
   const permMap = new Map(employee.modulePermissions.map((p) => [p.module, p]));
   // ADMIN always has full access; for other roles, fall back to role
-  // defaults when no explicit permission row exists.
-  const roleDefaults = getRoleDefaults(employee.role as import("@prisma/client").Role);
+  // defaults when no explicit permission row exists. Defaults are
+  // per-module since the July 2026 access rework (field tier is
+  // deny-by-default outside its allow-list).
+  const roleDefaultsFor = (module: string) =>
+    getRoleDefaults(employee.role as import("@prisma/client").Role, module);
   const entities = entityType === "client" ? allClients : allProjects;
   const nameMap = new Map([...allClients.map((c) => [c.id, c.name] as const), ...allProjects.map((p) => [p.id, p.name] as const)]);
 
@@ -777,7 +781,7 @@ function PermissionsTab({ employee, allClients, allProjects, customPages }: {
                         {ALL_PERMISSION_FLAGS.map((flag) => {
                           const checked = perm
                             ? (perm as unknown as Record<string, boolean>)[flag]
-                            : (roleDefaults as unknown as Record<string, boolean>)[flag];
+                            : (roleDefaultsFor(mod.key) as unknown as Record<string, boolean>)[flag];
                           return (
                             <td key={flag} className="p-2 text-center">
                               <input type="checkbox" name={`${mod.key}_${flag}`} value="true"
@@ -804,7 +808,7 @@ function PermissionsTab({ employee, allClients, allProjects, customPages }: {
                         {ALL_PERMISSION_FLAGS.map((flag) => {
                           const checked = perm
                             ? (perm as unknown as Record<string, boolean>)[flag]
-                            : (roleDefaults as unknown as Record<string, boolean>)[flag];
+                            : (roleDefaultsFor(pageKey) as unknown as Record<string, boolean>)[flag];
                           return (
                             <td key={flag} className="p-2 text-center">
                               <input type="checkbox" name={`${pageKey}_${flag}`} value="true"

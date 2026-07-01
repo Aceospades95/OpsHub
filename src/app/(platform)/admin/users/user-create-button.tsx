@@ -6,8 +6,8 @@ import { useFormState } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { createUser } from "@/actions/admin";
 import { Plus, Copy, Check } from "lucide-react";
+import { roleOptionsFor } from "@/lib/roles";
 
-const ROLES = ["GUEST", "VIEWER", "CONTRIBUTOR", "DEVELOPER", "MANAGER", "ADMIN"];
 
 interface WorkflowTemplate {
   id: string;
@@ -145,8 +145,8 @@ export function UserCreateButton({ allUsers, workflowTemplates, defaultSendWelco
                 </div>
                 <div>
                   <label className="text-sm font-medium">System Role</label>
-                  <select name="role" defaultValue="VIEWER" className="w-full mt-1 px-3 py-2 text-sm border border-input rounded-md bg-background">
-                    {ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
+                  <select name="role" defaultValue="CONTRIBUTOR" className="w-full mt-1 px-3 py-2 text-sm border border-input rounded-md bg-background">
+                    {roleOptionsFor().map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
                   </select>
                 </div>
               </div>

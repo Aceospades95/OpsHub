@@ -23,6 +23,7 @@ import { TeamHierarchy } from "./team-hierarchy";
 import { PageLayout } from "@/components/shared/page-layout";
 import { TaskCheckbox } from "@/app/(platform)/tasks/task-checkbox";
 import { QuotesCard } from "@/components/quotes/quotes-card";
+import { canSeeAllQuotes } from "@/lib/quotes/access";
 import { ProjectSubcontractorsCard } from "./project-subcontractors-card";
 import { ProjectContractsCard } from "./project-contracts-card";
 import { ProjectRelationsCard } from "./project-relations-card";
@@ -558,7 +559,11 @@ export default async function ProjectDetailPage({ params }: Props) {
       </Card>
     ),
     quotes: quotePerms.canView ? (
-      <QuotesCard projectId={project.id} canCreate={quotePerms.canCreate} />
+      <QuotesCard
+        projectId={project.id}
+        canCreate={quotePerms.canCreate}
+        restrictToUserId={canSeeAllQuotes(user.role) ? undefined : user.id}
+      />
     ) : null,
     subcontractors: subPerms.canView ? (
       <Card className="h-full">

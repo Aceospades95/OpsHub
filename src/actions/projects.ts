@@ -4,7 +4,6 @@ import { db } from "@/lib/db";
 import { log } from "@/lib/log";
 import { requireAuth, resolveModulePerms, canManageProjectAssignments } from "@/lib/permissions";
 import { assertManageEntity } from "@/lib/entity-authz";
-import { maybePromoteUserRole, maybeDemoteUserRole } from "@/lib/auto-role";
 import { logActivity } from "@/lib/activity";
 import { revalidatePath } from "next/cache";
 import { revalidateProject, revalidateUser } from "@/lib/revalidate-entity";
@@ -369,10 +368,8 @@ export async function addProjectMember(_prev: unknown, formData: FormData) {
     data: { userId, projectId, role },
   });
 
-  // Bump GUEST / VIEWER up to CONTRIBUTOR now that they have project access.
-  // Their previous role is stored so it can be restored if they lose every
-  // assignment later.
-  await maybePromoteUserRole(userId);
+  // No role auto-promotion (July 2026 access rework): membership itself
+  // grants scoped visibility via getUserScope, whatever the user's role.
 
   revalidatePath(`/projects/${projectId}`);
   // The new member's /team/{userId} page shows project memberships, so it needs
@@ -443,9 +440,6 @@ export async function removeProjectMember(_prev: unknown, formData: FormData) {
     return { error: "Permission denied" };
 
   await db.projectMember.delete({ where: { id } });
-  // If this was the last thing keeping the user at CONTRIBUTOR (auto-promoted),
-  // revert them to their original role.
-  await maybeDemoteUserRole(member.userId);
   revalidatePath(`/projects/${member.projectId}`);
   revalidateUser(member.userId);
   return { success: true };

@@ -18,6 +18,7 @@ import { PageLayout } from "@/components/shared/page-layout";
 import { TaskCheckbox } from "@/app/(platform)/tasks/task-checkbox";
 import { RecentlyViewedTracker } from "@/components/shared/recently-viewed-tracker";
 import { QuotesCard } from "@/components/quotes/quotes-card";
+import { canSeeAllQuotes } from "@/lib/quotes/access";
 import { pluralize } from "@/lib/pluralize";
 
 interface Props {
@@ -31,9 +32,14 @@ export default async function ClientDetailPage({ params }: Props) {
   const perms = await resolveModulePerms(user.id, user.role, "clients");
   if (!perms.canView) return <AccessDenied module="clients" moduleLabel="Clients" moduleDescription="Client accounts, contacts, and relationships" />;
 
-  // Quotes module visibility is independent of clients — gate the embedded
-  // card on the user's quotes permissions, not their clients permissions.
-  const quotePerms = await resolveModulePerms(user.id, user.role, "quotes");
+  // Quotes and contracts module visibility is independent of clients — gate
+  // the embedded cards on those modules' permissions, not the clients ones.
+  // A field-tier user assigned to one of this client's projects can open
+  // the client page for contact info but must not see contract values.
+  const [quotePerms, contractPerms] = await Promise.all([
+    resolveModulePerms(user.id, user.role, "quotes"),
+    resolveModulePerms(user.id, user.role, "contracts"),
+  ]);
 
   // Round-8 QA: resolve by slug-or-id so /clients/<slug> works for
   // new records (where the slug is the canonical href) and existing
@@ -156,7 +162,7 @@ export default async function ClientDetailPage({ params }: Props) {
         </CardContent>
       </Card>
     ),
-    contracts: (
+    contracts: contractPerms.canView ? (
       <Card className="h-full">
         <CardHeader>
           <CardTitle>Contracts ({client.contracts.length})</CardTitle>
@@ -195,7 +201,7 @@ export default async function ClientDetailPage({ params }: Props) {
           )}
         </CardContent>
       </Card>
-    ),
+    ) : null,
     comments: (
       <Card className="h-full">
         <CardHeader>
@@ -248,7 +254,11 @@ export default async function ClientDetailPage({ params }: Props) {
       </div>
     ),
     quotes: quotePerms.canView ? (
-      <QuotesCard clientId={client.id} canCreate={quotePerms.canCreate} />
+      <QuotesCard
+        clientId={client.id}
+        canCreate={quotePerms.canCreate}
+        restrictToUserId={canSeeAllQuotes(user.role) ? undefined : user.id}
+      />
     ) : null,
     tasks: (
       <Card className="h-full">

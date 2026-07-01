@@ -10,6 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { formatCurrency } from "@/lib/quotes/totals";
+import { canAccessQuote } from "@/lib/quotes/access";
 import { QuoteActions } from "./quote-actions";
 
 interface Props {
@@ -41,6 +42,9 @@ export default async function QuoteDetailPage({ params }: Props) {
     },
   });
   if (!quote) notFound();
+  // Non-org-wide roles only reach their own quotes. notFound (not 403)
+  // so probing ids doesn't confirm a quote exists.
+  if (!canAccessQuote(user, quote)) notFound();
 
   // Recompute the discount amount from cached totals — saved with the
   // quote — so the read view doesn't drift if the schema's cached

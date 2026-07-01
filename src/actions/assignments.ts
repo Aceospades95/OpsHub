@@ -4,7 +4,6 @@ import { db } from "@/lib/db";
 import { log } from "@/lib/log";
 import { requireAuth, canManageProjectAssignments } from "@/lib/permissions";
 import { hasOrgWideManage } from "@/lib/scope";
-import { maybePromoteUserRole, maybeDemoteUserRole } from "@/lib/auto-role";
 import { logActivity } from "@/lib/activity";
 import { revalidatePath } from "next/cache";
 import { revalidateAssignment } from "@/lib/revalidate-entity";
@@ -212,10 +211,6 @@ export async function createAssignment(_prev: unknown, formData: FormData) {
     },
   });
 
-  // Promote GUEST/VIEWER → CONTRIBUTOR so they can actually see the project
-  // they were just assigned to.
-  await maybePromoteUserRole(assignment.employeeId);
-
   await logActivity("created", "assignment", assignment.id, user.id, `Assignment for employee ${parsed.data.employeeId}`, {
     projectId: assignment.projectId,
     clientId: assignment.clientId,
@@ -306,17 +301,6 @@ export async function updateAssignment(_prev: unknown, formData: FormData) {
   // Status transitions out of ACTIVE/PLANNED (e.g. -> COMPLETED / ON_HOLD)
   // can remove the assignment from the user's scope; trigger the demotion
   // check in that case.
-  const wasActive = previous.status === "ACTIVE" || previous.status === "PLANNED";
-  const isActive = parsed.data.status === "ACTIVE" || parsed.data.status === "PLANNED";
-  if (wasActive && !isActive) await maybeDemoteUserRole(parsed.data.employeeId);
-  else if (!wasActive && isActive) await maybePromoteUserRole(parsed.data.employeeId);
-
-  // Reassignment to a different employee removes the previous one's
-  // grant — run their demotion check and refresh their profile page.
-  if (previous.employeeId !== parsed.data.employeeId) {
-    await maybeDemoteUserRole(previous.employeeId);
-  }
-
   await logActivity("updated", "assignment", id, user.id, undefined, {
     projectId: parsed.data.projectId,
     clientId: parsed.data.clientId,
@@ -350,7 +334,6 @@ export async function deleteAssignment(_prev: unknown, formData: FormData) {
   if (projectGate) return projectGate;
 
   await db.assignment.delete({ where: { id } });
-  await maybeDemoteUserRole(assignment.employeeId);
   await logActivity("deleted", "assignment", id, user.id, undefined, {
     projectId: assignment.projectId,
     clientId: assignment.clientId,
@@ -378,7 +361,6 @@ export async function removeAssignment(assignmentId: string) {
   if (projectGate) return projectGate;
 
   await db.assignment.delete({ where: { id: assignmentId } });
-  await maybeDemoteUserRole(assignment.employeeId);
   await logActivity("deleted", "assignment", assignmentId, user.id, undefined, {
     projectId: assignment.projectId,
     clientId: assignment.clientId,
@@ -438,8 +420,6 @@ export async function quickAssign(data: {
       status: "ACTIVE",
     },
   });
-
-  await maybePromoteUserRole(assignment.employeeId);
 
   await logActivity("created", "assignment", assignment.id, user.id, `Quick-assigned to project`, {
     projectId: assignment.projectId,
