@@ -16,6 +16,7 @@ import { ClientActions } from "./client-actions";
 import { ContactSection } from "./contact-section";
 import { PageLayout } from "@/components/shared/page-layout";
 import { TaskCheckbox } from "@/app/(platform)/tasks/task-checkbox";
+import { AddTaskButton } from "@/components/shared/add-task-button";
 import { RecentlyViewedTracker } from "@/components/shared/recently-viewed-tracker";
 import { QuotesCard } from "@/components/quotes/quotes-card";
 import { canSeeAllQuotes } from "@/lib/quotes/access";
@@ -36,9 +37,10 @@ export default async function ClientDetailPage({ params }: Props) {
   // the embedded cards on those modules' permissions, not the clients ones.
   // A field-tier user assigned to one of this client's projects can open
   // the client page for contact info but must not see contract values.
-  const [quotePerms, contractPerms] = await Promise.all([
+  const [quotePerms, contractPerms, taskPerms] = await Promise.all([
     resolveModulePerms(user.id, user.role, "quotes"),
     resolveModulePerms(user.id, user.role, "contracts"),
+    resolveModulePerms(user.id, user.role, "tasks"),
   ]);
 
   // Round-8 QA: resolve by slug-or-id so /clients/<slug> works for
@@ -268,9 +270,17 @@ export default async function ClientDetailPage({ params }: Props) {
               <CheckSquare className="h-4 w-4" />
               Tasks
             </CardTitle>
-            <Link href={`/tasks?client=${client.id}`} className="text-xs text-primary hover:underline">
-              View all
-            </Link>
+            <div className="flex items-center gap-3">
+              {taskPerms.canCreate && (
+                <AddTaskButton
+                  clientId={client.id}
+                  users={users.map((u) => ({ id: u.id, name: u.name }))}
+                />
+              )}
+              <Link href={`/tasks?client=${client.id}`} className="text-xs text-primary hover:underline">
+                View all
+              </Link>
+            </div>
           </div>
         </CardHeader>
         <CardContent>

@@ -6,6 +6,7 @@ import { assertManageEntity } from "@/lib/entity-authz";
 import { logActivity } from "@/lib/activity";
 import { deriveActivityScope } from "@/lib/activity-scope";
 import { revalidatePath } from "next/cache";
+import { revalidateCertification } from "@/lib/revalidate-entity";
 import { isValidCalendarRange } from "@/lib/dates";
 import { z } from "zod";
 
@@ -173,7 +174,10 @@ export async function createCertification(_prev: unknown, formData: FormData) {
   await logActivity("created", "certification", cert.id, user.id, cert.name, {
     clientId: cert.clientId,
   });
-  revalidatePath("/certifications");
+  revalidateCertification(cert.id, {
+    clientId: cert.clientId,
+    assigneeId: cert.assigneeId,
+  });
   return { success: true, id: cert.id };
 }
 
@@ -198,7 +202,7 @@ export async function updateCertification(_prev: unknown, formData: FormData) {
   // and a soft-deleted cert must not be editable from a stale form.
   const existing = await db.certification.findFirst({
     where: { id, deletedAt: null },
-    select: { id: true },
+    select: { id: true, clientId: true, assigneeId: true },
   });
   if (!existing) return { error: "Not found" };
 
@@ -211,14 +215,18 @@ export async function updateCertification(_prev: unknown, formData: FormData) {
   const updated = await db.certification.update({
     where: { id },
     data: { name, ...extracted.data },
-    select: { clientId: true },
+    select: { clientId: true, assigneeId: true },
   });
 
   await logActivity("updated", "certification", id, user.id, name, {
     clientId: updated.clientId,
   });
-  revalidatePath("/certifications");
-  revalidatePath(`/certifications/${id}`);
+  revalidateCertification(id, {
+    clientId: updated.clientId,
+    previousClientId: existing.clientId,
+    assigneeId: updated.assigneeId,
+    previousAssigneeId: existing.assigneeId,
+  });
   return { success: true };
 }
 
@@ -244,7 +252,7 @@ export async function deleteCertification(_prev: unknown, formData: FormData) {
   await logActivity("soft-deleted", "certification", id, user.id, cert.name || "", {
     clientId: cert.clientId ?? null,
   });
-  revalidatePath("/certifications");
+  revalidateCertification(id, { clientId: cert.clientId ?? null, deleted: true });
   return { success: true };
 }
 
@@ -316,8 +324,7 @@ export async function signOffCertification(_prev: unknown, formData: FormData) {
     notes ? `${cert.name}: ${notes}` : cert.name,
     { clientId: cert.clientId }
   );
-  revalidatePath(`/certifications/${id}`);
-  revalidatePath("/certifications");
+  revalidateCertification(id);
   return { success: true };
 }
 
@@ -345,8 +352,7 @@ export async function revokeSignOff(_prev: unknown, formData: FormData) {
   await logActivity("sign-off-revoked", "certification", id, user.id, cert.name, {
     clientId: cert.clientId,
   });
-  revalidatePath(`/certifications/${id}`);
-  revalidatePath("/certifications");
+  revalidateCertification(id);
   return { success: true };
 }
 

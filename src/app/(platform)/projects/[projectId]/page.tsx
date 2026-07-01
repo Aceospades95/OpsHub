@@ -22,6 +22,7 @@ import { AddToolButton } from "./add-tool-button";
 import { TeamHierarchy } from "./team-hierarchy";
 import { PageLayout } from "@/components/shared/page-layout";
 import { TaskCheckbox } from "@/app/(platform)/tasks/task-checkbox";
+import { AddTaskButton } from "@/components/shared/add-task-button";
 import { QuotesCard } from "@/components/quotes/quotes-card";
 import { canSeeAllQuotes } from "@/lib/quotes/access";
 import { ProjectSubcontractorsCard } from "./project-subcontractors-card";
@@ -64,6 +65,7 @@ export default async function ProjectDetailPage({ params }: Props) {
   // Linking an existing contract mutates the contract's projectId, so
   // the contract card's link control needs contracts-module edit rights.
   const contractPerms = await resolveModulePerms(user.id, user.role, "contracts");
+  const taskPerms = await resolveModulePerms(user.id, user.role, "tasks");
 
   // Round-8 QA: resolve by slug-or-id (slug is the canonical href
   // for new records; cuid still works for old bookmarks).
@@ -196,7 +198,7 @@ export default async function ProjectDetailPage({ params }: Props) {
           orderBy: { name: "asc" },
         })
       : Promise.resolve([] as { id: string; name: string }[]),
-    needsPickers || canAssign
+    needsPickers || canAssign || taskPerms.canCreate
       ? db.user.findMany({
           where: { isActive: true },
           select: { id: true, name: true, email: true, jobTitle: true, location: true },
@@ -473,9 +475,17 @@ export default async function ProjectDetailPage({ params }: Props) {
             <CheckSquare className="h-5 w-5" />
             Tasks ({projectTasks.length})
           </CardTitle>
-          <Link href={`/tasks?project=${project.id}`} className="text-sm text-primary hover:underline">
-            View all
-          </Link>
+          <div className="flex items-center gap-3">
+            {taskPerms.canCreate && (
+              <AddTaskButton
+                projectId={project.id}
+                users={allUsers.map((u) => ({ id: u.id, name: u.name }))}
+              />
+            )}
+            <Link href={`/tasks?project=${project.id}`} className="text-sm text-primary hover:underline">
+              View all
+            </Link>
+          </div>
         </CardHeader>
         <CardContent>
           {projectTasks.length === 0 ? (

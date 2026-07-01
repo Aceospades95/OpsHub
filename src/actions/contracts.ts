@@ -5,6 +5,7 @@ import { requireAuth, resolveModulePerms } from "@/lib/permissions";
 import { assertManageEntity } from "@/lib/entity-authz";
 import { logActivity } from "@/lib/activity";
 import { revalidatePath } from "next/cache";
+import { revalidateContract } from "@/lib/revalidate-entity";
 import { z } from "zod";
 import { isValidCalendarRange } from "@/lib/dates";
 
@@ -81,10 +82,10 @@ export async function createContract(_prev: unknown, formData: FormData) {
     clientId: contract.clientId,
     projectId: contract.projectId,
   });
-  revalidatePath("/contracts");
-  // Contracts show on client and project detail pages, so those need to refresh too.
-  if (contract.clientId) revalidatePath(`/clients/${contract.clientId}`);
-  if (contract.projectId) revalidatePath(`/projects/${contract.projectId}`);
+  revalidateContract(contract.id, {
+    clientId: contract.clientId,
+    projectId: contract.projectId,
+  });
   return { success: true };
 }
 
@@ -151,18 +152,12 @@ export async function updateContract(_prev: unknown, formData: FormData) {
     clientId: parsed.data.clientId ?? previous?.clientId ?? null,
     projectId: parsed.data.projectId ?? previous?.projectId ?? null,
   });
-  revalidatePath(`/contracts/${id}`);
-  revalidatePath("/contracts");
-  // Revalidate both old and new client/project pages so the contract list
-  // on those pages stays in sync.
-  if (parsed.data.clientId) revalidatePath(`/clients/${parsed.data.clientId}`);
-  if (previous?.clientId && previous.clientId !== parsed.data.clientId) {
-    revalidatePath(`/clients/${previous.clientId}`);
-  }
-  if (parsed.data.projectId) revalidatePath(`/projects/${parsed.data.projectId}`);
-  if (previous?.projectId && previous.projectId !== parsed.data.projectId) {
-    revalidatePath(`/projects/${previous.projectId}`);
-  }
+  revalidateContract(id, {
+    clientId: parsed.data.clientId ?? null,
+    previousClientId: previous?.clientId ?? null,
+    projectId: parsed.data.projectId ?? null,
+    previousProjectId: previous?.projectId ?? null,
+  });
   return { success: true };
 }
 
@@ -186,10 +181,11 @@ export async function deleteContract(_prev: unknown, formData: FormData) {
     clientId: contract.clientId,
     projectId: contract.projectId,
   });
-  revalidatePath("/contracts");
-  // Revalidate the client/project pages where this contract used to appear.
-  if (contract.clientId) revalidatePath(`/clients/${contract.clientId}`);
-  if (contract.projectId) revalidatePath(`/projects/${contract.projectId}`);
+  revalidateContract(id, {
+    clientId: contract.clientId,
+    projectId: contract.projectId,
+    deleted: true,
+  });
   return { success: true };
 }
 
@@ -245,10 +241,11 @@ export async function linkContractToProject(
     projectId,
   });
 
-  revalidatePath(`/contracts/${contractId}`);
-  revalidatePath(`/projects/${projectId}`);
-  // The contract left its previous project's card.
-  if (previousProjectId) revalidatePath(`/projects/${previousProjectId}`);
+  revalidateContract(contractId, {
+    clientId: contract.clientId,
+    projectId,
+    previousProjectId,
+  });
   return { success: true };
 }
 
@@ -278,8 +275,10 @@ export async function unlinkContractFromProject(
     projectId: previousProjectId,
   });
 
-  revalidatePath(`/contracts/${contractId}`);
-  revalidatePath(`/projects/${previousProjectId}`);
+  revalidateContract(contractId, {
+    clientId: contract.clientId,
+    previousProjectId,
+  });
   return { success: true };
 }
 
