@@ -637,3 +637,83 @@ export async function linkToolToProject(
   revalidatePath(`/projects/${projectId}`);
   return { success: true };
 }
+
+// Related projects
+//
+// A directional link: `projectId` references / supports
+// `relatedProjectId`. The pair is stored once (the @@unique on
+// ProjectRelation), and both projects' detail pages render it — the
+// source under "Related projects" and the target under "Referenced by"
+// — so the relationship is discoverable from either end. Example: an
+// Apple break-fix project links to the NYC and CPS projects it supports.
+export async function linkRelatedProject(
+  projectId: string,
+  relatedProjectId: string
+): Promise<{ success: true } | { error: string }> {
+  const user = await requireAuth();
+  const perms = await resolveModulePerms(user.id, user.role, "projects");
+  if (!perms.canEdit) return { error: "Permission denied" };
+
+  if (!projectId || !relatedProjectId) {
+    return { error: "Both projects are required" };
+  }
+  if (projectId === relatedProjectId) {
+    return { error: "A project can't be related to itself" };
+  }
+
+  // Both ends must exist and not be soft-deleted.
+  const [project, related] = await Promise.all([
+    db.project.findFirst({ where: { id: projectId, deletedAt: null }, select: { id: true } }),
+    db.project.findFirst({ where: { id: relatedProjectId, deletedAt: null }, select: { id: true, name: true } }),
+  ]);
+  if (!project) return { error: "Project not found" };
+  if (!related) return { error: "Related project not found" };
+
+  // Write scope is on the source project — the one whose card the link
+  // is being added from.
+  const scopeGate = await assertManageEntity(user.id, user.role, "project", projectId);
+  if (scopeGate) return scopeGate;
+
+  const existing = await db.projectRelation.findUnique({
+    where: { projectId_relatedProjectId: { projectId, relatedProjectId } },
+  });
+  if (existing) return { error: "These projects are already linked" };
+
+  await db.projectRelation.create({ data: { projectId, relatedProjectId } });
+  await logActivity("linked", "project", projectId, user.id, related.name, { projectId });
+  // Both detail pages show the relationship (forward + reverse).
+  revalidatePath(`/projects/${projectId}`);
+  revalidatePath(`/projects/${relatedProjectId}`);
+  return { success: true };
+}
+
+export async function unlinkRelatedProject(
+  projectId: string,
+  relatedProjectId: string
+): Promise<{ success: true } | { error: string }> {
+  const user = await requireAuth();
+  const perms = await resolveModulePerms(user.id, user.role, "projects");
+  if (!perms.canEdit) return { error: "Permission denied" };
+
+  // Allow removing from EITHER end of the relationship — find the row
+  // regardless of which project the caller is viewing.
+  const relation = await db.projectRelation.findFirst({
+    where: {
+      OR: [
+        { projectId, relatedProjectId },
+        { projectId: relatedProjectId, relatedProjectId: projectId },
+      ],
+    },
+    select: { id: true, projectId: true, relatedProjectId: true },
+  });
+  if (!relation) return { error: "Relationship not found" };
+
+  // Manage rights on the source (owning) side of the stored row.
+  const scopeGate = await assertManageEntity(user.id, user.role, "project", relation.projectId);
+  if (scopeGate) return scopeGate;
+
+  await db.projectRelation.delete({ where: { id: relation.id } });
+  revalidatePath(`/projects/${relation.projectId}`);
+  revalidatePath(`/projects/${relation.relatedProjectId}`);
+  return { success: true };
+}
