@@ -34,6 +34,8 @@ where the entity could appear.**
 | Task | (list page `/tasks`) | `revalidateTask({ projectId?, assigneeId?, clientId?, previousAssigneeId? })` | `/tasks`, `/dashboard`, project detail, client detail, assignee profile |
 | Comment | (attached to parent entity) | `revalidateComment({ entityType, entityId, authorId? })` | parent entity's detail page, `/dashboard`, author profile |
 | Quote | `/quotes/{id}` | `revalidateQuote(id, { clientId?, previousClientId?, projectId?, previousProjectId? })` | `/quotes`, `/quotes/{id}/edit`, `/dashboard`, client detail, project detail |
+| Contract | `/contracts/{id}` | `revalidateContract(id, { clientId?, previousClientId?, projectId?, previousProjectId? })` | `/contracts` tree, `/dashboard`, old + new client detail, old + new project detail |
+| Certification | `/certifications/{id}` | `revalidateCertification(id, { clientId?, previousClientId?, assigneeId?, previousAssigneeId? })` | `/certifications`, `/dashboard`, old + new assignee profile, old + new client detail |
 
 ## Where the Client entity appears (and how to link)
 
@@ -99,6 +101,8 @@ Every `project.name`, `task.project.name`, `cert.project.name`, etc. must link t
 | Contract detail project link | `contracts/[contractId]/page.tsx` | ✅ |
 | Search results | `search/page.tsx` | ✅ |
 | Tool detail project list | `tools/[toolId]/tool-projects.tsx` | ✅ |
+| My View "My projects" card | `my/page.tsx` | ✅ |
+| My View all-projects overview (inline editable) | `my/my-projects-overview.tsx` | ✅ |
 
 ## Mutation audit for Project
 
@@ -119,6 +123,9 @@ Every `project.name`, `task.project.name`, `cert.project.name`, etc. must link t
 | `createDocument` / `deleteDocument` | `documents.ts` | `revalidatePath(/projects/{id})` | |
 | `updateDocument` / `restoreDocumentVersion` | `documents.ts` | Revalidates both document page and parent project | |
 | `createTask` / `updateTask` / `deleteTask` / `updateTaskStatus` | `tasks.ts` | `revalidateTask({ projectId, clientId, assigneeId, previousAssigneeId? })` | |
+| `updateProjectStatusInline` / `updateProjectNotesInline` / `updateProjectOwnerInline` | `projects.ts` | `revalidateProject(id, { clientId })` | Narrow single-field saves from the /my overview table; same three-gate convention |
+| `assignTaskProject` | `tasks.ts` | `revalidateTask({ old + new projectId/clientId, assigneeId })` | Files a task under a project; clientId is DERIVED from the project |
+| `createContract` / `updateContract` / `deleteContract` / `linkContractToProject` / `unlinkContractFromProject` | `contracts.ts` | `revalidateContract(id, { clientId?, previousClientId?, projectId?, previousProjectId? })` | Centralized July 2026 — was piecemeal revalidatePath |
 | `createClient` / `updateClient` / `deleteClient` | `clients.ts` | `revalidateClient(id)` | Cascades to `/projects` and `/team` via helper |
 
 ## Where the User entity appears (and how to link)
@@ -862,6 +869,76 @@ return `{ error: "Not found" }` when missing, then gate.
 Multi-step writes go in `db.$transaction`. Role values being written
 are bounded by the actor's own rank (see `USER_ROLE_RANK` in
 `actions/admin.ts` and `ROLE_RANK` in `actions/projects.ts`).
+
+## My View (`/my`)
+
+The personal landing page (post-login redirect target; `/` also lands
+here). Registered as the non-permissioned `my` module in
+`src/lib/modules.ts` — every authenticated user can open it; everything
+on it is scoped per-user by the queries themselves:
+
+- **My projects** — owned (`Project.ownerId`) ∪ member ∪ actively assigned.
+- **My tasks** — open tasks assigned to the viewer, due-date order, with
+  the shared TaskCheckbox and a one-line quick-add (assignee = viewer).
+- **Google Tasks inbox** — synced tasks with no project yet; each row
+  files under a project via `assignTaskProject`.
+- **All projects overview** — the spreadsheet replacement. Inline status
+  select, click-to-edit notes, owner picker (org-wide roles only).
+  Backed by `updateProject*Inline` actions in `actions/projects.ts`.
+
+`Project.ownerId` and `Project.notes` exist for this page (migration
+`20260701220000`). `revalidateProject` / `revalidateTask` /
+`revalidateAssignment` all invalidate `/my`.
+
+## Google Tasks integration
+
+Per-user two-way sync with the Google Tasks API. Pieces:
+
+- **Model** — `GoogleTasksIntegration` (one row per connected user):
+  refresh token, cached access token + expiry, mirrored `tasklistId`
+  ("OpsHub" list, created on first sync), last-sync bookkeeping.
+- **OAuth** — `/api/integrations/google-tasks/connect` → Google consent
+  (scope `auth/tasks`, offline + prompt=consent, CSRF state cookie) →
+  `/callback` stores tokens and runs a first sync. Reuses the SSO OAuth
+  client; the redirect URI must be added in the Google console (see
+  `.env.example`).
+- **Sync engine** — `src/lib/google-tasks/sync.ts`. Pull: every Google
+  task becomes an OpsHub Task with `sourceType="google_tasks"`,
+  `sourceId=<google task id>`, assigned to the connected user; Google
+  deletions soft-delete. Push: edits/completions of those SAME tasks
+  patch back to Google. OpsHub-native tasks are NOT mirrored (the Google
+  list is a capture surface, not an org mirror);
+  `pushNewTaskToGoogle()` exists for explicit opt-in flows. Conflicts:
+  last-write-wins per task; a pull in the same run suppresses its own
+  echo push.
+- **Scheduling** — `google-tasks-sync` job (no webhooks upstream, so we
+  poll). Rides the hourly all-jobs cron; add a dedicated 5-minute
+  `?job=google-tasks-sync` entry for snappier sync. "Sync now" on /my
+  posts to `/api/integrations/google-tasks/sync`.
+
+## Role model (July 2026 rework)
+
+Three presented roles — see `src/lib/roles.ts` and `getRoleDefaults()`
+in `src/lib/permissions.ts`:
+
+- **Admin** (ADMIN) — everything, including `/admin`.
+- **Manager** (MANAGER) — org-wide operational data, no `/admin`.
+- **Field** (CONTRIBUTOR; legacy VIEWER = read-only variant) —
+  deny-by-default allow-list: tasks (full), scoped projects/clients/
+  tools (view + comment/upload), team + intranet view. NO quotes,
+  contracts, suppliers, subcontractors, partnerships, workflows, or
+  certifications unless an explicit ModulePermission row or entity
+  grant says so. Contract scope no longer fans out from project
+  assignments for this tier.
+
+Quotes additionally have per-quote ownership gates
+(`src/lib/quotes/access.ts`): non-org-wide roles only ever see/export/
+edit quotes they created or are assigned to — enforced in the list
+page, detail/edit pages, PDF/DOCX routes, and every quote action.
+
+Legacy DEVELOPER (admin-without-/admin) and GUEST are hidden from role
+pickers but keep working; role auto-promotion (`lib/auto-role.ts`) was
+removed — assignment-driven scope grants made it redundant.
 
 ## How to extend this document
 

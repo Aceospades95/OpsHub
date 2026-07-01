@@ -54,15 +54,19 @@ All variables are documented in `.env.example` with inline notes; this section c
 
 Wire **one** cron entry to `POST /api/jobs/run` (no body, no `?job=` param) at hourly cadence. Every registered job is gated by its own internal cadence (`shouldRunDaily`, `shouldRunWeekly`) so an hourly trigger can drive everything.
 
-The exception: **`workflows-tick` should run every minute**. Run it as a separate cron entry with `?job=workflows-tick` so subjects don't wait an hour for their next portal step to surface.
+Two exceptions:
+
+- **`workflows-tick` should run every minute** — a separate cron entry with `?job=workflows-tick` so subjects don't wait an hour for their next portal step to surface.
+- **`google-tasks-sync` should run every ~5 minutes** when anyone has connected Google Tasks (Google has no webhooks, so sync latency = poll cadence). Cheap no-op when nothing changed; the /my "Sync now" button covers on-demand freshness either way.
 
 Vercel-style example:
 
 ```jsonc
 {
   "crons": [
-    { "path": "/api/jobs/run?job=workflows-tick", "schedule": "* * * * *" },
-    { "path": "/api/jobs/run",                    "schedule": "0 * * * *" }
+    { "path": "/api/jobs/run?job=workflows-tick",    "schedule": "* * * * *" },
+    { "path": "/api/jobs/run?job=google-tasks-sync", "schedule": "*/5 * * * *" },
+    { "path": "/api/jobs/run",                       "schedule": "0 * * * *" }
   ]
 }
 ```
@@ -70,8 +74,9 @@ Vercel-style example:
 OS cron + curl example:
 
 ```cron
-* * * * *  curl -fsS -X POST -H "x-cron-secret: $CRON_SECRET" https://opshub.example.com/api/jobs/run?job=workflows-tick
-0 * * * *  curl -fsS -X POST -H "x-cron-secret: $CRON_SECRET" https://opshub.example.com/api/jobs/run
+* * * * *    curl -fsS -X POST -H "x-cron-secret: $CRON_SECRET" https://opshub.example.com/api/jobs/run?job=workflows-tick
+*/5 * * * *  curl -fsS -X POST -H "x-cron-secret: $CRON_SECRET" https://opshub.example.com/api/jobs/run?job=google-tasks-sync
+0 * * * *    curl -fsS -X POST -H "x-cron-secret: $CRON_SECRET" https://opshub.example.com/api/jobs/run
 ```
 
 Registered jobs (from `src/lib/jobs/registry.ts`):

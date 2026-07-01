@@ -30,6 +30,26 @@ personal view at all.
 
 ---
 
+## Implementation status (updated 2026-07-01, same branch)
+
+The go-ahead came back "build it out". Shipped on this branch, in the
+priority order proposed in §8:
+
+| Item | Status |
+|---|---|
+| **P0 — financial exposure** | ✅ Quotes role-scoped everywhere (list, detail/edit, PDF/DOCX routes, all actions, embedded cards); contract values gated on the contracts module on the client page; contract scope no longer fans out from field-tier project assignments. |
+| **P1 — role simplification** | ✅ Deny-by-default field tier via per-module `getRoleDefaults`; pickers collapsed to Admin / Manager / Field (`lib/roles.ts`); auto-promotion deleted. Enum collapse itself deferred (legacy DEVELOPER/VIEWER/GUEST still valid, hidden). |
+| **P2 — My View** | ✅ `/my` personal landing page (now the post-login target): my projects, my tasks + quick-add, Google inbox, and an all-projects table with inline status/notes/owner editing. `Project.ownerId` + `Project.notes` added. |
+| **P3 — integrity & de-siloing** | ✅ `revalidateContract` / `revalidateCertification` helpers wired into every mutation; Task.clientId now derived from the project; SupplierProject FK restored (with orphan cleanup); add-task from project/client pages. ❌ Deferred: ProjectMember↔Assignment merge, computed EXPIRING statuses (both need a data-migration plan). |
+| **P4 — Google Tasks** | ✅ OAuth connect/callback/disconnect, two-way sync engine, `google-tasks-sync` job, /my inbox with project triage. Setup: add the callback redirect URI + enable the Tasks API in the Google console (`.env.example`), optionally add the 5-minute cron entry (`docs/deployment.md`). |
+| **P5 — scope trim** | ⏸ Untouched pending the open-questions answers — field roles no longer see the over-scoped modules, which removes most of the day-to-day noise without deleting anything. |
+
+Corrections to this report discovered while implementing: quote creation
+from client/project pages already existed (`QuotesCard` has a prefilled
+New Quote button), so §5's quote row overstated the gap.
+
+---
+
 ## 1. Executive summary
 
 **What's solid.** The plumbing is genuinely good: deploy/boot hygiene, CI
