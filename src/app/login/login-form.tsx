@@ -37,7 +37,7 @@ export function LoginForm({
   useEffect(() => {
     setPending(false);
     if (state?.success) {
-      router.push("/dashboard");
+      router.push("/my");
     }
   }, [state, router]);
 
@@ -72,7 +72,7 @@ export function LoginForm({
             disabled={googlePending}
             onClick={() => {
               setGooglePending(true);
-              signIn("google", { callbackUrl: "/dashboard" });
+              signIn("google", { callbackUrl: "/my" });
             }}
           >
             <svg className="h-4 w-4" viewBox="0 0 24 24">

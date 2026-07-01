@@ -60,12 +60,14 @@ export default auth((req) => {
   }
 
   if (req.auth && (pathname === "/login" || pathname === "/register")) {
-    return NextResponse.redirect(new URL("/dashboard", req.url));
+    return NextResponse.redirect(new URL("/my", req.url));
   }
 
   if (pathname === "/") {
     if (req.auth) {
-      return NextResponse.redirect(new URL("/dashboard", req.url));
+      // /my is the personal landing page — the org dashboard stays at
+      // /dashboard for anyone who wants the overview.
+      return NextResponse.redirect(new URL("/my", req.url));
     }
     return NextResponse.redirect(new URL("/login", req.url));
   }

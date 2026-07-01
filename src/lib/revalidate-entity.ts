@@ -89,6 +89,7 @@ export function revalidateProject(
   revalidatePath("/team", "layout"); // staffing matrix
   revalidatePath("/tasks");
   revalidatePath("/dashboard");
+  revalidatePath("/my"); // personal view lists + overview table
   // Subcontractor and partnership detail pages list a project's name —
   // revalidate so a renamed project shows everywhere it appears.
   revalidatePath("/subcontractors", "layout");
@@ -132,6 +133,7 @@ export function revalidateAssignment(opts: {
 }) {
   revalidatePath("/team", "layout");
   revalidatePath("/projects", "layout");
+  revalidatePath("/my"); // "my projects" derives from assignments
   if (opts.employeeId) revalidatePath(`/team/${opts.employeeId}`);
   if (opts.projectId) revalidatePath(`/projects/${opts.projectId}`);
   revalidatePath("/dashboard"); // dashboard shows assignment counts
@@ -151,6 +153,7 @@ export function revalidateTask(opts: {
 }) {
   revalidatePath("/tasks");
   revalidatePath("/dashboard");
+  revalidatePath("/my"); // my-tasks card + Google inbox + open-task counts
   if (opts.projectId) revalidatePath(`/projects/${opts.projectId}`);
   if (opts.clientId) revalidatePath(`/clients/${opts.clientId}`);
   if (opts.assigneeId) revalidatePath(`/team/${opts.assigneeId}`);

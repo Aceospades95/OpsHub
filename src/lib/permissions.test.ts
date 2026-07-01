@@ -60,9 +60,9 @@ describe("getRoleDefaults — field tier (CONTRIBUTOR)", () => {
   });
 
   it("grants client + team + intranet + tools view", () => {
-    for (const module of ["clients", "team", "intranet", "tools"]) {
-      expect(getRoleDefaults("CONTRIBUTOR", module).canView).toBe(true);
-      expect(getRoleDefaults("CONTRIBUTOR", module).canEdit).toBe(false);
+    for (const moduleKey of ["clients", "team", "intranet", "tools"]) {
+      expect(getRoleDefaults("CONTRIBUTOR", moduleKey).canView).toBe(true);
+      expect(getRoleDefaults("CONTRIBUTOR", moduleKey).canEdit).toBe(false);
     }
   });
 });
@@ -83,8 +83,8 @@ describe("getRoleDefaults — legacy VIEWER is the read-only field variant", () 
 
 describe("getRoleDefaults — MANAGER keeps org-wide operational access", () => {
   it("gets everything except canManage on every module", () => {
-    for (const module of ["quotes", "contracts", "projects", "team"]) {
-      const flags = getRoleDefaults("MANAGER", module);
+    for (const moduleKey of ["quotes", "contracts", "projects", "team"]) {
+      const flags = getRoleDefaults("MANAGER", moduleKey);
       expect(flags.canView).toBe(true);
       expect(flags.canEdit).toBe(true);
       expect(flags.canDelete).toBe(true);

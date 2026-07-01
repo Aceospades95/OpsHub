@@ -24,6 +24,7 @@ export const DEFAULT_SIDEBAR_CONFIG: SidebarConfig = {
       id: "main",
       title: "Workspace",
       items: [
+        { key: "my", visible: true },
         { key: "dashboard", visible: true },
         { key: "tasks", visible: true },
         { key: "team", visible: true },

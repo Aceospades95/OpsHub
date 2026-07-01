@@ -171,6 +171,21 @@ export async function createTask(_prevState: unknown, formData: FormData) {
 
   const data = parsed.data;
 
+  // When the task has a project, its client is DERIVED from the project —
+  // a form-supplied clientId that disagrees is ignored. Task.clientId can
+  // otherwise drift from task.project.clientId and file the task under
+  // the wrong client's rollups (audit §3.2-2). Standalone tasks (no
+  // project) may still target a client directly.
+  let clientId = data.clientId || null;
+  if (data.projectId) {
+    const project = await db.project.findFirst({
+      where: { id: data.projectId, deletedAt: null },
+      select: { clientId: true },
+    });
+    if (!project) return { error: "Project not found" };
+    clientId = project.clientId;
+  }
+
   const task = await db.task.create({
     data: {
       title: data.title,
@@ -179,7 +194,7 @@ export async function createTask(_prevState: unknown, formData: FormData) {
       status: data.status,
       dueDate: data.dueDate ? new Date(data.dueDate) : null,
       projectId: data.projectId || null,
-      clientId: data.clientId || null,
+      clientId,
       assigneeId: data.assigneeId || null,
       createdById: user.id,
     },
@@ -250,6 +265,52 @@ export async function updateTaskStatus(taskId: string, status: string) {
   return { success: true };
 }
 
+/**
+ * Move a task under a project (or clear it) without the full edit form.
+ * Used by the /my Google-inbox triage and the project-page add-task flow.
+ * The task's client is DERIVED from the project — never set independently
+ * — so the client rollups can't disagree with the project's client.
+ */
+export async function assignTaskProject(taskId: string, projectId: string | null) {
+  const user = await requireAuth();
+
+  const denied = await authorizeTaskMutation({ id: user.id, role: user.role }, taskId);
+  if (denied) return denied;
+
+  let clientId: string | null = null;
+  if (projectId) {
+    const project = await db.project.findFirst({
+      where: { id: projectId, deletedAt: null },
+      select: { id: true, clientId: true },
+    });
+    if (!project) return { error: "Project not found" };
+    clientId = project.clientId;
+  }
+
+  const previous = await db.task.findUnique({
+    where: { id: taskId },
+    select: { projectId: true, clientId: true, assigneeId: true },
+  });
+
+  const updated = await db.task.update({
+    where: { id: taskId },
+    data: { projectId: projectId || null, clientId },
+  });
+
+  revalidateTask({
+    projectId: updated.projectId,
+    clientId: updated.clientId,
+    assigneeId: updated.assigneeId,
+  });
+  if (previous?.projectId && previous.projectId !== updated.projectId) {
+    revalidateTask({ projectId: previous.projectId });
+  }
+  if (previous?.clientId && previous.clientId !== updated.clientId) {
+    revalidateTask({ clientId: previous.clientId });
+  }
+  return { success: true };
+}
+
 export async function updateTask(_prevState: unknown, formData: FormData) {
   const user = await requireAuth();
 
@@ -281,6 +342,18 @@ export async function updateTask(_prevState: unknown, formData: FormData) {
   const data = parsed.data;
   const completedAt = data.status === "DONE" ? new Date() : null;
 
+  // Same client-derivation rule as createTask: a project-linked task's
+  // client always follows the project.
+  let clientId = data.clientId || null;
+  if (data.projectId) {
+    const project = await db.project.findFirst({
+      where: { id: data.projectId, deletedAt: null },
+      select: { clientId: true },
+    });
+    if (!project) return { error: "Project not found" };
+    clientId = project.clientId;
+  }
+
   // Look up the previous state so we can revalidate pages the task is moving
   // away from (old project, old client, old assignee).
   const previous = await db.task.findUnique({
@@ -298,7 +371,7 @@ export async function updateTask(_prevState: unknown, formData: FormData) {
       completedAt,
       dueDate: data.dueDate ? new Date(data.dueDate) : null,
       projectId: data.projectId || null,
-      clientId: data.clientId || null,
+      clientId,
       assigneeId: data.assigneeId || null,
     },
   });

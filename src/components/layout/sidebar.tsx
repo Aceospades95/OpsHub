@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
+  Home,
   LayoutDashboard,
   Building2,
   FolderKanban,
@@ -51,6 +52,7 @@ interface SidebarProps {
 }
 
 const ICON_MAP: Record<string, LucideIcon> = {
+  Home,
   LayoutDashboard,
   Building2,
   FolderKanban,
