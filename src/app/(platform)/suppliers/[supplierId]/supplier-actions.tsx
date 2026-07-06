@@ -13,7 +13,8 @@ import { Pencil, Trash2 } from "lucide-react";
 interface Props {
   supplier: {
     id: string; name: string; category: string; contactName: string | null;
-    contactEmail: string | null; contactPhone: string | null; address: string | null;
+    contactEmail: string | null; contactPhone: string | null; location: string | null;
+    address: string | null;
     website: string | null; notes: string | null; status: string; isPreferred: boolean;
   };
   canEdit: boolean;
@@ -47,6 +48,7 @@ export function SupplierActions({ supplier, canEdit, canDelete }: Props) {
                 <Input name="contactName" label="Contact Name" defaultValue={supplier.contactName || ""} />
                 <Input name="contactEmail" label="Contact Email" defaultValue={supplier.contactEmail || ""} />
                 <Input name="contactPhone" label="Contact Phone" defaultValue={supplier.contactPhone || ""} />
+                <Input name="location" label="Location (city / region)" defaultValue={supplier.location || ""} />
                 <Textarea name="address" label="Address" defaultValue={supplier.address || ""} />
                 <Input name="website" label="Website" defaultValue={supplier.website || ""} />
                 <Textarea name="notes" label="Notes" defaultValue={supplier.notes || ""} />

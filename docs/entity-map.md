@@ -940,6 +940,42 @@ Legacy DEVELOPER (admin-without-/admin) and GUEST are hidden from role
 pickers but keep working; role auto-promotion (`lib/auto-role.ts`) was
 removed — assignment-driven scope grants made it redundant.
 
+## List views: cards/table toggle + group-by (Phase 3)
+
+Every module list page shares one view system:
+
+- **`ViewOptionsBar`** (`src/components/shared/view-options-bar.tsx`) —
+  URL-param driven (`?view=` / `?groupBy=`), same navigation idiom as
+  CertFilters. The FIRST view option is the default and is stored as the
+  absence of the param, so plain sidebar links stay clean.
+- **`groupRows()`** (`src/lib/group-rows.ts`) — shared bucketing:
+  alphabetical groups, null/blank keys in a trailing "Not set" bucket,
+  row order preserved within groups.
+- **`GroupSection`** (`src/components/shared/group-section.tsx`) —
+  collapsible `<details>` wrapper for group headers (zero client JS).
+- **`lib/effective-status.ts`** — date-derived display status for
+  certifications (`certBucket`) and contracts
+  (`effectiveContractStatus`). Views must never trust the stored
+  EXPIRING_SOON / EXPIRED enum values (they're only as fresh as the
+  daily jobs); manual lifecycle states (DRAFT, TERMINATED, SUSPENDED,
+  REVOKED, …) pass through.
+
+Rollout: certifications (group by state / jurisdiction level / status /
+type / engagement / client / assignee), suppliers (location / category /
+status — `Supplier.location` added for this), clients (status /
+industry / account manager), subcontractors (status / type /
+compliance), partnerships (type / tier / status), tools (category /
+type), projects (tree default + flat table grouped by client / status /
+owner / offering), contracts (tree default + flat table grouped by
+client / status / type). Tasks and team keep their existing bespoke
+view systems; quotes is already a sortable table.
+
+When adding a module list page: parse `view`/`groupBy` from
+searchParams with a closed GROUP_OPTIONS list, write `renderCards` /
+`renderTable` helpers, and compose with `groupRows` + `GroupSection`
+exactly like `suppliers/page.tsx` (the smallest reference
+implementation).
+
 ## How to extend this document
 
 When you add a new module or feature:

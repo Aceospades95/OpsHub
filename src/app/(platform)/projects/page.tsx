@@ -9,6 +9,21 @@ import { ProjectCreateButton } from "./project-create-button";
 import { DownloadCsvButton } from "@/components/shared/download-csv-button";
 import { ProjectsPageClient, type ProjectData, type ClientGroup } from "./projects-page-client";
 import type { Prisma } from "@prisma/client";
+import Link from "next/link";
+import { Card, CardContent } from "@/components/ui/card";
+import { StatusBadge } from "@/components/shared/status-badge";
+import { formatCalendarDate } from "@/lib/dates";
+import { ViewOptionsBar } from "@/components/shared/view-options-bar";
+import { GroupSection } from "@/components/shared/group-section";
+import { groupRows } from "@/lib/group-rows";
+
+const GROUP_OPTIONS = [
+  { value: "client", label: "Client" },
+  { value: "status", label: "Status" },
+  { value: "owner", label: "Owner" },
+  { value: "offering", label: "Service offering" },
+] as const;
+type GroupKey = (typeof GROUP_OPTIONS)[number]["value"];
 
 export const metadata = { title: "Projects · OpsHub" };
 
@@ -18,7 +33,7 @@ export default async function ProjectsPage({
   // Honor `?clientId=...` from the "Create the first project →" link
   // on a client detail page. When present, the list filters to that
   // client and the "+ New Project" modal pre-selects them.
-  searchParams: { clientId?: string };
+  searchParams: { clientId?: string; view?: string; groupBy?: string };
 }) {
   const user = await requireAuth();
 
@@ -26,6 +41,10 @@ export default async function ProjectsPage({
   if (!perms.canView) return <AccessDenied module="projects" moduleLabel="Projects" moduleDescription="Project portfolio, milestones, staffing, and documents" />;
 
   const focusClientId = searchParams.clientId?.trim() || undefined;
+  const view = searchParams.view === "table" ? "table" : "tree";
+  const groupBy = GROUP_OPTIONS.some((o) => o.value === searchParams.groupBy)
+    ? (searchParams.groupBy as GroupKey)
+    : null;
 
   const scope = await getUserScope(user.id, user.role);
   // When the user isn't org-wide, show only projects in scope. Still include
@@ -46,6 +65,30 @@ export default async function ProjectsPage({
     deletedAt: null,
     ...(scope.all ? {} : { id: { in: Array.from(scope.clientIds) } }),
   };
+
+  // Flat list for the table view — includes sub-projects (the tree view
+  // nests them instead). Only fetched when the table is showing.
+  const flatProjects =
+    view === "table"
+      ? await db.project.findMany({
+          where: {
+            deletedAt: null,
+            ...(focusClientId ? { clientId: focusClientId } : {}),
+            ...(scopedProjectIds ? { id: { in: scopedProjectIds } } : {}),
+          },
+          orderBy: [{ client: { name: "asc" } }, { name: "asc" }],
+          include: {
+            client: { select: { id: true, name: true } },
+            owner: { select: { id: true, name: true } },
+            serviceOffering: { select: { id: true, name: true } },
+            _count: {
+              select: {
+                tasks: { where: { status: { in: ["TODO", "IN_PROGRESS"] }, deletedAt: null } },
+              },
+            },
+          },
+        })
+      : [];
 
   const [clients, rootProjects, allProjects, serviceOfferings] = await Promise.all([
     db.client.findMany({
@@ -119,7 +162,109 @@ export default async function ProjectsPage({
         }
       />
 
-      {rootProjects.length === 0 ? (
+      <ViewOptionsBar
+        view={view}
+        viewOptions={[
+          { value: "tree", label: "Tree" },
+          { value: "table", label: "Table" },
+        ]}
+        groupBy={view === "table" ? groupBy : undefined}
+        groupByOptions={view === "table" ? [...GROUP_OPTIONS] : undefined}
+      />
+
+      {view === "table" ? (
+        flatProjects.length === 0 ? (
+          <EmptyState
+            icon={FolderKanban}
+            title="No projects yet"
+            description="Create your first project to get started"
+          />
+        ) : (
+          (() => {
+            type FlatProject = (typeof flatProjects)[number];
+            const groupKeyOf = (project: FlatProject, key: GroupKey): string | null => {
+              switch (key) {
+                case "client":
+                  return project.client.name;
+                case "status":
+                  return project.status.replace("_", " ").charAt(0) + project.status.replace("_", " ").slice(1).toLowerCase();
+                case "owner":
+                  return project.owner?.name ?? null;
+                case "offering":
+                  return project.serviceOffering?.name ?? null;
+              }
+            };
+            const renderTable = (rows: FlatProject[]) => (
+              <Card>
+                <CardContent className="p-0 overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-border text-left text-xs text-muted-foreground">
+                        <th className="p-3 font-medium">Project</th>
+                        <th className="p-3 font-medium">Client</th>
+                        <th className="p-3 font-medium">Status</th>
+                        <th className="p-3 font-medium">Owner</th>
+                        <th className="p-3 font-medium">Timeline</th>
+                        <th className="p-3 font-medium text-right">Open tasks</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rows.map((project) => (
+                        <tr key={project.id} className="border-b border-border last:border-0 hover:bg-muted/50">
+                          <td className="p-3">
+                            <Link
+                              href={`/projects/${project.slug ?? project.id}`}
+                              className="font-medium hover:text-primary hover:underline"
+                            >
+                              {project.name}
+                            </Link>
+                            {project.parentProjectId && (
+                              <span className="ml-2 text-xs text-muted-foreground">(sub-project)</span>
+                            )}
+                          </td>
+                          <td className="p-3 text-muted-foreground">
+                            <Link href={`/clients/${project.client.id}`} className="hover:text-primary hover:underline">
+                              {project.client.name}
+                            </Link>
+                          </td>
+                          <td className="p-3"><StatusBadge status={project.status} /></td>
+                          <td className="p-3 text-muted-foreground">{project.owner?.name ?? "—"}</td>
+                          <td className="p-3 text-muted-foreground text-xs">
+                            {project.startDate || project.endDate
+                              ? `${project.startDate ? formatCalendarDate(project.startDate, "MMM d, yyyy") : "…"} – ${
+                                  project.endDate ? formatCalendarDate(project.endDate, "MMM d, yyyy") : "…"
+                                }`
+                              : "—"}
+                          </td>
+                          <td className="p-3 text-right tabular-nums">
+                            {project._count.tasks > 0 ? (
+                              <Link href={`/tasks?project=${project.id}`} className="hover:text-primary hover:underline">
+                                {project._count.tasks}
+                              </Link>
+                            ) : (
+                              <span className="text-muted-foreground">0</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </CardContent>
+              </Card>
+            );
+            const groups = groupBy ? groupRows(flatProjects, (row) => groupKeyOf(row, groupBy)) : null;
+            return groups ? (
+              groups.map((group) => (
+                <GroupSection key={group.label} label={group.label} count={group.rows.length}>
+                  {renderTable(group.rows)}
+                </GroupSection>
+              ))
+            ) : (
+              renderTable(flatProjects)
+            );
+          })()
+        )
+      ) : rootProjects.length === 0 ? (
         <EmptyState
           icon={FolderKanban}
           title="No projects yet"

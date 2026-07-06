@@ -41,6 +41,7 @@ export function SupplierCreateButton() {
             <Input name="contactName" label="Contact Name" />
             <Input name="contactEmail" label="Contact Email" type="email" />
             <Input name="contactPhone" label="Contact Phone" />
+            <Input name="location" label="Location (city / region)" />
             <Textarea name="address" label="Address" />
             <Input name="website" label="Website" />
             <Textarea name="notes" label="Notes" />
