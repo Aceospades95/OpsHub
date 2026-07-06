@@ -780,6 +780,10 @@ model Supplier {
   contactName  String?
   contactEmail String?
   contactPhone String?
+  /// Short city/region label ("Chicago", "Cook County, IL") used for the
+  /// grouped supplier list. Distinct from `address`, which is the full
+  /// free-form mailing address.
+  location     String?
   address      String?        @db.Text
   website      String?
   notes        String?        @db.Text

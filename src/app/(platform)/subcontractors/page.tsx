@@ -12,9 +12,27 @@ import { SubcontractorCreateButton } from "./subcontractor-create-button";
 import { DownloadCsvButton } from "@/components/shared/download-csv-button";
 import { Prisma } from "@prisma/client";
 import { pluralize } from "@/lib/pluralize";
+import { formatCalendarDate } from "@/lib/dates";
+import { ViewOptionsBar } from "@/components/shared/view-options-bar";
+import { GroupSection } from "@/components/shared/group-section";
+import { groupRows } from "@/lib/group-rows";
+
+const GROUP_OPTIONS = [
+  { value: "status", label: "Status" },
+  { value: "type", label: "Type" },
+  { value: "compliance", label: "Compliance" },
+] as const;
+type GroupKey = (typeof GROUP_OPTIONS)[number]["value"];
+
+function humanizeEnum(value: string): string {
+  return value
+    .split("_")
+    .map((w) => w.charAt(0) + w.slice(1).toLowerCase())
+    .join(" ");
+}
 
 interface Props {
-  searchParams: { status?: string; type?: string; compliance?: string };
+  searchParams: { status?: string; type?: string; compliance?: string; view?: string; groupBy?: string };
 }
 
 export const metadata = { title: "Subcontractors · OpsHub" };
@@ -44,6 +62,11 @@ export default async function SubcontractorsPage({ searchParams }: Props) {
     where.complianceStatus = searchParams.compliance as Prisma.SubcontractorWhereInput["complianceStatus"];
   }
 
+  const view = searchParams.view === "table" ? "table" : "cards";
+  const groupBy = GROUP_OPTIONS.some((o) => o.value === searchParams.groupBy)
+    ? (searchParams.groupBy as GroupKey)
+    : null;
+
   const subcontractors = await db.subcontractor.findMany({
     where,
     orderBy: [{ isPreferred: "desc" }, { name: "asc" }],
@@ -59,6 +82,134 @@ export default async function SubcontractorsPage({ searchParams }: Props) {
     return ms > 0 && ms < 30 * 24 * 60 * 60 * 1000;
   };
 
+  type SubRow = (typeof subcontractors)[number];
+  const groupKeyOf = (sub: SubRow, key: GroupKey): string | null => {
+    switch (key) {
+      case "status":
+        return humanizeEnum(sub.status);
+      case "type":
+        return humanizeEnum(sub.type);
+      case "compliance":
+        return humanizeEnum(sub.complianceStatus);
+    }
+  };
+
+  const renderCards = (rows: SubRow[]) => (
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      {rows.map((sub) => {
+        const insuranceFlag = expiringSoon(sub.insuranceExpiresAt) || (sub.insuranceExpiresAt && sub.insuranceExpiresAt < now);
+        return (
+          <Link key={sub.id} href={`/subcontractors/${sub.id}`}>
+            <Card className="hover:shadow-md transition-shadow h-full">
+              <CardContent className="p-5">
+                <div className="flex items-start justify-between mb-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <h3 className="font-semibold text-foreground truncate">{sub.name}</h3>
+                    {sub.isPreferred && (
+                      <Star className="h-4 w-4 text-warning fill-warning shrink-0" />
+                    )}
+                  </div>
+                  <StatusBadge status={sub.status} />
+                </div>
+                <div className="flex flex-wrap items-center gap-2 mb-3">
+                  <Badge variant="outline">{sub.type}</Badge>
+                  {sub.complianceStatus !== "COMPLIANT" && (
+                    <Badge variant={sub.complianceStatus === "NON_COMPLIANT" || sub.complianceStatus === "EXPIRED" ? "destructive" : "warning"}>
+                      {sub.complianceStatus.replace("_", " ").toLowerCase()}
+                    </Badge>
+                  )}
+                  {insuranceFlag && (
+                    <Badge variant="warning" className="flex items-center gap-1">
+                      <AlertTriangle className="h-3 w-3" /> Insurance
+                    </Badge>
+                  )}
+                </div>
+                <div className="space-y-1 text-xs text-muted-foreground">
+                  {sub.primaryContactName && <p>{sub.primaryContactName}</p>}
+                  {sub.primaryContactEmail && (
+                    <p className="flex items-center gap-1">
+                      <Mail className="h-3 w-3" /> {sub.primaryContactEmail}
+                    </p>
+                  )}
+                  {sub.primaryContactPhone && (
+                    <p className="flex items-center gap-1">
+                      <Phone className="h-3 w-3" /> {sub.primaryContactPhone}
+                    </p>
+                  )}
+                  <p className="pt-1">{pluralize(sub._count.projects, "active project")}</p>
+                </div>
+              </CardContent>
+            </Card>
+          </Link>
+        );
+      })}
+    </div>
+  );
+
+  const renderTable = (rows: SubRow[]) => (
+    <Card>
+      <CardContent className="p-0 overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-border text-left text-xs text-muted-foreground">
+              <th className="p-3 font-medium">Name</th>
+              <th className="p-3 font-medium">Type</th>
+              <th className="p-3 font-medium">Compliance</th>
+              <th className="p-3 font-medium">Insurance expires</th>
+              <th className="p-3 font-medium">Contact</th>
+              <th className="p-3 font-medium text-right">Active projects</th>
+              <th className="p-3 font-medium">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((sub) => {
+              const insuranceFlag = expiringSoon(sub.insuranceExpiresAt) || (sub.insuranceExpiresAt && sub.insuranceExpiresAt < now);
+              return (
+                <tr key={sub.id} className="border-b border-border last:border-0 hover:bg-muted/50">
+                  <td className="p-3">
+                    <Link
+                      href={`/subcontractors/${sub.id}`}
+                      className="font-medium hover:text-primary hover:underline inline-flex items-center gap-1.5"
+                    >
+                      {sub.name}
+                      {sub.isPreferred && <Star className="h-3.5 w-3.5 text-warning fill-warning" />}
+                    </Link>
+                  </td>
+                  <td className="p-3 text-muted-foreground">{humanizeEnum(sub.type)}</td>
+                  <td className="p-3">
+                    <Badge
+                      variant={
+                        sub.complianceStatus === "COMPLIANT"
+                          ? "success"
+                          : sub.complianceStatus === "PENDING"
+                            ? "warning"
+                            : "destructive"
+                      }
+                    >
+                      {humanizeEnum(sub.complianceStatus)}
+                    </Badge>
+                  </td>
+                  <td className={`p-3 ${insuranceFlag ? "text-warning font-medium" : "text-muted-foreground"}`}>
+                    {sub.insuranceExpiresAt
+                      ? formatCalendarDate(sub.insuranceExpiresAt, "MMM d, yyyy")
+                      : "—"}
+                  </td>
+                  <td className="p-3 text-muted-foreground">
+                    {sub.primaryContactName || sub.primaryContactEmail || "—"}
+                  </td>
+                  <td className="p-3 text-right tabular-nums">{sub._count.projects}</td>
+                  <td className="p-3"><StatusBadge status={sub.status} /></td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </CardContent>
+    </Card>
+  );
+
+  const renderRows = view === "table" ? renderTable : renderCards;
+
   return (
     <div>
       <PageHeader
@@ -72,62 +223,30 @@ export default async function SubcontractorsPage({ searchParams }: Props) {
         }
       />
 
+      <ViewOptionsBar
+        view={view}
+        viewOptions={[
+          { value: "cards", label: "Cards" },
+          { value: "table", label: "Table" },
+        ]}
+        groupBy={groupBy}
+        groupByOptions={[...GROUP_OPTIONS]}
+      />
+
       {subcontractors.length === 0 ? (
         <EmptyState
           icon={HardHat}
           title="No subcontractors yet"
           description="Add your first subcontractor to start tracking project labor"
         />
+      ) : groupBy ? (
+        groupRows(subcontractors, (sub) => groupKeyOf(sub, groupBy)).map((group) => (
+          <GroupSection key={group.label} label={group.label} count={group.rows.length}>
+            {renderRows(group.rows)}
+          </GroupSection>
+        ))
       ) : (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {subcontractors.map((sub) => {
-            const insuranceFlag = expiringSoon(sub.insuranceExpiresAt) || (sub.insuranceExpiresAt && sub.insuranceExpiresAt < now);
-            return (
-              <Link key={sub.id} href={`/subcontractors/${sub.id}`}>
-                <Card className="hover:shadow-md transition-shadow h-full">
-                  <CardContent className="p-5">
-                    <div className="flex items-start justify-between mb-2">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <h3 className="font-semibold text-foreground truncate">{sub.name}</h3>
-                        {sub.isPreferred && (
-                          <Star className="h-4 w-4 text-warning fill-warning shrink-0" />
-                        )}
-                      </div>
-                      <StatusBadge status={sub.status} />
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2 mb-3">
-                      <Badge variant="outline">{sub.type}</Badge>
-                      {sub.complianceStatus !== "COMPLIANT" && (
-                        <Badge variant={sub.complianceStatus === "NON_COMPLIANT" || sub.complianceStatus === "EXPIRED" ? "destructive" : "warning"}>
-                          {sub.complianceStatus.replace("_", " ").toLowerCase()}
-                        </Badge>
-                      )}
-                      {insuranceFlag && (
-                        <Badge variant="warning" className="flex items-center gap-1">
-                          <AlertTriangle className="h-3 w-3" /> Insurance
-                        </Badge>
-                      )}
-                    </div>
-                    <div className="space-y-1 text-xs text-muted-foreground">
-                      {sub.primaryContactName && <p>{sub.primaryContactName}</p>}
-                      {sub.primaryContactEmail && (
-                        <p className="flex items-center gap-1">
-                          <Mail className="h-3 w-3" /> {sub.primaryContactEmail}
-                        </p>
-                      )}
-                      {sub.primaryContactPhone && (
-                        <p className="flex items-center gap-1">
-                          <Phone className="h-3 w-3" /> {sub.primaryContactPhone}
-                        </p>
-                      )}
-                      <p className="pt-1">{pluralize(sub._count.projects, "active project")}</p>
-                    </div>
-                  </CardContent>
-                </Card>
-              </Link>
-            );
-          })}
-        </div>
+        renderRows(subcontractors)
       )}
     </div>
   );

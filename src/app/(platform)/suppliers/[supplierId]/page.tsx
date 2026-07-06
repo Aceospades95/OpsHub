@@ -122,9 +122,14 @@ export default async function SupplierDetailPage({ params }: Props) {
                     <Phone className="h-4 w-4" /> {supplier.contactPhone}
                   </p>
                 )}
-                {supplier.address && (
+                {supplier.location && (
                   <p className="flex items-center gap-2 text-muted-foreground">
-                    <MapPin className="h-4 w-4 shrink-0" /> {supplier.address}
+                    <MapPin className="h-4 w-4 shrink-0" /> {supplier.location}
+                  </p>
+                )}
+                {supplier.address && (
+                  <p className="flex items-start gap-2 text-muted-foreground whitespace-pre-line">
+                    <MapPin className="h-4 w-4 shrink-0 mt-0.5" /> {supplier.address}
                   </p>
                 )}
                 {supplier.website && (

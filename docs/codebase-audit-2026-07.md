@@ -43,6 +43,7 @@ priority order proposed in §8:
 | **P3 — integrity & de-siloing** | ✅ `revalidateContract` / `revalidateCertification` helpers wired into every mutation; Task.clientId now derived from the project; SupplierProject FK restored (with orphan cleanup); add-task from project/client pages. ❌ Deferred: ProjectMember↔Assignment merge, computed EXPIRING statuses (both need a data-migration plan). |
 | **P4 — Google Tasks** | ✅ OAuth connect/callback/disconnect, two-way sync engine, `google-tasks-sync` job, /my inbox with project triage. Setup: add the callback redirect URI + enable the Tasks API in the Google console (`.env.example`), optionally add the 5-minute cron entry (`docs/deployment.md`). |
 | **P5 — scope trim** | ⏸ Untouched pending the open-questions answers — field roles no longer see the over-scoped modules, which removes most of the day-to-day noise without deleting anything. |
+| **Phase 3 — list views (post-merge request)** | ✅ Shared cards/table toggle + group-by across certifications (state/jurisdiction/status/type/engagement/client/assignee), suppliers (new `location` field; location/category/status), clients, subcontractors, partnerships, tools, and flat table views for projects and contracts. Display statuses for certs + contracts are now date-derived (`lib/effective-status.ts`) — closes the "stored EXPIRING/EXPIRED drift" deferred item at the view layer. |
 
 Corrections to this report discovered while implementing: quote creation
 from client/project pages already existed (`QuotesCard` has a prefilled
