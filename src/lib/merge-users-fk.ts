@@ -67,6 +67,9 @@ export const REASSIGNMENTS: { model: string; column: string }[] = [
   { model: "subcontractor", column: "accountManagerId" },
   { model: "partnership", column: "relationshipOwnerId" },
   { model: "project", column: "ownerId" },
+  { model: "vehicle", column: "assignedToId" },
+  { model: "disciplinaryReport", column: "employeeId" },
+  { model: "disciplinaryReport", column: "issuedById" },
   { model: "sandboxPage", column: "createdById" },
   { model: "customWidget", column: "createdById" },
   // User self-reference: managerId. If any direct reports were pointing

@@ -11,6 +11,8 @@ import { Star, Mail, Phone, MapPin, Globe } from "lucide-react";
 import { SupplierActions } from "./supplier-actions";
 import { SupplierProjects } from "./supplier-projects";
 import { SupplierAttachments } from "./supplier-attachments";
+import { SupplierContactSection } from "./supplier-contact-section";
+import { SupplierReceipts } from "./supplier-receipts";
 
 interface Props {
   params: Promise<{ supplierId: string }>;
@@ -28,6 +30,7 @@ export default async function SupplierDetailPage({ params }: Props) {
     include: {
       projects: true,
       links: true,
+      contacts: { orderBy: [{ isPrimary: "desc" }, { name: "asc" }] },
       comments: {
         include: { author: { select: { id: true, name: true } } },
         orderBy: { createdAt: "desc" },
@@ -36,6 +39,21 @@ export default async function SupplierDetailPage({ params }: Props) {
   });
 
   if (!supplier) notFound();
+
+  const [receipts, categoryRows] = await Promise.all([
+    db.file.findMany({
+      where: { supplierId: supplier.id, category: "receipt" },
+      orderBy: { createdAt: "desc" },
+      include: { uploadedBy: { select: { id: true, name: true } } },
+    }),
+    db.supplier.findMany({
+      where: { deletedAt: null },
+      select: { category: true },
+      distinct: ["category"],
+      orderBy: { category: "asc" },
+    }),
+  ]);
+  const categories = categoryRows.map((row) => row.category);
 
   // The full project list is only needed for the link-project picker
   // (canEdit). Read-only viewers just need the names of the projects
@@ -54,7 +72,7 @@ export default async function SupplierDetailPage({ params }: Props) {
       <PageHeader
         title={supplier.name}
         actions={
-          <SupplierActions supplier={supplier} canEdit={perms.canEdit} canDelete={perms.canDelete} />
+          <SupplierActions supplier={supplier} categories={categories} canEdit={perms.canEdit} canDelete={perms.canDelete} />
         }
       />
 
@@ -92,6 +110,27 @@ export default async function SupplierDetailPage({ params }: Props) {
           </Card>
 
           <Card>
+            <CardHeader><CardTitle>Receipts ({receipts.length})</CardTitle></CardHeader>
+            <CardContent>
+              <SupplierReceipts
+                supplierId={supplier.id}
+                receipts={receipts.map((file) => ({
+                  id: file.id,
+                  name: file.name,
+                  url: file.url,
+                  size: file.size,
+                  createdAt: file.createdAt.toISOString(),
+                  uploadedByName: file.uploadedBy?.name ?? null,
+                }))}
+                canUpload={perms.canUpload}
+                canDelete={perms.canDelete}
+                currentUserId={user.id}
+                uploaderIds={Object.fromEntries(receipts.map((file) => [file.id, file.uploadedById]))}
+              />
+            </CardContent>
+          </Card>
+
+          <Card>
             <CardHeader><CardTitle>Comments</CardTitle></CardHeader>
             <CardContent>
               <CommentSection
@@ -111,7 +150,14 @@ export default async function SupplierDetailPage({ params }: Props) {
             <CardHeader><CardTitle>Contact Information</CardTitle></CardHeader>
             <CardContent>
               <div className="space-y-3 text-sm">
-                {supplier.contactName && <p className="font-medium">{supplier.contactName}</p>}
+                {supplier.contactName && (
+                  <div>
+                    <p className="font-medium">{supplier.contactName}</p>
+                    {supplier.contactTitle && (
+                      <p className="text-xs text-muted-foreground">{supplier.contactTitle}</p>
+                    )}
+                  </div>
+                )}
                 {supplier.contactEmail && (
                   <p className="flex items-center gap-2 text-muted-foreground">
                     <Mail className="h-4 w-4" /> {supplier.contactEmail}
@@ -138,6 +184,17 @@ export default async function SupplierDetailPage({ params }: Props) {
                   </a>
                 )}
               </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader><CardTitle>Contacts ({supplier.contacts.length})</CardTitle></CardHeader>
+            <CardContent>
+              <SupplierContactSection
+                contacts={supplier.contacts}
+                supplierId={supplier.id}
+                canEdit={perms.canEdit}
+              />
             </CardContent>
           </Card>
 

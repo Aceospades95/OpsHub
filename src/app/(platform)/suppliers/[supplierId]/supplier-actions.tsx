@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select } from "@/components/ui/select";
 import { FormDialog } from "@/components/shared/form-dialog";
+import { SupplierCategorySelect } from "../supplier-category-select";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { updateSupplier, deleteSupplier } from "@/actions/suppliers";
 import { Pencil, Trash2 } from "lucide-react";
@@ -13,17 +14,18 @@ import { Pencil, Trash2 } from "lucide-react";
 interface Props {
   supplier: {
     id: string; name: string; category: string; contactName: string | null;
+    contactTitle: string | null;
     contactEmail: string | null; contactPhone: string | null; location: string | null;
     address: string | null;
     website: string | null; notes: string | null; status: string; isPreferred: boolean;
   };
+  /** Distinct categories already in the database (feeds the picker). */
+  categories: string[];
   canEdit: boolean;
   canDelete: boolean;
 }
 
-const categories = ["auto_repair","decals","alarm_security","maintenance","it_services","office_supplies","other"];
-
-export function SupplierActions({ supplier, canEdit, canDelete }: Props) {
+export function SupplierActions({ supplier, categories, canEdit, canDelete }: Props) {
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
 
@@ -43,9 +45,10 @@ export function SupplierActions({ supplier, canEdit, canDelete }: Props) {
               <>
                 <input type="hidden" name="id" value={supplier.id} />
                 <Input name="name" label="Name" defaultValue={supplier.name} required error={fieldErrors?.name?.[0]} />
-                <Select name="category" label="Category" defaultValue={supplier.category} options={categories.map(c => ({ label: c.replace(/_/g," ").replace(/\b\w/g,l=>l.toUpperCase()), value: c }))} />
+                <SupplierCategorySelect categories={categories} defaultValue={supplier.category} />
                 <Select name="status" label="Status" defaultValue={supplier.status} options={[{label:"Active",value:"ACTIVE"},{label:"Inactive",value:"INACTIVE"},{label:"Archived",value:"ARCHIVED"}]} />
                 <Input name="contactName" label="Contact Name" defaultValue={supplier.contactName || ""} />
+                <Input name="contactTitle" label="Contact Title" defaultValue={supplier.contactTitle || ""} />
                 <Input name="contactEmail" label="Contact Email" defaultValue={supplier.contactEmail || ""} />
                 <Input name="contactPhone" label="Contact Phone" defaultValue={supplier.contactPhone || ""} />
                 <Input name="location" label="Location (city / region)" defaultValue={supplier.location || ""} />
