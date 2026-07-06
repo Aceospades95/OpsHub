@@ -17,7 +17,7 @@ import Link from "next/link";
 import {
   User, Briefcase, BarChart3, FolderOpen, MapPin, Phone,
   Mail, Calendar, Users, FileText, ChevronRight, Shield,
-  AlertTriangle, Pencil, Trash2, Plus, KeyRound,
+  AlertTriangle, Pencil, Trash2, Plus, KeyRound, FileWarning,
 } from "lucide-react";
 
 import { formatDistanceToNow } from "date-fns";
@@ -28,6 +28,7 @@ import { AddAssignmentDialog } from "../components/add-assignment-dialog";
 import type { UserData } from "../components/team-types";
 import { getPermissionedModules, ALL_PERMISSION_FLAGS, PERMISSION_FLAG_LABELS } from "@/lib/modules";
 import { getRoleDefaults } from "@/lib/permissions";
+import { DisciplinaryTab, type DisciplinaryReportRow } from "./disciplinary-tab";
 import { roleOptionsFor } from "@/lib/roles";
 
 interface Assignment {
@@ -82,14 +83,14 @@ interface ActivityLog {
   createdAt: string;
 }
 
-type TabKey = "overview" | "assignments" | "reporting" | "projects" | "permissions" | "activity";
+type TabKey = "overview" | "assignments" | "reporting" | "projects" | "permissions" | "disciplinary" | "activity";
 
 function formatFte(v: number): string {
   return v % 1 === 0 ? v.toFixed(0) : v.toFixed(2);
 }
 
 export function EmployeeDetailClient({
-  employee, activity, canManage, isAdmin, allUsers, allClients, allProjects, serviceOfferings, roleDefinitions, customPages,
+  employee, activity, canManage, isAdmin, allUsers, allClients, allProjects, serviceOfferings, roleDefinitions, customPages, disciplinaryReports,
 }: {
   employee: Employee;
   activity: ActivityLog[];
@@ -101,6 +102,7 @@ export function EmployeeDetailClient({
   serviceOfferings: { id: string; name: string }[];
   roleDefinitions: { id: string; name: string }[];
   customPages: { id: string; title: string; slug: string }[];
+  disciplinaryReports: DisciplinaryReportRow[];
 }) {
   const [activeTab, setActiveTab] = useState<TabKey>("overview");
   const [editOpen, setEditOpen] = useState(false);
@@ -152,6 +154,9 @@ export function EmployeeDetailClient({
     { key: "reporting", label: "Reporting", icon: Users },
     { key: "projects", label: "Projects", icon: FolderOpen },
     ...(isAdmin ? [{ key: "permissions" as TabKey, label: "Permissions", icon: Shield }] : []),
+    // HR-sensitive — only rendered for ADMIN/MANAGER viewers (the server
+    // page only fetches reports for them too).
+    ...(canManage ? [{ key: "disciplinary" as TabKey, label: "Disciplinary", icon: FileWarning }] : []),
     { key: "activity", label: "Activity", icon: FileText },
   ];
 
@@ -301,6 +306,14 @@ export function EmployeeDetailClient({
       {activeTab === "reporting" && <ReportingTab employee={employee} />}
       {activeTab === "projects" && <ProjectsTab employee={employee} />}
       {activeTab === "permissions" && isAdmin && <PermissionsTab employee={employee} allClients={allClients} allProjects={allProjects} customPages={customPages} />}
+      {activeTab === "disciplinary" && canManage && (
+        <DisciplinaryTab
+          employeeId={employee.id}
+          employeeName={employee.name}
+          reports={disciplinaryReports}
+          isAdmin={isAdmin}
+        />
+      )}
       {activeTab === "activity" && <ActivityTab activity={activity} />}
 
       {/* Edit Dialog */}
