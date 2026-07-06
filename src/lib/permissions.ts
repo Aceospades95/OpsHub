@@ -44,16 +44,62 @@ const SCOPED_MODULES: Record<string, "projectIds" | "clientIds" | "contractIds" 
   certifications: "certIds",
 };
 
-export function getRoleDefaults(role: Role): PermissionFlags {
+/**
+ * Modules a field-tier user (CONTRIBUTOR / VIEWER) can use out of the box,
+ * with the flags CONTRIBUTOR gets on each (VIEWER gets the canView bits
+ * only). Everything NOT listed here defaults to NO access for the field
+ * tier — quotes, contracts, suppliers, subcontractors, partnerships,
+ * workflows, certifications, and custom pages are opt-in via an explicit
+ * ModulePermission row or an entity grant.
+ *
+ * This is the July 2026 access rework: the old defaults granted every
+ * VIEWER+ canView (and every CONTRIBUTOR+ canEdit/canCreate) on EVERY
+ * permissioned module, which exposed quote totals, contract values, and
+ * subcontractor rates to field accounts. See
+ * docs/codebase-audit-2026-07.md §6 for the full leak list this closes.
+ */
+const FIELD_MODULE_DEFAULTS: Record<string, Partial<PermissionFlags>> = {
+  tasks: { canView: true, canEdit: true, canCreate: true, canComment: true, canUpload: true },
+  // Scoped modules: the list pages additionally filter to the user's
+  // assigned entities, so canView here means "their own", not org-wide.
+  projects: { canView: true, canComment: true, canUpload: true },
+  clients: { canView: true, canComment: true },
+  tools: { canView: true },
+  team: { canView: true },
+  intranet: { canView: true },
+};
+
+export function getRoleDefaults(role: Role, module: string): PermissionFlags {
   const level = ROLE_LEVEL[role];
+
+  // MANAGER (and the legacy DEVELOPER, though it short-circuits earlier
+  // via hasOrgWideManage) — org-wide operational access to every module.
+  if (level >= 3) {
+    return {
+      canView: true,
+      canEdit: true,
+      canCreate: true,
+      canDelete: true,
+      canComment: true,
+      canUpload: true,
+      canManage: level >= 4,
+    };
+  }
+
+  if (role === "GUEST") return getGuestModuleDefaults(module);
+
+  // Field tier (CONTRIBUTOR, plus legacy VIEWER as its read-only variant):
+  // deny-by-default allow-list.
+  const grants = FIELD_MODULE_DEFAULTS[module];
+  const canWrite = level >= 2;
   return {
-    canView: level >= 1,
-    canEdit: level >= 2,
-    canCreate: level >= 2,
-    canDelete: level >= 3,
-    canComment: level >= 2,
-    canUpload: level >= 2,
-    canManage: level >= 4,
+    canView: Boolean(grants?.canView),
+    canEdit: Boolean(grants?.canEdit) && canWrite,
+    canCreate: Boolean(grants?.canCreate) && canWrite,
+    canDelete: false,
+    canComment: Boolean(grants?.canComment) && canWrite,
+    canUpload: Boolean(grants?.canUpload) && canWrite,
+    canManage: false,
   };
 }
 
@@ -110,10 +156,8 @@ export async function resolveModulePerms(
     };
   }
 
-  // Start with role-based defaults.
-  const base: PermissionFlags = role === "GUEST"
-    ? getGuestModuleDefaults(module)
-    : getRoleDefaults(role);
+  // Start with role-based defaults (GUEST handled inside).
+  const base: PermissionFlags = getRoleDefaults(role, module);
 
   // An explicit module-permission row overrides the role defaults.
   const modulePerm = await db.modulePermission.findUnique({
@@ -136,6 +180,10 @@ export async function resolveModulePerms(
   // if the user has at least one entity in scope (via assignment, membership,
   // or entity permission), grant canView + canComment regardless of role or
   // module-permission rows. Assignments are the source of truth for access.
+  // Note: for the field tier, scope.contractIds only ever contains
+  // EXPLICIT entity grants (see getUserScope) — a project assignment no
+  // longer fans out to the project's contracts, so this path can't
+  // re-open contracts that the role defaults above deny.
   const scopeKey = SCOPED_MODULES[module];
   if (scopeKey && !effective.canView) {
     const scope = await getUserScope(userId, role);

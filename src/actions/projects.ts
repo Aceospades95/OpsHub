@@ -4,7 +4,6 @@ import { db } from "@/lib/db";
 import { log } from "@/lib/log";
 import { requireAuth, resolveModulePerms, canManageProjectAssignments } from "@/lib/permissions";
 import { assertManageEntity } from "@/lib/entity-authz";
-import { maybePromoteUserRole, maybeDemoteUserRole } from "@/lib/auto-role";
 import { logActivity } from "@/lib/activity";
 import { revalidatePath } from "next/cache";
 import { revalidateProject, revalidateUser } from "@/lib/revalidate-entity";
@@ -274,6 +273,93 @@ export async function updateProject(_prev: unknown, formData: FormData) {
   return { success: true };
 }
 
+// ─── Inline edits (My View all-projects table) ──────────────────────
+//
+// Narrow single-field updates so /my can change status, notes, and owner
+// without round-tripping the full edit form. Same three-gate convention
+// as updateProject: requireAuth → module canEdit → assertManageEntity.
+
+const PROJECT_STATUSES = ["PLANNING", "ACTIVE", "ON_HOLD", "COMPLETED", "ARCHIVED"] as const;
+type InlineProjectStatus = (typeof PROJECT_STATUSES)[number];
+
+async function gateInlineProjectEdit(projectId: string) {
+  const user = await requireAuth();
+  const perms = await resolveModulePerms(user.id, user.role, "projects");
+  if (!perms.canEdit) return { error: "Permission denied" as const };
+  const project = await db.project.findFirst({
+    where: { id: projectId, deletedAt: null },
+    select: { id: true, name: true, clientId: true },
+  });
+  if (!project) return { error: "Project not found" as const };
+  const scopeGate = await assertManageEntity(user.id, user.role, "project", projectId);
+  if (scopeGate) return scopeGate;
+  return { user, project };
+}
+
+export async function updateProjectStatusInline(projectId: string, status: string) {
+  if (!PROJECT_STATUSES.includes(status as InlineProjectStatus)) {
+    return { error: `Invalid status "${status}"` };
+  }
+  const gate = await gateInlineProjectEdit(projectId);
+  if ("error" in gate) return gate;
+
+  await db.project.update({ where: { id: projectId }, data: { status: status as InlineProjectStatus } });
+  await logActivity("updated", "project", projectId, gate.user.id, `${gate.project.name} → ${status}`, {
+    projectId,
+    clientId: gate.project.clientId,
+  });
+  revalidateProject(projectId, { clientId: gate.project.clientId });
+  return { success: true };
+}
+
+const MAX_PROJECT_NOTES_LENGTH = 5000;
+
+export async function updateProjectNotesInline(projectId: string, notes: string) {
+  const trimmed = (notes ?? "").trim();
+  if (trimmed.length > MAX_PROJECT_NOTES_LENGTH) {
+    return { error: `Notes are capped at ${MAX_PROJECT_NOTES_LENGTH} characters` };
+  }
+  const gate = await gateInlineProjectEdit(projectId);
+  if ("error" in gate) return gate;
+
+  await db.project.update({
+    where: { id: projectId },
+    data: { notes: trimmed.length === 0 ? null : trimmed },
+  });
+  // Notes churn constantly from /my — log once per edit but keep the
+  // details short so the activity feed doesn't fill with note bodies.
+  await logActivity("updated", "project", projectId, gate.user.id, `${gate.project.name} — notes updated`, {
+    projectId,
+    clientId: gate.project.clientId,
+  });
+  revalidateProject(projectId, { clientId: gate.project.clientId });
+  return { success: true };
+}
+
+export async function updateProjectOwnerInline(projectId: string, ownerId: string | null) {
+  const gate = await gateInlineProjectEdit(projectId);
+  if ("error" in gate) return gate;
+
+  if (ownerId) {
+    const owner = await db.user.findFirst({
+      where: { id: ownerId, isActive: true },
+      select: { id: true },
+    });
+    if (!owner) return { error: "Owner not found" };
+  }
+
+  await db.project.update({
+    where: { id: projectId },
+    data: { ownerId: ownerId || null },
+  });
+  await logActivity("updated", "project", projectId, gate.user.id, `${gate.project.name} — owner changed`, {
+    projectId,
+    clientId: gate.project.clientId,
+  });
+  revalidateProject(projectId, { clientId: gate.project.clientId });
+  return { success: true };
+}
+
 export async function deleteProject(_prev: unknown, formData: FormData) {
   const user = await requireAuth();
   const perms = await resolveModulePerms(user.id, user.role, "projects");
@@ -369,10 +455,8 @@ export async function addProjectMember(_prev: unknown, formData: FormData) {
     data: { userId, projectId, role },
   });
 
-  // Bump GUEST / VIEWER up to CONTRIBUTOR now that they have project access.
-  // Their previous role is stored so it can be restored if they lose every
-  // assignment later.
-  await maybePromoteUserRole(userId);
+  // No role auto-promotion (July 2026 access rework): membership itself
+  // grants scoped visibility via getUserScope, whatever the user's role.
 
   revalidatePath(`/projects/${projectId}`);
   // The new member's /team/{userId} page shows project memberships, so it needs
@@ -443,9 +527,6 @@ export async function removeProjectMember(_prev: unknown, formData: FormData) {
     return { error: "Permission denied" };
 
   await db.projectMember.delete({ where: { id } });
-  // If this was the last thing keeping the user at CONTRIBUTOR (auto-promoted),
-  // revert them to their original role.
-  await maybeDemoteUserRole(member.userId);
   revalidatePath(`/projects/${member.projectId}`);
   revalidateUser(member.userId);
   return { success: true };

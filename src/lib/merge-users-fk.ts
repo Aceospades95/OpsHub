@@ -64,12 +64,18 @@ export const REASSIGNMENTS: { model: string; column: string }[] = [
   { model: "certificationRenewalChecklistItem", column: "completedById" },
   { model: "certificationRenewalHistory", column: "signedOffById" },
   { model: "client", column: "accountManagerId" },
+  { model: "subcontractor", column: "accountManagerId" },
+  { model: "partnership", column: "relationshipOwnerId" },
+  { model: "project", column: "ownerId" },
   { model: "sandboxPage", column: "createdById" },
   { model: "customWidget", column: "createdById" },
   // User self-reference: managerId. If any direct reports were pointing
   // at the merged-in user, re-aim them at the keeper so the org-tree
   // doesn't lose them.
   { model: "user", column: "managerId" },
+  // Deliberately NOT re-pointed: GoogleTasksIntegration.userId (unique
+  // per user; the row cascades away with the merged-in user — the keeper
+  // reconnects from /my if they weren't connected already).
 ];
 
 /**

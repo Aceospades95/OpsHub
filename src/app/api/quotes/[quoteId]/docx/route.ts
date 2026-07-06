@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getBranding } from "@/lib/branding";
 import { requireAuth, resolveModulePerms } from "@/lib/permissions";
+import { canAccessQuote } from "@/lib/quotes/access";
 import { computeQuoteTotals } from "@/lib/quotes/totals";
 import { renderQuoteDocx, type DocxLineItem } from "@/lib/quotes/docx";
 
@@ -28,6 +29,11 @@ export async function GET(
     },
   });
   if (!quote) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+  // Per-quote gate on top of the module gate: non-org-wide roles can only
+  // export their own quotes. 404 (not 403) so ids can't be probed.
+  if (!canAccessQuote(user, quote)) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 

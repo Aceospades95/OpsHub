@@ -151,15 +151,20 @@ export async function getUserScope(
   const certIds = new Set(certRows.map((c) => c.id));
 
   // ── Contract visibility ───────────────────────────────────────
-  // Contracts are only visible when directly linked to an assigned
-  // project or granted via explicit entity permission. We intentionally
-  // do NOT fan out through clientIds — seeing a client doesn't
-  // automatically grant access to all contracts for that client.
+  // MANAGER: contracts linked to their assigned projects are in scope so
+  // they can manage them (their list pages skip filtering anyway).
+  //
+  // Field tier (CONTRIBUTOR / VIEWER / GUEST): contracts are ONLY visible
+  // via an explicit entity permission. A project assignment deliberately
+  // does NOT fan out to the project's contracts — field accounts must
+  // never see contract values just because they're staffed on the job.
+  // We also never fan out through clientIds — seeing a client doesn't
+  // grant access to that client's contracts.
   const contractIds = new Set<string>();
   for (const p of entityPerms) {
     if (p.entityType === "contract") contractIds.add(p.entityId);
   }
-  if (projectIds.size > 0) {
+  if (role === "MANAGER" && projectIds.size > 0) {
     const contracts = await db.contract.findMany({
       where: { projectId: { in: Array.from(projectIds) }, deletedAt: null },
       select: { id: true },

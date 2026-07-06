@@ -13,6 +13,7 @@
  */
 
 export type ModuleKey =
+  | "my"
   | "dashboard"
   | "clients"
   | "projects"
@@ -103,6 +104,15 @@ export const PERMISSION_FLAG_LABELS: Record<PermissionFlag, string> = {
  * permissions gating, and search will all pick it up automatically.
  */
 export const MODULES: ModuleDefinition[] = [
+  {
+    key: "my",
+    label: "My View",
+    href: "/my",
+    icon: "Home",
+    description: "Your projects, tasks, and inbox — the personal landing page",
+    section: "main",
+    permissioned: false,
+  },
   {
     key: "dashboard",
     label: "Dashboard",

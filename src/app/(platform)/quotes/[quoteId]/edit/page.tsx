@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { requireAuth, resolveModulePerms } from "@/lib/permissions";
 import { AccessDenied } from "@/components/shared/access-denied";
 import { getBranding } from "@/lib/branding";
+import { canAccessQuote } from "@/lib/quotes/access";
 
 import { QuoteEditor } from "./quote-editor";
 
@@ -62,6 +63,8 @@ export default async function QuoteEditPage({ params }: Props) {
   ]);
 
   if (!quote) notFound();
+  // Non-org-wide roles only reach their own quotes — see lib/quotes/access.
+  if (!canAccessQuote(user, quote)) notFound();
 
   const editable = quote.status === "DRAFT" || quote.status === "REVISED";
   if (!editable) {

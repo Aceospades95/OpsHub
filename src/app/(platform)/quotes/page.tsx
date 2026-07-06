@@ -11,6 +11,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Badge } from "@/components/ui/badge";
 import { formatCurrency } from "@/lib/quotes/totals";
+import { canSeeAllQuotes, ownQuotesWhere } from "@/lib/quotes/access";
 
 import { QuoteCreateButton } from "./quote-create-button";
 import { QuoteFilters } from "./quote-filters";
@@ -74,6 +75,9 @@ export default async function QuotesPage({
   const projectId = searchParams.projectId?.trim();
 
   const where: Prisma.QuoteWhereInput = { deletedAt: null };
+  // Non-org-wide roles only ever see their own quotes — the module
+  // permission alone must not expose org-wide pricing.
+  if (!canSeeAllQuotes(user.role)) where.AND = ownQuotesWhere(user.id);
   if (clientId) where.clientId = clientId;
   if (projectId) where.projectId = projectId;
   if (search) {

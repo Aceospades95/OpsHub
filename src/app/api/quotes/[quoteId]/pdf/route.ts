@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
 
 import { requireAuth, resolveModulePerms } from "@/lib/permissions";
+import { canAccessQuote } from "@/lib/quotes/access";
 import { loadQuoteForExport } from "@/lib/quotes/loader";
 import { renderQuotePdf } from "@/lib/quotes/pdf";
+import { db } from "@/lib/db";
 
 // react-pdf needs the Node runtime — Edge doesn't have the Buffer/stream
 // APIs it depends on. We also force-dynamic so each request renders a
@@ -21,6 +23,16 @@ export async function GET(
   }
 
   const { quoteId } = await params;
+  // Per-quote gate on top of the module gate: non-org-wide roles can only
+  // export their own quotes. 404 (not 403) so ids can't be probed.
+  const quote = await db.quote.findFirst({
+    where: { id: quoteId, deletedAt: null },
+    select: { createdById: true, assignedToId: true },
+  });
+  if (!quote || !canAccessQuote(user, quote)) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
   const data = await loadQuoteForExport({ id: quoteId });
   if (!data) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });

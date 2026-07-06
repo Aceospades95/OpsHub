@@ -13,6 +13,12 @@ interface Props {
   clientId?: string;
   projectId?: string;
   canCreate: boolean;
+  /**
+   * When set, only quotes created by or assigned to this user are listed.
+   * Parent pages pass the viewer's id for non-org-wide roles (see
+   * lib/quotes/access.ts) so an embedded card never leaks org pricing.
+   */
+  restrictToUserId?: string;
   /** Max rows to render before linking to the full list. */
   limit?: number;
 }
@@ -22,11 +28,17 @@ interface Props {
  * into a card map on `/clients/[id]` or `/projects/[id]` — header has a
  * "New Quote" button that pre-selects the parent entity.
  */
-export async function QuotesCard({ clientId, projectId, canCreate, limit = 8 }: Props) {
+export async function QuotesCard({ clientId, projectId, canCreate, restrictToUserId, limit = 8 }: Props) {
   if (!clientId && !projectId) return null;
 
   const quotes = await db.quote.findMany({
-    where: clientId ? { clientId, deletedAt: null } : { projectId, deletedAt: null },
+    where: {
+      ...(clientId ? { clientId } : { projectId }),
+      deletedAt: null,
+      ...(restrictToUserId
+        ? { OR: [{ createdById: restrictToUserId }, { assignedToId: restrictToUserId }] }
+        : {}),
+    },
     orderBy: { updatedAt: "desc" },
     include: { client: { select: { id: true, name: true } } },
     take: limit,

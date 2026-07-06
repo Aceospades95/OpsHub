@@ -89,6 +89,7 @@ export function revalidateProject(
   revalidatePath("/team", "layout"); // staffing matrix
   revalidatePath("/tasks");
   revalidatePath("/dashboard");
+  revalidatePath("/my"); // personal view lists + overview table
   // Subcontractor and partnership detail pages list a project's name —
   // revalidate so a renamed project shows everywhere it appears.
   revalidatePath("/subcontractors", "layout");
@@ -132,6 +133,7 @@ export function revalidateAssignment(opts: {
 }) {
   revalidatePath("/team", "layout");
   revalidatePath("/projects", "layout");
+  revalidatePath("/my"); // "my projects" derives from assignments
   if (opts.employeeId) revalidatePath(`/team/${opts.employeeId}`);
   if (opts.projectId) revalidatePath(`/projects/${opts.projectId}`);
   revalidatePath("/dashboard"); // dashboard shows assignment counts
@@ -151,10 +153,74 @@ export function revalidateTask(opts: {
 }) {
   revalidatePath("/tasks");
   revalidatePath("/dashboard");
+  revalidatePath("/my"); // my-tasks card + Google inbox + open-task counts
   if (opts.projectId) revalidatePath(`/projects/${opts.projectId}`);
   if (opts.clientId) revalidatePath(`/clients/${opts.clientId}`);
   if (opts.assigneeId) revalidatePath(`/team/${opts.assigneeId}`);
   if (opts.previousAssigneeId && opts.previousAssigneeId !== opts.assigneeId) {
+    revalidatePath(`/team/${opts.previousAssigneeId}`);
+  }
+}
+
+// ─── CONTRACT ─────────────────────────────────────────────────
+//
+// A contract appears on: contracts tree (list), contract detail, client
+// detail (contracts card), project detail (contracts card), dashboard
+// (expiring-contract widgets/counts).
+
+export function revalidateContract(
+  contractId: string,
+  opts?: {
+    clientId?: string | null;
+    previousClientId?: string | null;
+    projectId?: string | null;
+    previousProjectId?: string | null;
+    /** See revalidateUser's `deleted` doc — same rationale. */
+    deleted?: boolean;
+  }
+) {
+  if (!opts?.deleted) revalidatePath(`/contracts/${contractId}`);
+  revalidatePath("/contracts", opts?.deleted ? "page" : "layout");
+  revalidatePath("/dashboard");
+
+  if (opts?.clientId) revalidatePath(`/clients/${opts.clientId}`);
+  if (opts?.previousClientId && opts.previousClientId !== opts.clientId) {
+    revalidatePath(`/clients/${opts.previousClientId}`);
+  }
+  if (opts?.projectId) revalidatePath(`/projects/${opts.projectId}`);
+  if (opts?.previousProjectId && opts.previousProjectId !== opts.projectId) {
+    revalidatePath(`/projects/${opts.previousProjectId}`);
+  }
+}
+
+// ─── CERTIFICATION ────────────────────────────────────────────
+//
+// A certification appears on: certifications list, cert detail, the
+// assignee's / point-of-contact's team profile, dashboard (expiry
+// widgets). Client pages don't render certs today — the clientId
+// revalidation is here so they can start to without reopening this.
+
+export function revalidateCertification(
+  certId: string,
+  opts?: {
+    clientId?: string | null;
+    previousClientId?: string | null;
+    assigneeId?: string | null;
+    previousAssigneeId?: string | null;
+    /** See revalidateUser's `deleted` doc — same rationale. */
+    deleted?: boolean;
+  }
+) {
+  if (!opts?.deleted) revalidatePath(`/certifications/${certId}`);
+  revalidatePath("/certifications", opts?.deleted ? "page" : "layout");
+  revalidatePath("/dashboard");
+
+  if (opts?.clientId) revalidatePath(`/clients/${opts.clientId}`);
+  if (opts?.previousClientId && opts.previousClientId !== opts.clientId) {
+    revalidatePath(`/clients/${opts.previousClientId}`);
+  }
+  if (opts?.assigneeId) revalidatePath(`/team/${opts.assigneeId}`);
+  if (opts?.previousAssigneeId && opts.previousAssigneeId !== opts.assigneeId) {
     revalidatePath(`/team/${opts.previousAssigneeId}`);
   }
 }

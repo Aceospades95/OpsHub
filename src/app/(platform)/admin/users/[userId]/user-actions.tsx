@@ -9,6 +9,7 @@ import { FormDialog } from "@/components/shared/form-dialog";
 import { Dialog } from "@/components/ui/dialog";
 import { updateUser, deleteUser } from "@/actions/admin";
 import { Pencil, Trash2 } from "lucide-react";
+import { roleOptionsFor } from "@/lib/roles";
 
 interface Props {
   user: {
@@ -42,7 +43,7 @@ export function UserActions({ user, allUsers }: Props) {
             <input type="hidden" name="id" value={user.id} />
             <Input name="name" label="Name" defaultValue={user.name} required error={fieldErrors?.name?.[0]} />
             <Input name="email" label="Email" type="email" defaultValue={user.email} required error={fieldErrors?.email?.[0]} />
-            <Select name="role" label="Role" defaultValue={user.role} options={[{label:"Guest",value:"GUEST"},{label:"Viewer",value:"VIEWER"},{label:"Contributor",value:"CONTRIBUTOR"},{label:"Developer",value:"DEVELOPER"},{label:"Manager",value:"MANAGER"},{label:"Admin",value:"ADMIN"}]} />
+            <Select name="role" label="Role" defaultValue={user.role} options={roleOptionsFor(user.role)} />
             <Input name="department" label="Department" defaultValue={user.department || ""} />
             <Input name="jobTitle" label="Job Title" defaultValue={user.jobTitle || ""} />
             <Input name="location" label="Location" defaultValue={user.location || ""} placeholder="e.g. New York, NY" />
