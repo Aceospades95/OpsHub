@@ -14,6 +14,9 @@ const statusVariantMap: Record<string, BadgeVariant> = {
   ON_HOLD: "warning",
   COMPLETED: "default",
 
+  // Certification renewal-in-progress (date-derived display state)
+  RENEWAL_SUBMITTED: "default",
+
   // Contract statuses
   DRAFT: "outline",
   UNDER_REVIEW: "warning",

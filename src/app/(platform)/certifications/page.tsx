@@ -15,6 +15,7 @@ import {
   XCircle,
   RotateCcw,
   MapPin,
+  Hourglass,
 } from "lucide-react";
 import { differenceInDays } from "date-fns";
 import { formatCalendarDate } from "@/lib/dates";
@@ -46,6 +47,7 @@ const BUCKET_TO_STATUS: Record<CertBucket, string> = {
   expiring: "EXPIRING_SOON",
   expired: "EXPIRED",
   pending: "PENDING",
+  renewing: "RENEWAL_SUBMITTED",
 };
 
 type CertRow = Prisma.CertificationGetPayload<{
@@ -167,6 +169,7 @@ export default async function CertificationsPage({ searchParams }: PageProps) {
     expiring: [],
     expired: [],
     pending: [],
+    renewing: [],
   };
   for (const cert of certifications) buckets[certBucket(cert, now)].push(cert);
   const expiringSoon = buckets.expiring;
@@ -436,7 +439,7 @@ export default async function CertificationsPage({ searchParams }: PageProps) {
       />
 
       {/* Clickable status buckets — tap a card to filter the list below. */}
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4 mb-6">
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-5 mb-6">
         {(
           [
             {
@@ -465,6 +468,15 @@ export default async function CertificationsPage({ searchParams }: PageProps) {
               iconWrap: "bg-destructive/10",
               iconColor: "text-destructive",
               activeBorder: buckets.expired.length > 0 ? "border-destructive/50" : "",
+            },
+            {
+              key: "renewing" as const,
+              label: "Renewal Submitted",
+              count: buckets.renewing.length,
+              Icon: Hourglass,
+              iconWrap: "bg-primary/10",
+              iconColor: "text-primary",
+              activeBorder: "",
             },
             {
               key: "pending" as const,

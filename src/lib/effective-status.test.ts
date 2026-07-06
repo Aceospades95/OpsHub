@@ -29,6 +29,34 @@ describe("certBucket", () => {
     ).toBe("active");
   });
 
+  it("renewal submitted mutes expiring/expired regardless of dates", () => {
+    expect(
+      certBucket(
+        {
+          status: "ACTIVE",
+          expirationDate: daysFromNow(-3),
+          renewalLeadDays: 90,
+          renewalSubmittedAt: daysFromNow(-10),
+        },
+        NOW
+      )
+    ).toBe("renewing");
+  });
+
+  it("PENDING still wins over renewal submitted", () => {
+    expect(
+      certBucket(
+        {
+          status: "PENDING",
+          expirationDate: null,
+          renewalLeadDays: null,
+          renewalSubmittedAt: daysFromNow(-1),
+        },
+        NOW
+      )
+    ).toBe("pending");
+  });
+
   it("falls back to stored EXPIRED when there is no date", () => {
     expect(certBucket({ status: "EXPIRED", expirationDate: null, renewalLeadDays: null }, NOW)).toBe(
       "expired"
