@@ -74,6 +74,7 @@ export default async function SuppliersPage({
     where: { deletedAt: null },
     orderBy: [{ isPreferred: "desc" }, { name: "asc" }],
   });
+  const categories = Array.from(new Set(suppliers.map((s) => s.category))).sort();
 
   const groups = groupBy
     ? groupRows(suppliers, (s) => groupKeyOf(s, groupBy))
@@ -172,7 +173,7 @@ export default async function SuppliersPage({
         actions={
           <div className="flex items-center gap-2">
             {user.role === "ADMIN" && <DownloadCsvButton importerKey="suppliers" />}
-            {perms.canCreate && <SupplierCreateButton />}
+            {perms.canCreate && <SupplierCreateButton categories={categories} />}
           </div>
         }
       />

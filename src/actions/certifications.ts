@@ -298,6 +298,8 @@ export async function signOffCertification(_prev: unknown, formData: FormData) {
         signOffNotes: notes,
         // Reset fired reminders so the next cycle starts fresh
         firedReminderOffsets: [],
+        // The renewal cycle is complete — reminders re-arm.
+        renewalSubmittedAt: null,
       },
     }),
     db.certificationRenewalHistory.create({
@@ -483,5 +485,48 @@ export async function removeChecklistItem(_prev: unknown, formData: FormData) {
     scope
   );
   revalidatePath(`/certifications/${item.certificationId}`);
+  return { success: true };
+}
+
+// ─── Renewal submitted ─────────────────────────────────────────
+//
+// "We applied for the renewal, now we wait." While set, the expiry
+// reminder job skips this cert and list views show "Renewal Submitted"
+// instead of expiring/expired alarms. Cleared automatically on sign-off
+// (new cycle) or manually from the detail page.
+
+export async function setRenewalSubmitted(_prev: unknown, formData: FormData) {
+  const user = await requireAuth();
+  if (user.role !== "ADMIN" && user.role !== "MANAGER") {
+    return { error: "Only admins and managers can update renewal status" };
+  }
+
+  const id = formData.get("id") as string;
+  if (!id) return { error: "ID required" };
+  const submitted = formData.get("submitted") === "true";
+
+  const cert = await db.certification.findFirst({
+    where: { id, deletedAt: null },
+    select: { id: true, name: true, clientId: true },
+  });
+  if (!cert) return { error: "Not found" };
+
+  const denied = await assertManageEntity(user.id, user.role, "certification", id);
+  if (denied) return { error: denied.error };
+
+  await db.certification.update({
+    where: { id },
+    data: { renewalSubmittedAt: submitted ? new Date() : null },
+  });
+
+  await logActivity(
+    submitted ? "renewal-submitted" : "renewal-submission-cleared",
+    "certification",
+    id,
+    user.id,
+    cert.name,
+    { clientId: cert.clientId }
+  );
+  revalidateCertification(id, { clientId: cert.clientId });
   return { success: true };
 }

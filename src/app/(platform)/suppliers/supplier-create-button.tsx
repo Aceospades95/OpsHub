@@ -7,15 +7,11 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select } from "@/components/ui/select";
 import { FormDialog } from "@/components/shared/form-dialog";
 import { createSupplier } from "@/actions/suppliers";
+import { SupplierCategorySelect } from "./supplier-category-select";
 import { Plus } from "lucide-react";
 
-export function SupplierCreateButton() {
+export function SupplierCreateButton({ categories = [] }: { categories?: string[] }) {
   const [open, setOpen] = useState(false);
-
-  const categories = [
-    "auto_repair", "decals", "alarm_security", "maintenance",
-    "it_services", "office_supplies", "other",
-  ];
 
   return (
     <>
@@ -26,19 +22,14 @@ export function SupplierCreateButton() {
         {({ fieldErrors }) => (
           <>
             <Input name="name" label="Name" required error={fieldErrors?.name?.[0]} />
-            <Select
-              name="category"
-              label="Category"
-              options={categories.map(c => ({ label: c.replace(/_/g, " ").replace(/\b\w/g, l => l.toUpperCase()), value: c }))}
-              placeholder="Select category"
-              required
-            />
+            <SupplierCategorySelect categories={categories} />
             <Select
               name="status"
               label="Status"
               options={[{label:"Active",value:"ACTIVE"},{label:"Inactive",value:"INACTIVE"},{label:"Archived",value:"ARCHIVED"}]}
             />
             <Input name="contactName" label="Contact Name" />
+            <Input name="contactTitle" label="Contact Title" />
             <Input name="contactEmail" label="Contact Email" type="email" />
             <Input name="contactPhone" label="Contact Phone" />
             <Input name="location" label="Location (city / region)" />

@@ -38,6 +38,10 @@ export const certificationExpiryCheck: JobDefinition = {
         deletedAt: null,
         status: { not: "EXPIRED" },
         expirationDate: { gte: now, lte: generousHorizon },
+        // Renewal already submitted → the org is waiting on the issuing
+        // body; nagging about the expiry date helps nobody. Sign-off
+        // clears the flag and re-arms reminders for the next cycle.
+        renewalSubmittedAt: null,
       },
       include: {
         assignee: { select: { id: true, name: true } },

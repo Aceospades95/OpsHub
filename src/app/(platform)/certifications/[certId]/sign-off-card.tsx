@@ -6,9 +6,9 @@ import { useFormState } from "react-dom";
 import { format } from "date-fns";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { CheckCircle2, ShieldCheck, Undo2 } from "lucide-react";
+import { CheckCircle2, ShieldCheck, Undo2, Hourglass } from "lucide-react";
 import Link from "next/link";
-import { signOffCertification, revokeSignOff } from "@/actions/certifications";
+import { signOffCertification, revokeSignOff, setRenewalSubmitted } from "@/actions/certifications";
 
 interface Props {
   cert: {
@@ -16,6 +16,7 @@ interface Props {
     signedOffAt: Date | null;
     signedOffBy: { id: string; name: string } | null;
     signOffNotes: string | null;
+    renewalSubmittedAt: Date | null;
   };
   canSignOff: boolean;
   canRevoke: boolean;
@@ -25,6 +26,7 @@ export function SignOffCard({ cert, canSignOff, canRevoke }: Props) {
   const [modalOpen, setModalOpen] = useState(false);
   const [signState, signAction] = useFormState(signOffCertification, null);
   const [revokeState, revokeAction] = useFormState(revokeSignOff, null);
+  const [renewalState, renewalAction] = useFormState(setRenewalSubmitted, null);
   const router = useRouter();
 
   useEffect(() => {
@@ -40,7 +42,14 @@ export function SignOffCard({ cert, canSignOff, canRevoke }: Props) {
     }
   }, [revokeState, router]);
 
+  useEffect(() => {
+    if (renewalState?.success) {
+      router.refresh();
+    }
+  }, [renewalState, router]);
+
   const isSignedOff = !!cert.signedOffAt;
+  const renewalSubmitted = !!cert.renewalSubmittedAt;
 
   return (
     <Card className={`h-full ${isSignedOff ? "border-success/40" : ""}`}>
@@ -51,6 +60,54 @@ export function SignOffCard({ cert, canSignOff, canRevoke }: Props) {
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
+        {/* Renewal-in-progress toggle. While set: expiry reminders are
+         *  muted and lists show "Renewal Submitted" instead of
+         *  expiring/expired alarms. Sign-off clears it automatically. */}
+        <div className="rounded-md border border-border bg-muted p-3">
+          {renewalSubmitted ? (
+            <div className="flex items-start justify-between gap-2">
+              <div className="flex items-start gap-2">
+                <Hourglass className="h-4 w-4 text-primary mt-0.5" />
+                <div>
+                  <p className="text-sm font-medium">Renewal submitted</p>
+                  <p className="text-xs text-muted-foreground">
+                    {format(new Date(cert.renewalSubmittedAt!), "MMM d, yyyy")} — waiting on the
+                    issuing body. Expiry reminders are paused.
+                  </p>
+                </div>
+              </div>
+              {canSignOff && (
+                <form action={renewalAction}>
+                  <input type="hidden" name="id" value={cert.id} />
+                  <input type="hidden" name="submitted" value="false" />
+                  <Button type="submit" size="sm" variant="outline">
+                    Clear
+                  </Button>
+                </form>
+              )}
+            </div>
+          ) : (
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-xs text-muted-foreground">
+                Applied for the renewal and waiting? Mark it submitted to pause the
+                expiry reminders until sign-off.
+              </p>
+              {canSignOff && (
+                <form action={renewalAction}>
+                  <input type="hidden" name="id" value={cert.id} />
+                  <input type="hidden" name="submitted" value="true" />
+                  <Button type="submit" size="sm" variant="outline" className="shrink-0">
+                    <Hourglass className="h-3.5 w-3.5 mr-1" /> Renewal submitted
+                  </Button>
+                </form>
+              )}
+            </div>
+          )}
+          {renewalState?.error && (
+            <p className="text-xs text-destructive mt-2">{renewalState.error}</p>
+          )}
+        </div>
+
         {isSignedOff ? (
           <>
             <div className="flex items-start gap-2">

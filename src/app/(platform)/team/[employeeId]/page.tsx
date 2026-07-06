@@ -21,6 +21,30 @@ export default async function EmployeeDetailPage({ params }: Props) {
   const canManage = user.role === "ADMIN" || user.role === "MANAGER";
   const isAdmin = user.role === "ADMIN";
 
+  // HR-sensitive: only fetched for ADMIN/MANAGER viewers — the tab that
+  // renders these is gated the same way.
+  const disciplinaryReports = canManage
+    ? await db.disciplinaryReport.findMany({
+        where: { employeeId, deletedAt: null },
+        orderBy: { incidentDate: "desc" },
+        include: { issuedBy: { select: { name: true } } },
+      })
+    : [];
+  const serializedDisciplinaryReports = disciplinaryReports.map((report) => ({
+    id: report.id,
+    actionType: report.actionType as string,
+    incidentDate: report.incidentDate.toISOString(),
+    createdAt: report.createdAt.toISOString(),
+    followUpDate: report.followUpDate ? report.followUpDate.toISOString() : null,
+    acknowledgedAt: report.acknowledgedAt ? report.acknowledgedAt.toISOString() : null,
+    description: report.description,
+    actionTaken: report.actionTaken,
+    improvementPlan: report.improvementPlan,
+    witnesses: report.witnesses,
+    notes: report.notes,
+    issuedByName: report.issuedBy.name,
+  }));
+
   // Explicit select of exactly what EmployeeDetailClient renders — the
   // previous full-row include sent every column (incl. permission rows
   // and OAuth accounts) to every viewer. The permissions/accounts
@@ -214,6 +238,7 @@ export default async function EmployeeDetailPage({ params }: Props) {
       <EmployeeDetailClient
         employee={serializedEmployee}
         activity={serializedActivity}
+        disciplinaryReports={serializedDisciplinaryReports}
         canManage={canManage}
         isAdmin={isAdmin}
         allUsers={allUsers}

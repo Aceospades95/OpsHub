@@ -12,15 +12,16 @@ import { differenceInDays } from "date-fns";
 
 // ─── Certifications ──────────────────────────────────────────────
 
-export type CertBucket = "active" | "expiring" | "expired" | "pending";
+export type CertBucket = "active" | "expiring" | "expired" | "pending" | "renewing";
 
-export const CERT_BUCKETS: CertBucket[] = ["active", "expiring", "expired", "pending"];
+export const CERT_BUCKETS: CertBucket[] = ["active", "expiring", "expired", "pending", "renewing"];
 
 export const CERT_BUCKET_LABELS: Record<CertBucket, string> = {
   active: "Active",
   expiring: "Expiring Soon",
   expired: "Expired",
   pending: "Pending",
+  renewing: "Renewal Submitted",
 };
 
 /**
@@ -33,10 +34,15 @@ export function certBucket(
     status: string;
     expirationDate: Date | null;
     renewalLeadDays: number | null;
+    /** Optional — older call sites may not select it. */
+    renewalSubmittedAt?: Date | null;
   },
   now: Date
 ): CertBucket {
   if (cert.status === "PENDING") return "pending";
+  // Renewal already submitted → we're waiting on the issuing body, so
+  // suppress the expiring/expired alarms until sign-off clears it.
+  if (cert.renewalSubmittedAt) return "renewing";
   if (cert.expirationDate) {
     const days = differenceInDays(cert.expirationDate, now);
     if (days <= 0) return "expired";

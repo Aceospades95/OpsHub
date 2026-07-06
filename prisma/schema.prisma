@@ -369,6 +369,9 @@ model User {
   createdCustomReports           CustomReport[]                      @relation("CustomReportCreator")
   ownedProjects                  Project[]                           @relation("ProjectOwner")
   googleTasksIntegration         GoogleTasksIntegration?
+  assignedVehicles               Vehicle[]                           @relation("VehicleAssignee")
+  disciplinaryReports            DisciplinaryReport[]                @relation("DisciplinaryEmployee")
+  issuedDisciplinaryReports      DisciplinaryReport[]                @relation("DisciplinaryIssuer")
   accounts                       Account[]
   signupTokens                   SignupToken[]
 }
@@ -778,6 +781,8 @@ model Supplier {
   name         String
   category     String
   contactName  String?
+  /// Job title of the primary contact ("Account Manager", "Dispatcher").
+  contactTitle String?
   contactEmail String?
   contactPhone String?
   /// Short city/region label ("Chicago", "Cook County, IL") used for the
@@ -797,7 +802,28 @@ model Supplier {
   files    File[]
   links    ExternalLink[]
   comments Comment[]
+  contacts SupplierContact[]
   projects SupplierProject[]
+}
+
+/// Additional supplier contacts beyond the flat primary-contact fields —
+/// AP departments, dispatchers, personal vs company emails, fax lines.
+/// One row per person/channel; same shape as SubcontractorContact.
+model SupplierContact {
+  id         String   @id @default(cuid())
+  supplierId String
+  name       String
+  title      String?
+  email      String?
+  phone      String?
+  isPrimary  Boolean  @default(false)
+  notes      String?  @db.Text
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  supplier Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+
+  @@index([supplierId])
 }
 
 model SupplierProject {
@@ -1088,6 +1114,12 @@ model Certification {
   agencyContactPhone   String?
   issuedDate           DateTime?
   submittedDate        DateTime? // When the application was submitted
+  /// Set when the renewal application has been submitted and the org is
+  /// waiting on the issuing body. While set: the expiry-reminder job
+  /// skips this cert and list views show "Renewal submitted" instead of
+  /// expiring/expired alarms. Cleared on sign-off (new cycle) or
+  /// manually from the cert detail page.
+  renewalSubmittedAt   DateTime?
   expirationDate       DateTime?
   renewalDate          DateTime? // When to start renewal process
   renewalLeadDays      Int?                @default(90) // Legacy single lead — kept for back-compat
@@ -2307,4 +2339,121 @@ model PartnershipProject {
   @@unique([partnershipId, projectId])
   @@index([projectId])
   @@index([role])
+}
+
+// ─── DISCIPLINARY ACTION REPORTS ──────────────────────────
+//
+// HR incident documentation, replacing the Google Spreadsheet template.
+// Reports are created by ADMIN/MANAGER from the employee's profile and
+// exported as a PDF (via /api/team/.../disciplinary/.../pdf) for the
+// employee to sign. Sensitive: never visible to the field tier — every
+// read/write path gates on ADMIN or MANAGER.
+
+enum DisciplinaryActionType {
+  VERBAL_WARNING
+  WRITTEN_WARNING
+  FINAL_WARNING
+  SUSPENSION
+  TERMINATION
+  OTHER
+}
+
+model DisciplinaryReport {
+  id              String                 @id @default(cuid())
+  employeeId      String
+  issuedById      String
+  actionType      DisciplinaryActionType @default(WRITTEN_WARNING)
+  incidentDate    DateTime
+  /// Factual account of what happened.
+  description     String                 @db.Text
+  /// Company response — the action being taken.
+  actionTaken     String?                @db.Text
+  /// Corrective expectations going forward.
+  improvementPlan String?                @db.Text
+  witnesses       String?
+  followUpDate    DateTime?
+  /// Set when the employee acknowledges receipt (matches the signature
+  /// line on the exported PDF).
+  acknowledgedAt  DateTime?
+  notes           String?                @db.Text
+  createdAt       DateTime               @default(now())
+  updatedAt       DateTime               @updatedAt
+  /// Soft-delete tombstone — see Project.deletedAt comment.
+  deletedAt       DateTime?
+
+  employee User @relation("DisciplinaryEmployee", fields: [employeeId], references: [id], onDelete: Cascade)
+  issuedBy User @relation("DisciplinaryIssuer", fields: [issuedById], references: [id])
+
+  @@index([employeeId, incidentDate])
+}
+
+// ─── VEHICLE FLEET ────────────────────────────────────────
+//
+// Company vehicles + their maintenance history. The list page surfaces
+// due/overdue service (from `nextServiceDate`); the daily
+// vehicle-maintenance-check job notifies admins/managers when a vehicle
+// enters its due window. `maintenanceNotifiedFor` dedupes the job — one
+// notification per nextServiceDate value, re-armed whenever the date
+// changes (i.e. after service is logged).
+
+enum VehicleStatus {
+  ACTIVE
+  IN_SHOP
+  RETIRED
+  SOLD
+}
+
+model Vehicle {
+  id                     String        @id @default(cuid())
+  /// Optional friendly label ("Van #3"). Lists fall back to
+  /// year + make + model when unset.
+  nickname               String?
+  make                   String
+  model                  String
+  year                   Int
+  vin                    String?       @unique
+  licensePlate           String?
+  status                 VehicleStatus @default(ACTIVE)
+  assignedToId           String?
+  currentMileage         Int?
+  /// Next scheduled service — drives the due-soon visuals and the
+  /// maintenance job. Updated automatically when a maintenance record
+  /// with a nextDueDate is logged.
+  nextServiceDate        DateTime?
+  nextServiceMileage     Int?
+  /// Job-dedupe stamp — see the model comment.
+  maintenanceNotifiedFor DateTime?
+  notes                  String?       @db.Text
+  createdAt              DateTime      @default(now())
+  updatedAt              DateTime      @updatedAt
+  /// Soft-delete tombstone — see Project.deletedAt comment.
+  deletedAt              DateTime?
+
+  assignedTo         User?                      @relation("VehicleAssignee", fields: [assignedToId], references: [id], onDelete: SetNull)
+  maintenanceRecords VehicleMaintenanceRecord[]
+
+  @@index([status])
+  @@index([assignedToId])
+  @@index([nextServiceDate])
+}
+
+model VehicleMaintenanceRecord {
+  id             String   @id @default(cuid())
+  vehicleId      String
+  serviceDate    DateTime
+  /// "Oil change", "Brake pads", "Tire rotation", … free-form.
+  serviceType    String
+  odometer       Int?
+  cost           Float?
+  vendor         String?
+  notes          String?  @db.Text
+  /// When this kind of service is next due. Logging a record with this
+  /// set also updates Vehicle.nextServiceDate.
+  nextDueDate    DateTime?
+  nextDueMileage Int?
+  createdAt      DateTime @default(now())
+
+  vehicle Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+
+  @@index([vehicleId, serviceDate])
 }

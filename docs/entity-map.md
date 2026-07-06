@@ -366,6 +366,7 @@ Current types:
 - `comment-added`
 - `milestone-assigned`
 - `certification-expiring`
+- `vehicle-maintenance-due`
 - `system`, `test`
 
 ### User-facing UI
@@ -975,6 +976,106 @@ searchParams with a closed GROUP_OPTIONS list, write `renderCards` /
 `renderTable` helpers, and compose with `groupRows` + `GroupSection`
 exactly like `suppliers/page.tsx` (the smallest reference
 implementation).
+
+## July 2026 feedback batch
+
+Migration `20260707000000_feedback_batch_suppliers_certs_disciplinary_fleet`
+carries every schema change below.
+
+### Supplier contacts, receipts, categories
+
+- **`SupplierContact`** — many contacts per supplier, each with name,
+  title, company/personal email, office/cell/fax phones, isPrimary
+  (setting one primary unsets the others), notes. CRUD in
+  `actions/suppliers.ts`, rendered by
+  `suppliers/[supplierId]/supplier-contact-section.tsx`. The legacy
+  single contactName/Email/Phone columns (plus new `contactTitle`)
+  remain as the "quick contact" on the supplier itself.
+- **Receipts** — `uploadSupplierReceipt` / `deleteSupplierReceipt`
+  store `File` rows with `supplierId` + `category: "receipt"`
+  (private visibility, 10MB cap, magic-byte sniffing, SVG blocked).
+  Listed and uploaded from the supplier detail page
+  (`supplier-receipts.tsx`); served via `/api/files/{id}` with the
+  existing supplier-module authz in `lib/file-authz.ts`.
+- **Categories** — the category select
+  (`suppliers/supplier-category-select.tsx`) offers
+  DEFAULT_CATEGORIES ∪ every distinct category already in the DB, plus
+  an "+ Add new category…" option that reveals a free-text input.
+  New values are normalized to snake_case by `resolveCategory()` so
+  grouping stays stable.
+
+### Certification "renewal submitted"
+
+`Certification.renewalSubmittedAt` records that the renewal paperwork
+is filed and we're waiting on the authority. While set:
+
+- `certBucket()` (`lib/effective-status.ts`) returns `"renewing"` —
+  shown as a "Renewal Submitted" badge and its own stat chip/filter on
+  the certifications list.
+- The `certification-expiry-check` job skips the cert (no more
+  "expires in 15 days" nagging while waiting).
+- Toggled from the cert detail sign-off card
+  (`setRenewalSubmitted` in `actions/certifications.ts`,
+  ADMIN/MANAGER + entity gate). Signing off a completed renewal
+  clears it automatically, re-arming normal expiry tracking for the
+  next cycle.
+
+### Disciplinary action reports
+
+HR paper trail replacing the Google Spreadsheet template.
+
+- **Model** — `DisciplinaryReport`: employee, issuedBy, actionType
+  (VERBAL_WARNING → TERMINATION enum), incidentDate, description,
+  actionTaken, improvementPlan, witnesses, followUpDate,
+  acknowledgedAt, notes, soft-delete.
+- **Access** — ADMIN/MANAGER only (`requireHrRole` in
+  `actions/disciplinary.ts`); delete is ADMIN-only. The tab on the
+  employee profile (`team/[employeeId]/disciplinary-tab.tsx`) is
+  gated by `canManage` and the data is only fetched server-side for
+  those roles. Employees do NOT see their own reports in-app — the
+  PDF is the employee-facing artifact.
+- **PDF export** — `GET /api/team/disciplinary/{reportId}/pdf`
+  renders a signed-signature-line LETTER document
+  (`lib/disciplinary/pdf.tsx`, @react-pdf/renderer) for printing /
+  handing to the employee. Action-type labels live in
+  `lib/disciplinary.ts` (kept out of the "use server" file).
+
+### Fleet module
+
+Company vehicles + maintenance, registered as the permissioned `fleet`
+module (Car icon; ADMIN/MANAGER by default, grantable to field users
+via ModulePermission like any other module).
+
+- **Models** — `Vehicle` (nickname, make/model/year, unique VIN,
+  licensePlate, status ACTIVE/IN_SHOP/RETIRED/SOLD, assignedTo,
+  currentMileage, rolling nextServiceDate/nextServiceMileage,
+  maintenanceNotifiedFor dedupe stamp, notes, soft-delete) and
+  `VehicleMaintenanceRecord` (serviceDate, serviceType, odometer,
+  cost, vendor, notes, nextDueDate/nextDueMileage).
+- **Pages** — `/fleet` list (due-service stat chips with `?due=`
+  filters; cards/table views grouped by status / make / assignee via
+  the shared view kit) and `/fleet/{vehicleId}` detail (spec card,
+  service badges, lifetime maintenance cost, history table +
+  log-maintenance dialog).
+- **Rolling schedule** — `addMaintenanceRecord` writes the record and
+  updates the vehicle in one transaction: odometer only moves
+  forward, `nextDueDate`/`nextDueMileage` roll the vehicle's schedule
+  forward, and `maintenanceNotifiedFor` clears so the next window
+  re-notifies. Editing the vehicle's `nextServiceDate` directly also
+  re-arms it.
+- **Job** — `vehicle-maintenance-check` (daily): vehicles
+  ACTIVE/IN_SHOP with `nextServiceDate` within
+  `MAINTENANCE_DUE_WINDOW_DAYS` (14) or overdue notify admins,
+  managers, and the assigned driver (`vehicle-maintenance-due` type,
+  email included), deduped per service date via
+  `maintenanceNotifiedFor`.
+- **Helpers** — `lib/fleet.ts`: `vehicleLabel()` (nickname or "year
+  make model") and `maintenanceDueState()` (overdue / due-soon /
+  scheduled / none; RETIRED and SOLD vehicles never nag).
+- Soft-delete recovery + purge cover `vehicle` and
+  `disciplinary-report`; `merge-users-fk.ts` reassigns
+  `Vehicle.assignedToId`, `DisciplinaryReport.employeeId`, and
+  `DisciplinaryReport.issuedById`.
 
 ## How to extend this document
 
