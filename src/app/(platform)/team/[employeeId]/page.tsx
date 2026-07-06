@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import { requireAuth, resolveModulePerms } from "@/lib/permissions";
+import { activityVisibilityWhere } from "@/lib/activity";
 import { AccessDenied } from "@/components/shared/access-denied";
 import { PageHeader } from "@/components/layout/page-header";
 import { EmployeeDetailClient } from "./employee-detail-client";
@@ -20,30 +21,10 @@ export default async function EmployeeDetailPage({ params }: Props) {
 
   const canManage = user.role === "ADMIN" || user.role === "MANAGER";
   const isAdmin = user.role === "ADMIN";
-
-  // HR-sensitive: only fetched for ADMIN/MANAGER viewers — the tab that
-  // renders these is gated the same way.
-  const disciplinaryReports = canManage
-    ? await db.disciplinaryReport.findMany({
-        where: { employeeId, deletedAt: null },
-        orderBy: { incidentDate: "desc" },
-        include: { issuedBy: { select: { name: true } } },
-      })
-    : [];
-  const serializedDisciplinaryReports = disciplinaryReports.map((report) => ({
-    id: report.id,
-    actionType: report.actionType as string,
-    incidentDate: report.incidentDate.toISOString(),
-    createdAt: report.createdAt.toISOString(),
-    followUpDate: report.followUpDate ? report.followUpDate.toISOString() : null,
-    acknowledgedAt: report.acknowledgedAt ? report.acknowledgedAt.toISOString() : null,
-    description: report.description,
-    actionTaken: report.actionTaken,
-    improvementPlan: report.improvementPlan,
-    witnesses: report.witnesses,
-    notes: report.notes,
-    issuedByName: report.issuedBy.name,
-  }));
+  // HR-sensitive, and never shown to the report's subject: an
+  // ADMIN/MANAGER viewing their OWN profile doesn't get the tab (or the
+  // data) — the server actions enforce the same rule.
+  const canManageDisciplinary = canManage && user.id !== employeeId;
 
   // Explicit select of exactly what EmployeeDetailClient renders — the
   // previous full-row include sent every column (incl. permission rows
@@ -122,12 +103,21 @@ export default async function EmployeeDetailPage({ params }: Props) {
 
   // Admin-only data — the client only uses these in the canManage /
   // isAdmin gated dialogs and the Permissions tab.
-  const [recentActivity, allUsers, allClients, allProjects, serviceOfferings, roleDefinitions, customPages] = await Promise.all([
+  const [recentActivity, disciplinaryReports, allUsers, allClients, allProjects, serviceOfferings, roleDefinitions, customPages] = await Promise.all([
     db.activityLog.findMany({
-      where: { userId: employeeId },
+      // Rows where this employee is the ACTOR. HR-sensitive entity
+      // types are filtered for viewers outside the HR roles.
+      where: { userId: employeeId, ...activityVisibilityWhere(user.role) },
       take: 10,
       orderBy: { createdAt: "desc" },
     }),
+    canManageDisciplinary
+      ? db.disciplinaryReport.findMany({
+          where: { employeeId, deletedAt: null },
+          orderBy: { incidentDate: "desc" },
+          include: { issuedBy: { select: { name: true } } },
+        })
+      : Promise.resolve([]),
     canManage ? db.user.findMany({
       where: { id: { not: employeeId }, isActive: true },
       select: { id: true, name: true },
@@ -199,6 +189,21 @@ export default async function EmployeeDetailPage({ params }: Props) {
     createdAt: a.createdAt.toISOString(),
   }));
 
+  const serializedDisciplinaryReports = disciplinaryReports.map((report) => ({
+    id: report.id,
+    actionType: report.actionType as string,
+    incidentDate: report.incidentDate.toISOString(),
+    createdAt: report.createdAt.toISOString(),
+    followUpDate: report.followUpDate ? report.followUpDate.toISOString() : null,
+    acknowledgedAt: report.acknowledgedAt ? report.acknowledgedAt.toISOString() : null,
+    description: report.description,
+    actionTaken: report.actionTaken,
+    improvementPlan: report.improvementPlan,
+    witnesses: report.witnesses,
+    notes: report.notes,
+    issuedByName: report.issuedBy.name,
+  }));
+
   // Workflow templates available to start manually for this employee.
   // Only EMPLOYEE-subject + active templates are shown — no point listing
   // a candidate-hire template against a sitting team member.
@@ -239,6 +244,7 @@ export default async function EmployeeDetailPage({ params }: Props) {
         employee={serializedEmployee}
         activity={serializedActivity}
         disciplinaryReports={serializedDisciplinaryReports}
+        canManageDisciplinary={canManageDisciplinary}
         canManage={canManage}
         isAdmin={isAdmin}
         allUsers={allUsers}

@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { format } from "date-fns";
+import { formatCalendarDate, toCalendarDateString } from "@/lib/dates";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -41,10 +42,6 @@ const ACTION_OPTIONS = DISCIPLINARY_ACTION_TYPES.map((t) => ({
   value: t,
   label: DISCIPLINARY_ACTION_LABELS[t],
 }));
-
-function toDateInput(iso: string | null): string {
-  return iso ? iso.slice(0, 10) : "";
-}
 
 /**
  * Disciplinary action reports on the employee profile. Rendered only for
@@ -115,7 +112,7 @@ export function DisciplinaryTab({
           label="Date of incident"
           type="date"
           required
-          defaultValue={report ? toDateInput(report.incidentDate) : ""}
+          defaultValue={report ? toCalendarDateString(report.incidentDate) : ""}
         />
       </div>
       <Textarea
@@ -144,7 +141,7 @@ export function DisciplinaryTab({
           name="followUpDate"
           label="Follow-up review date"
           type="date"
-          defaultValue={report ? toDateInput(report.followUpDate) : ""}
+          defaultValue={report ? toCalendarDateString(report.followUpDate) : ""}
         />
       </div>
       <Textarea name="notes" label="Internal notes (not on the PDF)" rows={2} defaultValue={report?.notes ?? ""} />
@@ -189,10 +186,10 @@ export function DisciplinaryTab({
                       )}
                     </div>
                     <p className="text-xs text-muted-foreground mt-0.5">
-                      Incident {format(new Date(report.incidentDate), "MMM d, yyyy")} · issued by{" "}
+                      Incident {formatCalendarDate(report.incidentDate, "MMM d, yyyy")} · issued by{" "}
                       {report.issuedByName} on {format(new Date(report.createdAt), "MMM d, yyyy")}
                       {report.followUpDate &&
-                        ` · follow-up ${format(new Date(report.followUpDate), "MMM d, yyyy")}`}
+                        ` · follow-up ${formatCalendarDate(report.followUpDate, "MMM d, yyyy")}`}
                     </p>
                   </div>
                   <div className="flex items-center gap-1 shrink-0">

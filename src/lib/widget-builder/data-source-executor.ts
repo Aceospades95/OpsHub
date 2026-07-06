@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { HR_SENSITIVE_ENTITY_TYPES } from "@/lib/activity";
 import { getDataSource } from "./data-source-registry";
 import type { FilterConfig, AggregationType } from "./widget-config-types";
 
@@ -142,7 +143,16 @@ async function queryModel(
     case "document": return db.document.findMany(args as Parameters<typeof db.document.findMany>[0]) as unknown as Record<string, unknown>[];
     case "supplier": return db.supplier.findMany(args as Parameters<typeof db.supplier.findMany>[0]) as unknown as Record<string, unknown>[];
     case "certification": return db.certification.findMany(args as Parameters<typeof db.certification.findMany>[0]) as unknown as Record<string, unknown>[];
-    case "activityLog": return db.activityLog.findMany(args as Parameters<typeof db.activityLog.findMany>[0]) as unknown as Record<string, unknown>[];
+    case "activityLog": {
+      // Custom widgets render for whoever views the page they're placed
+      // on — HR-sensitive rows are excluded unconditionally rather than
+      // per-viewer, since the executor has no viewer context here.
+      const activityArgs = {
+        ...args,
+        where: { AND: [filteredWhere, { entityType: { notIn: HR_SENSITIVE_ENTITY_TYPES } }] },
+      };
+      return db.activityLog.findMany(activityArgs as Parameters<typeof db.activityLog.findMany>[0]) as unknown as Record<string, unknown>[];
+    }
     default: return [];
   }
 }
@@ -159,7 +169,12 @@ async function countModel(dataSourceId: string, where: Record<string, unknown>):
     case "document": return db.document.count({ where: w });
     case "supplier": return db.supplier.count({ where: w });
     case "certification": return db.certification.count({ where: w });
-    case "activityLog": return db.activityLog.count({ where: w });
+    case "activityLog":
+      // Same HR-sensitivity exclusion as fetchModel — counts must not
+      // reveal what the row fetch hides.
+      return db.activityLog.count({
+        where: { AND: [w, { entityType: { notIn: HR_SENSITIVE_ENTITY_TYPES } }] },
+      });
     default: return 0;
   }
 }

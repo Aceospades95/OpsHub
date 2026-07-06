@@ -70,14 +70,26 @@ Known limitations (not bugs, HTML constraint):
 - **Clients** — by name, description (permission-gated)
 - **Projects** — by name, description (permission-gated)
 - **Contracts** — by title, description (permission-gated)
-- **Suppliers** — by name, notes (permission-gated)
+- **Suppliers** — by name, notes, quick-contact name, and contact-rolodex
+  names (permission-gated)
+- **Subcontractors** — by name, legal name, description, primary contact
+- **Partnerships** — by name, legal name, description, industry, primary contact
+- **Vehicles (fleet)** — by nickname, make, model, VIN, license plate —
+  scope-filtered for assigned drivers
 - **Tasks** — by title, description — results deep-link to parent project or client
 - **Team members** — by name, email, jobTitle, department — links to `/team/{id}`
 - **Intranet resources** — by title, description, content — only published items,
   permission-gated (fixes the Time Off bug where HR entries were invisible)
 
-When you add a new module that has user-facing content, add it to this list and
-to the search query.
+The Cmd-K palette (`quickSearch` in `src/actions/search.ts`) covers
+employees, clients, projects, suppliers (incl. contact names), contracts,
+quotes, tools, vehicles, and intranet with the same permission + scope
+gates. **Disciplinary reports are deliberately excluded from both search
+surfaces** — search gates on module `canView`, which can't express the
+HR-roles-minus-subject rule.
+
+When you add a new module that has user-facing content, add it to this list,
+to the search query, and to `quickSearch`.
 
 ## Where the Project entity appears (and how to link)
 
@@ -985,24 +997,30 @@ carries every schema change below.
 ### Supplier contacts, receipts, categories
 
 - **`SupplierContact`** — many contacts per supplier, each with name,
-  title, company/personal email, office/cell/fax phones, isPrimary
-  (setting one primary unsets the others), notes. CRUD in
-  `actions/suppliers.ts`, rendered by
-  `suppliers/[supplierId]/supplier-contact-section.tsx`. The legacy
-  single contactName/Email/Phone columns (plus new `contactTitle`)
-  remain as the "quick contact" on the supplier itself.
+  title, one email, one phone, isPrimary (setting one primary unsets
+  the others), and notes. Additional emails/phones for the same person
+  are modeled as additional contact rows (e.g. "Jane — office" /
+  "Jane — cell"), not extra columns. CRUD in `actions/suppliers.ts`,
+  rendered by `suppliers/[supplierId]/supplier-contact-section.tsx`.
+  The legacy single contactName/Email/Phone columns (plus new
+  `contactTitle`) remain as the "quick contact" on the supplier itself.
 - **Receipts** — `uploadSupplierReceipt` / `deleteSupplierReceipt`
   store `File` rows with `supplierId` + `category: "receipt"`
-  (private visibility, 10MB cap, magic-byte sniffing, SVG blocked).
-  Listed and uploaded from the supplier detail page
-  (`supplier-receipts.tsx`); served via `/api/files/{id}` with the
-  existing supplier-module authz in `lib/file-authz.ts`.
+  (private visibility, magic-byte sniffing, SVG blocked; size cap =
+  `MAX_RECEIPT_UPLOAD_BYTES` in `lib/upload-limits.ts`, checked
+  client-side too because the server-action body limit rejects bigger
+  uploads before the action runs). Listed and uploaded from the
+  supplier detail page (`supplier-receipts.tsx`); served via
+  `/api/files/{id}` with the existing supplier-module authz in
+  `lib/file-authz.ts`. `File` has an `@@index([supplierId, category])`
+  for this query.
 - **Categories** — the category select
   (`suppliers/supplier-category-select.tsx`) offers
   DEFAULT_CATEGORIES ∪ every distinct category already in the DB, plus
   an "+ Add new category…" option that reveals a free-text input.
-  New values are normalized to snake_case by `resolveCategory()` so
-  grouping stays stable.
+  Every write path — the create/update forms AND the CSV importer —
+  normalizes to snake_case via `normalizeSupplierCategory()`
+  (`lib/supplier-categories.ts`) so grouping stays stable.
 
 ### Certification "renewal submitted"
 
@@ -1013,7 +1031,12 @@ is filed and we're waiting on the authority. While set:
   shown as a "Renewal Submitted" badge and its own stat chip/filter on
   the certifications list.
 - The `certification-expiry-check` job skips the cert (no more
-  "expires in 15 days" nagging while waiting).
+  "expires in 15 days" nagging while waiting), and the
+  `certifications-expiring` report excludes it the same way.
+- **Backstop:** once `expirationDate` actually passes, `"expired"`
+  wins over `"renewing"` — a stalled renewal can't hide an expired
+  cert. Lists show it as Expired again and the sign-off card flags
+  "the certification has since expired — chase the renewal."
 - Toggled from the cert detail sign-off card
   (`setRenewalSubmitted` in `actions/certifications.ts`,
   ADMIN/MANAGER + entity gate). Signing off a completed renewal
@@ -1027,24 +1050,45 @@ HR paper trail replacing the Google Spreadsheet template.
 - **Model** — `DisciplinaryReport`: employee, issuedBy, actionType
   (VERBAL_WARNING → TERMINATION enum), incidentDate, description,
   actionTaken, improvementPlan, witnesses, followUpDate,
-  acknowledgedAt, notes, soft-delete.
-- **Access** — ADMIN/MANAGER only (`requireHrRole` in
-  `actions/disciplinary.ts`); delete is ADMIN-only. The tab on the
-  employee profile (`team/[employeeId]/disciplinary-tab.tsx`) is
-  gated by `canManage` and the data is only fetched server-side for
-  those roles. Employees do NOT see their own reports in-app — the
-  PDF is the employee-facing artifact.
+  acknowledgedAt, notes, soft-delete. The employee FK is
+  `onDelete: Restrict` — hard-deleting a user can never destroy the
+  paper trail (deleteUser's P2003 catch says "deactivate instead";
+  merge-users reassigns the rows).
+- **Access** — ADMIN/MANAGER only (`isHrRole` in `lib/disciplinary.ts`,
+  enforced by `requireHrRole` in `actions/disciplinary.ts`); delete is
+  ADMIN-only. **The report's subject is always excluded**, even with an
+  HR role: the tab is hidden and the data not fetched on their own
+  profile, every action rejects `viewer.id === employeeId`
+  (create/update/acknowledge/delete), and the PDF route 403s. The
+  acknowledgement toggle is activity-logged (it stands in for the
+  employee's signature). Employees do NOT see their own reports in-app —
+  the PDF is the employee-facing artifact.
+- **Activity-log hygiene** — disciplinary log entries store only the
+  action-type label (never the employee name or incident text), the
+  soft-delete registry labels reports as "Action (date)" via
+  `formatLabel` (never the description), and every user-facing
+  ActivityLog query spreads in `activityVisibilityWhere(role)`
+  (`lib/activity.ts`) so `disciplinary-report` rows never reach non-HR
+  viewers (Recent Activity widget, dashboard feed, widget-builder
+  activity source). Admin-only surfaces (/admin/activity + CSV) show
+  everything.
 - **PDF export** — `GET /api/team/disciplinary/{reportId}/pdf`
   renders a signed-signature-line LETTER document
   (`lib/disciplinary/pdf.tsx`, @react-pdf/renderer) for printing /
   handing to the employee. Action-type labels live in
-  `lib/disciplinary.ts` (kept out of the "use server" file).
+  `lib/disciplinary.ts` (kept out of the "use server" file). Calendar
+  dates on the PDF render via `formatCalendarDate` (UTC-pinned).
 
 ### Fleet module
 
 Company vehicles + maintenance, registered as the permissioned `fleet`
 module (Car icon; ADMIN/MANAGER by default, grantable to field users
-via ModulePermission like any other module).
+via ModulePermission like any other module). Fleet is also a **scoped
+module**: `scope.vehicleIds` (assigned vehicles + entity grants) gives
+assigned drivers view access to their own vehicles — the list page
+filters to the scope set and the detail page gates with
+`canViewEntity(scope, "vehicle", id)`, so the maintenance
+notification's link works for the driver it's sent to.
 
 - **Models** — `Vehicle` (nickname, make/model/year, unique VIN,
   licensePlate, status ACTIVE/IN_SHOP/RETIRED/SOLD, assignedTo,
@@ -1059,16 +1103,18 @@ via ModulePermission like any other module).
   log-maintenance dialog).
 - **Rolling schedule** — `addMaintenanceRecord` writes the record and
   updates the vehicle in one transaction: odometer only moves
-  forward, `nextDueDate`/`nextDueMileage` roll the vehicle's schedule
-  forward, and `maintenanceNotifiedFor` clears so the next window
-  re-notifies. Editing the vehicle's `nextServiceDate` directly also
-  re-arms it.
+  forward, and — **only when the record is the vehicle's most recent
+  service** — `nextDueDate`/`nextDueMileage` roll the schedule forward
+  and `maintenanceNotifiedFor` clears so the next window re-notifies.
+  Backfilling an older record never wipes or rewinds the live
+  schedule. Editing the vehicle's `nextServiceDate` directly also
+  re-arms the notification.
 - **Job** — `vehicle-maintenance-check` (daily): vehicles
   ACTIVE/IN_SHOP with `nextServiceDate` within
   `MAINTENANCE_DUE_WINDOW_DAYS` (14) or overdue notify admins,
-  managers, and the assigned driver (`vehicle-maintenance-due` type,
-  email included), deduped per service date via
-  `maintenanceNotifiedFor`.
+  managers, and the assigned driver (`vehicle-maintenance-due` type;
+  one notify per recipient so each email greets the person by name),
+  deduped per service date via `maintenanceNotifiedFor`.
 - **Helpers** — `lib/fleet.ts`: `vehicleLabel()` (nickname or "year
   make model") and `maintenanceDueState()` (overdue / due-soon /
   scheduled / none; RETIRED and SOLD vehicles never nag).

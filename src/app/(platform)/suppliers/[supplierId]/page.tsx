@@ -121,11 +121,11 @@ export default async function SupplierDetailPage({ params }: Props) {
                   size: file.size,
                   createdAt: file.createdAt.toISOString(),
                   uploadedByName: file.uploadedBy?.name ?? null,
+                  uploadedById: file.uploadedById,
                 }))}
                 canUpload={perms.canUpload}
                 canDelete={perms.canDelete}
                 currentUserId={user.id}
-                uploaderIds={Object.fromEntries(receipts.map((file) => [file.id, file.uploadedById]))}
               />
             </CardContent>
           </Card>

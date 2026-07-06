@@ -6,15 +6,21 @@ import { logActivity } from "@/lib/activity";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import type { Role } from "@prisma/client";
-import { DISCIPLINARY_ACTION_LABELS } from "@/lib/disciplinary";
+import { DISCIPLINARY_ACTION_LABELS, isHrRole } from "@/lib/disciplinary";
 
 /**
  * Disciplinary action reports — HR incident documentation, replacing the
  * Google Spreadsheet template. SENSITIVE: every path (including reads on
  * the profile page) is restricted to ADMIN and MANAGER; reports are
  * never visible to the field tier or to the employee's own account
- * through the app. The exported PDF is the artifact that gets handed to
- * the employee.
+ * through the app. That last clause includes HR roles themselves — the
+ * SUBJECT of a report can never read or touch it, even as ADMIN, so a
+ * manager can't rewrite or self-acknowledge a warning issued about them.
+ * The exported PDF is the artifact that gets handed to the employee.
+ *
+ * Activity-log entries store only the action-type label (never the
+ * employee name or incident text) and are additionally filtered from
+ * non-HR viewers via activityVisibilityWhere() in lib/activity.
  */
 
 const ACTION_TYPES = [
@@ -27,8 +33,19 @@ const ACTION_TYPES = [
 ] as const;
 
 function requireHrRole(role: Role): { error: string } | null {
-  if (role !== "ADMIN" && role !== "MANAGER") {
+  if (!isHrRole(role)) {
     return { error: "Only admins and managers can manage disciplinary reports" };
+  }
+  return null;
+}
+
+/** The subject of a report can never act on it — not even as ADMIN. */
+function requireNotSubject(
+  viewerId: string,
+  employeeId: string
+): { error: string } | null {
+  if (viewerId === employeeId) {
+    return { error: "You can't manage a disciplinary report about yourself" };
   }
   return null;
 }
@@ -70,6 +87,9 @@ export async function createDisciplinaryReport(_prev: unknown, formData: FormDat
   }
   const data = parsed.data;
 
+  const selfGate = requireNotSubject(user.id, data.employeeId);
+  if (selfGate) return selfGate;
+
   const employee = await db.user.findUnique({
     where: { id: data.employeeId },
     select: { id: true, name: true },
@@ -91,12 +111,15 @@ export async function createDisciplinaryReport(_prev: unknown, formData: FormDat
     },
   });
 
+  // Action-type label only — no employee name, no incident text. The
+  // activity feed is broader than the HR audience even with the
+  // entity-type filter as backstop.
   await logActivity(
     "created",
     "disciplinary-report",
     report.id,
     user.id,
-    `${DISCIPLINARY_ACTION_LABELS[data.actionType]} — ${employee.name}`
+    DISCIPLINARY_ACTION_LABELS[data.actionType]
   );
   revalidatePath(`/team/${data.employeeId}`);
   return { success: true };
@@ -121,6 +144,8 @@ export async function updateDisciplinaryReport(_prev: unknown, formData: FormDat
     select: { id: true, employeeId: true },
   });
   if (!existing) return { error: "Not found" };
+  const selfGate = requireNotSubject(user.id, existing.employeeId);
+  if (selfGate) return selfGate;
 
   await db.disciplinaryReport.update({
     where: { id },
@@ -152,14 +177,26 @@ export async function setDisciplinaryAcknowledged(_prev: unknown, formData: Form
 
   const report = await db.disciplinaryReport.findFirst({
     where: { id, deletedAt: null },
-    select: { id: true, employeeId: true },
+    select: { id: true, employeeId: true, actionType: true },
   });
   if (!report) return { error: "Not found" };
+  // The acknowledgement stamp stands in for the employee's signature —
+  // the subject recording (or clearing) their own is exactly the
+  // integrity hole to close.
+  const selfGate = requireNotSubject(user.id, report.employeeId);
+  if (selfGate) return selfGate;
 
   await db.disciplinaryReport.update({
     where: { id },
     data: { acknowledgedAt: acknowledged ? new Date() : null },
   });
+  await logActivity(
+    "updated",
+    "disciplinary-report",
+    id,
+    user.id,
+    `${DISCIPLINARY_ACTION_LABELS[report.actionType]} — ${acknowledged ? "acknowledged" : "acknowledgement cleared"}`
+  );
   revalidatePath(`/team/${report.employeeId}`);
   return { success: true };
 }
@@ -177,6 +214,8 @@ export async function deleteDisciplinaryReport(_prev: unknown, formData: FormDat
     select: { id: true, employeeId: true, actionType: true },
   });
   if (!report) return { error: "Not found" };
+  const selfGate = requireNotSubject(user.id, report.employeeId);
+  if (selfGate) return selfGate;
 
   await db.disciplinaryReport.update({
     where: { id },

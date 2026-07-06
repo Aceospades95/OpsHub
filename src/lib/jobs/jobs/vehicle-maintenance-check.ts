@@ -13,6 +13,7 @@ import { log } from "@/lib/log";
 import { notify } from "@/lib/notifications";
 import { absoluteUrl } from "@/lib/url";
 import { differenceInDays } from "date-fns";
+import { formatCalendarDate } from "@/lib/dates";
 import { vehicleLabel, MAINTENANCE_DUE_WINDOW_DAYS } from "@/lib/fleet";
 import { shouldRunDaily } from "../gating";
 import type { JobDefinition } from "../types";
@@ -46,7 +47,7 @@ export const vehicleMaintenanceCheck: JobDefinition = {
 
     const managers = await db.user.findMany({
       where: { isActive: true, role: { in: ["ADMIN", "MANAGER"] } },
-      select: { id: true },
+      select: { id: true, name: true },
     });
 
     let notified = 0;
@@ -68,37 +69,52 @@ export const vehicleMaintenanceCheck: JobDefinition = {
           ? `Vehicle maintenance overdue: ${label}`
           : `Vehicle maintenance due in ${days} day${days === 1 ? "" : "s"}: ${label}`;
       const body = vehicle.licensePlate ? `${label} · ${vehicle.licensePlate}` : label;
+      // Calendar date — server-local toDateString() would name the
+      // previous day on hosts west of UTC.
+      const serviceDay = formatCalendarDate(vehicle.nextServiceDate, "MMMM d, yyyy");
 
-      const recipientIds = Array.from(
-        new Set([...managers.map((m) => m.id), ...(vehicle.assignedTo ? [vehicle.assignedTo.id] : [])])
-      );
+      // One notify() per recipient (the certification-expiry pattern) so
+      // each email greets the person by name. Assigned drivers can open
+      // the link — vehicle assignment grants scoped view of the vehicle.
+      const recipients = new Map(managers.map((m) => [m.id, m.name]));
+      if (vehicle.assignedTo) recipients.set(vehicle.assignedTo.id, vehicle.assignedTo.name);
 
-      try {
-        await notify({
-          recipientId: recipientIds,
-          type: "vehicle-maintenance-due",
-          title,
-          body,
-          href: `/fleet/${vehicle.id}`,
-          entityType: "vehicle",
-          entityId: vehicle.id,
-          email: {
-            templateKey: "notification",
-            data: {
-              recipientName: "there",
-              heading: title,
-              body: `${label} has service scheduled for ${vehicle.nextServiceDate.toDateString()}. Log the maintenance in OpsHub once it's done to reset the schedule.`,
-              cta: { label: "Open vehicle", url: absoluteUrl(`/fleet/${vehicle.id}`) },
+      let delivered = 0;
+      for (const [recipientId, recipientName] of Array.from(recipients.entries())) {
+        try {
+          await notify({
+            recipientId,
+            type: "vehicle-maintenance-due",
+            title,
+            body,
+            href: `/fleet/${vehicle.id}`,
+            entityType: "vehicle",
+            entityId: vehicle.id,
+            email: {
+              templateKey: "notification",
+              data: {
+                recipientName,
+                heading: title,
+                body: `${label} has service scheduled for ${serviceDay}. Log the maintenance in OpsHub once it's done to reset the schedule.`,
+                cta: { label: "Open vehicle", url: absoluteUrl(`/fleet/${vehicle.id}`) },
+              },
             },
-          },
-        });
+          });
+          delivered += 1;
+        } catch (err) {
+          log.error("jobs.vehicleMaintenance", "Notify failed", err, {
+            vehicleId: vehicle.id,
+            recipientId,
+          });
+        }
+      }
+
+      if (delivered > 0) {
         notified += 1;
         await db.vehicle.update({
           where: { id: vehicle.id },
           data: { maintenanceNotifiedFor: vehicle.nextServiceDate },
         });
-      } catch (err) {
-        log.error("jobs.vehicleMaintenance", "Notify failed", err, { vehicleId: vehicle.id });
       }
     }
 

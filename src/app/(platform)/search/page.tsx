@@ -4,8 +4,9 @@ import { getUserScope, hasOrgWideManage } from "@/lib/scope";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent } from "@/components/ui/card";
 import { StatusBadge } from "@/components/shared/status-badge";
+import { vehicleLabel } from "@/lib/fleet";
 import { Badge } from "@/components/ui/badge";
-import { Search, BookOpen, Users, HardHat, Handshake } from "lucide-react";
+import { Search, BookOpen, Users, HardHat, Handshake, Car } from "lucide-react";
 import Link from "next/link";
 
 interface Props {
@@ -25,7 +26,7 @@ export default async function SearchPage({ searchParams }: Props) {
         <PageHeader title="Search" description="Search across all modules" />
         <div className="flex flex-col items-center py-12 text-muted-foreground">
           <Search className="h-12 w-12 mb-4" />
-          <p>Search clients, projects, contracts, suppliers, subcontractors, partnerships, tasks, team members, and intranet resources</p>
+          <p>Search clients, projects, contracts, suppliers, subcontractors, partnerships, vehicles, tasks, team members, and intranet resources</p>
         </div>
       </div>
     );
@@ -46,6 +47,7 @@ export default async function SearchPage({ searchParams }: Props) {
     intranetPerms,
     tasksPerms,
     teamPerms,
+    fleetPerms,
   ] = await Promise.all([
     getUserScope(userId, role),
     resolveModulePerms(userId, role, "clients"),
@@ -57,6 +59,7 @@ export default async function SearchPage({ searchParams }: Props) {
     resolveModulePerms(userId, role, "intranet"),
     resolveModulePerms(userId, role, "tasks"),
     resolveModulePerms(userId, role, "team"),
+    resolveModulePerms(userId, role, "fleet"),
   ]);
 
   const orgWide = hasOrgWideManage(role) || scope.all;
@@ -89,9 +92,12 @@ export default async function SearchPage({ searchParams }: Props) {
         ],
       };
 
+  // Scoped fleet viewers (assigned drivers) only match their own vehicles.
+  const vehicleScope = orgWide ? {} : { id: { in: Array.from(scope.vehicleIds) } };
+
   const contains = { contains: query, mode: "insensitive" as const };
 
-  const [clients, projects, contracts, suppliers, subcontractors, partnerships, tasks, intranetResources, users] = await Promise.all([
+  const [clients, projects, contracts, suppliers, subcontractors, partnerships, tasks, intranetResources, users, vehicles] = await Promise.all([
     clientPerms.canView
       ? db.client.findMany({
           where: {
@@ -123,7 +129,16 @@ export default async function SearchPage({ searchParams }: Props) {
       : [],
     supplierPerms.canView
       ? db.supplier.findMany({
-          where: { deletedAt: null, OR: [{ name: contains }, { notes: contains }] },
+          where: {
+            deletedAt: null,
+            OR: [
+              { name: contains },
+              { notes: contains },
+              { contactName: contains },
+              // New multi-contact rolodex rows.
+              { contacts: { some: { name: contains } } },
+            ],
+          },
           take: 10,
         })
       : [],
@@ -202,6 +217,28 @@ export default async function SearchPage({ searchParams }: Props) {
           take: 10,
         })
       : [],
+    // Vehicles — findable by nickname, make/model, VIN, or plate.
+    fleetPerms.canView
+      ? db.vehicle.findMany({
+          where: {
+            deletedAt: null,
+            AND: [
+              vehicleScope,
+              {
+                OR: [
+                  { nickname: contains },
+                  { make: contains },
+                  { model: contains },
+                  { vin: contains },
+                  { licensePlate: contains },
+                ],
+              },
+            ],
+          },
+          include: { assignedTo: { select: { id: true, name: true } } },
+          take: 10,
+        })
+      : [],
   ]);
 
   const totalResults =
@@ -213,7 +250,8 @@ export default async function SearchPage({ searchParams }: Props) {
     partnerships.length +
     tasks.length +
     intranetResources.length +
-    users.length;
+    users.length +
+    vehicles.length;
 
   return (
     <div>
@@ -388,6 +426,34 @@ export default async function SearchPage({ searchParams }: Props) {
                   </Link>
                 );
               })}
+            </div>
+          </div>
+        )}
+
+        {vehicles.length > 0 && (
+          <div>
+            <h2 className="text-lg font-semibold mb-3 flex items-center gap-2">
+              <Car className="h-4 w-4" />
+              Fleet ({vehicles.length})
+            </h2>
+            <div className="space-y-2">
+              {vehicles.map((vehicle) => (
+                <Link key={vehicle.id} href={`/fleet/${vehicle.id}`}>
+                  <Card className="hover:shadow-md transition-shadow">
+                    <CardContent className="p-4 flex items-center justify-between">
+                      <div>
+                        <p className="font-medium">{vehicleLabel(vehicle)}</p>
+                        <p className="text-sm text-muted-foreground">
+                          {[vehicle.licensePlate, vehicle.vin, vehicle.assignedTo?.name]
+                            .filter(Boolean)
+                            .join(" · ")}
+                        </p>
+                      </div>
+                      <StatusBadge status={vehicle.status} />
+                    </CardContent>
+                  </Card>
+                </Link>
+              ))}
             </div>
           </div>
         )}

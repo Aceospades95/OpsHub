@@ -3,9 +3,11 @@
 import { db } from "@/lib/db";
 import { requireAuth, resolveModulePerms } from "@/lib/permissions";
 import { logActivity } from "@/lib/activity";
+import { MAX_RECEIPT_UPLOAD_BYTES, describeMaxUpload } from "@/lib/upload-limits";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { nameField } from "@/lib/validation";
+import { normalizeSupplierCategory } from "@/lib/supplier-categories";
 import { asUploadedFile } from "@/lib/uploaded-file";
 import { blobToBuffer, deleteFile, uploadFile, StorageQuotaExceededError } from "@/lib/storage";
 import { sniffUploadType } from "@/lib/upload-validation";
@@ -23,10 +25,7 @@ function resolveCategory(formData: FormData): { category?: string; error?: strin
   const newCategory = (formData.get("newCategory") as string | null)?.trim() ?? "";
   if (raw === "__new__" || (!raw && newCategory)) {
     if (!newCategory) return { error: "Enter a name for the new category" };
-    const normalized = newCategory
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "_")
-      .replace(/^_+|_+$/g, "");
+    const normalized = normalizeSupplierCategory(newCategory);
     if (!normalized) return { error: "Enter a name for the new category" };
     return { category: normalized };
   }
@@ -297,7 +296,6 @@ export async function deleteSupplierContact(_prev: unknown, formData: FormData) 
 // /api/files/{id} which enforces per-entity authz (lib/file-authz
 // already grants supplier files to anyone who can view the supplier).
 
-const MAX_RECEIPT_BYTES = 10 * 1024 * 1024;
 
 export async function uploadSupplierReceipt(_prev: unknown, formData: FormData) {
   const user = await requireAuth();
@@ -314,8 +312,8 @@ export async function uploadSupplierReceipt(_prev: unknown, formData: FormData) 
   const blob = asUploadedFile(formData.get("file"));
   if (!blob) return { error: "No file provided" };
   if (blob.size === 0) return { error: "File is empty" };
-  if (blob.size > MAX_RECEIPT_BYTES) {
-    return { error: `File exceeds ${MAX_RECEIPT_BYTES / 1024 / 1024}MB limit` };
+  if (blob.size > MAX_RECEIPT_UPLOAD_BYTES) {
+    return { error: `File exceeds the ${describeMaxUpload(MAX_RECEIPT_UPLOAD_BYTES)} limit` };
   }
 
   const buffer = await blobToBuffer(blob as unknown as Blob);

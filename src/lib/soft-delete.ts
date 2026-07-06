@@ -28,6 +28,10 @@
 import { db } from "@/lib/db";
 import { logActivity } from "@/lib/activity";
 import type { DynamicDelegateMap } from "@/lib/dynamic-delegate";
+import { vehicleLabel } from "@/lib/fleet";
+import { DISCIPLINARY_ACTION_LABELS } from "@/lib/disciplinary";
+import { formatCalendarDate } from "@/lib/dates";
+import type { DisciplinaryActionType } from "@prisma/client";
 
 /**
  * Default retention. The PURGE_SOFT_DELETED task config can override
@@ -72,10 +76,33 @@ export interface SoftDeleteEntity {
   singularLabel: string;
   /** Module key for permission checks. */
   module: string;
-  /** Field on the row that produces the user-facing label. */
-  labelField: "name" | "title" | "model" | "description";
+  /**
+   * Field on the row that produces the user-facing label. For entities
+   * whose label is composed from several columns (or must NOT expose a
+   * column verbatim — HR text), set `labelSelect` + `formatLabel`
+   * instead; they take precedence.
+   */
+  labelField: "name" | "title" | "model" | "actionType";
+  /** Columns `formatLabel` needs. Only set together with `formatLabel`. */
+  labelSelect?: Record<string, true>;
+  /** Composed label builder — receives a row selected via `labelSelect`. */
+  formatLabel?(row: Record<string, unknown>): string;
   /** Link back to the entity's detail page (works while soft-deleted). */
   hrefForId(id: string): string;
+}
+
+/** The Prisma `select` needed to build an entity's label. */
+export function labelSelection(entity: SoftDeleteEntity): Record<string, true> {
+  return entity.labelSelect ?? { [entity.labelField]: true };
+}
+
+/** Human label for a row selected via `labelSelection()`. */
+export function rowLabel(
+  entity: SoftDeleteEntity,
+  row: Record<string, unknown>
+): string {
+  if (entity.formatLabel) return entity.formatLabel(row);
+  return String(row[entity.labelField] ?? "");
 }
 
 export const SOFT_DELETE_ENTITIES: readonly SoftDeleteEntity[] = [
@@ -167,6 +194,11 @@ export const SOFT_DELETE_ENTITIES: readonly SoftDeleteEntity[] = [
     singularLabel: "vehicle",
     module: "fleet",
     labelField: "model",
+    // "Van #2" / "2022 Ford Transit" — a bare model string can't
+    // distinguish three deleted Transits in the recovery bin.
+    labelSelect: { nickname: true, year: true, make: true, model: true },
+    formatLabel: (row) =>
+      vehicleLabel(row as { nickname: string | null; year: number; make: string; model: string }),
     hrefForId: (id) => `/fleet/${id}`,
   },
   {
@@ -177,7 +209,17 @@ export const SOFT_DELETE_ENTITIES: readonly SoftDeleteEntity[] = [
     // HR-sensitive; the recovery page itself is ADMIN-only. No standalone
     // detail page — the href lands on the team list.
     module: "team",
-    labelField: "description",
+    labelField: "actionType",
+    // NEVER the description: restore/purge write this label into the
+    // ActivityLog, which reaches wider audiences than the HR roles.
+    labelSelect: { actionType: true, incidentDate: true },
+    formatLabel: (row) => {
+      const label =
+        DISCIPLINARY_ACTION_LABELS[row.actionType as DisciplinaryActionType] ??
+        String(row.actionType);
+      const date = formatCalendarDate(row.incidentDate as Date, "MMM d, yyyy");
+      return date ? `${label} (${date})` : label;
+    },
     hrefForId: () => `/team`,
   },
   {
@@ -260,7 +302,7 @@ export async function softDeleteRow(
 
   const existing = await delegate.findUnique({
     where: { id },
-    select: { id: true, deletedAt: true, [entity.labelField]: true },
+    select: { id: true, deletedAt: true, ...labelSelection(entity) },
   });
   if (!existing) {
     throw new Error(`${entity.singularLabel} not found`);
@@ -271,27 +313,25 @@ export async function softDeleteRow(
     );
   }
 
-  const updated = await delegate.update({
+  await delegate.update({
     where: { id },
     data: { deletedAt: new Date() },
-    select: { id: true, [entity.labelField]: true },
+    select: { id: true },
   });
 
+  const label = rowLabel(entity, existing);
   if (opts.log !== false) {
     await logActivity(
       "soft-deleted",
       entity.entityType,
       id,
       actorId,
-      String(updated[entity.labelField] ?? existing[entity.labelField] ?? ""),
+      label,
       opts.scope ?? {}
     );
   }
 
-  return {
-    id,
-    label: String(existing[entity.labelField] ?? ""),
-  };
+  return { id, label };
 }
 
 /**
@@ -307,7 +347,7 @@ export async function restoreRow(
 
   const existing = await delegate.findUnique({
     where: { id },
-    select: { id: true, deletedAt: true, [entity.labelField]: true },
+    select: { id: true, deletedAt: true, ...labelSelection(entity) },
   });
   if (!existing) {
     throw new Error(`${entity.singularLabel} not found`);
@@ -323,15 +363,10 @@ export async function restoreRow(
     data: { deletedAt: null },
   });
 
-  await logActivity(
-    "restored",
-    entity.entityType,
-    id,
-    actorId,
-    String(existing[entity.labelField] ?? "")
-  );
+  const label = rowLabel(entity, existing);
+  await logActivity("restored", entity.entityType, id, actorId, label);
 
-  return { id, label: String(existing[entity.labelField] ?? "") };
+  return { id, label };
 }
 
 /**
@@ -351,7 +386,7 @@ export async function hardDeleteRow(
 
   const existing = await delegate.findUnique({
     where: { id },
-    select: { id: true, [entity.labelField]: true },
+    select: { id: true, ...labelSelection(entity) },
   });
   if (!existing) return { deleted: false };
 
@@ -363,7 +398,7 @@ export async function hardDeleteRow(
       entity.entityType,
       id,
       actorId,
-      String(existing[entity.labelField] ?? "")
+      rowLabel(entity, existing)
     );
   }
   return { deleted: true };

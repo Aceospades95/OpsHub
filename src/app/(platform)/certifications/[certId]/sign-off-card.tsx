@@ -17,6 +17,7 @@ interface Props {
     signedOffBy: { id: string; name: string } | null;
     signOffNotes: string | null;
     renewalSubmittedAt: Date | null;
+    expirationDate: Date | null;
   };
   canSignOff: boolean;
   canRevoke: boolean;
@@ -50,6 +51,13 @@ export function SignOffCard({ cert, canSignOff, canRevoke }: Props) {
 
   const isSignedOff = !!cert.signedOffAt;
   const renewalSubmitted = !!cert.renewalSubmittedAt;
+  // Backstop for stalled renewals: once the expiration passes, lists
+  // show the cert as Expired again — flag it here too so whoever opens
+  // the card knows the submitted renewal needs chasing, not waiting.
+  const renewalStalled =
+    renewalSubmitted &&
+    !!cert.expirationDate &&
+    new Date(cert.expirationDate).getTime() < Date.now();
 
   return (
     <Card className={`h-full ${isSignedOff ? "border-success/40" : ""}`}>
@@ -67,12 +75,15 @@ export function SignOffCard({ cert, canSignOff, canRevoke }: Props) {
           {renewalSubmitted ? (
             <div className="flex items-start justify-between gap-2">
               <div className="flex items-start gap-2">
-                <Hourglass className="h-4 w-4 text-primary mt-0.5" />
+                <Hourglass className={`h-4 w-4 mt-0.5 ${renewalStalled ? "text-destructive" : "text-primary"}`} />
                 <div>
                   <p className="text-sm font-medium">Renewal submitted</p>
                   <p className="text-xs text-muted-foreground">
                     {format(new Date(cert.renewalSubmittedAt!), "MMM d, yyyy")} — waiting on the
-                    issuing body. Expiry reminders are paused.
+                    issuing body.{" "}
+                    {renewalStalled
+                      ? "The certification has since expired — chase the renewal."
+                      : "Expiry reminders are paused."}
                   </p>
                 </div>
               </div>

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { toCalendarDateString } from "@/lib/dates";
 import { Textarea } from "@/components/ui/textarea";
 import { Select } from "@/components/ui/select";
 import { FormDialog } from "@/components/shared/form-dialog";
@@ -85,7 +86,7 @@ export function VehicleFields({
           name="nextServiceDate"
           label="Next service date"
           type="date"
-          defaultValue={vehicle?.nextServiceDate ? vehicle.nextServiceDate.slice(0, 10) : ""}
+          defaultValue={toCalendarDateString(vehicle?.nextServiceDate)}
         />
         <Input
           name="nextServiceMileage"

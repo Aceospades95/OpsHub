@@ -580,6 +580,7 @@ export default async function CertificationDetailPage({ params }: Props) {
           signedOffBy: cert.signedOffBy,
           signOffNotes: cert.signOffNotes,
           renewalSubmittedAt: cert.renewalSubmittedAt,
+          expirationDate: cert.expirationDate,
         }}
         canSignOff={canSignOff}
         canRevoke={canRevoke}

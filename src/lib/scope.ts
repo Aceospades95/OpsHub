@@ -35,6 +35,7 @@ export interface UserScope {
   contractIds: Set<string>;
   toolIds: Set<string>;
   certIds: Set<string>;
+  vehicleIds: Set<string>;
 }
 
 /** Roles that see everything on list pages / sidebar. */
@@ -74,6 +75,7 @@ export async function getUserScope(
       contractIds: new Set(),
       toolIds: new Set(),
       certIds: new Set(),
+      vehicleIds: new Set(),
     };
   }
 
@@ -188,6 +190,20 @@ export async function getUserScope(
     for (const pt of projectTools) toolIds.add(pt.toolId);
   }
 
+  // ── Vehicle visibility ────────────────────────────────────────
+  // Assigned drivers see their own vehicles (the maintenance job
+  // notifies them, so the linked page must open); explicit entity
+  // permissions extend that. Everything else stays module-gated.
+  const vehicleIds = new Set<string>();
+  for (const p of entityPerms) {
+    if (p.entityType === "vehicle") vehicleIds.add(p.entityId);
+  }
+  const assignedVehicles = await db.vehicle.findMany({
+    where: { assignedToId: userId, deletedAt: null },
+    select: { id: true },
+  });
+  for (const v of assignedVehicles) vehicleIds.add(v.id);
+
   return {
     role,
     canViewAll,
@@ -201,10 +217,11 @@ export async function getUserScope(
     contractIds,
     toolIds,
     certIds,
+    vehicleIds,
   };
 }
 
-export type ScopeEntityType = "project" | "client" | "contract" | "tool" | "certification";
+export type ScopeEntityType = "project" | "client" | "contract" | "tool" | "certification" | "vehicle";
 
 function scopeSetFor(scope: UserScope, entityType: ScopeEntityType): Set<string> {
   switch (entityType) {
@@ -218,6 +235,8 @@ function scopeSetFor(scope: UserScope, entityType: ScopeEntityType): Set<string>
       return scope.toolIds;
     case "certification":
       return scope.certIds;
+    case "vehicle":
+      return scope.vehicleIds;
   }
 }
 

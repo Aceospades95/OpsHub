@@ -30,6 +30,7 @@ vi.mock("@/lib/db", () => ({
     quote: { findMany: vi.fn() },
     tool: { findMany: vi.fn() },
     intranetResource: { findMany: vi.fn() },
+    vehicle: { findMany: vi.fn() },
   },
 }));
 vi.mock("@/lib/permissions", () => ({
@@ -95,6 +96,7 @@ beforeEach(() => {
     contractIds: new Set<string>(),
     toolIds: new Set<string>(),
     certIds: new Set<string>(),
+    vehicleIds: new Set<string>(),
   });
   resolveModulePermsMock.mockResolvedValue(NO_PERMS);
   // Default: no rows returned anywhere.
@@ -137,6 +139,7 @@ describe("quickSearch authz", () => {
       contractIds: new Set<string>(),
       toolIds: new Set<string>(),
       certIds: new Set<string>(),
+      vehicleIds: new Set<string>(),
     });
     dbMock.supplier.findMany.mockResolvedValue([
       { id: "s1", name: "Acme Pipes", category: "MEP" },
@@ -186,6 +189,7 @@ describe("quickSearch authz", () => {
       contractIds: new Set<string>(),
       toolIds: new Set<string>(),
       certIds: new Set<string>(),
+      vehicleIds: new Set<string>(),
     });
     dbMock.project.findMany.mockResolvedValue([
       { id: "p1", name: "My project", client: { name: "Acme" } },

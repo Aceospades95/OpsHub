@@ -1,6 +1,7 @@
 "use server";
 
 import { db } from "@/lib/db";
+import { vehicleLabel } from "@/lib/fleet";
 import { requireAuth, resolveModulePerms } from "@/lib/permissions";
 import { getUserScope, hasOrgWideManage } from "@/lib/scope";
 
@@ -37,6 +38,7 @@ export interface SearchHit {
     | "contract"
     | "quote"
     | "tool"
+    | "vehicle"
     | "intranet";
   label: string;
   sublabel?: string;
@@ -72,6 +74,7 @@ export async function quickSearch(query: string): Promise<SearchResults> {
     quotesPerms,
     toolsPerms,
     intranetPerms,
+    fleetPerms,
   ] = await Promise.all([
     resolveModulePerms(user.id, user.role, "team"),
     resolveModulePerms(user.id, user.role, "clients"),
@@ -81,6 +84,7 @@ export async function quickSearch(query: string): Promise<SearchResults> {
     resolveModulePerms(user.id, user.role, "quotes"),
     resolveModulePerms(user.id, user.role, "tools"),
     resolveModulePerms(user.id, user.role, "intranet"),
+    resolveModulePerms(user.id, user.role, "fleet"),
   ]);
 
   // Build scope-aware filters. Each entity type is limited to the rows
@@ -94,6 +98,9 @@ export async function quickSearch(query: string): Promise<SearchResults> {
   const toolScope = orgWide
     ? {}
     : { id: { in: Array.from(scope.toolIds) } };
+  const vehicleScope = orgWide
+    ? {}
+    : { id: { in: Array.from(scope.vehicleIds) } };
 
   const ci = { contains: trimmed, mode: "insensitive" as const };
 
@@ -106,6 +113,7 @@ export async function quickSearch(query: string): Promise<SearchResults> {
     quotes,
     tools,
     intranet,
+    vehicles,
   ] = await Promise.all([
     teamPerms.canView
       ? db.user.findMany({
@@ -154,7 +162,7 @@ export async function quickSearch(query: string): Promise<SearchResults> {
       ? db.supplier.findMany({
           where: {
             deletedAt: null,
-            OR: [{ name: ci }, { contactName: ci }, { category: ci }],
+            OR: [{ name: ci }, { contactName: ci }, { category: ci }, { contacts: { some: { name: ci } } }],
           },
           select: { id: true, name: true, category: true },
           take: PER_BUCKET_LIMIT,
@@ -239,6 +247,35 @@ export async function quickSearch(query: string): Promise<SearchResults> {
           orderBy: { updatedAt: "desc" },
         })
       : [],
+    fleetPerms.canView
+      ? db.vehicle.findMany({
+          where: {
+            deletedAt: null,
+            AND: [
+              vehicleScope,
+              {
+                OR: [
+                  { nickname: ci },
+                  { make: ci },
+                  { model: ci },
+                  { vin: ci },
+                  { licensePlate: ci },
+                ],
+              },
+            ],
+          },
+          select: {
+            id: true,
+            nickname: true,
+            year: true,
+            make: true,
+            model: true,
+            licensePlate: true,
+          },
+          take: PER_BUCKET_LIMIT,
+          orderBy: [{ make: "asc" }, { model: "asc" }],
+        })
+      : [],
   ]);
 
   const hits: SearchHit[] = [
@@ -298,6 +335,13 @@ export async function quickSearch(query: string): Promise<SearchResults> {
       sublabel: r.category,
       href: `/intranet/${r.id}`,
     })),
+    ...vehicles.map((v) => ({
+      id: `vehicle-${v.id}`,
+      type: "vehicle" as const,
+      label: vehicleLabel(v),
+      sublabel: v.licensePlate || undefined,
+      href: `/fleet/${v.id}`,
+    })),
   ];
 
   const truncated =
@@ -308,7 +352,8 @@ export async function quickSearch(query: string): Promise<SearchResults> {
     contracts.length === PER_BUCKET_LIMIT ||
     quotes.length === PER_BUCKET_LIMIT ||
     tools.length === PER_BUCKET_LIMIT ||
-    intranet.length === PER_BUCKET_LIMIT;
+    intranet.length === PER_BUCKET_LIMIT ||
+    vehicles.length === PER_BUCKET_LIMIT;
 
   return { hits, truncated };
 }

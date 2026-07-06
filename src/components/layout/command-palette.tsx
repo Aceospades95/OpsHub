@@ -18,6 +18,7 @@ import {
   FileText,
   ScrollText,
   Wrench,
+  Car,
   BookOpen,
 } from "lucide-react";
 
@@ -48,6 +49,7 @@ const TYPE_META: Record<
   contract: { label: "Contracts", icon: FileText },
   quote: { label: "Quotes", icon: ScrollText },
   tool: { label: "Tools", icon: Wrench },
+  vehicle: { label: "Fleet", icon: Car },
   intranet: { label: "Intranet", icon: BookOpen },
 };
 
@@ -59,6 +61,7 @@ const TYPE_ORDER: SearchHit["type"][] = [
   "contract",
   "supplier",
   "tool",
+  "vehicle",
   "intranet",
 ];
 

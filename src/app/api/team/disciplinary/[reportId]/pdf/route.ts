@@ -32,6 +32,12 @@ export async function GET(
   if (!report) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
+  // The subject never reads their own report through the app — the
+  // signed printout handed over by their manager is the employee-facing
+  // artifact.
+  if (report.employeeId === user.id) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
 
   const branding = await getBranding();
   const pdf = await renderDisciplinaryPdf({

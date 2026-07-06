@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import { requireAuth, resolveModulePerms } from "@/lib/permissions";
+import { activityVisibilityWhere } from "@/lib/activity";
 import { getUserScope } from "@/lib/scope";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -103,8 +104,10 @@ export default async function DashboardPage() {
     db.user.count({ where: { isActive: true } }),
     db.activityLog.findMany({
       // Scoped users only see their own activity — the global feed leaks
-      // entity names (clients, contracts, …) outside their scope.
-      where: scope.all ? {} : { userId },
+      // entity names (clients, contracts, …) outside their scope. HR-
+      // sensitive entity types are additionally filtered by role: the
+      // scope.all set includes legacy DEVELOPER, which is not an HR role.
+      where: { ...(scope.all ? {} : { userId }), ...activityVisibilityWhere(user.role) },
       take: 10,
       orderBy: { createdAt: "desc" },
       include: { user: { select: { id: true, name: true } } },

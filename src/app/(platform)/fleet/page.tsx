@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import { requireAuth, resolveModulePerms } from "@/lib/permissions";
+import { getUserScope } from "@/lib/scope";
 import { AccessDenied } from "@/components/shared/access-denied";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent } from "@/components/ui/card";
@@ -65,9 +66,17 @@ export default async function FleetPage({
     ? (searchParams.due as DueFilter)
     : null;
 
+  // Scoped viewers (e.g. an assigned driver whose canView comes from the
+  // vehicle scope grant) only see their own vehicles.
+  const scope = await getUserScope(user.id, user.role);
+  const vehicleWhere: Prisma.VehicleWhereInput = { deletedAt: null };
+  if (!scope.all) {
+    vehicleWhere.id = { in: Array.from(scope.vehicleIds) };
+  }
+
   const [vehicles, users] = await Promise.all([
     db.vehicle.findMany({
-      where: { deletedAt: null },
+      where: vehicleWhere,
       orderBy: [{ status: "asc" }, { make: "asc" }, { model: "asc" }],
       include: { assignedTo: { select: { id: true, name: true } } },
     }),

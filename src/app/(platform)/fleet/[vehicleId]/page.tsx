@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import { requireAuth, resolveModulePerms } from "@/lib/permissions";
+import { getUserScope, canViewEntity } from "@/lib/scope";
 import { AccessDenied } from "@/components/shared/access-denied";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -9,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { AlertTriangle, CalendarClock, Gauge, User, Wrench } from "lucide-react";
 import Link from "next/link";
 import { formatCalendarDate } from "@/lib/dates";
+import { formatCurrency } from "@/lib/quotes/totals";
 import { vehicleLabel, maintenanceDueState } from "@/lib/fleet";
 import { VehicleActions } from "./vehicle-actions";
 import { MaintenanceSection } from "./maintenance-section";
@@ -32,22 +34,32 @@ export default async function VehicleDetailPage({ params }: Props) {
     );
   }
 
-  const vehicle = await db.vehicle.findFirst({
-    where: { id: vehicleId, deletedAt: null },
-    include: {
-      assignedTo: { select: { id: true, name: true } },
-      maintenanceRecords: { orderBy: { serviceDate: "desc" } },
-    },
-  });
+  // The vehicle fetch and the (perms-gated) editor dropdown are
+  // independent — one round trip, not two.
+  const [vehicle, users] = await Promise.all([
+    db.vehicle.findFirst({
+      where: { id: vehicleId, deletedAt: null },
+      include: {
+        assignedTo: { select: { id: true, name: true } },
+        maintenanceRecords: { orderBy: { serviceDate: "desc" } },
+      },
+    }),
+    perms.canEdit
+      ? db.user.findMany({
+          where: { isActive: true },
+          select: { id: true, name: true },
+          orderBy: { name: "asc" },
+        })
+      : Promise.resolve([] as { id: string; name: string }[]),
+  ]);
   if (!vehicle) notFound();
 
-  const users = perms.canEdit
-    ? await db.user.findMany({
-        where: { isActive: true },
-        select: { id: true, name: true },
-        orderBy: { name: "asc" },
-      })
-    : [];
+  // Scoped viewers (assigned drivers / entity grants) only open their
+  // own vehicles — same pattern as the tools module.
+  const scope = await getUserScope(user.id, user.role);
+  if (!canViewEntity(scope, "vehicle", vehicle.id)) {
+    return <AccessDenied module="fleet" moduleLabel="Fleet" entityType="vehicle" entityId={vehicle.id} />;
+  }
 
   const now = new Date();
   const dueState = maintenanceDueState(vehicle, now);
@@ -163,7 +175,7 @@ export default async function VehicleDetailPage({ params }: Props) {
                   <p className="text-muted-foreground">
                     Lifetime maintenance:{" "}
                     <span className="text-foreground font-medium">
-                      {totalCost.toLocaleString("en-US", { style: "currency", currency: "USD" })}
+                      {formatCurrency(totalCost, "USD")}
                     </span>
                   </p>
                 )}

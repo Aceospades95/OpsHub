@@ -3,7 +3,8 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { format } from "date-fns";
+import { formatCalendarDate } from "@/lib/dates";
+import { formatCurrency } from "@/lib/quotes/totals";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -85,7 +86,7 @@ export function MaintenanceSection({
               {records.map((record) => (
                 <tr key={record.id} className="border-b border-border last:border-0 align-top">
                   <td className="py-2.5 pr-3 whitespace-nowrap">
-                    {format(new Date(record.serviceDate), "MMM d, yyyy")}
+                    {formatCalendarDate(record.serviceDate, "MMM d, yyyy")}
                   </td>
                   <td className="py-2.5 pr-3">
                     <span className="font-medium">{record.serviceType}</span>
@@ -97,13 +98,11 @@ export function MaintenanceSection({
                     {record.odometer != null ? record.odometer.toLocaleString() : "—"}
                   </td>
                   <td className="py-2.5 pr-3 text-right tabular-nums text-muted-foreground">
-                    {record.cost != null
-                      ? record.cost.toLocaleString("en-US", { style: "currency", currency: "USD" })
-                      : "—"}
+                    {record.cost != null ? formatCurrency(record.cost, "USD") : "—"}
                   </td>
                   <td className="py-2.5 pr-3 text-muted-foreground">{record.vendor || "—"}</td>
                   <td className="py-2.5 pr-3 text-muted-foreground whitespace-nowrap">
-                    {record.nextDueDate ? format(new Date(record.nextDueDate), "MMM d, yyyy") : "—"}
+                    {record.nextDueDate ? formatCalendarDate(record.nextDueDate, "MMM d, yyyy") : "—"}
                   </td>
                   {canDelete && (
                     <td className="py-2.5 text-right">
@@ -159,7 +158,8 @@ export function MaintenanceSection({
                 </div>
                 <p className="text-xs text-muted-foreground -mt-1 flex items-center gap-1">
                   <Wrench className="h-3 w-3" />
-                  Setting a next-due date updates the vehicle&apos;s service schedule and re-arms the reminder.
+                  When this is the vehicle&apos;s most recent service, the next-due date becomes the vehicle&apos;s
+                  schedule and re-arms the reminder. Backfilled older records leave the schedule alone.
                 </p>
                 <Textarea name="notes" label="Notes" />
               </>
