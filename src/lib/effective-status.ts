@@ -40,16 +40,17 @@ export function certBucket(
   now: Date
 ): CertBucket {
   if (cert.status === "PENDING") return "pending";
-  // Renewal already submitted → we're waiting on the issuing body, so
-  // suppress the expiring/expired alarms until sign-off clears it.
+  const days = cert.expirationDate ? differenceInDays(cert.expirationDate, now) : null;
+  // Once the expiration date has actually passed, "expired" wins even
+  // with a renewal submitted — the org is operating without a valid
+  // cert, and a filed renewal that stalled must not hide that forever.
+  if (days != null && days <= 0) return "expired";
+  if (cert.status === "EXPIRED" && days == null) return "expired";
+  // Renewal already submitted (and not yet expired) → we're waiting on
+  // the issuing body, so suppress the expiring-soon nag until sign-off
+  // clears it.
   if (cert.renewalSubmittedAt) return "renewing";
-  if (cert.expirationDate) {
-    const days = differenceInDays(cert.expirationDate, now);
-    if (days <= 0) return "expired";
-    if (days <= (cert.renewalLeadDays || 90)) return "expiring";
-  } else if (cert.status === "EXPIRED") {
-    return "expired";
-  }
+  if (days != null && days <= (cert.renewalLeadDays || 90)) return "expiring";
   return "active";
 }
 

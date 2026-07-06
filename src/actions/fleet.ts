@@ -10,15 +10,25 @@ import { vehicleLabel } from "@/lib/fleet";
 
 /**
  * Vehicle fleet actions. Fleet is a permissioned module (Manager+ by
- * default; grantable per-user) and vehicles aren't a scoped entity type,
- * so gates are module-level. Adding a maintenance record with a next-due
- * date rolls the vehicle's nextServiceDate forward and re-arms the
- * maintenance notification (clears maintenanceNotifiedFor).
+ * default; grantable per-user). Assigned drivers additionally get scoped
+ * VIEW of their own vehicles (scope.vehicleIds) — writes stay
+ * module-gated, so these actions check module flags only. Adding a
+ * maintenance record with a next-due date rolls the vehicle's
+ * nextServiceDate forward and re-arms the maintenance notification
+ * (clears maintenanceNotifiedFor) — but only when the record is the
+ * vehicle's most recent service; backfilling history never rewinds the
+ * live schedule.
  */
 
 const VEHICLE_STATUSES = ["ACTIVE", "IN_SHOP", "RETIRED", "SOLD"] as const;
 
 const CURRENT_YEAR_MAX = 2100;
+
+/** FormData accessor: empty string / missing → undefined (zod optional). */
+function optField(formData: FormData, key: string): string | undefined {
+  const value = formData.get(key);
+  return value === null || value === "" ? undefined : String(value);
+}
 
 const vehicleSchema = z.object({
   nickname: z.string().max(100).optional(),
@@ -36,10 +46,7 @@ const vehicleSchema = z.object({
 });
 
 function parseVehicleForm(formData: FormData) {
-  const opt = (key: string) => {
-    const value = formData.get(key);
-    return value === null || value === "" ? undefined : String(value);
-  };
+  const opt = (key: string) => optField(formData, key);
   return vehicleSchema.safeParse({
     nickname: opt("nickname"),
     make: formData.get("make"),
@@ -173,37 +180,65 @@ export async function addMaintenanceRecord(_prev: unknown, formData: FormData) {
   const perms = await resolveModulePerms(user.id, user.role, "fleet");
   if (!perms.canEdit) return { error: "Permission denied" };
 
-  const opt = (key: string) => {
-    const value = formData.get(key);
-    return value === null || value === "" ? undefined : String(value);
-  };
   const parsed = maintenanceSchema.safeParse({
     vehicleId: formData.get("vehicleId"),
     serviceDate: formData.get("serviceDate"),
     serviceType: formData.get("serviceType"),
-    odometer: opt("odometer"),
-    cost: opt("cost"),
-    vendor: opt("vendor"),
-    notes: opt("notes"),
-    nextDueDate: opt("nextDueDate"),
-    nextDueMileage: opt("nextDueMileage"),
+    odometer: optField(formData, "odometer"),
+    cost: optField(formData, "cost"),
+    vendor: optField(formData, "vendor"),
+    notes: optField(formData, "notes"),
+    nextDueDate: optField(formData, "nextDueDate"),
+    nextDueMileage: optField(formData, "nextDueMileage"),
   });
   if (!parsed.success) {
     return { error: parsed.error.errors[0].message, fieldErrors: parsed.error.flatten().fieldErrors };
   }
   const data = parsed.data;
 
-  const vehicle = await db.vehicle.findFirst({
-    where: { id: data.vehicleId, deletedAt: null },
-    select: { id: true, currentMileage: true },
-  });
+  const [vehicle, latestRecord] = await Promise.all([
+    db.vehicle.findFirst({
+      where: { id: data.vehicleId, deletedAt: null },
+      select: { id: true, currentMileage: true },
+    }),
+    db.vehicleMaintenanceRecord.findFirst({
+      where: { vehicleId: data.vehicleId },
+      orderBy: { serviceDate: "desc" },
+      select: { serviceDate: true },
+    }),
+  ]);
   if (!vehicle) return { error: "Vehicle not found" };
+
+  const serviceDate = new Date(data.serviceDate);
+  // Only the vehicle's MOST RECENT service moves the live schedule.
+  // Backfilling a forgotten older record must never wipe the upcoming
+  // service or rewind it into the past (which would fire a spurious
+  // overdue notification).
+  const isLatestService = !latestRecord || serviceDate.getTime() >= latestRecord.serviceDate.getTime();
+
+  const vehicleUpdates: Record<string, unknown> = {
+    // Odometer readings only ever move forward — safe for backfills too,
+    // since an old reading can only raise a stale/unset current value.
+    ...(data.odometer && data.odometer > (vehicle.currentMileage ?? 0)
+      ? { currentMileage: data.odometer }
+      : {}),
+    ...(isLatestService
+      ? {
+          // Service happened: roll the vehicle's schedule forward and
+          // re-arm the notification. A record without a next-due date
+          // clears the schedule (nothing planned).
+          nextServiceDate: data.nextDueDate ? new Date(data.nextDueDate) : null,
+          nextServiceMileage: data.nextDueMileage ?? null,
+          maintenanceNotifiedFor: null,
+        }
+      : {}),
+  };
 
   await db.$transaction([
     db.vehicleMaintenanceRecord.create({
       data: {
         vehicleId: data.vehicleId,
-        serviceDate: new Date(data.serviceDate),
+        serviceDate,
         serviceType: data.serviceType,
         odometer: data.odometer ?? null,
         cost: data.cost ?? null,
@@ -213,21 +248,9 @@ export async function addMaintenanceRecord(_prev: unknown, formData: FormData) {
         nextDueMileage: data.nextDueMileage ?? null,
       },
     }),
-    db.vehicle.update({
-      where: { id: data.vehicleId },
-      data: {
-        // Service happened: roll the vehicle's schedule forward and
-        // re-arm the notification. A record without a next-due date
-        // clears the schedule (nothing planned).
-        nextServiceDate: data.nextDueDate ? new Date(data.nextDueDate) : null,
-        nextServiceMileage: data.nextDueMileage ?? null,
-        maintenanceNotifiedFor: null,
-        // Odometer readings only ever move forward.
-        ...(data.odometer && data.odometer > (vehicle.currentMileage ?? 0)
-          ? { currentMileage: data.odometer }
-          : {}),
-      },
-    }),
+    ...(Object.keys(vehicleUpdates).length > 0
+      ? [db.vehicle.update({ where: { id: data.vehicleId }, data: vehicleUpdates })]
+      : []),
   ]);
 
   await logActivity("created", "vehicle-maintenance", data.vehicleId, user.id, data.serviceType);

@@ -90,11 +90,13 @@ function formatFte(v: number): string {
 }
 
 export function EmployeeDetailClient({
-  employee, activity, canManage, isAdmin, allUsers, allClients, allProjects, serviceOfferings, roleDefinitions, customPages, disciplinaryReports,
+  employee, activity, canManage, canManageDisciplinary, isAdmin, allUsers, allClients, allProjects, serviceOfferings, roleDefinitions, customPages, disciplinaryReports,
 }: {
   employee: Employee;
   activity: ActivityLog[];
   canManage: boolean;
+  /** canManage minus the profile's own account — the report subject never sees the tab. */
+  canManageDisciplinary: boolean;
   isAdmin: boolean;
   allUsers: { id: string; name: string }[];
   allClients: { id: string; name: string }[];
@@ -154,9 +156,10 @@ export function EmployeeDetailClient({
     { key: "reporting", label: "Reporting", icon: Users },
     { key: "projects", label: "Projects", icon: FolderOpen },
     ...(isAdmin ? [{ key: "permissions" as TabKey, label: "Permissions", icon: Shield }] : []),
-    // HR-sensitive — only rendered for ADMIN/MANAGER viewers (the server
-    // page only fetches reports for them too).
-    ...(canManage ? [{ key: "disciplinary" as TabKey, label: "Disciplinary", icon: FileWarning }] : []),
+    // HR-sensitive — only rendered for ADMIN/MANAGER viewers who are NOT
+    // the profile's own account (the server page only fetches reports
+    // under the same condition).
+    ...(canManageDisciplinary ? [{ key: "disciplinary" as TabKey, label: "Disciplinary", icon: FileWarning }] : []),
     { key: "activity", label: "Activity", icon: FileText },
   ];
 
@@ -306,7 +309,7 @@ export function EmployeeDetailClient({
       {activeTab === "reporting" && <ReportingTab employee={employee} />}
       {activeTab === "projects" && <ProjectsTab employee={employee} />}
       {activeTab === "permissions" && isAdmin && <PermissionsTab employee={employee} allClients={allClients} allProjects={allProjects} customPages={customPages} />}
-      {activeTab === "disciplinary" && canManage && (
+      {activeTab === "disciplinary" && canManageDisciplinary && (
         <DisciplinaryTab
           employeeId={employee.id}
           employeeName={employee.name}

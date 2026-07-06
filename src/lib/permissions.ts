@@ -36,12 +36,15 @@ const GUEST_VISIBLE_MODULES = new Set(["intranet", "team", "dashboard", "tasks"]
  * not listed here (team, intranet, dashboard, tasks) aren't entity-scoped —
  * they're always on if the role allows canView.
  */
-const SCOPED_MODULES: Record<string, "projectIds" | "clientIds" | "contractIds" | "toolIds" | "certIds"> = {
+const SCOPED_MODULES: Record<string, "projectIds" | "clientIds" | "contractIds" | "toolIds" | "certIds" | "vehicleIds"> = {
   projects: "projectIds",
   clients: "clientIds",
   contracts: "contractIds",
   tools: "toolIds",
   certifications: "certIds",
+  // Assigned drivers get scoped view of their own vehicles — the daily
+  // maintenance job notifies them with a link to /fleet/{id}.
+  fleet: "vehicleIds",
 };
 
 /**

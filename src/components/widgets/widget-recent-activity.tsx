@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { activityVisibilityWhere } from "@/lib/activity";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar } from "@/components/ui/avatar";
 import { Activity } from "lucide-react";
@@ -57,10 +58,19 @@ function collapseBursts(rows: ActivityRow[]): CollapsedRow[] {
   return out;
 }
 
-export async function WidgetRecentActivity({ userId: _userId }: { userId: string }) {
+export async function WidgetRecentActivity({ userId }: { userId: string }) {
+  // Page layouts are global, so this widget renders for every viewer of
+  // the page it's placed on — filter HR-sensitive entity types by the
+  // VIEWER's role, not the layout author's.
+  const viewer = await db.user.findUnique({
+    where: { id: userId },
+    select: { role: true },
+  });
+
   // Pull a bigger window than we display so post-grouping we still
   // have ~10 distinct rows even when a bulk import dominates raw logs.
   const logs = await db.activityLog.findMany({
+    where: activityVisibilityWhere(viewer?.role ?? "VIEWER"),
     take: 100,
     orderBy: { createdAt: "desc" },
     include: { user: { select: { name: true } } },

@@ -7,6 +7,7 @@
  */
 
 import type { SupplierStatus } from "@prisma/client";
+import { normalizeSupplierCategory } from "@/lib/supplier-categories";
 import { db } from "@/lib/db";
 import { logActivity } from "@/lib/activity";
 import type { ImporterDefinition, ImportResult, ImportRowResult } from "../types";
@@ -101,7 +102,9 @@ export const suppliersImporter: ImporterDefinition = {
       const rowNumber = i + 1;
       const raw = rows[i];
       const name = (raw.name || "").trim();
-      const category = (raw.category || "").trim();
+      // Same normalization as the create/update forms — a CSV "Fleet
+      // Maintenance" must merge with the picker's "fleet_maintenance".
+      const category = normalizeSupplierCategory(raw.category || "");
 
       if (!name) { failed++; results.push({ row: rowNumber, status: "failed", message: "Missing name" }); continue; }
       if (!category) { failed++; results.push({ row: rowNumber, status: "failed", message: "Missing category" }); continue; }

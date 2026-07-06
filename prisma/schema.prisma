@@ -953,6 +953,8 @@ model File {
   @@index([storageDriver])
   @@index([uploadedById])
   @@index([userId])
+  // Supplier receipts list on the supplier detail page filters by both.
+  @@index([supplierId, category])
 }
 
 model ExternalLink {
@@ -2381,7 +2383,11 @@ model DisciplinaryReport {
   /// Soft-delete tombstone — see Project.deletedAt comment.
   deletedAt       DateTime?
 
-  employee User @relation("DisciplinaryEmployee", fields: [employeeId], references: [id], onDelete: Cascade)
+  /// Restrict, not Cascade: hard-deleting a user must never silently
+  /// destroy the HR paper trail. deleteUser's P2003 catch turns the
+  /// blocked delete into a "deactivate instead" message, and merge-users
+  /// reassigns these rows — both paths preserve the records.
+  employee User @relation("DisciplinaryEmployee", fields: [employeeId], references: [id], onDelete: Restrict)
   issuedBy User @relation("DisciplinaryIssuer", fields: [issuedById], references: [id])
 
   @@index([employeeId, incidentDate])

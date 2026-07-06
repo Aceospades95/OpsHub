@@ -29,7 +29,21 @@ describe("certBucket", () => {
     ).toBe("active");
   });
 
-  it("renewal submitted mutes expiring/expired regardless of dates", () => {
+  it("renewal submitted mutes the expiring-soon nag before expiration", () => {
+    expect(
+      certBucket(
+        {
+          status: "ACTIVE",
+          expirationDate: daysFromNow(30),
+          renewalLeadDays: 90,
+          renewalSubmittedAt: daysFromNow(-10),
+        },
+        NOW
+      )
+    ).toBe("renewing");
+  });
+
+  it("expired wins over renewal submitted once the date passes (backstop)", () => {
     expect(
       certBucket(
         {
@@ -40,7 +54,7 @@ describe("certBucket", () => {
         },
         NOW
       )
-    ).toBe("renewing");
+    ).toBe("expired");
   });
 
   it("PENDING still wins over renewal submitted", () => {

@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { useConfirm } from "@/components/shared/use-confirm";
 import { uploadSupplierReceipt, deleteSupplierReceipt } from "@/actions/suppliers";
+import { MAX_RECEIPT_UPLOAD_BYTES, describeMaxUpload } from "@/lib/upload-limits";
 import { Receipt, Upload, Trash2, Loader2, Download } from "lucide-react";
 
 interface ReceiptFile {
@@ -17,6 +18,7 @@ interface ReceiptFile {
   /** ISO string — serialized server-side. */
   createdAt: string;
   uploadedByName: string | null;
+  uploadedById: string;
 }
 
 function formatBytes(size: number | null): string {
@@ -37,15 +39,12 @@ export function SupplierReceipts({
   canUpload,
   canDelete,
   currentUserId,
-  uploaderIds,
 }: {
   supplierId: string;
   receipts: ReceiptFile[];
   canUpload: boolean;
   canDelete: boolean;
   currentUserId: string;
-  /** fileId → uploadedById, so uploaders see delete on their own rows. */
-  uploaderIds: Record<string, string>;
 }) {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -55,19 +54,34 @@ export function SupplierReceipts({
 
   async function handleFileChosen(file: File | undefined) {
     if (!file) return;
-    setUploading(true);
-    const fd = new FormData();
-    fd.set("supplierId", supplierId);
-    fd.set("file", file);
-    const result = await uploadSupplierReceipt(null, fd);
-    setUploading(false);
-    if (fileInputRef.current) fileInputRef.current.value = "";
-    if (result && "error" in result && result.error) {
-      toast.error(result.error);
+    // Pre-check the size: anything at/over the limit would be rejected by
+    // the server-action transport (413) before the action's own friendly
+    // check could run.
+    if (file.size >= MAX_RECEIPT_UPLOAD_BYTES) {
+      toast.error(`File exceeds the ${describeMaxUpload(MAX_RECEIPT_UPLOAD_BYTES)} limit`);
+      if (fileInputRef.current) fileInputRef.current.value = "";
       return;
     }
-    toast.success("Receipt uploaded");
-    startTransition(() => router.refresh());
+    setUploading(true);
+    const data = new FormData();
+    data.set("supplierId", supplierId);
+    data.set("file", file);
+    try {
+      const result = await uploadSupplierReceipt(null, data);
+      if (result && "error" in result && result.error) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success("Receipt uploaded");
+      startTransition(() => router.refresh());
+    } catch {
+      // Transport-level failure (oversized multipart body, dropped
+      // connection) — the action never ran.
+      toast.error("Upload failed — check the file size and try again");
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
   }
 
   async function handleDelete(file: ReceiptFile) {
@@ -95,7 +109,7 @@ export function SupplierReceipts({
       )}
 
       {receipts.map((file) => {
-        const mayDelete = canDelete || (canUpload && uploaderIds[file.id] === currentUserId);
+        const mayDelete = canDelete || (canUpload && file.uploadedById === currentUserId);
         return (
           <div
             key={file.id}

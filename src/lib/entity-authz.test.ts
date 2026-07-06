@@ -22,6 +22,7 @@ vi.mock("@/lib/db", () => ({
     certification: { findMany: vi.fn().mockResolvedValue([]) },
     contract: { findMany: vi.fn().mockResolvedValue([]) },
     projectTool: { findMany: vi.fn().mockResolvedValue([]) },
+    vehicle: { findMany: vi.fn().mockResolvedValue([]) },
   },
 }));
 
@@ -104,6 +105,7 @@ describe("assertManageEntity", () => {
       contractIds: new Set<string>(),
       toolIds: new Set<string>(),
       certIds: new Set<string>(),
+      vehicleIds: new Set<string>(),
     };
     expect(
       await assertManageEntity("u1", "CONTRIBUTOR", "project", "p1", scope)

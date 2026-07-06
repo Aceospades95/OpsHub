@@ -16,6 +16,7 @@ import {
 } from "@react-pdf/renderer";
 import React from "react";
 import { DISCIPLINARY_ACTION_LABELS } from "@/lib/disciplinary";
+import { formatCalendarDate } from "@/lib/dates";
 import type { DisciplinaryActionType } from "@prisma/client";
 
 export interface DisciplinaryPdfData {
@@ -81,12 +82,13 @@ const styles = StyleSheet.create({
   ackNote: { marginTop: 20, fontSize: 8, color: "#555555", lineHeight: 1.4 },
 });
 
+// Calendar dates (incidentDate/followUpDate are UTC midnight from
+// <input type="date">) must render TZ-pinned — a server west of UTC
+// would otherwise print the day before on a signed legal document.
+// formatCalendarDate also handles reportDate (a true timestamp) fine:
+// the calendar day in UTC is stable for a generated-at date.
 function formatDate(date: Date): string {
-  return date.toLocaleDateString("en-US", {
-    month: "long",
-    day: "numeric",
-    year: "numeric",
-  });
+  return formatCalendarDate(date, "MMMM d, yyyy");
 }
 
 function DisciplinaryPdf({ data }: { data: DisciplinaryPdfData }) {

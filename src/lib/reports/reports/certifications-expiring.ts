@@ -8,6 +8,7 @@
 
 import { db } from "@/lib/db";
 import { format } from "date-fns";
+import { formatCalendarDate } from "@/lib/dates";
 import type { ReportDefinition } from "../types";
 
 function daysBetween(a: Date, b: Date): number {
@@ -32,6 +33,9 @@ export const certificationsExpiring: ReportDefinition = {
         deletedAt: null,
         status: { in: ["ACTIVE", "EXPIRING_SOON", "PENDING"] },
         expirationDate: { gte: now, lte: horizon },
+        // Mirrors the job: a submitted renewal mutes the expiry nagging
+        // (and its cost would overstate the outstanding renewal spend).
+        renewalSubmittedAt: null,
       },
       include: {
         client: { select: { name: true } },
@@ -90,7 +94,9 @@ export const certificationsExpiring: ReportDefinition = {
         {
           key: "expirationDate",
           label: "Expires",
-          format: (v) => (v instanceof Date ? format(v, "MMM d, yyyy") : "—"),
+          // Calendar date (UTC midnight) — server-local format() would
+          // shift it a day west of UTC.
+          format: (v) => (v instanceof Date ? formatCalendarDate(v, "MMM d, yyyy") : "—"),
         },
         { key: "daysUntil", label: "Days", align: "right" },
         {

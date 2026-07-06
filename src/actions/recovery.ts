@@ -8,6 +8,8 @@ import {
   findSoftDeleteEntity,
   hardDeleteRow,
   restoreRow,
+  labelSelection,
+  rowLabel,
   DEFAULT_RETENTION_DAYS,
 } from "@/lib/soft-delete";
 import type { DynamicDelegateMap } from "@/lib/dynamic-delegate";
@@ -136,7 +138,7 @@ export async function listSoftDeletedRows(
       select: {
         id: true,
         deletedAt: true,
-        [entity.labelField]: true,
+        ...labelSelection(entity),
       },
       orderBy: { deletedAt: "desc" },
     });
@@ -152,7 +154,7 @@ export async function listSoftDeletedRows(
         pluralLabel: entity.pluralLabel,
         singularLabel: entity.singularLabel,
         id: r.id,
-        label: String(r[entity.labelField] ?? "(unnamed)"),
+        label: rowLabel(entity, r) || "(unnamed)",
         deletedAt: r.deletedAt,
         daysLeft,
         href: entity.hrefForId(r.id),

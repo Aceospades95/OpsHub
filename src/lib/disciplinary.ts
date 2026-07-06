@@ -1,4 +1,13 @@
-import type { DisciplinaryActionType } from "@prisma/client";
+import type { DisciplinaryActionType, Role } from "@prisma/client";
+
+/**
+ * Roles allowed to see or manage disciplinary reports. Everything HR —
+ * the profile tab, the actions, the PDF route, and the activity-log
+ * visibility filter — gates on this one predicate.
+ */
+export function isHrRole(role: Role): boolean {
+  return role === "ADMIN" || role === "MANAGER";
+}
 
 /** Ordered form options + display labels for disciplinary action types. */
 export const DISCIPLINARY_ACTION_TYPES: DisciplinaryActionType[] = [
