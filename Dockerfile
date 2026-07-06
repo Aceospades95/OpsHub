@@ -18,7 +18,13 @@ RUN apt-get update -y \
 FROM base AS deps
 WORKDIR /app
 COPY package.json package-lock.json* ./
-RUN npm ci
+# esbuild's postinstall execs its just-written binary; with npm's
+# parallel script workers that intermittently fails with ETXTBSY
+# (text file busy) on overlayfs — the flake that broke publish run
+# #298. --foreground-scripts serializes the lifecycle scripts (closing
+# the open-fd race) and the `||` retry absorbs anything left; builds
+# run with no-cache, so every publish re-rolls this dice.
+RUN npm ci --foreground-scripts || npm ci --foreground-scripts
 
 # Generate Prisma client
 COPY prisma ./prisma
