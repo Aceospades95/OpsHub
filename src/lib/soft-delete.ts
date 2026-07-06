@@ -61,7 +61,9 @@ export interface SoftDeleteEntity {
     | "certification"
     | "intranetResource"
     | "document"
-    | "task";
+    | "task"
+    | "vehicle"
+    | "disciplinaryReport";
   /** Activity-log entityType + recovery-page slug. Stable. */
   entityType: string;
   /** Plural label used as the section header on /admin/recovery. */
@@ -71,7 +73,7 @@ export interface SoftDeleteEntity {
   /** Module key for permission checks. */
   module: string;
   /** Field on the row that produces the user-facing label. */
-  labelField: "name" | "title";
+  labelField: "name" | "title" | "model" | "description";
   /** Link back to the entity's detail page (works while soft-deleted). */
   hrefForId(id: string): string;
 }
@@ -157,6 +159,26 @@ export const SOFT_DELETE_ENTITIES: readonly SoftDeleteEntity[] = [
     module: "certifications",
     labelField: "name",
     hrefForId: (id) => `/certifications/${id}`,
+  },
+  {
+    prismaModel: "vehicle",
+    entityType: "vehicle",
+    pluralLabel: "Vehicles",
+    singularLabel: "vehicle",
+    module: "fleet",
+    labelField: "model",
+    hrefForId: (id) => `/fleet/${id}`,
+  },
+  {
+    prismaModel: "disciplinaryReport",
+    entityType: "disciplinary-report",
+    pluralLabel: "Disciplinary Reports",
+    singularLabel: "disciplinary report",
+    // HR-sensitive; the recovery page itself is ADMIN-only. No standalone
+    // detail page — the href lands on the team list.
+    module: "team",
+    labelField: "description",
+    hrefForId: () => `/team`,
   },
   {
     prismaModel: "intranetResource",

@@ -29,6 +29,8 @@ vi.mock("@/lib/db", () => ({
     intranetResource: { findUnique: vi.fn(), update: vi.fn(), delete: vi.fn(), findMany: vi.fn().mockResolvedValue([]), deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
     document: { findUnique: vi.fn(), update: vi.fn(), delete: vi.fn(), findMany: vi.fn().mockResolvedValue([]), deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
     task: { findUnique: vi.fn(), update: vi.fn(), delete: vi.fn(), findMany: vi.fn().mockResolvedValue([]), deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+    vehicle: { findUnique: vi.fn(), update: vi.fn(), delete: vi.fn(), findMany: vi.fn().mockResolvedValue([]), deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+    disciplinaryReport: { findUnique: vi.fn(), update: vi.fn(), delete: vi.fn(), findMany: vi.fn().mockResolvedValue([]), deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
   },
 }));
 vi.mock("@/lib/activity", () => ({
@@ -57,13 +59,14 @@ const projectDeleteMany = db.project.deleteMany as ReturnType<typeof vi.fn>;
 const PROJECT = SOFT_DELETE_ENTITIES.find((e) => e.entityType === "project")!;
 
 describe("soft-delete entity registry", () => {
-  it("includes all 12 expected entity types", () => {
+  it("includes all 14 expected entity types", () => {
     const types = SOFT_DELETE_ENTITIES.map((e) => e.entityType).sort();
     expect(types).toEqual(
       [
         "certification",
         "client",
         "contract",
+        "disciplinary-report",
         "document",
         "intranet",
         "partnership",
@@ -73,6 +76,7 @@ describe("soft-delete entity registry", () => {
         "supplier",
         "task",
         "tool",
+        "vehicle",
       ].sort()
     );
   });
@@ -256,7 +260,7 @@ describe("purgeOldSoftDeletes", () => {
     const args = projectDeleteMany.mock.calls[0][0];
     expect(args.where.deletedAt.lt).toBeInstanceOf(Date);
     expect(summary.find((s) => s.entity === "project")?.purged).toBe(3);
-    // 12 entities total
+    // one summary row per registry entry
     expect(summary).toHaveLength(SOFT_DELETE_ENTITIES.length);
   });
 

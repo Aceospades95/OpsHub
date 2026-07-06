@@ -21,6 +21,7 @@ export type NotificationType =
   | "comment-added"
   | "milestone-assigned"
   | "certification-expiring"
+  | "vehicle-maintenance-due"
   | "system"
   | "test";
 
@@ -36,6 +37,7 @@ export const NOTIFICATION_TYPE_LABELS: Record<NotificationType, string> = {
   "comment-added": "New comment",
   "milestone-assigned": "Milestone assignment",
   "certification-expiring": "Certification expiring",
+  "vehicle-maintenance-due": "Vehicle maintenance due",
   system: "System",
   test: "Test",
 };

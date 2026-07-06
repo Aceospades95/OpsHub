@@ -25,6 +25,7 @@ export type ModuleKey =
   | "subcontractors"
   | "partnerships"
   | "tools"
+  | "fleet"
   | "intranet"
   | "quotes"
   | "workflows"
@@ -210,6 +211,15 @@ export const MODULES: ModuleDefinition[] = [
     href: "/tools",
     icon: "Wrench",
     description: "Shared tools and linked resources",
+    section: "resources",
+    permissioned: true,
+  },
+  {
+    key: "fleet",
+    label: "Fleet",
+    href: "/fleet",
+    icon: "Car",
+    description: "Company vehicles, maintenance records, and service alerts",
     section: "resources",
     permissioned: true,
   },

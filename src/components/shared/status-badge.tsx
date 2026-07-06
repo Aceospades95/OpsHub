@@ -17,6 +17,11 @@ const statusVariantMap: Record<string, BadgeVariant> = {
   // Certification renewal-in-progress (date-derived display state)
   RENEWAL_SUBMITTED: "default",
 
+  // Vehicle statuses
+  IN_SHOP: "warning",
+  RETIRED: "outline",
+  SOLD: "secondary",
+
   // Contract statuses
   DRAFT: "outline",
   UNDER_REVIEW: "warning",

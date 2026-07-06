@@ -50,6 +50,7 @@ export const DEFAULT_SIDEBAR_CONFIG: SidebarConfig = {
         { key: "intranet", visible: true },
         { key: "tools", visible: true },
         { key: "suppliers", visible: true },
+        { key: "fleet", visible: true },
       ],
     },
     {
