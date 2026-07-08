@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import {
   Home,
   Car,
+  Target,
   LayoutDashboard,
   Building2,
   FolderKanban,
@@ -55,6 +56,7 @@ interface SidebarProps {
 const ICON_MAP: Record<string, LucideIcon> = {
   Home,
   Car,
+  Target,
   LayoutDashboard,
   Building2,
   FolderKanban,

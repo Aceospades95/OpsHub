@@ -372,6 +372,7 @@ model User {
   assignedVehicles               Vehicle[]                           @relation("VehicleAssignee")
   disciplinaryReports            DisciplinaryReport[]                @relation("DisciplinaryEmployee")
   issuedDisciplinaryReports      DisciplinaryReport[]                @relation("DisciplinaryIssuer")
+  ownedBids                      BidOpportunity[]                    @relation("BidOwner")
   accounts                       Account[]
   signupTokens                   SignupToken[]
 }
@@ -553,6 +554,7 @@ model Client {
   assignments    Assignment[]
   activityLogs   ActivityLog[]
   quotes         Quote[]
+  bids           BidOpportunity[]
 }
 
 model ClientContact {
@@ -621,6 +623,7 @@ model Project {
   tasks        Task[]
   sandboxPages SandboxPage[]
 
+  sourceBids       BidOpportunity[]
   relations        ProjectRelation[]      @relation("ProjectRelations")
   relatedRelations ProjectRelation[]      @relation("RelatedProjectRelations")
   assignments      Assignment[]
@@ -2462,4 +2465,92 @@ model VehicleMaintenanceRecord {
   vehicle Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
 
   @@index([vehicleId, serviceDate])
+}
+
+// ─── BID PIPELINE ─────────────────────────────────────────
+//
+// Business development: the procurement portals we're registered on
+// (where deals are found) and the opportunities we pursue through
+// them. An opportunity moves IDENTIFIED → PREPARING → SUBMITTED →
+// WON / LOST / NO_BID / STALE; winning one converts into a Project
+// (BidOpportunity.projectId) so the pipeline hands off to delivery.
+
+enum BidStatus {
+  /// Found it — evaluating whether to pursue.
+  IDENTIFIED
+  /// Go decision made; response in progress.
+  PREPARING
+  /// Response submitted — waiting on the buyer.
+  SUBMITTED
+  WON
+  LOST
+  /// Deliberate pass after evaluation.
+  NO_BID
+  /// Died quietly — no award ever announced / opportunity evaporated.
+  STALE
+}
+
+model BidPortal {
+  id                   String    @id @default(cuid())
+  name                 String
+  url                  String?
+  /// "City of Chicago", "Cook County", "State of Illinois", "Federal", …
+  jurisdiction         String?
+  /// The login identity used on the portal (an email or username —
+  /// NEVER a password; credentials live in the password manager).
+  accountIdentifier    String?
+  /// Some registrations must be renewed periodically.
+  registrationRenewsAt DateTime?
+  isActive             Boolean   @default(true)
+  notes                String?   @db.Text
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  bids BidOpportunity[]
+}
+
+model BidOpportunity {
+  id                 String    @id @default(cuid())
+  title              String
+  /// RFP/RFQ/IFB number as published by the buyer.
+  solicitationNumber String?
+  /// Issuing agency / buyer ("City of Chicago DoIT").
+  agency             String?
+  /// Deep link to the solicitation (usually on the portal).
+  url                String?
+  description        String?   @db.Text
+  estimatedValue     Float?
+  currency           String?   @default("USD")
+  status             BidStatus @default(IDENTIFIED)
+  /// Response-submission deadline.
+  dueDate            DateTime?
+  submittedAt        DateTime?
+  /// When the outcome (WON/LOST/NO_BID/STALE) was recorded.
+  decidedAt          DateTime?
+  lossReason         String?
+  notes              String?   @db.Text
+  /// Dedupe stamp for the bid-due-check job — one notification per
+  /// dueDate value; changing the date re-arms it (mirrors
+  /// Vehicle.maintenanceNotifiedFor).
+  dueNotifiedFor     DateTime?
+  portalId           String?
+  clientId           String?
+  ownerId            String?
+  /// Set when a WON bid is converted into a delivery project.
+  projectId          String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  /// Soft-delete tombstone — see Project.deletedAt comment.
+  deletedAt          DateTime?
+
+  portal  BidPortal? @relation(fields: [portalId], references: [id], onDelete: SetNull)
+  client  Client?    @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  owner   User?      @relation("BidOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  project Project?   @relation(fields: [projectId], references: [id], onDelete: SetNull)
+
+  @@index([status])
+  @@index([dueDate])
+  @@index([portalId])
+  @@index([ownerId])
+  @@index([clientId])
 }

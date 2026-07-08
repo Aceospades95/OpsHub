@@ -76,6 +76,7 @@ Known limitations (not bugs, HTML constraint):
 - **Partnerships** — by name, legal name, description, industry, primary contact
 - **Vehicles (fleet)** — by nickname, make, model, VIN, license plate —
   scope-filtered for assigned drivers
+- **Bids** — by title, solicitation number, agency (permission-gated)
 - **Tasks** — by title, description — results deep-link to parent project or client
 - **Team members** — by name, email, jobTitle, department — links to `/team/{id}`
 - **Intranet resources** — by title, description, content — only published items,
@@ -83,8 +84,8 @@ Known limitations (not bugs, HTML constraint):
 
 The Cmd-K palette (`quickSearch` in `src/actions/search.ts`) covers
 employees, clients, projects, suppliers (incl. contact names), contracts,
-quotes, tools, vehicles, and intranet with the same permission + scope
-gates. **Disciplinary reports are deliberately excluded from both search
+quotes, tools, vehicles, bids, and intranet with the same permission +
+scope gates. **Disciplinary reports are deliberately excluded from both search
 surfaces** — search gates on module `canView`, which can't express the
 HR-roles-minus-subject rule.
 
@@ -378,7 +379,7 @@ Current types:
 - `comment-added`
 - `milestone-assigned`
 - `certification-expiring`
-- `vehicle-maintenance-due`
+- `vehicle-maintenance-due`, `bid-due-soon`
 - `system`, `test`
 
 ### User-facing UI
@@ -1122,6 +1123,48 @@ notification's link works for the driver it's sent to.
   `disciplinary-report`; `merge-users-fk.ts` reassigns
   `Vehicle.assignedToId`, `DisciplinaryReport.employeeId`, and
   `DisciplinaryReport.issuedById`.
+
+## Bid pipeline (July 2026)
+
+Business development in one permissioned module (`bids`, Manager+ by
+default — bid values are financial data). Migration
+`20260709000000_bid_pipeline`.
+
+- **`BidPortal`** (`/bids/portals`) — registry of the procurement /
+  bidding sites we're registered on: name, URL, jurisdiction, the
+  account identifier used there (never a password), registration
+  renewal date (flagged red when past), active flag, notes. Lives
+  inside the bids module rather than intranet resources because
+  portals are structured pipeline data: every opportunity records its
+  source portal, so "which registrations actually produce work" falls
+  out of the data.
+- **`BidOpportunity`** (`/bids`, detail `/bids/{id}`) — the pipeline
+  item: title, solicitation #, agency, deep link, estimated value,
+  response due date, portal/client/owner links, notes. Stages:
+  IDENTIFIED → PREPARING → SUBMITTED → WON / LOST (Not Awarded) /
+  NO_BID / STALE. Stage bookkeeping is automatic: → SUBMITTED stamps
+  `submittedAt`, → any outcome stamps `decidedAt`, reopening clears it.
+- **Views** — default "Pipeline" view renders stage sections in
+  pipeline order with per-stage counts + dollar totals (the kanban
+  read); "Table" is the flat list with group-by portal/owner/client/
+  agency. Stat chips: open pipeline (count + value), due ≤ 7 days,
+  overdue, awaiting decision, won — the due chips filter the list.
+- **Deadline job** — `bid-due-check` (daily): open pre-submission bids
+  due within `BID_DUE_WINDOW_DAYS` (7) or overdue notify the owner +
+  admins/managers per-recipient (`bid-due-soon` type), deduped per
+  dueDate via `dueNotifiedFor` (a new date re-arms it). SUBMITTED bids
+  quiet for 60+ days get a "waiting Nd — check on this" hint in the
+  UI (`bidWaitingDays`), nudging them toward STALE or a follow-up.
+- **Convert to project** — on a bid detail, "Convert to project"
+  creates a PLANNING project (name prefilled from the bid, client
+  required), links it via `BidOpportunity.projectId`, and stamps the
+  bid WON — the pipeline→delivery hand-off. Requires create rights on
+  BOTH the bids and projects modules.
+- **Wiring** — soft-delete recovery (`bid`), merge-users reassigns
+  `ownerId`, global search + Cmd-K palette buckets, status-badge
+  variants for all stages, sidebar under Delivery next to Quotes.
+- Helpers in `lib/bids.ts` (`bidDueState`, `bidWaitingDays`, stage
+  vocabulary) with tests.
 
 ## How to extend this document
 

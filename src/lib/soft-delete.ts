@@ -67,7 +67,8 @@ export interface SoftDeleteEntity {
     | "document"
     | "task"
     | "vehicle"
-    | "disciplinaryReport";
+    | "disciplinaryReport"
+    | "bidOpportunity";
   /** Activity-log entityType + recovery-page slug. Stable. */
   entityType: string;
   /** Plural label used as the section header on /admin/recovery. */
@@ -221,6 +222,15 @@ export const SOFT_DELETE_ENTITIES: readonly SoftDeleteEntity[] = [
       return date ? `${label} (${date})` : label;
     },
     hrefForId: () => `/team`,
+  },
+  {
+    prismaModel: "bidOpportunity",
+    entityType: "bid",
+    pluralLabel: "Bids",
+    singularLabel: "bid",
+    module: "bids",
+    labelField: "title",
+    hrefForId: (id) => `/bids/${id}`,
   },
   {
     prismaModel: "intranetResource",

@@ -31,6 +31,7 @@ vi.mock("@/lib/db", () => ({
     task: { findUnique: vi.fn(), update: vi.fn(), delete: vi.fn(), findMany: vi.fn().mockResolvedValue([]), deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
     vehicle: { findUnique: vi.fn(), update: vi.fn(), delete: vi.fn(), findMany: vi.fn().mockResolvedValue([]), deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
     disciplinaryReport: { findUnique: vi.fn(), update: vi.fn(), delete: vi.fn(), findMany: vi.fn().mockResolvedValue([]), deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+    bidOpportunity: { findUnique: vi.fn(), update: vi.fn(), delete: vi.fn(), findMany: vi.fn().mockResolvedValue([]), deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
   },
 }));
 vi.mock("@/lib/activity", () => ({
@@ -59,10 +60,11 @@ const projectDeleteMany = db.project.deleteMany as ReturnType<typeof vi.fn>;
 const PROJECT = SOFT_DELETE_ENTITIES.find((e) => e.entityType === "project")!;
 
 describe("soft-delete entity registry", () => {
-  it("includes all 14 expected entity types", () => {
+  it("includes all 15 expected entity types", () => {
     const types = SOFT_DELETE_ENTITIES.map((e) => e.entityType).sort();
     expect(types).toEqual(
       [
+        "bid",
         "certification",
         "client",
         "contract",

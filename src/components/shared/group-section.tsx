@@ -8,10 +8,13 @@ import type { ReactNode } from "react";
 export function GroupSection({
   label,
   count,
+  subtitle,
   children,
 }: {
   label: string;
   count: number;
+  /** Optional extra text after the count — e.g. a stage's dollar total. */
+  subtitle?: string;
   children: ReactNode;
 }) {
   return (
@@ -22,6 +25,7 @@ export function GroupSection({
         </span>
         <h2 className="text-sm font-semibold text-foreground">{label}</h2>
         <span className="text-xs text-muted-foreground">({count})</span>
+        {subtitle && <span className="text-xs text-muted-foreground">· {subtitle}</span>}
         <span className="flex-1 border-t border-border ml-2" />
       </summary>
       {children}

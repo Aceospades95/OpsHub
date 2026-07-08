@@ -39,6 +39,7 @@ export interface SearchHit {
     | "quote"
     | "tool"
     | "vehicle"
+    | "bid"
     | "intranet";
   label: string;
   sublabel?: string;
@@ -75,6 +76,7 @@ export async function quickSearch(query: string): Promise<SearchResults> {
     toolsPerms,
     intranetPerms,
     fleetPerms,
+    bidsPerms,
   ] = await Promise.all([
     resolveModulePerms(user.id, user.role, "team"),
     resolveModulePerms(user.id, user.role, "clients"),
@@ -85,6 +87,7 @@ export async function quickSearch(query: string): Promise<SearchResults> {
     resolveModulePerms(user.id, user.role, "tools"),
     resolveModulePerms(user.id, user.role, "intranet"),
     resolveModulePerms(user.id, user.role, "fleet"),
+    resolveModulePerms(user.id, user.role, "bids"),
   ]);
 
   // Build scope-aware filters. Each entity type is limited to the rows
@@ -114,6 +117,7 @@ export async function quickSearch(query: string): Promise<SearchResults> {
     tools,
     intranet,
     vehicles,
+    bids,
   ] = await Promise.all([
     teamPerms.canView
       ? db.user.findMany({
@@ -276,6 +280,17 @@ export async function quickSearch(query: string): Promise<SearchResults> {
           orderBy: [{ make: "asc" }, { model: "asc" }],
         })
       : [],
+    bidsPerms.canView
+      ? db.bidOpportunity.findMany({
+          where: {
+            deletedAt: null,
+            OR: [{ title: ci }, { solicitationNumber: ci }, { agency: ci }],
+          },
+          select: { id: true, title: true, agency: true, solicitationNumber: true },
+          take: PER_BUCKET_LIMIT,
+          orderBy: { updatedAt: "desc" },
+        })
+      : [],
   ]);
 
   const hits: SearchHit[] = [
@@ -342,6 +357,13 @@ export async function quickSearch(query: string): Promise<SearchResults> {
       sublabel: v.licensePlate || undefined,
       href: `/fleet/${v.id}`,
     })),
+    ...bids.map((b) => ({
+      id: `bid-${b.id}`,
+      type: "bid" as const,
+      label: b.title,
+      sublabel: [b.agency, b.solicitationNumber].filter(Boolean).join(" · ") || undefined,
+      href: `/bids/${b.id}`,
+    })),
   ];
 
   const truncated =
@@ -353,7 +375,8 @@ export async function quickSearch(query: string): Promise<SearchResults> {
     quotes.length === PER_BUCKET_LIMIT ||
     tools.length === PER_BUCKET_LIMIT ||
     intranet.length === PER_BUCKET_LIMIT ||
-    vehicles.length === PER_BUCKET_LIMIT;
+    vehicles.length === PER_BUCKET_LIMIT ||
+    bids.length === PER_BUCKET_LIMIT;
 
   return { hits, truncated };
 }
