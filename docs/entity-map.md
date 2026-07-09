@@ -894,8 +894,12 @@ on it is scoped per-user by the queries themselves:
 - **My projects** — owned (`Project.ownerId`) ∪ member ∪ actively assigned.
 - **My tasks** — open tasks assigned to the viewer, due-date order, with
   the shared TaskCheckbox and a one-line quick-add (assignee = viewer).
-- **Google Tasks inbox** — synced tasks with no project yet; each row
-  files under a project via `assignTaskProject`.
+- **My tasks** — ONE list (`my-tasks-card.tsx`): OpsHub and
+  Google-synced tasks together, soonest due first. Synced rows carry a
+  small calendar-check mark; any task without a project files onto one
+  inline via `assignTaskProject`; the Google connect / sync-now /
+  disconnect controls live in the card header. (The separate "Google
+  Tasks inbox" card is gone — Google is plumbing, not a place.)
 - **All projects overview** — the spreadsheet replacement. Inline status
   select, click-to-edit notes, owner picker (org-wide roles only).
   Backed by `updateProject*Inline` actions in `actions/projects.ts`.
@@ -916,15 +920,19 @@ Per-user two-way sync with the Google Tasks API. Pieces:
   `/callback` stores tokens and runs a first sync. Reuses the SSO OAuth
   client; the redirect URI must be added in the Google console (see
   `.env.example`).
-- **Sync engine** — `src/lib/google-tasks/sync.ts`. Pull: every Google
-  task becomes an OpsHub Task with `sourceType="google_tasks"`,
-  `sourceId=<google task id>`, assigned to the connected user; Google
+- **Sync engine** — `src/lib/google-tasks/sync.ts`. Pull: every task in
+  EVERY list on the account (the default "My Tasks" list included —
+  the original design only read a dedicated "OpsHub" list it created,
+  which is why nothing synced) becomes an OpsHub Task with
+  `sourceType="google_tasks"` and `sourceId="<tasklistId>:<taskId>"`
+  (composite — task ids are only unique per list; legacy bare ids are
+  migrated on first match), assigned to the connected user; Google
   deletions soft-delete. Push: edits/completions of those SAME tasks
-  patch back to Google. OpsHub-native tasks are NOT mirrored (the Google
-  list is a capture surface, not an org mirror);
-  `pushNewTaskToGoogle()` exists for explicit opt-in flows. Conflicts:
-  last-write-wins per task; a pull in the same run suppresses its own
-  echo push.
+  patch back to the originating list. OpsHub-native tasks are NOT
+  mirrored automatically; `pushNewTaskToGoogle()` (targets the
+  account's `@default` list) exists for explicit opt-in flows.
+  Conflicts: last-write-wins per task; a pull in the same run
+  suppresses its own echo push.
 - **Scheduling** — `google-tasks-sync` job (no webhooks upstream, so we
   poll). Rides the hourly all-jobs cron; add a dedicated 5-minute
   `?job=google-tasks-sync` entry for snappier sync. "Sync now" on /my

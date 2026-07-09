@@ -4,13 +4,10 @@ import { getUserScope, hasOrgWideScope } from "@/lib/scope";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatusBadge } from "@/components/shared/status-badge";
-import { TaskCheckbox } from "@/app/(platform)/tasks/task-checkbox";
-import { formatCalendarDate } from "@/lib/dates";
-import { CheckSquare, FolderKanban, Clock } from "lucide-react";
+import { FolderKanban } from "lucide-react";
 import Link from "next/link";
 import { MyProjectsOverview, type OverviewRow } from "./my-projects-overview";
-import { MyQuickAddTask } from "./my-quick-add-task";
-import { GoogleTasksSection } from "./google-tasks-section";
+import { MyTasksCard } from "./my-tasks-card";
 
 export const metadata = { title: "My View · OpsHub" };
 
@@ -34,7 +31,7 @@ export default async function MyViewPage({
   ]);
   const projectWhere = scope.all ? {} : { id: { in: Array.from(scope.projectIds) } };
 
-  const [myProjects, myTasks, overviewProjects, owners, googleIntegration, googleInbox] =
+  const [myProjects, myTasks, overviewProjects, owners, googleIntegration] =
     await Promise.all([
       // Projects on my plate: owned, member of, or actively assigned.
       db.project.findMany({
@@ -67,7 +64,7 @@ export default async function MyViewPage({
         },
         include: { project: { select: { id: true, name: true } } },
         orderBy: [{ dueDate: { sort: "asc", nulls: "last" } }, { priority: "asc" }],
-        take: 25,
+        take: 30,
       }),
       // Everything I can see, for the inline-editable overview table.
       db.project.findMany({
@@ -93,19 +90,7 @@ export default async function MyViewPage({
         : Promise.resolve([] as { id: string; name: string }[]),
       db.googleTasksIntegration.findUnique({
         where: { userId: user.id },
-        select: { id: true, tasklistId: true, lastSyncedAt: true, lastSyncStatus: true, lastSyncError: true },
-      }),
-      // Google-synced tasks not yet filed under a project — the triage inbox.
-      db.task.findMany({
-        where: {
-          assigneeId: user.id,
-          sourceType: "google_tasks",
-          projectId: null,
-          status: { in: ["TODO", "IN_PROGRESS"] },
-          deletedAt: null,
-        },
-        orderBy: { createdAt: "desc" },
-        take: 20,
+        select: { id: true, lastSyncedAt: true, lastSyncStatus: true, lastSyncError: true },
       }),
     ]);
 
@@ -171,68 +156,28 @@ export default async function MyViewPage({
           </CardContent>
         </Card>
 
-        {/* ── My open tasks ───────────────────────────── */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <CheckSquare className="h-4 w-4" />
-              My tasks ({myTasks.length})
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <MyQuickAddTask projects={projectOptions} assigneeId={user.id} />
-            {myTasks.length === 0 ? (
-              <p className="text-sm text-muted-foreground mt-3">No open tasks. Enjoy it while it lasts.</p>
-            ) : (
-              <div className="space-y-2 mt-3">
-                {myTasks.map((task) => {
-                  const overdue = task.dueDate ? task.dueDate < renderedAt : false;
-                  return (
-                    <div key={task.id} className="flex items-start gap-3 text-sm">
-                      <TaskCheckbox taskId={task.id} status={task.status} />
-                      <div className="min-w-0 flex-1">
-                        <p className="font-medium truncate">{task.title}</p>
-                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                          {task.project && (
-                            <Link
-                              href={`/projects/${task.project.id}`}
-                              className="hover:text-primary hover:underline truncate"
-                            >
-                              {task.project.name}
-                            </Link>
-                          )}
-                          {task.dueDate && (
-                            <span className={`flex items-center gap-1 shrink-0 ${overdue ? "text-destructive" : ""}`}>
-                              <Clock className="h-3 w-3" />
-                              {formatCalendarDate(task.dueDate, "MMM d")}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+        {/* ── My open tasks (OpsHub + Google, one list) ── */}
+        <MyTasksCard
+          tasks={myTasks.map((task) => ({
+            id: task.id,
+            title: task.title,
+            status: task.status,
+            dueDate: task.dueDate ? task.dueDate.toISOString() : null,
+            project: task.project ? { id: task.project.id, name: task.project.name } : null,
+            isGoogle: task.sourceType === "google_tasks",
+          }))}
+          projects={projectOptions}
+          google={{
+            connected: Boolean(googleIntegration),
+            lastSyncedAt: googleIntegration?.lastSyncedAt?.toISOString() ?? null,
+            lastSyncStatus: googleIntegration?.lastSyncStatus ?? null,
+            lastSyncError: googleIntegration?.lastSyncError ?? null,
+          }}
+          flash={searchParams?.google ?? null}
+          assigneeId={user.id}
+          now={renderedAt.toISOString()}
+        />
       </div>
-
-      {/* ── Google Tasks inbox / connect ──────────────── */}
-      <GoogleTasksSection
-        connected={Boolean(googleIntegration)}
-        flash={searchParams?.google ?? null}
-        lastSyncedAt={googleIntegration?.lastSyncedAt?.toISOString() ?? null}
-        lastSyncStatus={googleIntegration?.lastSyncStatus ?? null}
-        lastSyncError={googleIntegration?.lastSyncError ?? null}
-        inbox={googleInbox.map((t) => ({
-          id: t.id,
-          title: t.title,
-          status: t.status,
-          dueDate: t.dueDate ? t.dueDate.toISOString() : null,
-        }))}
-        projects={projectOptions}
-      />
 
       {/* ── All projects, editable in place ───────────── */}
       <MyProjectsOverview
