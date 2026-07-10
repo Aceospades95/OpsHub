@@ -75,6 +75,21 @@ function googleStatusToOps(status: string | undefined): "TODO" | "DONE" {
   return status === "completed" ? "DONE" : "TODO";
 }
 
+/** The email/doc link Google carries on the task, if any. */
+function sourceLinkOf(g: GoogleTask): string | null {
+  return g.links?.find((l) => l.link)?.link ?? null;
+}
+
+/**
+ * True when Google won't accept writes back to this task. "Assigned"
+ * tasks (from Chat/Docs, they carry assignmentInfo) and some
+ * Gmail-linked tasks return 403 PERMISSION_DENIED on PATCH — we pull
+ * them read-only rather than error every sync trying to push.
+ */
+function isReadOnly(g: GoogleTask): boolean {
+  return Boolean(g.assignmentInfo);
+}
+
 export async function syncGoogleTasksForUser(userId: string): Promise<SyncResult> {
   const result: SyncResult = { pulledCreated: 0, pulledUpdated: 0, pushed: 0, errors: [] };
 
@@ -132,6 +147,8 @@ export async function syncGoogleTasksForUser(userId: string): Promise<SyncResult
                 createdById: userId,
                 sourceType: SOURCE_TYPE,
                 sourceId: key,
+                sourceLink: sourceLinkOf(g),
+                sourceReadOnly: isReadOnly(g),
               },
             });
             pulledIds.add(key);
@@ -164,6 +181,8 @@ export async function syncGoogleTasksForUser(userId: string): Promise<SyncResult
           }
 
           const nextStatus = googleStatusToOps(g.status);
+          const nextLink = sourceLinkOf(g);
+          const nextReadOnly = isReadOnly(g);
           const changed =
             existing.title !== (g.title?.trim() || existing.title) ||
             (existing.description ?? "") !== (g.notes?.trim() ?? "") ||
@@ -173,7 +192,9 @@ export async function syncGoogleTasksForUser(userId: string): Promise<SyncResult
             // richer OpsHub status.
             (nextStatus === "DONE") !== (existing.status === "DONE") ||
             existing.deletedAt !== null ||
-            existing.sourceId !== key;
+            existing.sourceId !== key ||
+            existing.sourceLink !== nextLink ||
+            existing.sourceReadOnly !== nextReadOnly;
 
           if (!changed) continue;
 
@@ -184,6 +205,8 @@ export async function syncGoogleTasksForUser(userId: string): Promise<SyncResult
               description: g.notes?.trim() || null,
               dueDate: g.due ? new Date(g.due) : null,
               sourceId: key,
+              sourceLink: nextLink,
+              sourceReadOnly: nextReadOnly,
               ...(nextStatus === "DONE"
                 ? { status: "DONE", completedAt: new Date(g.completed ?? Date.now()) }
                 : existing.status === "DONE"
@@ -208,6 +231,9 @@ export async function syncGoogleTasksForUser(userId: string): Promise<SyncResult
       where: {
         sourceType: SOURCE_TYPE,
         assigneeId: userId,
+        // Read-only tasks (assigned / Gmail-linked) never push — Google
+        // 403s on them. We pull them; we don't fight the API to write back.
+        sourceReadOnly: false,
         ...(pushSince ? { updatedAt: { gt: pushSince } } : {}),
       },
     });
@@ -234,6 +260,12 @@ export async function syncGoogleTasksForUser(userId: string): Promise<SyncResult
         // window — mirror the delete here rather than erroring forever.
         if (status === 404 && !task.deletedAt) {
           await db.task.update({ where: { id: task.id }, data: { deletedAt: new Date() } });
+        } else if (status === 403) {
+          // Google won't let us write this task (assigned / Gmail-linked).
+          // Flag it read-only so future syncs skip the push — NOT an
+          // error; the sync stays "success". The completion/edit still
+          // lives correctly in OpsHub; it just can't round-trip.
+          await db.task.update({ where: { id: task.id }, data: { sourceReadOnly: true } });
         } else if (status !== 404) {
           result.errors.push(`push ${task.id}: ${(err as Error).message}`);
         }

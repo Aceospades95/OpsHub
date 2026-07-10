@@ -93,7 +93,7 @@ export default async function MyViewPage({
         : Promise.resolve([] as { id: string; name: string }[]),
       db.googleTasksIntegration.findUnique({
         where: { userId: user.id },
-        select: { id: true, lastSyncedAt: true, lastSyncStatus: true, lastSyncError: true },
+        select: { id: true, lastSyncedAt: true, lastSyncStatus: true, lastSyncError: true, autoSyncMinutes: true },
       }),
       // Open bids on my plate — deadline pressure first.
       bidPerms.canView
@@ -177,6 +177,7 @@ export default async function MyViewPage({
             dueDate: task.dueDate ? task.dueDate.toISOString() : null,
             project: task.project ? { id: task.project.id, name: task.project.name } : null,
             isGoogle: task.sourceType === "google_tasks",
+            sourceLink: task.sourceLink ?? null,
           }))}
           projects={projectOptions}
           google={{
@@ -184,6 +185,7 @@ export default async function MyViewPage({
             lastSyncedAt: googleIntegration?.lastSyncedAt?.toISOString() ?? null,
             lastSyncStatus: googleIntegration?.lastSyncStatus ?? null,
             lastSyncError: googleIntegration?.lastSyncError ?? null,
+            autoSyncMinutes: googleIntegration?.autoSyncMinutes ?? 0,
           }}
           flash={searchParams?.google ?? null}
           assigneeId={user.id}

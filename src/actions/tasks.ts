@@ -9,6 +9,7 @@ import { requireAuth, resolveModulePerms } from "@/lib/permissions";
 import type { Role } from "@prisma/client";
 import { z } from "zod";
 import { nameField } from "@/lib/validation";
+import { pushNewTaskToGoogle } from "@/lib/google-tasks/sync";
 
 /**
  * Verify the actor is allowed to mutate this specific task. Without
@@ -160,6 +161,9 @@ export async function createTask(_prevState: unknown, formData: FormData) {
     clientId: (formData.get("clientId") as string) || undefined,
     assigneeId: (formData.get("assigneeId") as string) || undefined,
   };
+  // Opt-in: also drop the task into the assignee's own Google Tasks
+  // (where a due date surfaces on their Google Calendar).
+  const pushToGoogle = formData.get("pushToGoogle") === "true";
 
   const parsed = taskSchema.safeParse(raw);
   if (!parsed.success) {
@@ -224,6 +228,24 @@ export async function createTask(_prevState: unknown, formData: FormData) {
       title: task.title,
       projectId: task.projectId,
     });
+  }
+
+  // Opt-in: mirror the task into the assignee's Google Tasks so it (and
+  // its due date, on their Calendar) reaches their phone. Non-fatal —
+  // task creation never fails because of Google, and it silently no-ops
+  // when the assignee hasn't connected their own Google Tasks.
+  if (pushToGoogle && task.assigneeId) {
+    try {
+      const connected = await db.googleTasksIntegration.findUnique({
+        where: { userId: task.assigneeId },
+        select: { id: true },
+      });
+      if (connected) {
+        await pushNewTaskToGoogle(task.assigneeId, task.id);
+      }
+    } catch (err) {
+      log.error("tasks.pushGoogle", "Push to assignee Google Tasks failed", err, { taskId: task.id });
+    }
   }
 
   return { success: true };

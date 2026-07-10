@@ -1,16 +1,17 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useEffect, useRef, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { assignTaskProject } from "@/actions/tasks";
+import { syncGoogleTasksAction, setGoogleAutoSync } from "@/actions/google-tasks";
 import { TaskCheckbox } from "@/app/(platform)/tasks/task-checkbox";
 import { formatCalendarDate } from "@/lib/dates";
 import { MyQuickAddTask } from "./my-quick-add-task";
-import { CheckSquare, Clock, CalendarCheck, RefreshCw } from "lucide-react";
+import { CheckSquare, Clock, CalendarCheck, RefreshCw, Mail } from "lucide-react";
 
 export interface MyTaskRow {
   id: string;
@@ -21,6 +22,8 @@ export interface MyTaskRow {
   project: { id: string; name: string } | null;
   /** True when the task is synced with the user's Google Tasks. */
   isGoogle: boolean;
+  /** Gmail/Docs link Google carries on the task, if any. */
+  sourceLink: string | null;
 }
 
 interface GoogleState {
@@ -28,7 +31,17 @@ interface GoogleState {
   lastSyncedAt: string | null;
   lastSyncStatus: string | null;
   lastSyncError: string | null;
+  /** Client-side auto-sync cadence; 0 = off. */
+  autoSyncMinutes: number;
 }
+
+const AUTO_SYNC_OPTIONS = [
+  { value: 0, label: "Manual" },
+  { value: 5, label: "Every 5 min" },
+  { value: 15, label: "Every 15 min" },
+  { value: 30, label: "Every 30 min" },
+  { value: 60, label: "Hourly" },
+];
 
 const FLASH_MESSAGES: Record<string, { tone: "success" | "error"; text: string }> = {
   connected: { tone: "success", text: "Google Tasks connected — your lists synced." },
@@ -67,6 +80,7 @@ export function MyTasksCard({
   const router = useRouter();
   const [, startTransition] = useTransition();
   const [filed, setFiled] = useState<Map<string, string>>(new Map());
+  const [syncing, setSyncing] = useState(false);
   const renderedAt = new Date(now);
 
   async function fileUnder(taskId: string, projectId: string) {
@@ -80,6 +94,45 @@ export function MyTasksCard({
     setFiled((m) => new Map(m).set(taskId, name));
     startTransition(() => router.refresh());
   }
+
+  async function runSync(silent = false) {
+    if (syncing) return;
+    setSyncing(true);
+    try {
+      const result = await syncGoogleTasksAction();
+      if (result.error) {
+        if (!silent) toast.error(`Sync issue: ${result.error}`);
+      } else if (!silent) {
+        const pulled = result.pulledCreated + result.pulledUpdated;
+        toast.success(pulled > 0 ? `Synced — ${pulled} update${pulled === 1 ? "" : "s"} from Google` : "Synced — up to date");
+      }
+      startTransition(() => router.refresh());
+    } catch {
+      if (!silent) toast.error("Couldn't reach Google — try again");
+    } finally {
+      setSyncing(false);
+    }
+  }
+
+  async function changeInterval(minutes: number) {
+    const result = await setGoogleAutoSync(minutes);
+    if (result && "error" in result && result.error) {
+      toast.error(result.error);
+      return;
+    }
+    startTransition(() => router.refresh());
+  }
+
+  // Auto-sync while the page is open, at the chosen cadence. Skips the
+  // tick if a manual/previous sync is still running.
+  const syncRef = useRef(runSync);
+  syncRef.current = runSync;
+  useEffect(() => {
+    if (!google.connected || !google.autoSyncMinutes) return;
+    const ms = google.autoSyncMinutes * 60 * 1000;
+    const timer = setInterval(() => syncRef.current(true), ms);
+    return () => clearInterval(timer);
+  }, [google.connected, google.autoSyncMinutes]);
 
   const flashMessage = flash ? FLASH_MESSAGES[flash] ?? null : null;
 
@@ -98,18 +151,30 @@ export function MyTasksCard({
                 {google.lastSyncStatus === "failed"
                   ? "Google sync failed"
                   : google.lastSyncedAt
-                    ? `Google synced ${format(new Date(google.lastSyncedAt), "MMM d, HH:mm")}`
+                    ? `Synced ${format(new Date(google.lastSyncedAt), "MMM d, HH:mm")}`
                     : "Google connected"}
               </span>
-              <form action="/api/integrations/google-tasks/sync" method="post">
-                <button
-                  type="submit"
-                  className="inline-flex items-center gap-1 px-2 py-1 font-medium rounded-md border border-input bg-background hover:bg-muted"
-                >
-                  <RefreshCw className="h-3 w-3" />
-                  Sync
-                </button>
-              </form>
+              <select
+                value={google.autoSyncMinutes}
+                onChange={(e) => changeInterval(Number(e.target.value))}
+                className="px-1.5 py-1 rounded-md border border-input bg-background"
+                aria-label="Auto-sync interval"
+              >
+                {AUTO_SYNC_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={() => runSync(false)}
+                disabled={syncing}
+                className="inline-flex items-center gap-1 px-2 py-1 font-medium rounded-md border border-input bg-background hover:bg-muted disabled:opacity-50"
+              >
+                <RefreshCw className={`h-3 w-3 ${syncing ? "animate-spin" : ""}`} />
+                Sync
+              </button>
               <form action="/api/integrations/google-tasks/disconnect" method="post">
                 <button type="submit" className="hover:text-destructive hover:underline">
                   Disconnect
@@ -198,6 +263,18 @@ export function MyTasksCard({
                           <Clock className="h-3 w-3" />
                           {formatCalendarDate(task.dueDate, "MMM d")}
                         </span>
+                      )}
+                      {task.sourceLink && (
+                        <a
+                          href={task.sourceLink}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center gap-1 shrink-0 text-primary hover:underline"
+                          aria-label="Open the linked email in Google"
+                        >
+                          <Mail className="h-3 w-3" />
+                          Email
+                        </a>
                       )}
                     </div>
                   </div>

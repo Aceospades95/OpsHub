@@ -74,6 +74,10 @@ export function AddTaskButton({
               ...users.map((u) => ({ label: u.name, value: u.id })),
             ]}
           />
+          <label className="flex items-center gap-2 text-sm text-muted-foreground">
+            <input type="checkbox" name="pushToGoogle" value="true" className="rounded" />
+            Also add to the assignee&apos;s Google Tasks (needs them connected; a due date shows on their Google Calendar)
+          </label>
           <div className="flex justify-end gap-2">
             <Button type="button" variant="outline" onClick={() => setOpen(false)}>
               Cancel

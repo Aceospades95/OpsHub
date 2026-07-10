@@ -932,11 +932,24 @@ Per-user two-way sync with the Google Tasks API. Pieces:
   mirrored automatically; `pushNewTaskToGoogle()` (targets the
   account's `@default` list) exists for explicit opt-in flows.
   Conflicts: last-write-wins per task; a pull in the same run
-  suppresses its own echo push.
-- **Scheduling** — `google-tasks-sync` job (no webhooks upstream, so we
-  poll). Rides the hourly all-jobs cron; add a dedicated 5-minute
-  `?job=google-tasks-sync` entry for snappier sync. "Sync now" on /my
-  posts to `/api/integrations/google-tasks/sync`.
+  suppresses its own echo push. **Read-only tasks**: "assigned" tasks
+  (from Google Chat/Docs, they carry `assignmentInfo`) and some
+  Gmail-linked tasks 403 on PATCH — we pull them, flag
+  `Task.sourceReadOnly`, and never push (a live 403 flags the task and
+  is swallowed, so the sync stays "success" instead of erroring every
+  run). `Task.sourceLink` captures the linked Gmail message, surfaced
+  as an "Email" chip on /my.
+- **Scheduling** — three layers: (1) the `google-tasks-sync` job on
+  the server cron (true background; no webhooks upstream so we poll),
+  (2) a per-user **auto-sync** while /my is open at a chosen cadence
+  (`GoogleTasksIntegration.autoSyncMinutes`, Off/5/15/30/60 — client
+  polling calling `syncGoogleTasksAction`), and (3) the manual "Sync"
+  button (same action). "Assign to employee's Google Tasks": the
+  Add-task dialog has an opt-in checkbox — when the assignee has their
+  own integration, `createTask` calls `pushNewTaskToGoogle(assigneeId)`
+  so the task lands in their Google Tasks (a due date shows on their
+  Google Calendar via Tasks-in-Calendar). Non-fatal + no-ops when they
+  aren't connected.
 
 ## Role model (July 2026 rework)
 
