@@ -40,6 +40,7 @@ export type FileAuthzInput = {
   userId: string | null;
   subcontractorId: string | null;
   partnershipId: string | null;
+  bidOpportunityId: string | null;
 };
 
 export type FileAuthzResult =
@@ -137,6 +138,19 @@ export async function checkFileReadPermission(
     if (supplier) {
       foundAnyParent = true;
       const perms = await resolveModulePerms(userId, role, "suppliers");
+      if (perms.canView) allowedByAny = true;
+    }
+  }
+
+  // ─── Bid opportunity (module-level) ─────────────────
+  if (!allowedByAny && file.bidOpportunityId) {
+    const bid = await db.bidOpportunity.findUnique({
+      where: { id: file.bidOpportunityId },
+      select: { id: true, deletedAt: true },
+    });
+    if (bid && !bid.deletedAt) {
+      foundAnyParent = true;
+      const perms = await resolveModulePerms(userId, role, "bids");
       if (perms.canView) allowedByAny = true;
     }
   }

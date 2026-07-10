@@ -109,6 +109,106 @@ Registered jobs (from `src/lib/jobs/registry.ts`):
 
 The in-memory implementation in `src/lib/rate-limit.ts` is fine for a single-process deploy. ECS multi-container needs a Redis-backed `Storage` swap — the interface is defined for that.
 
+
+## AWS deployment runbook
+
+The move from single-node Unraid to AWS. Everything below is settable
+without code changes — the drivers and hooks already exist.
+
+### 1. Image pulls (no PAT on the box)
+
+Two options, in order of preference:
+
+- **ECR + instance role (no stored credentials).** Enable the
+  `ecr-publish.yml` workflow by setting three repository *variables*
+  (Settings → Secrets and variables → Actions → Variables):
+  `AWS_REGION`, `AWS_ROLE_ARN` (an OIDC-trusted role with
+  ecr:PutImage etc.), and `ECR_REPOSITORY` (e.g. `opshub`). The job
+  no-ops until they're set. On the instance, attach an IAM role with
+  `AmazonEC2ContainerRegistryReadOnly` and pull via
+  `aws ecr get-login-password | docker login --username AWS --password-stdin <acct>.dkr.ecr.<region>.amazonaws.com`
+  (or let ECS handle it — task roles pull natively).
+- **GHCR + read-only PAT.** One-time
+  `docker login ghcr.io -u <github-user>` with a classic PAT scoped to
+  ONLY `read:packages`. Docker caches it; `docker compose pull` works
+  unattended afterwards.
+
+### 2. File storage — S3, not the container disk
+
+The default `local` driver writes to `.storage/` INSIDE the container;
+replace the instance and every receipt/logo/portal upload is gone.
+In AWS set:
+
+```
+STORAGE_DRIVER=s3
+S3_BUCKET=<bucket>
+S3_REGION=<region>
+```
+
+Credentials come from the SDK default chain — attach an instance/task
+role with read/write on that bucket and set nothing else. Existing
+local files do NOT migrate automatically: copy `.storage/files/*` to
+the bucket keeping the same keys, or accept starting fresh (the
+`File.storageDriver` column keeps old rows readable while both drivers
+are reachable).
+
+### 3. Email — pick a real driver
+
+`EMAIL_DRIVER=log` (the default) writes to the EmailLog table and
+sends NOTHING — every notification email (bid deadlines, cert expiry,
+vehicle maintenance, welcome emails) silently stays in-app. The boot
+validator refuses `log` in production for exactly this reason. On AWS
+the natural choice is SES:
+
+```
+EMAIL_DRIVER=ses
+SES_FROM_ADDRESS=ops@yourdomain.com   # a verified SES identity
+AWS_REGION=<region>                    # if different from the default chain
+```
+
+(Verify the domain in SES, move out of the sandbox, and attach
+`ses:SendEmail` to the instance/task role.) `EMAIL_DRIVER=smtp` is the
+provider-agnostic alternative — see `.env.example` for the knobs.
+Send a test from `/admin/emails` after cutover.
+
+### 4. Cron — the jobs don't run themselves
+
+Nothing fires `contract-expiry-check`, `certification-expiry-check`,
+`vehicle-maintenance-check`, `bid-due-check`, `google-tasks-sync`, or
+the cleanup/purge jobs until something POSTs the cron endpoint.
+Simplest on a single EC2 box — host crontab:
+
+```
+*/5 * * * *  curl -s -X POST -H "x-cron-secret: $CRON_SECRET" "https://opshub.example.com/api/jobs/run?job=google-tasks-sync"
+0 * * * *    curl -s -X POST -H "x-cron-secret: $CRON_SECRET" "https://opshub.example.com/api/jobs/run"
+```
+
+AWS-native alternative: two EventBridge Scheduler rules targeting the
+same URLs (API destination with the `x-cron-secret` header). The
+hourly all-jobs run is idempotent — daily jobs self-gate.
+
+### 5. Backups — before anything else
+
+- **RDS**: turn on automated backups (7–35 day retention) and take a
+  manual snapshot before each deploy that includes a migration.
+- **Self-managed Postgres**: nightly
+  `pg_dump -Fc "$DATABASE_URL" > opshub-$(date +%F).dump` shipped to
+  S3 (lifecycle-expire after 30 days), plus the same pre-migration
+  snapshot habit.
+- **Test one restore** into a scratch database before trusting the
+  pipeline: `pg_restore --clean --if-exists -d "$SCRATCH_URL" <dump>`.
+- The S3 uploads bucket wants versioning ON — that's the file-side
+  recovery story.
+
+### 6. Instance sizing + health
+
+The app is a single Node process (standalone Next build). 2 vCPU /
+2 GB is comfortable; Postgres separate (RDS t4g.micro is fine to
+start). Point the load balancer / uptime monitor at `/api/health`
+(200/503, does a `SELECT 1`) — the container HEALTHCHECK already
+probes it. Set `TZ=UTC` (calendar-date rendering is UTC-pinned, but
+keeping the host on UTC removes a whole class of confusion in logs).
+
 ## Admin runbook
 
 ### "A workflow is stuck"

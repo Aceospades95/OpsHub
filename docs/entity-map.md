@@ -1168,11 +1168,37 @@ default — bid values are financial data). Migration
   required), links it via `BidOpportunity.projectId`, and stamps the
   bid WON — the pipeline→delivery hand-off. Requires create rights on
   BOTH the bids and projects modules.
+- **Comments & attachments** — bids host comments (`Comment.bidId`,
+  entityType `"bid"` through the standard comment plumbing incl.
+  @mentions) and private file attachments (`File.bidOpportunityId`,
+  category `"attachment"`, bids-module authz in `lib/file-authz`).
+  Upload UI is the shared `EntityFileSection`.
+- **Win-rate report** — `bids-win-rate` in the reports registry:
+  per-portal open/won/lost/no-bid/stale counts, win rate over real
+  decisions, and won value — the "is this registration worth
+  renewing" answer. Schedulable (rides the daily digest).
+- **Surfaces** — Bids card on the client detail page (page-layout id
+  `bids`), "My open bids" strip on /my for owners, global search +
+  Cmd-K palette buckets.
 - **Wiring** — soft-delete recovery (`bid`), merge-users reassigns
-  `ownerId`, global search + Cmd-K palette buckets, status-badge
-  variants for all stages, sidebar under Delivery next to Quotes.
+  `ownerId`, status-badge variants for all stages, sidebar under
+  Delivery next to Quotes.
 - Helpers in `lib/bids.ts` (`bidDueState`, `bidWaitingDays`, stage
   vocabulary) with tests.
+
+## Shared entity sub-sections
+
+Two parameterized components keep per-entity features from forking:
+
+- **`EntityContactSection`** (`components/shared/entity-contact-section.tsx`)
+  — the contact rolodex (primary badge, create/edit dialogs, delete
+  confirm). Clients and suppliers are thin bindings that pass their own
+  server actions + parent-id field; give the next entity contacts by
+  writing another ~30-line wrapper, not a copy.
+- **`EntityFileSection`** (`components/shared/entity-file-section.tsx`)
+  — upload/list/download/delete for entity-attached files with the
+  client-side size pre-check and try/finally built in. Supplier
+  receipts and bid attachments are the current bindings.
 
 ## How to extend this document
 

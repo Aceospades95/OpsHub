@@ -114,6 +114,7 @@ export async function uploadFile(params: {
   supplierId?: string;
   intranetResourceId?: string;
   certificationId?: string;
+  bidOpportunityId?: string;
   /** Target user id when attaching a file to an employee profile. */
   userId?: string;
   /** Freeform category tag, currently used by the employee files UI. */
@@ -167,6 +168,7 @@ export async function uploadFile(params: {
       supplierId: params.supplierId,
       intranetResourceId: params.intranetResourceId,
       certificationId: params.certificationId,
+      bidOpportunityId: params.bidOpportunityId,
       userId: params.userId,
       category: params.category,
     },

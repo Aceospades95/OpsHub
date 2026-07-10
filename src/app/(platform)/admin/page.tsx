@@ -21,6 +21,7 @@ import {
   Trash2,
   Users,
   ShieldAlert,
+  Database,
 } from "lucide-react";
 
 const SETTINGS_SECTIONS = [
@@ -50,6 +51,7 @@ const SETTINGS_SECTIONS = [
       { label: "Reports", href: "/admin/reports", icon: BarChart3, description: "Saved reports, CSV downloads, and email digests" },
       { label: "Recovery Bin", href: "/admin/recovery", icon: Trash2, description: "Restore soft-deleted records or skip the 30-day window and delete now" },
       { label: "PII Scan", href: "/admin/pii-scan", icon: ShieldAlert, description: "Find rows containing real customer-or-operator strings before promoting this DB to production" },
+      { label: "Usage Census", href: "/admin/census", icon: Database, description: "Live row counts per subsystem — the data behind delete-dead-weight and migration decisions" },
     ],
   },
   {

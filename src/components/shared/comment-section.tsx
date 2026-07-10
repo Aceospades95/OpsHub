@@ -23,7 +23,7 @@ interface CommentData {
 
 interface CommentSectionProps {
   comments: CommentData[];
-  entityType: "client" | "project" | "contract" | "document" | "supplier" | "certification" | "subcontractor" | "partnership";
+  entityType: "client" | "project" | "contract" | "document" | "supplier" | "certification" | "subcontractor" | "partnership" | "bid";
   entityId: string;
   canComment: boolean;
   canDelete: boolean;

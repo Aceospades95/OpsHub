@@ -934,6 +934,7 @@ model File {
   userId          String?
   subcontractorId String?
   partnershipId   String?
+  bidOpportunityId String?
   // Optional freeform tag used by the employee files UI (resume, id,
   // certification, training, other). Null for files attached to other
   // entities.
@@ -949,6 +950,7 @@ model File {
   user             User?             @relation("FileOwner", fields: [userId], references: [id], onDelete: SetNull)
   subcontractor    Subcontractor?    @relation(fields: [subcontractorId], references: [id], onDelete: Cascade)
   partnership      Partnership?      @relation(fields: [partnershipId], references: [id], onDelete: Cascade)
+  bidOpportunity   BidOpportunity?   @relation(fields: [bidOpportunityId], references: [id], onDelete: Cascade)
 
   quotes            Quote[]            @relation("QuotePdf")
   workflowDocuments WorkflowDocument[]
@@ -958,6 +960,7 @@ model File {
   @@index([userId])
   // Supplier receipts list on the supplier detail page filters by both.
   @@index([supplierId, category])
+  @@index([bidOpportunityId])
 }
 
 model ExternalLink {
@@ -1023,6 +1026,7 @@ model Comment {
   certificationId String?
   subcontractorId String?
   partnershipId   String?
+  bidId           String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
@@ -1035,6 +1039,7 @@ model Comment {
   certification Certification? @relation(fields: [certificationId], references: [id])
   subcontractor Subcontractor? @relation(fields: [subcontractorId], references: [id], onDelete: Cascade)
   partnership   Partnership?   @relation(fields: [partnershipId], references: [id], onDelete: Cascade)
+  bid           BidOpportunity? @relation(fields: [bidId], references: [id], onDelete: Cascade)
 }
 
 model ActivityLog {
@@ -2543,10 +2548,12 @@ model BidOpportunity {
   /// Soft-delete tombstone — see Project.deletedAt comment.
   deletedAt          DateTime?
 
-  portal  BidPortal? @relation(fields: [portalId], references: [id], onDelete: SetNull)
-  client  Client?    @relation(fields: [clientId], references: [id], onDelete: SetNull)
-  owner   User?      @relation("BidOwner", fields: [ownerId], references: [id], onDelete: SetNull)
-  project Project?   @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  portal   BidPortal? @relation(fields: [portalId], references: [id], onDelete: SetNull)
+  client   Client?    @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  owner    User?      @relation("BidOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  project  Project?   @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  comments Comment[]
+  files    File[]
 
   @@index([status])
   @@index([dueDate])

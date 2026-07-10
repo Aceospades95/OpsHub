@@ -60,6 +60,7 @@ export async function GET(
         userId: true,
         subcontractorId: true,
         partnershipId: true,
+        bidOpportunityId: true,
       },
     });
     if (!fkRow) {

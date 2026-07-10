@@ -4,7 +4,9 @@ import { getUserScope, hasOrgWideScope } from "@/lib/scope";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatusBadge } from "@/components/shared/status-badge";
-import { FolderKanban } from "lucide-react";
+import { FolderKanban, Target } from "lucide-react";
+import { formatCalendarDate } from "@/lib/dates";
+import { OPEN_BID_STATUSES, bidDueState } from "@/lib/bids";
 import Link from "next/link";
 import { MyProjectsOverview, type OverviewRow } from "./my-projects-overview";
 import { MyTasksCard } from "./my-tasks-card";
@@ -25,13 +27,14 @@ export default async function MyViewPage({
   const user = await requireAuth();
   const renderedAt = new Date();
 
-  const [projectPerms, scope] = await Promise.all([
+  const [projectPerms, bidPerms, scope] = await Promise.all([
     resolveModulePerms(user.id, user.role, "projects"),
+    resolveModulePerms(user.id, user.role, "bids"),
     getUserScope(user.id, user.role),
   ]);
   const projectWhere = scope.all ? {} : { id: { in: Array.from(scope.projectIds) } };
 
-  const [myProjects, myTasks, overviewProjects, owners, googleIntegration] =
+  const [myProjects, myTasks, overviewProjects, owners, googleIntegration, myBids] =
     await Promise.all([
       // Projects on my plate: owned, member of, or actively assigned.
       db.project.findMany({
@@ -92,6 +95,15 @@ export default async function MyViewPage({
         where: { userId: user.id },
         select: { id: true, lastSyncedAt: true, lastSyncStatus: true, lastSyncError: true },
       }),
+      // Open bids on my plate — deadline pressure first.
+      bidPerms.canView
+        ? db.bidOpportunity.findMany({
+            where: { deletedAt: null, ownerId: user.id, status: { in: OPEN_BID_STATUSES } },
+            select: { id: true, title: true, status: true, dueDate: true, agency: true },
+            orderBy: [{ dueDate: { sort: "asc", nulls: "last" } }, { updatedAt: "desc" }],
+            take: 6,
+          })
+        : Promise.resolve([]),
     ]);
 
   const overviewRows: OverviewRow[] = overviewProjects.map((p) => ({
@@ -178,6 +190,55 @@ export default async function MyViewPage({
           now={renderedAt.toISOString()}
         />
       </div>
+
+      {/* ── My open bids ──────────────────────────────── */}
+      {myBids.length > 0 && (
+        <Card className="mb-6">
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle className="flex items-center gap-2">
+                <Target className="h-4 w-4" />
+                My open bids ({myBids.length})
+              </CardTitle>
+              <Link href="/bids" className="text-xs text-primary hover:underline">
+                Pipeline
+              </Link>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+              {myBids.map((bid) => {
+                const due = bidDueState(bid, renderedAt);
+                return (
+                  <Link
+                    key={bid.id}
+                    href={`/bids/${bid.id}`}
+                    className="flex items-center justify-between gap-2 rounded border border-border bg-muted p-2.5 hover:border-primary transition-colors"
+                  >
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium truncate">{bid.title}</p>
+                      <p
+                        className={`text-xs truncate ${
+                          due === "overdue"
+                            ? "text-destructive font-medium"
+                            : due === "due-soon"
+                              ? "text-warning font-medium"
+                              : "text-muted-foreground"
+                        }`}
+                      >
+                        {[bid.agency, bid.dueDate ? `due ${formatCalendarDate(bid.dueDate, "MMM d")}` : null]
+                          .filter(Boolean)
+                          .join(" · ") || "No deadline set"}
+                      </p>
+                    </div>
+                    <StatusBadge status={bid.status} />
+                  </Link>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* ── All projects, editable in place ───────────── */}
       <MyProjectsOverview

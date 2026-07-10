@@ -31,6 +31,7 @@ const entityModuleMap: Record<string, string> = {
   certification: "certifications",
   subcontractor: "subcontractors",
   partnership: "partnerships",
+  bid: "bids",
 };
 
 /**
@@ -46,6 +47,7 @@ const entityLabel: Record<string, string> = {
   certification: "certification",
   subcontractor: "subcontractor",
   partnership: "partnership",
+  bid: "bid",
 };
 
 type CommentEntityType =
@@ -56,7 +58,8 @@ type CommentEntityType =
   | "supplier"
   | "certification"
   | "subcontractor"
-  | "partnership";
+  | "partnership"
+  | "bid";
 
 /**
  * Comment host types that participate in the per-entity visibility scope
@@ -83,11 +86,13 @@ function revalidateCommentHost(
   entityId: string,
   authorId?: string | null
 ) {
-  if (entityType === "supplier" || entityType === "certification") {
+  if (entityType === "supplier" || entityType === "certification" || entityType === "bid") {
     revalidatePath(
       entityType === "supplier"
         ? `/suppliers/${entityId}`
-        : `/certifications/${entityId}`
+        : entityType === "certification"
+          ? `/certifications/${entityId}`
+          : `/bids/${entityId}`
     );
     revalidatePath("/dashboard");
     if (authorId) revalidatePath(`/team/${authorId}`);
@@ -106,6 +111,7 @@ const addCommentSchema = z.object({
     "certification",
     "subcontractor",
     "partnership",
+    "bid",
   ]),
   entityId: z.string().min(1),
   content: z
@@ -145,6 +151,10 @@ async function resolveCommentEntity(
       return d
         ? { name: d.title, href: `/projects/${d.projectId}/documents/${entityId}` }
         : null;
+    }
+    case "bid": {
+      const b = await db.bidOpportunity.findFirst({ where: { id: entityId, deletedAt: null }, select: { title: true } });
+      return b ? { name: b.title, href: `/bids/${entityId}` } : null;
     }
     case "supplier": {
       const s = await db.supplier.findFirst({ where: { id: entityId, deletedAt: null }, select: { name: true } });
@@ -381,7 +391,9 @@ export async function deleteComment(_prev: unknown, formData: FormData) {
               ? "subcontractor"
               : comment.partnershipId
                 ? "partnership"
-                : "supplier";
+                : comment.bidId
+                  ? "bid"
+                  : "supplier";
   const entityId =
     comment.clientId ??
     comment.projectId ??
@@ -390,6 +402,7 @@ export async function deleteComment(_prev: unknown, formData: FormData) {
     comment.certificationId ??
     comment.subcontractorId ??
     comment.partnershipId ??
+    comment.bidId ??
     comment.supplierId;
 
   // Allow delete if user is author or has delete permission

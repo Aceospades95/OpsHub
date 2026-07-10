@@ -23,6 +23,8 @@ import { format } from "date-fns";
 import { bidDueState, bidWaitingDays, BID_STALE_HINT_DAYS } from "@/lib/bids";
 import { BidActions } from "./bid-actions";
 import { StageControls } from "./stage-controls";
+import { BidAttachments } from "./bid-attachments";
+import { CommentSection } from "@/components/shared/comment-section";
 
 interface Props {
   params: Promise<{ bidId: string }>;
@@ -54,6 +56,15 @@ export default async function BidDetailPage({ params }: Props) {
         owner: { select: { id: true, name: true } },
         client: { select: { id: true, name: true } },
         project: { select: { id: true, name: true, status: true } },
+        comments: {
+          include: { author: { select: { id: true, name: true } } },
+          orderBy: { createdAt: "desc" },
+        },
+        files: {
+          where: { category: "attachment" },
+          include: { uploadedBy: { select: { name: true } } },
+          orderBy: { createdAt: "desc" },
+        },
       },
     }),
     perms.canEdit
@@ -181,6 +192,20 @@ export default async function BidDetailPage({ params }: Props) {
               </CardContent>
             </Card>
           )}
+
+          <Card>
+            <CardHeader><CardTitle>Activity & comments</CardTitle></CardHeader>
+            <CardContent>
+              <CommentSection
+                comments={bid.comments}
+                entityType="bid"
+                entityId={bid.id}
+                canComment={perms.canComment}
+                canDelete={perms.canDelete}
+                currentUserId={user.id}
+              />
+            </CardContent>
+          </Card>
         </div>
 
         <div className="space-y-6">
@@ -267,6 +292,27 @@ export default async function BidDetailPage({ params }: Props) {
                   </p>
                 )}
               </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader><CardTitle>Attachments ({bid.files.length})</CardTitle></CardHeader>
+            <CardContent>
+              <BidAttachments
+                bidId={bid.id}
+                files={bid.files.map((file) => ({
+                  id: file.id,
+                  name: file.name,
+                  url: file.url,
+                  size: file.size,
+                  createdAt: file.createdAt.toISOString(),
+                  uploadedByName: file.uploadedBy?.name ?? null,
+                  uploadedById: file.uploadedById,
+                }))}
+                canUpload={perms.canUpload}
+                canDelete={perms.canDelete}
+                currentUserId={user.id}
+              />
             </CardContent>
           </Card>
         </div>

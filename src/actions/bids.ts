@@ -8,6 +8,11 @@ import { revalidateProject } from "@/lib/revalidate-entity";
 import { z } from "zod";
 import { nameField } from "@/lib/validation";
 import { BID_STATUSES } from "@/lib/bids";
+import { asUploadedFile } from "@/lib/uploaded-file";
+import { blobToBuffer, deleteFile, uploadFile, StorageQuotaExceededError } from "@/lib/storage";
+import { sniffUploadType } from "@/lib/upload-validation";
+import { MAX_RECEIPT_UPLOAD_BYTES, describeMaxUpload } from "@/lib/upload-limits";
+import { log } from "@/lib/log";
 import type { BidStatus } from "@prisma/client";
 
 /**
@@ -378,4 +383,77 @@ export async function convertBidToProject(_prev: unknown, formData: FormData) {
   revalidateProject(project.id, { clientId });
   revalidateBid(id);
   return { success: true, projectId: project.id };
+}
+
+// ─── Attachments ──────────────────────────────────────────────────
+// RFP PDFs, submitted responses, award letters — private files with
+// category "attachment", served via /api/files/{id} (lib/file-authz
+// grants bid files to anyone who can view the bids module).
+
+export async function uploadBidAttachment(_prev: unknown, formData: FormData) {
+  const user = await requireAuth();
+  const perms = await resolveModulePerms(user.id, user.role, "bids");
+  if (!perms.canUpload) return { error: "Permission denied" };
+
+  const bidId = formData.get("bidId") as string;
+  const bid = await db.bidOpportunity.findFirst({
+    where: { id: bidId, deletedAt: null },
+    select: { id: true },
+  });
+  if (!bid) return { error: "Not found" };
+
+  const blob = asUploadedFile(formData.get("file"));
+  if (!blob) return { error: "No file provided" };
+  if (blob.size === 0) return { error: "File is empty" };
+  if (blob.size > MAX_RECEIPT_UPLOAD_BYTES) {
+    return { error: `File exceeds the ${describeMaxUpload(MAX_RECEIPT_UPLOAD_BYTES)} limit` };
+  }
+
+  const buffer = await blobToBuffer(blob as unknown as Blob);
+  const sniff = sniffUploadType(buffer, blob.type, { blockSvg: true });
+  if (!sniff.ok) return { error: sniff.reason };
+
+  try {
+    await uploadFile({
+      content: buffer,
+      filename: blob.name,
+      contentType: blob.type,
+      uploadedById: user.id,
+      visibility: "private",
+      bidOpportunityId: bidId,
+      category: "attachment",
+    });
+  } catch (err) {
+    if (err instanceof StorageQuotaExceededError) {
+      return { error: "Your account is at its storage quota. Delete older files first." };
+    }
+    log.error("bids.attachment", "Storage driver failed", err);
+    return { error: "Upload failed — check storage configuration and server logs." };
+  }
+
+  await logActivity("uploaded", "bid-attachment", bidId, user.id, blob.name);
+  revalidateBid(bidId);
+  return { success: true };
+}
+
+export async function deleteBidAttachment(_prev: unknown, formData: FormData) {
+  const user = await requireAuth();
+  const perms = await resolveModulePerms(user.id, user.role, "bids");
+
+  const fileId = formData.get("fileId") as string;
+  const file = await db.file.findUnique({
+    where: { id: fileId },
+    select: { id: true, name: true, bidOpportunityId: true, uploadedById: true, category: true },
+  });
+  if (!file || !file.bidOpportunityId || file.category !== "attachment") return { error: "Not found" };
+
+  // Uploaders can remove their own attachment; anything else needs delete.
+  if (!(perms.canDelete || (perms.canUpload && file.uploadedById === user.id))) {
+    return { error: "Permission denied" };
+  }
+
+  await deleteFile(fileId);
+  await logActivity("deleted", "bid-attachment", file.bidOpportunityId, user.id, file.name);
+  revalidateBid(file.bidOpportunityId);
+  return { success: true };
 }
