@@ -1,17 +1,25 @@
 /**
  * Google Tasks ⇄ OpsHub sync engine.
  *
- * Sync model (deliberately narrow — see docs/entity-map.md):
+ * Sync model:
  *
- *   PULL  — every Google task in the mirrored list becomes an OpsHub Task
- *           (sourceType "google_tasks", sourceId = the Google task id),
- *           assigned to the integration's user. Quick-adds from any
- *           Google surface (app, Assistant, Gmail sidebar) land in the
- *           /my inbox for filing under a project.
+ *   PULL  — every task in EVERY list on the connected Google account
+ *           (the default "My Tasks" list included) becomes an OpsHub
+ *           Task assigned to the integration's user. Quick-adds from
+ *           any Google surface (app, Assistant, Gmail sidebar) show up
+ *           in "My tasks" on /my, where unfiled ones can be dropped
+ *           onto a project.
  *   PUSH  — changes to those SAME tasks flow back (title, notes, due,
- *           completion). OpsHub-native tasks are NOT pushed to Google:
- *           the Google list is the owner's personal capture surface, not
- *           a mirror of the org's whole task table.
+ *           completion). OpsHub-native tasks are NOT pushed to Google
+ *           automatically: your Google lists stay yours, not a mirror
+ *           of the org's whole task table (pushNewTaskToGoogle exists
+ *           for explicit "send to my phone" flows).
+ *
+ * `Task.sourceId` stores "<tasklistId>:<taskId>" so pushes know which
+ * list to patch. Legacy rows from the retired dedicated-"OpsHub"-list
+ * design stored the bare task id — they're migrated to the composite
+ * key the first time a pull matches them, and the push path falls back
+ * to the stored integration.tasklistId for any stragglers.
  *
  * Conflicts resolve last-write-wins per task using Google's `updated`
  * stamp vs the OpsHub row's updatedAt.
@@ -25,16 +33,15 @@ import { db } from "@/lib/db";
 import { log } from "@/lib/log";
 import { revalidateTask } from "@/lib/revalidate-entity";
 import {
-  findOrCreateTasklist,
   getValidAccessToken,
   insertTask,
+  listTasklists,
   listTasks,
   patchTask,
   type GoogleTask,
 } from "./api";
 
 const SOURCE_TYPE = "google_tasks";
-const TASKLIST_TITLE = "OpsHub";
 /** Overlap window so clock skew between us and Google can't drop updates. */
 const UPDATED_MIN_BUFFER_MS = 5 * 60 * 1000;
 
@@ -43,6 +50,18 @@ export interface SyncResult {
   pulledUpdated: number;
   pushed: number;
   errors: string[];
+}
+
+/** Composite source key — Google task ids are only unique per list. */
+function sourceKey(tasklistId: string, taskId: string): string {
+  return `${tasklistId}:${taskId}`;
+}
+
+/** Split a sourceId back into list + task. Legacy bare ids have no list. */
+function parseSourceId(sourceId: string): { tasklistId: string | null; taskId: string } {
+  const i = sourceId.indexOf(":");
+  if (i === -1) return { tasklistId: null, taskId: sourceId };
+  return { tasklistId: sourceId.slice(0, i), taskId: sourceId.slice(i + 1) };
 }
 
 /** Google `due` is date-only; normalize both sides to a YYYY-MM-DD string. */
@@ -72,105 +91,112 @@ export async function syncGoogleTasksForUser(userId: string): Promise<SyncResult
   try {
     const accessToken = await getValidAccessToken(integration);
 
-    const tasklist = await findOrCreateTasklist(
-      accessToken,
-      integration.tasklistId,
-      TASKLIST_TITLE
-    );
-    if (tasklist.id !== integration.tasklistId) {
-      await db.googleTasksIntegration.update({
-        where: { id: integration.id },
-        data: { tasklistId: tasklist.id },
-      });
-    }
-
-    // ── PULL: Google → OpsHub ─────────────────────────────────────
+    // ── PULL: Google → OpsHub, across every list on the account ──
     const updatedMin = integration.lastSyncedAt
       ? new Date(integration.lastSyncedAt.getTime() - UPDATED_MIN_BUFFER_MS)
       : null;
-    const googleTasks = await listTasks(accessToken, tasklist.id, updatedMin);
+    const lists = await listTasklists(accessToken);
 
     // Tasks whose OpsHub row was written by THIS pull — the push phase
     // skips them so a pull-write doesn't echo straight back to Google.
     const pulledIds = new Set<string>();
 
-    for (const g of googleTasks) {
+    for (const list of lists) {
+      let googleTasks: GoogleTask[];
       try {
-        const existing = await db.task.findFirst({
-          where: { sourceType: SOURCE_TYPE, sourceId: g.id },
-        });
+        googleTasks = await listTasks(accessToken, list.id, updatedMin);
+      } catch (err) {
+        result.errors.push(`list ${list.title ?? list.id}: ${(err as Error).message}`);
+        continue;
+      }
 
-        if (!existing) {
-          if (g.deleted || !g.title?.trim()) continue;
-          await db.task.create({
+      for (const g of googleTasks) {
+        const key = sourceKey(list.id, g.id);
+        try {
+          // Match the composite key, falling back to the legacy bare id
+          // (pre-multi-list rows) which gets migrated on first touch.
+          const existing = await db.task.findFirst({
+            where: { sourceType: SOURCE_TYPE, sourceId: { in: [key, g.id] } },
+          });
+
+          if (!existing) {
+            if (g.deleted || !g.title?.trim()) continue;
+            await db.task.create({
+              data: {
+                title: g.title.trim().slice(0, 500),
+                description: g.notes?.trim() || null,
+                status: googleStatusToOps(g.status),
+                completedAt: g.status === "completed" ? new Date(g.completed ?? Date.now()) : null,
+                dueDate: g.due ? new Date(g.due) : null,
+                assigneeId: userId,
+                createdById: userId,
+                sourceType: SOURCE_TYPE,
+                sourceId: key,
+              },
+            });
+            pulledIds.add(key);
+            result.pulledCreated += 1;
+            continue;
+          }
+
+          // Deletion in Google soft-deletes here (recoverable from the bin).
+          if (g.deleted) {
+            if (!existing.deletedAt) {
+              await db.task.update({
+                where: { id: existing.id },
+                data: { deletedAt: new Date(), sourceId: key },
+              });
+              pulledIds.add(key);
+              result.pulledUpdated += 1;
+            }
+            continue;
+          }
+
+          // Last-write-wins: only apply when Google's edit is newer than
+          // the OpsHub row. Ties (equal stamps) mean "already in sync".
+          const googleUpdated = g.updated ? new Date(g.updated) : null;
+          if (!googleUpdated || googleUpdated.getTime() <= existing.updatedAt.getTime()) {
+            // Still migrate a legacy sourceId so future pushes know the list.
+            if (existing.sourceId !== key) {
+              await db.task.update({ where: { id: existing.id }, data: { sourceId: key } });
+            }
+            continue;
+          }
+
+          const nextStatus = googleStatusToOps(g.status);
+          const changed =
+            existing.title !== (g.title?.trim() || existing.title) ||
+            (existing.description ?? "") !== (g.notes?.trim() ?? "") ||
+            dueKey(existing.dueDate) !== dueKey(g.due) ||
+            // Don't clobber IN_PROGRESS with TODO — Google only knows
+            // needsAction/completed, so "not completed" must preserve the
+            // richer OpsHub status.
+            (nextStatus === "DONE") !== (existing.status === "DONE") ||
+            existing.deletedAt !== null ||
+            existing.sourceId !== key;
+
+          if (!changed) continue;
+
+          await db.task.update({
+            where: { id: existing.id },
             data: {
-              title: g.title.trim().slice(0, 500),
+              title: g.title?.trim() ? g.title.trim().slice(0, 500) : existing.title,
               description: g.notes?.trim() || null,
-              status: googleStatusToOps(g.status),
-              completedAt: g.status === "completed" ? new Date(g.completed ?? Date.now()) : null,
               dueDate: g.due ? new Date(g.due) : null,
-              assigneeId: userId,
-              createdById: userId,
-              sourceType: SOURCE_TYPE,
-              sourceId: g.id,
+              sourceId: key,
+              ...(nextStatus === "DONE"
+                ? { status: "DONE", completedAt: new Date(g.completed ?? Date.now()) }
+                : existing.status === "DONE"
+                  ? { status: "TODO", completedAt: null }
+                  : {}),
+              deletedAt: null,
             },
           });
-          pulledIds.add(g.id);
-          result.pulledCreated += 1;
-          continue;
+          pulledIds.add(key);
+          result.pulledUpdated += 1;
+        } catch (err) {
+          result.errors.push(`pull ${key}: ${(err as Error).message}`);
         }
-
-        // Deletion in Google soft-deletes here (recoverable from the bin).
-        if (g.deleted) {
-          if (!existing.deletedAt) {
-            await db.task.update({
-              where: { id: existing.id },
-              data: { deletedAt: new Date() },
-            });
-            pulledIds.add(g.id);
-            result.pulledUpdated += 1;
-          }
-          continue;
-        }
-
-        // Last-write-wins: only apply when Google's edit is newer than
-        // the OpsHub row. Ties (equal stamps) mean "already in sync".
-        const googleUpdated = g.updated ? new Date(g.updated) : null;
-        if (!googleUpdated || googleUpdated.getTime() <= existing.updatedAt.getTime()) {
-          continue;
-        }
-
-        const nextStatus = googleStatusToOps(g.status);
-        const changed =
-          existing.title !== (g.title?.trim() || existing.title) ||
-          (existing.description ?? "") !== (g.notes?.trim() ?? "") ||
-          dueKey(existing.dueDate) !== dueKey(g.due) ||
-          // Don't clobber IN_PROGRESS with TODO — Google only knows
-          // needsAction/completed, so "not completed" must preserve the
-          // richer OpsHub status.
-          (nextStatus === "DONE") !== (existing.status === "DONE") ||
-          existing.deletedAt !== null;
-
-        if (!changed) continue;
-
-        await db.task.update({
-          where: { id: existing.id },
-          data: {
-            title: g.title?.trim() ? g.title.trim().slice(0, 500) : existing.title,
-            description: g.notes?.trim() || null,
-            dueDate: g.due ? new Date(g.due) : null,
-            ...(nextStatus === "DONE"
-              ? { status: "DONE", completedAt: new Date(g.completed ?? Date.now()) }
-              : existing.status === "DONE"
-                ? { status: "TODO", completedAt: null }
-                : {}),
-            deletedAt: null,
-          },
-        });
-        pulledIds.add(g.id);
-        result.pulledUpdated += 1;
-      } catch (err) {
-        result.errors.push(`pull ${g.id}: ${(err as Error).message}`);
       }
     }
 
@@ -188,8 +214,12 @@ export async function syncGoogleTasksForUser(userId: string): Promise<SyncResult
 
     for (const task of changedLocal) {
       if (!task.sourceId || pulledIds.has(task.sourceId)) continue;
+      const { tasklistId, taskId } = parseSourceId(task.sourceId);
+      // Legacy rows without a list prefix fall back to the old
+      // dedicated-list id; "@default" resolves to the account's main list.
+      const targetList = tasklistId ?? integration.tasklistId ?? "@default";
       try {
-        await patchTask(accessToken, tasklist.id, task.sourceId, {
+        await patchTask(accessToken, targetList, taskId, {
           title: task.title,
           notes: task.description ?? "",
           due: task.dueDate ? task.dueDate.toISOString() : undefined,
@@ -239,28 +269,28 @@ export async function syncGoogleTasksForUser(userId: string): Promise<SyncResult
 }
 
 /**
- * Push a brand-new OpsHub task INTO Google. Not part of the periodic
- * sync (OpsHub-native tasks stay native) — this is for explicit flows
- * that want a task on the owner's phone, e.g. a future "send to my
- * Google Tasks" row action.
+ * Push a brand-new OpsHub task INTO Google (the account's default
+ * list). Not part of the periodic sync (OpsHub-native tasks stay
+ * native) — this is for explicit flows that want a task on the owner's
+ * phone, e.g. a future "send to my Google Tasks" row action.
  */
 export async function pushNewTaskToGoogle(userId: string, taskId: string): Promise<{ error?: string }> {
   const integration = await db.googleTasksIntegration.findUnique({ where: { userId } });
-  if (!integration || !integration.tasklistId) return { error: "Google Tasks is not connected" };
+  if (!integration) return { error: "Google Tasks is not connected" };
 
   const task = await db.task.findFirst({ where: { id: taskId, deletedAt: null } });
   if (!task) return { error: "Task not found" };
   if (task.sourceType === SOURCE_TYPE) return {}; // already mirrored
 
   const accessToken = await getValidAccessToken(integration);
-  const created: GoogleTask = await insertTask(accessToken, integration.tasklistId, {
+  const created: GoogleTask = await insertTask(accessToken, "@default", {
     title: task.title,
     notes: task.description ?? undefined,
     due: task.dueDate ? task.dueDate.toISOString() : undefined,
   });
   await db.task.update({
     where: { id: task.id },
-    data: { sourceType: SOURCE_TYPE, sourceId: created.id },
+    data: { sourceType: SOURCE_TYPE, sourceId: sourceKey("@default", created.id) },
   });
   return {};
 }

@@ -33,6 +33,7 @@ vi.mock("@/lib/db", () => ({
     certification: { findUnique: vi.fn() },
     subcontractor: { findUnique: vi.fn() },
     partnership: { findUnique: vi.fn() },
+    bidOpportunity: { findUnique: vi.fn() },
     user: { findUnique: vi.fn() },
     quote: { findFirst: vi.fn() },
     workflowDocument: { findFirst: vi.fn() },
@@ -63,6 +64,7 @@ const dbMock = db as unknown as {
   certification: { findUnique: ReturnType<typeof vi.fn> };
   subcontractor: { findUnique: ReturnType<typeof vi.fn> };
   partnership: { findUnique: ReturnType<typeof vi.fn> };
+  bidOpportunity: { findUnique: ReturnType<typeof vi.fn> };
   user: { findUnique: ReturnType<typeof vi.fn> };
   quote: { findFirst: ReturnType<typeof vi.fn> };
   workflowDocument: { findFirst: ReturnType<typeof vi.fn> };
@@ -87,6 +89,7 @@ function emptyFile(overrides: Partial<FileAuthzInput> = {}): FileAuthzInput {
     userId: null,
     subcontractorId: null,
     partnershipId: null,
+    bidOpportunityId: null,
     ...overrides,
   };
 }

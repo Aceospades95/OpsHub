@@ -27,6 +27,7 @@ export type ModuleKey =
   | "tools"
   | "fleet"
   | "intranet"
+  | "bids"
   | "quotes"
   | "workflows"
   | "settings";
@@ -231,6 +232,15 @@ export const MODULES: ModuleDefinition[] = [
     description: "HR resources, policies, handbooks, and time off",
     section: "resources",
     permissioned: false,
+  },
+  {
+    key: "bids",
+    label: "Bid Pipeline",
+    href: "/bids",
+    icon: "Target",
+    description: "Procurement portals, open bids, and win/loss history",
+    section: "delivery",
+    permissioned: true,
   },
   {
     key: "quotes",

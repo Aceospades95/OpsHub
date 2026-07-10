@@ -6,7 +6,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { vehicleLabel } from "@/lib/fleet";
 import { Badge } from "@/components/ui/badge";
-import { Search, BookOpen, Users, HardHat, Handshake, Car } from "lucide-react";
+import { Search, BookOpen, Users, HardHat, Handshake, Car, Target } from "lucide-react";
 import Link from "next/link";
 
 interface Props {
@@ -26,7 +26,7 @@ export default async function SearchPage({ searchParams }: Props) {
         <PageHeader title="Search" description="Search across all modules" />
         <div className="flex flex-col items-center py-12 text-muted-foreground">
           <Search className="h-12 w-12 mb-4" />
-          <p>Search clients, projects, contracts, suppliers, subcontractors, partnerships, vehicles, tasks, team members, and intranet resources</p>
+          <p>Search clients, projects, contracts, suppliers, subcontractors, partnerships, vehicles, bids, tasks, team members, and intranet resources</p>
         </div>
       </div>
     );
@@ -48,6 +48,7 @@ export default async function SearchPage({ searchParams }: Props) {
     tasksPerms,
     teamPerms,
     fleetPerms,
+    bidsPerms,
   ] = await Promise.all([
     getUserScope(userId, role),
     resolveModulePerms(userId, role, "clients"),
@@ -60,6 +61,7 @@ export default async function SearchPage({ searchParams }: Props) {
     resolveModulePerms(userId, role, "tasks"),
     resolveModulePerms(userId, role, "team"),
     resolveModulePerms(userId, role, "fleet"),
+    resolveModulePerms(userId, role, "bids"),
   ]);
 
   const orgWide = hasOrgWideManage(role) || scope.all;
@@ -97,7 +99,7 @@ export default async function SearchPage({ searchParams }: Props) {
 
   const contains = { contains: query, mode: "insensitive" as const };
 
-  const [clients, projects, contracts, suppliers, subcontractors, partnerships, tasks, intranetResources, users, vehicles] = await Promise.all([
+  const [clients, projects, contracts, suppliers, subcontractors, partnerships, tasks, intranetResources, users, vehicles, bids] = await Promise.all([
     clientPerms.canView
       ? db.client.findMany({
           where: {
@@ -239,6 +241,17 @@ export default async function SearchPage({ searchParams }: Props) {
           take: 10,
         })
       : [],
+    // Bids — findable by title, solicitation number, or agency.
+    bidsPerms.canView
+      ? db.bidOpportunity.findMany({
+          where: {
+            deletedAt: null,
+            OR: [{ title: contains }, { solicitationNumber: contains }, { agency: contains }],
+          },
+          include: { portal: { select: { name: true } } },
+          take: 10,
+        })
+      : [],
   ]);
 
   const totalResults =
@@ -251,7 +264,8 @@ export default async function SearchPage({ searchParams }: Props) {
     tasks.length +
     intranetResources.length +
     users.length +
-    vehicles.length;
+    vehicles.length +
+    bids.length;
 
   return (
     <div>
@@ -426,6 +440,34 @@ export default async function SearchPage({ searchParams }: Props) {
                   </Link>
                 );
               })}
+            </div>
+          </div>
+        )}
+
+        {bids.length > 0 && (
+          <div>
+            <h2 className="text-lg font-semibold mb-3 flex items-center gap-2">
+              <Target className="h-4 w-4" />
+              Bids ({bids.length})
+            </h2>
+            <div className="space-y-2">
+              {bids.map((bid) => (
+                <Link key={bid.id} href={`/bids/${bid.id}`}>
+                  <Card className="hover:shadow-md transition-shadow">
+                    <CardContent className="p-4 flex items-center justify-between">
+                      <div>
+                        <p className="font-medium">{bid.title}</p>
+                        <p className="text-sm text-muted-foreground">
+                          {[bid.agency, bid.solicitationNumber, bid.portal?.name]
+                            .filter(Boolean)
+                            .join(" · ")}
+                        </p>
+                      </div>
+                      <StatusBadge status={bid.status} />
+                    </CardContent>
+                  </Card>
+                </Link>
+              ))}
             </div>
           </div>
         )}

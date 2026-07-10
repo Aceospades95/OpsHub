@@ -22,6 +22,7 @@ export type NotificationType =
   | "milestone-assigned"
   | "certification-expiring"
   | "vehicle-maintenance-due"
+  | "bid-due-soon"
   | "system"
   | "test";
 
@@ -38,6 +39,7 @@ export const NOTIFICATION_TYPE_LABELS: Record<NotificationType, string> = {
   "milestone-assigned": "Milestone assignment",
   "certification-expiring": "Certification expiring",
   "vehicle-maintenance-due": "Vehicle maintenance due",
+  "bid-due-soon": "Bid deadline approaching",
   system: "System",
   test: "Test",
 };

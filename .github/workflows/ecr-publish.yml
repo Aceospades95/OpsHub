@@ -1,0 +1,57 @@
+# Mirror the production image to Amazon ECR so instances pull with an
+# IAM role instead of a stored GHCR PAT.
+#
+# DISABLED UNTIL CONFIGURED: the job is gated on three repository
+# variables (Settings → Secrets and variables → Actions → Variables):
+#
+#   AWS_REGION      e.g. us-east-2
+#   AWS_ROLE_ARN    an IAM role trusting GitHub's OIDC provider, with
+#                   permissions: ecr:GetAuthorizationToken, ecr:BatchCheckLayerAvailability,
+#                   ecr:PutImage, ecr:InitiateLayerUpload, ecr:UploadLayerPart,
+#                   ecr:CompleteLayerUpload (scoped to the repository)
+#   ECR_REPOSITORY  e.g. opshub
+#
+# Until all three are set the workflow runs a single skipped job and
+# touches nothing. Uses OIDC (no AWS keys stored in GitHub).
+
+name: Publish to Amazon ECR
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write # OIDC token for configure-aws-credentials
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  build-and-push-ecr:
+    runs-on: ubuntu-latest
+    if: vars.AWS_REGION != '' && vars.AWS_ROLE_ARN != '' && vars.ECR_REPOSITORY != ''
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Log in to Amazon ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ steps.ecr.outputs.registry }}/${{ vars.ECR_REPOSITORY }}:latest
+            ${{ steps.ecr.outputs.registry }}/${{ vars.ECR_REPOSITORY }}:${{ github.sha }}

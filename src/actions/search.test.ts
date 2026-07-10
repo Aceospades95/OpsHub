@@ -31,6 +31,7 @@ vi.mock("@/lib/db", () => ({
     tool: { findMany: vi.fn() },
     intranetResource: { findMany: vi.fn() },
     vehicle: { findMany: vi.fn() },
+    bidOpportunity: { findMany: vi.fn() },
   },
 }));
 vi.mock("@/lib/permissions", () => ({

@@ -9,7 +9,7 @@ import { StatusBadge } from "@/components/shared/status-badge";
 import { CommentSection } from "@/components/shared/comment-section";
 import { Badge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
-import { Globe, Mail, Phone, Star, CheckSquare, Clock, UserCircle } from "lucide-react";
+import { Globe, Mail, Phone, Star, CheckSquare, Clock, UserCircle, Target } from "lucide-react";
 import { formatCalendarDate } from "@/lib/dates";
 import Link from "next/link";
 import { ClientActions } from "./client-actions";
@@ -37,10 +37,11 @@ export default async function ClientDetailPage({ params }: Props) {
   // the embedded cards on those modules' permissions, not the clients ones.
   // A field-tier user assigned to one of this client's projects can open
   // the client page for contact info but must not see contract values.
-  const [quotePerms, contractPerms, taskPerms] = await Promise.all([
+  const [quotePerms, contractPerms, taskPerms, bidPerms] = await Promise.all([
     resolveModulePerms(user.id, user.role, "quotes"),
     resolveModulePerms(user.id, user.role, "contracts"),
     resolveModulePerms(user.id, user.role, "tasks"),
+    resolveModulePerms(user.id, user.role, "bids"),
   ]);
 
   // Round-8 QA: resolve by slug-or-id so /clients/<slug> works for
@@ -62,6 +63,12 @@ export default async function ClientDetailPage({ params }: Props) {
         orderBy: { updatedAt: "desc" },
       },
       contracts: { where: { deletedAt: null }, orderBy: { updatedAt: "desc" } },
+      bids: {
+        where: { deletedAt: null },
+        orderBy: { updatedAt: "desc" },
+        take: 8,
+        include: { portal: { select: { name: true } } },
+      },
       comments: {
         include: { author: { select: { id: true, name: true } } },
         orderBy: { createdAt: "desc" },
@@ -261,6 +268,46 @@ export default async function ClientDetailPage({ params }: Props) {
         canCreate={quotePerms.canCreate}
         restrictToUserId={canSeeAllQuotes(user.role) ? undefined : user.id}
       />
+    ) : null,
+    bids: bidPerms.canView ? (
+      <Card className="h-full">
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <CardTitle className="flex items-center gap-2">
+              <Target className="h-4 w-4" />
+              Bids
+            </CardTitle>
+            <Link href="/bids" className="text-xs text-primary hover:underline">
+              View pipeline
+            </Link>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {client.bids.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No bids tracked for this client.</p>
+          ) : (
+            <div className="space-y-2">
+              {client.bids.map((bid) => (
+                <Link
+                  key={bid.id}
+                  href={`/bids/${bid.id}`}
+                  className="flex items-center justify-between gap-2 rounded border border-border bg-muted p-2.5 hover:border-primary transition-colors"
+                >
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium truncate">{bid.title}</p>
+                    <p className="text-xs text-muted-foreground truncate">
+                      {[bid.portal?.name, bid.dueDate ? `due ${formatCalendarDate(bid.dueDate, "MMM d")}` : null]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </p>
+                  </div>
+                  <StatusBadge status={bid.status} />
+                </Link>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
     ) : null,
     tasks: (
       <Card className="h-full">

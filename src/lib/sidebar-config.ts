@@ -38,6 +38,7 @@ export const DEFAULT_SIDEBAR_CONFIG: SidebarConfig = {
         { key: "projects", visible: true },
         { key: "subcontractors", visible: true },
         { key: "partnerships", visible: true },
+        { key: "bids", visible: true },
         { key: "quotes", visible: true },
         { key: "contracts", visible: true },
         { key: "certifications", visible: true },

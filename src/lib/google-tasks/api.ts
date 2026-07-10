@@ -10,7 +10,6 @@
  */
 
 import { db } from "@/lib/db";
-import { log } from "@/lib/log";
 
 const OAUTH_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
 const OAUTH_TOKEN_URL = "https://oauth2.googleapis.com/token";
@@ -167,31 +166,32 @@ async function tasksFetch<T>(
   return (text ? JSON.parse(text) : undefined) as T;
 }
 
-export async function findOrCreateTasklist(
-  accessToken: string,
-  preferredId: string | null,
-  title: string
-): Promise<{ id: string }> {
-  if (preferredId) {
-    try {
-      const list = await tasksFetch<{ id: string }>(accessToken, `/users/@me/lists/${preferredId}`);
-      if (list?.id) return list;
-    } catch (err) {
-      // 404 → the user deleted the list in Google; fall through and recreate.
-      if ((err as Error & { status?: number }).status !== 404) throw err;
-      log.warn("google-tasks", `Tasklist ${preferredId} is gone; recreating`);
-    }
-  }
-  const lists = await tasksFetch<{ items?: { id: string; title: string }[] }>(
-    accessToken,
-    "/users/@me/lists?maxResults=100"
-  );
-  const existing = lists.items?.find((l) => l.title === title);
-  if (existing) return existing;
-  return tasksFetch<{ id: string }>(accessToken, "/users/@me/lists", {
-    method: "POST",
-    body: JSON.stringify({ title }),
-  });
+export interface GoogleTasklist {
+  id: string;
+  title?: string;
+}
+
+/**
+ * Every task list on the account — the sync reads them ALL so tasks
+ * quick-added anywhere in Google (the default "My Tasks" list included)
+ * show up in OpsHub. Paginates.
+ */
+export async function listTasklists(accessToken: string): Promise<GoogleTasklist[]> {
+  const out: GoogleTasklist[] = [];
+  let pageToken: string | undefined;
+  do {
+    const params = new URLSearchParams({
+      maxResults: "100",
+      ...(pageToken ? { pageToken } : {}),
+    });
+    const page = await tasksFetch<{ items?: GoogleTasklist[]; nextPageToken?: string }>(
+      accessToken,
+      `/users/@me/lists?${params.toString()}`
+    );
+    out.push(...(page.items ?? []));
+    pageToken = page.nextPageToken;
+  } while (pageToken);
+  return out;
 }
 
 /** List tasks updated since `updatedMin` (all tasks when null). Paginates. */

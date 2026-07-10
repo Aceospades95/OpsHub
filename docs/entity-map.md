@@ -76,6 +76,7 @@ Known limitations (not bugs, HTML constraint):
 - **Partnerships** — by name, legal name, description, industry, primary contact
 - **Vehicles (fleet)** — by nickname, make, model, VIN, license plate —
   scope-filtered for assigned drivers
+- **Bids** — by title, solicitation number, agency (permission-gated)
 - **Tasks** — by title, description — results deep-link to parent project or client
 - **Team members** — by name, email, jobTitle, department — links to `/team/{id}`
 - **Intranet resources** — by title, description, content — only published items,
@@ -83,8 +84,8 @@ Known limitations (not bugs, HTML constraint):
 
 The Cmd-K palette (`quickSearch` in `src/actions/search.ts`) covers
 employees, clients, projects, suppliers (incl. contact names), contracts,
-quotes, tools, vehicles, and intranet with the same permission + scope
-gates. **Disciplinary reports are deliberately excluded from both search
+quotes, tools, vehicles, bids, and intranet with the same permission +
+scope gates. **Disciplinary reports are deliberately excluded from both search
 surfaces** — search gates on module `canView`, which can't express the
 HR-roles-minus-subject rule.
 
@@ -378,7 +379,7 @@ Current types:
 - `comment-added`
 - `milestone-assigned`
 - `certification-expiring`
-- `vehicle-maintenance-due`
+- `vehicle-maintenance-due`, `bid-due-soon`
 - `system`, `test`
 
 ### User-facing UI
@@ -893,8 +894,12 @@ on it is scoped per-user by the queries themselves:
 - **My projects** — owned (`Project.ownerId`) ∪ member ∪ actively assigned.
 - **My tasks** — open tasks assigned to the viewer, due-date order, with
   the shared TaskCheckbox and a one-line quick-add (assignee = viewer).
-- **Google Tasks inbox** — synced tasks with no project yet; each row
-  files under a project via `assignTaskProject`.
+- **My tasks** — ONE list (`my-tasks-card.tsx`): OpsHub and
+  Google-synced tasks together, soonest due first. Synced rows carry a
+  small calendar-check mark; any task without a project files onto one
+  inline via `assignTaskProject`; the Google connect / sync-now /
+  disconnect controls live in the card header. (The separate "Google
+  Tasks inbox" card is gone — Google is plumbing, not a place.)
 - **All projects overview** — the spreadsheet replacement. Inline status
   select, click-to-edit notes, owner picker (org-wide roles only).
   Backed by `updateProject*Inline` actions in `actions/projects.ts`.
@@ -915,15 +920,19 @@ Per-user two-way sync with the Google Tasks API. Pieces:
   `/callback` stores tokens and runs a first sync. Reuses the SSO OAuth
   client; the redirect URI must be added in the Google console (see
   `.env.example`).
-- **Sync engine** — `src/lib/google-tasks/sync.ts`. Pull: every Google
-  task becomes an OpsHub Task with `sourceType="google_tasks"`,
-  `sourceId=<google task id>`, assigned to the connected user; Google
+- **Sync engine** — `src/lib/google-tasks/sync.ts`. Pull: every task in
+  EVERY list on the account (the default "My Tasks" list included —
+  the original design only read a dedicated "OpsHub" list it created,
+  which is why nothing synced) becomes an OpsHub Task with
+  `sourceType="google_tasks"` and `sourceId="<tasklistId>:<taskId>"`
+  (composite — task ids are only unique per list; legacy bare ids are
+  migrated on first match), assigned to the connected user; Google
   deletions soft-delete. Push: edits/completions of those SAME tasks
-  patch back to Google. OpsHub-native tasks are NOT mirrored (the Google
-  list is a capture surface, not an org mirror);
-  `pushNewTaskToGoogle()` exists for explicit opt-in flows. Conflicts:
-  last-write-wins per task; a pull in the same run suppresses its own
-  echo push.
+  patch back to the originating list. OpsHub-native tasks are NOT
+  mirrored automatically; `pushNewTaskToGoogle()` (targets the
+  account's `@default` list) exists for explicit opt-in flows.
+  Conflicts: last-write-wins per task; a pull in the same run
+  suppresses its own echo push.
 - **Scheduling** — `google-tasks-sync` job (no webhooks upstream, so we
   poll). Rides the hourly all-jobs cron; add a dedicated 5-minute
   `?job=google-tasks-sync` entry for snappier sync. "Sync now" on /my
@@ -1122,6 +1131,74 @@ notification's link works for the driver it's sent to.
   `disciplinary-report`; `merge-users-fk.ts` reassigns
   `Vehicle.assignedToId`, `DisciplinaryReport.employeeId`, and
   `DisciplinaryReport.issuedById`.
+
+## Bid pipeline (July 2026)
+
+Business development in one permissioned module (`bids`, Manager+ by
+default — bid values are financial data). Migration
+`20260709000000_bid_pipeline`.
+
+- **`BidPortal`** (`/bids/portals`) — registry of the procurement /
+  bidding sites we're registered on: name, URL, jurisdiction, the
+  account identifier used there (never a password), registration
+  renewal date (flagged red when past), active flag, notes. Lives
+  inside the bids module rather than intranet resources because
+  portals are structured pipeline data: every opportunity records its
+  source portal, so "which registrations actually produce work" falls
+  out of the data.
+- **`BidOpportunity`** (`/bids`, detail `/bids/{id}`) — the pipeline
+  item: title, solicitation #, agency, deep link, estimated value,
+  response due date, portal/client/owner links, notes. Stages:
+  IDENTIFIED → PREPARING → SUBMITTED → WON / LOST (Not Awarded) /
+  NO_BID / STALE. Stage bookkeeping is automatic: → SUBMITTED stamps
+  `submittedAt`, → any outcome stamps `decidedAt`, reopening clears it.
+- **Views** — default "Pipeline" view renders stage sections in
+  pipeline order with per-stage counts + dollar totals (the kanban
+  read); "Table" is the flat list with group-by portal/owner/client/
+  agency. Stat chips: open pipeline (count + value), due ≤ 7 days,
+  overdue, awaiting decision, won — the due chips filter the list.
+- **Deadline job** — `bid-due-check` (daily): open pre-submission bids
+  due within `BID_DUE_WINDOW_DAYS` (7) or overdue notify the owner +
+  admins/managers per-recipient (`bid-due-soon` type), deduped per
+  dueDate via `dueNotifiedFor` (a new date re-arms it). SUBMITTED bids
+  quiet for 60+ days get a "waiting Nd — check on this" hint in the
+  UI (`bidWaitingDays`), nudging them toward STALE or a follow-up.
+- **Convert to project** — on a bid detail, "Convert to project"
+  creates a PLANNING project (name prefilled from the bid, client
+  required), links it via `BidOpportunity.projectId`, and stamps the
+  bid WON — the pipeline→delivery hand-off. Requires create rights on
+  BOTH the bids and projects modules.
+- **Comments & attachments** — bids host comments (`Comment.bidId`,
+  entityType `"bid"` through the standard comment plumbing incl.
+  @mentions) and private file attachments (`File.bidOpportunityId`,
+  category `"attachment"`, bids-module authz in `lib/file-authz`).
+  Upload UI is the shared `EntityFileSection`.
+- **Win-rate report** — `bids-win-rate` in the reports registry:
+  per-portal open/won/lost/no-bid/stale counts, win rate over real
+  decisions, and won value — the "is this registration worth
+  renewing" answer. Schedulable (rides the daily digest).
+- **Surfaces** — Bids card on the client detail page (page-layout id
+  `bids`), "My open bids" strip on /my for owners, global search +
+  Cmd-K palette buckets.
+- **Wiring** — soft-delete recovery (`bid`), merge-users reassigns
+  `ownerId`, status-badge variants for all stages, sidebar under
+  Delivery next to Quotes.
+- Helpers in `lib/bids.ts` (`bidDueState`, `bidWaitingDays`, stage
+  vocabulary) with tests.
+
+## Shared entity sub-sections
+
+Two parameterized components keep per-entity features from forking:
+
+- **`EntityContactSection`** (`components/shared/entity-contact-section.tsx`)
+  — the contact rolodex (primary badge, create/edit dialogs, delete
+  confirm). Clients and suppliers are thin bindings that pass their own
+  server actions + parent-id field; give the next entity contacts by
+  writing another ~30-line wrapper, not a copy.
+- **`EntityFileSection`** (`components/shared/entity-file-section.tsx`)
+  — upload/list/download/delete for entity-attached files with the
+  client-side size pre-check and try/finally built in. Supplier
+  receipts and bid attachments are the current bindings.
 
 ## How to extend this document
 

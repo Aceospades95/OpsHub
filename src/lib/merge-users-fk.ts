@@ -68,6 +68,7 @@ export const REASSIGNMENTS: { model: string; column: string }[] = [
   { model: "partnership", column: "relationshipOwnerId" },
   { model: "project", column: "ownerId" },
   { model: "vehicle", column: "assignedToId" },
+  { model: "bidOpportunity", column: "ownerId" },
   { model: "disciplinaryReport", column: "employeeId" },
   { model: "disciplinaryReport", column: "issuedById" },
   { model: "sandboxPage", column: "createdById" },
