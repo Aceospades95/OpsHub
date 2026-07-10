@@ -208,6 +208,17 @@ export async function listTasklists(accessToken: string): Promise<GoogleTasklist
   return out;
 }
 
+/**
+ * Resolve the account's default "My Tasks" list to its REAL id. The
+ * "@default" alias works fine in API calls but must never be STORED:
+ * a persisted "@default:<taskId>" source key can't match pull keys
+ * (which use the real list id), and another user's sync would resolve
+ * the alias to THEIR default list instead of the task's actual home.
+ */
+export async function getDefaultTasklist(accessToken: string): Promise<GoogleTasklist> {
+  return tasksFetch<GoogleTasklist>(accessToken, "/users/@me/lists/@default");
+}
+
 /** List tasks updated since `updatedMin` (all tasks when null). Paginates. */
 export async function listTasks(
   accessToken: string,

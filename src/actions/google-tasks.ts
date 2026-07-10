@@ -7,14 +7,15 @@ import { revalidatePath } from "next/cache";
 
 /**
  * Run the Google Tasks sync for the signed-in user and return the
- * counts as JSON. Backs both the manual "Sync" button and the
- * auto-sync interval on /my (neither needs the full-page redirect the
- * legacy route does).
+ * counts as JSON. Backs the manual "Sync" button and the auto-sync
+ * interval on /my and /tasks (neither needs the full-page redirect
+ * the legacy route does).
  */
 export async function syncGoogleTasksAction() {
   const user = await requireAuth();
   const result = await syncGoogleTasksForUser(user.id);
   revalidatePath("/my");
+  revalidatePath("/tasks");
   return {
     pulledCreated: result.pulledCreated,
     pulledUpdated: result.pulledUpdated,
@@ -27,10 +28,11 @@ export async function syncGoogleTasksAction() {
 const AUTO_SYNC_CHOICES = new Set([0, 5, 15, 30, 60]);
 
 /**
- * Set how often /my auto-syncs Google Tasks while open. Stored on the
- * user's integration; 0 turns it off. (This is client-side polling
- * while the page is open — true background cadence is the cron entry
- * hitting the google-tasks-sync job, see docs/deployment.md.)
+ * Set how often /my and /tasks auto-sync Google Tasks while open.
+ * Stored on the user's integration; 0 turns it off. (This is
+ * client-side polling while the page is open — true background cadence
+ * is the cron entry hitting the google-tasks-sync job, see
+ * docs/deployment.md.)
  */
 export async function setGoogleAutoSync(minutes: number) {
   const user = await requireAuth();
@@ -47,5 +49,6 @@ export async function setGoogleAutoSync(minutes: number) {
     data: { autoSyncMinutes: minutes === 0 ? null : minutes },
   });
   revalidatePath("/my");
+  revalidatePath("/tasks");
   return { success: true };
 }

@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { X, Save, ExternalLink } from "lucide-react";
+import { X, Save, ExternalLink, CalendarCheck, Mail } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -39,6 +39,10 @@ export interface TaskDrawerTask {
   project: { id: string; name: string } | null;
   client: { id: string; name: string } | null;
   assignee: { id: string; name: string } | null;
+  /** True when the task is synced with someone's Google Tasks. */
+  isGoogle: boolean;
+  /** Gmail/Docs link Google carries on the task, if any. */
+  sourceLink: string | null;
 }
 
 interface Props {
@@ -299,6 +303,28 @@ export function TaskDrawer({ task, projects, clients, users, onClose }: Props) {
                 <ExternalLink className="h-3 w-3" />
                 Open project: {task.project.name}
               </Link>
+            </div>
+          )}
+
+          {(task.isGoogle || task.sourceLink) && (
+            <div className="pt-2 border-t border-border flex flex-col gap-1.5">
+              {task.isGoogle && (
+                <p className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                  <CalendarCheck className="h-3 w-3" />
+                  Synced with Google Tasks — edits here sync back
+                </p>
+              )}
+              {task.sourceLink && (
+                <a
+                  href={task.sourceLink}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                >
+                  <Mail className="h-3 w-3" />
+                  Open the linked email in Google
+                </a>
+              )}
             </div>
           )}
         </div>

@@ -97,9 +97,10 @@ async function notifyTaskAssigned(opts: {
 
     const heading = `Task assigned: ${opts.title}`;
     const body = project ? `On ${project.name}` : "Standalone task";
-    // Tasks don't have their own detail page yet — link to the task list
-    // or the parent project, whichever is more useful
-    const href = opts.projectId ? `/projects/${opts.projectId}` : "/tasks";
+    // Deep-link straight to the task: /tasks#task-<id> scrolls to the
+    // row and opens its drawer. (Assignees always pass the /tasks scope
+    // filter for their own tasks.)
+    const href = `/tasks#task-${opts.taskId}`;
 
     await notify({
       recipientId: opts.assigneeId,

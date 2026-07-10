@@ -7,12 +7,13 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
 import { EmptyState } from "@/components/ui/empty-state";
-import { CheckSquare } from "lucide-react";
+import { CalendarCheck, CheckSquare, Mail } from "lucide-react";
 import { TaskCreateButton } from "./task-create-button";
 import { TaskCheckbox } from "./task-checkbox";
 import { TaskFilters } from "./task-filters";
 import { TasksListClient } from "./tasks-list-client";
 import { DownloadCsvButton } from "@/components/shared/download-csv-button";
+import { GoogleSyncControls } from "@/components/shared/google-sync-controls";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { Suspense } from "react";
 import { formatCalendarDate } from "@/lib/dates";
@@ -113,7 +114,7 @@ export default async function TasksPage({
   const scopedProjectIds = scope.all ? null : Array.from(scope.projectIds);
   const scopedClientIds = scope.all ? null : Array.from(scope.clientIds);
 
-  const [tasks, projects, clients, users] = await Promise.all([
+  const [tasks, projects, clients, users, googleIntegration] = await Promise.all([
     db.task.findMany({
       where,
       orderBy: [{ status: "asc" }, { priority: "asc" }, { dueDate: "asc" }],
@@ -139,10 +140,21 @@ export default async function TasksPage({
       orderBy: { name: "asc" },
     }),
     db.user.findMany({ where: { isActive: true }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
+    // The viewer's Google Tasks link — sync controls live here too, not
+    // just on /my, so "where are my Google tasks?" has an answer on the
+    // page that lists tasks.
+    db.googleTasksIntegration.findUnique({
+      where: { userId: user.id },
+      select: { lastSyncedAt: true, lastSyncStatus: true, lastSyncError: true, autoSyncMinutes: true },
+    }),
   ]);
 
-  const activeTasks = tasks.filter((t) => t.status !== "DONE" && t.status !== "CANCELLED");
-  const completedTasks = tasks.filter((t) => t.status === "DONE" || t.status === "CANCELLED");
+  // isGoogle drives the "synced with Google" mark on rows; sourceLink
+  // (the Gmail/Docs link Google carries) rides along from the model.
+  const taskRows = tasks.map((t) => ({ ...t, isGoogle: t.sourceType === "google_tasks" }));
+
+  const activeTasks = taskRows.filter((t) => t.status !== "DONE" && t.status !== "CANCELLED");
+  const completedTasks = taskRows.filter((t) => t.status === "DONE" || t.status === "CANCELLED");
 
   // Active filter label
   const filterParts: string[] = [];
@@ -170,7 +182,16 @@ export default async function TasksPage({
         title="Tasks"
         description="Track and manage tasks across projects and clients"
         actions={
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3 flex-wrap justify-end">
+            <GoogleSyncControls
+              google={{
+                connected: Boolean(googleIntegration),
+                lastSyncedAt: googleIntegration?.lastSyncedAt?.toISOString() ?? null,
+                lastSyncStatus: googleIntegration?.lastSyncStatus ?? null,
+                lastSyncError: googleIntegration?.lastSyncError ?? null,
+                autoSyncMinutes: googleIntegration?.autoSyncMinutes ?? 0,
+              }}
+            />
             {user.role === "ADMIN" && <DownloadCsvButton importerKey="tasks" />}
             <TaskCreateButton projects={projects} clients={clients} users={users} />
           </div>
@@ -238,7 +259,7 @@ export default async function TasksPage({
           description={filterParts.length > 0 ? "Try adjusting your filters" : "Create your first task to start tracking work"}
         />
       ) : groupBy === "project" ? (
-        <ProjectGroupedTasks tasks={tasks} />
+        <ProjectGroupedTasks tasks={taskRows} />
       ) : (
         <TasksListClient
           activeTasks={activeTasks}
@@ -264,6 +285,10 @@ type TaskRow = {
   project: { id: string; name: string } | null;
   client: { id: string; name: string } | null;
   assignee: { id: string; name: string } | null;
+  /** True when the task is synced with someone's Google Tasks. */
+  isGoogle: boolean;
+  /** Gmail/Docs link Google carries on the task, if any. */
+  sourceLink: string | null;
 };
 
 /**
@@ -328,10 +353,14 @@ function ProjectGroupedTasks({ tasks }: { tasks: TaskRow[] }) {
               <div className="space-y-1.5">
                 {[...active, ...completed].map((task) => {
                   const isDone = task.status === "DONE" || task.status === "CANCELLED";
+                  // "Completed …" always renders for done rows; active rows
+                  // may have nothing before the email chip.
+                  const hasPriorMeta = Boolean(task.client) || isDone || Boolean(task.dueDate);
                   return (
                     <div
                       key={task.id}
-                      className={`flex items-center gap-3 rounded border border-border/50 bg-muted p-2 ${
+                      id={`task-${task.id}`}
+                      className={`flex items-center gap-3 rounded border border-border/50 bg-muted p-2 scroll-mt-24 ${
                         isDone ? "opacity-60" : ""
                       }`}
                     >
@@ -341,6 +370,12 @@ function ProjectGroupedTasks({ tasks }: { tasks: TaskRow[] }) {
                           <span className={`text-sm ${isDone ? "line-through text-muted-foreground" : "font-medium"}`}>
                             {task.title}
                           </span>
+                          {task.isGoogle && (
+                            <CalendarCheck
+                              className="h-3 w-3 text-muted-foreground shrink-0"
+                              aria-label="Synced with Google Tasks"
+                            />
+                          )}
                           {!isDone && (
                             <StatusBadge status={task.priority} className="text-[10px]" />
                           )}
@@ -368,6 +403,21 @@ function ProjectGroupedTasks({ tasks }: { tasks: TaskRow[] }) {
                               <span>
                                 Completed{task.completedAt ? ` ${formatCalendarDate(task.completedAt, "MMM d, yyyy")}` : ""}
                               </span>
+                            </>
+                          )}
+                          {task.sourceLink && (
+                            <>
+                              {hasPriorMeta && <span aria-hidden className="opacity-40">·</span>}
+                              <a
+                                href={task.sourceLink}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 text-primary hover:underline"
+                                aria-label="Open the linked email in Google"
+                              >
+                                <Mail className="h-3 w-3" />
+                                Email
+                              </a>
                             </>
                           )}
                         </div>

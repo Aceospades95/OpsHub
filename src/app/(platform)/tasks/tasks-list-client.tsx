@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -9,6 +9,7 @@ import { StatusBadge } from "@/components/shared/status-badge";
 import { TaskCheckbox } from "./task-checkbox";
 import { TaskDrawer, type TaskDrawerTask } from "./task-drawer";
 import { formatCalendarDate } from "@/lib/dates";
+import { CalendarCheck, Mail } from "lucide-react";
 
 const statusBadgeVariant: Record<string, "default" | "success" | "warning" | "destructive" | "secondary" | "outline"> = {
   TODO: "outline",
@@ -57,6 +58,20 @@ export function TasksListClient({
   const selectedTask = selectedTaskId
     ? allTasks.find((t) => t.id === selectedTaskId) ?? null
     : null;
+
+  // Deep link: /tasks#task-<id> (from My View rows and assignment
+  // notifications) opens that task's drawer on arrival — the browser
+  // scrolls to the row's anchor, this opens the detail. Mount-only:
+  // closing the drawer must not re-open it on the next render.
+  useEffect(() => {
+    const hash = window.location.hash;
+    if (!hash.startsWith("#task-")) return;
+    const id = hash.slice("#task-".length);
+    if ([...activeTasks, ...completedTasks].some((t) => t.id === id)) {
+      setSelectedTaskId(id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div className="space-y-8">
@@ -118,7 +133,9 @@ function TaskRow({
   const isPastDue =
     !completed && task.dueDate && new Date(task.dueDate) < new Date();
   return (
-    <Card className="hover:shadow-sm transition-shadow">
+    // The anchor id + scroll margin make /tasks#task-<id> land here
+    // (deep links from My View and assignment notifications).
+    <Card id={`task-${task.id}`} className="hover:shadow-sm transition-shadow scroll-mt-24">
       <CardContent className="p-4">
         <div className="flex items-center gap-4">
           <TaskCheckbox taskId={task.id} status={task.status} />
@@ -134,6 +151,12 @@ function TaskRow({
               >
                 {task.title}
               </span>
+              {task.isGoogle && (
+                <CalendarCheck
+                  className="h-3.5 w-3.5 text-muted-foreground shrink-0"
+                  aria-label="Synced with Google Tasks"
+                />
+              )}
               {!completed && <StatusBadge status={task.priority} />}
               {task.status === "IN_PROGRESS" && (
                 <Badge variant="default" className="text-xs">
@@ -196,6 +219,25 @@ function TaskRow({
                   <span>
                     Completed{task.completedAt ? ` ${formatCalendarDate(task.completedAt, "MMM d, yyyy")}` : ""}
                   </span>
+                </>
+              )}
+              {/* Gmail/Docs link Google carries on synced tasks — same
+               *  stopPropagation pattern as the project/client links so
+               *  it doesn't also open the drawer. */}
+              {task.sourceLink && (
+                <>
+                  <span aria-hidden className="opacity-40">·</span>
+                  <a
+                    href={task.sourceLink}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(e) => e.stopPropagation()}
+                    className="inline-flex items-center gap-1 text-primary hover:underline"
+                    aria-label="Open the linked email in Google"
+                  >
+                    <Mail className="h-3 w-3" />
+                    Email
+                  </a>
                 </>
               )}
             </div>
