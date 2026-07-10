@@ -139,6 +139,20 @@ export interface GoogleTask {
   updated?: string;
   deleted?: boolean;
   hidden?: boolean;
+  /**
+   * External references on the task — e.g. the Gmail message a task was
+   * created from. `{ type: "email", description, link }`.
+   */
+  links?: { type?: string; description?: string; link?: string }[];
+  /** The task's own view URL in Google Tasks. */
+  webViewLink?: string;
+  /**
+   * Present when the task was ASSIGNED from another Google surface
+   * (Chat space, Docs). These tasks are read-only via the Tasks API —
+   * a PATCH returns 403 PERMISSION_DENIED. Its presence is the signal;
+   * we don't read its inner fields.
+   */
+  assignmentInfo?: Record<string, unknown>;
 }
 
 async function tasksFetch<T>(

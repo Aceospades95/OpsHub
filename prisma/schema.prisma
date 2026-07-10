@@ -505,6 +505,13 @@ model Task {
   /// Examples of `sourceType`: "workflow_step".
   sourceType  String?
   sourceId    String?
+  /// External link carried from the source (e.g. the Gmail message a
+  /// Google Task was created from). Surfaced on /my.
+  sourceLink  String?
+  /// True when the source system won't accept writes back (Google
+  /// "assigned tasks" from Chat/Docs, and Gmail-linked tasks, 403 on
+  /// PATCH). We still pull these, but never push — see google-tasks/sync.
+  sourceReadOnly Boolean @default(false)
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
   /// Soft-delete tombstone — see Project.deletedAt comment.
@@ -1533,6 +1540,8 @@ model GoogleTasksIntegration {
   lastSyncedAt         DateTime?
   lastSyncStatus       String? // "success" | "failed"
   lastSyncError        String?   @db.Text
+  /// Client-side auto-sync cadence while /my is open. Null / 0 = off.
+  autoSyncMinutes      Int?
   createdAt            DateTime  @default(now())
   updatedAt            DateTime  @updatedAt
 
