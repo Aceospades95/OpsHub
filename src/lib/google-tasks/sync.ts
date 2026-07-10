@@ -15,6 +15,13 @@
  *           of the org's whole task table (pushNewTaskToGoogle exists
  *           for explicit "send to my phone" flows).
  *
+ * Push ownership is by LIST, not by assignee: this integration's token
+ * can only write lists on THIS Google account, and a synced task
+ * reassigned to another OpsHub user still lives in the original
+ * owner's list. (Keying the push on assigneeId used to make the new
+ * assignee's sync patch a foreign list → 404 → the delete-mirroring
+ * path silently soft-deleted the task.)
+ *
  * `Task.sourceId` stores "<tasklistId>:<taskId>" so pushes know which
  * list to patch. Legacy rows from the retired dedicated-"OpsHub"-list
  * design stored the bare task id — they're migrated to the composite
@@ -33,6 +40,7 @@ import { db } from "@/lib/db";
 import { log } from "@/lib/log";
 import { revalidateTask } from "@/lib/revalidate-entity";
 import {
+  getDefaultTasklist,
   getValidAccessToken,
   insertTask,
   listTasklists,
@@ -112,6 +120,16 @@ export async function syncGoogleTasksForUser(userId: string): Promise<SyncResult
       : null;
     const lists = await listTasklists(accessToken);
 
+    // The default list's REAL id — the push phase needs it to know
+    // which alias-keyed rows are ours. Non-fatal when it can't resolve:
+    // the "@default" alias fallbacks below still work for API calls.
+    let defaultListId: string | null = null;
+    try {
+      defaultListId = (await getDefaultTasklist(accessToken)).id;
+    } catch {
+      /* alias fallback below */
+    }
+
     // Tasks whose OpsHub row was written by THIS pull — the push phase
     // skips them so a pull-write doesn't echo straight back to Google.
     const pulledIds = new Set<string>();
@@ -129,9 +147,16 @@ export async function syncGoogleTasksForUser(userId: string): Promise<SyncResult
         const key = sourceKey(list.id, g.id);
         try {
           // Match the composite key, falling back to the legacy bare id
-          // (pre-multi-list rows) which gets migrated on first touch.
+          // (pre-multi-list rows) and the "@default:<id>" alias key
+          // (rows pushNewTaskToGoogle wrote before it resolved real
+          // list ids). Both legacy shapes migrate to the composite key
+          // on first touch — without the alias candidate, a task pushed
+          // to Google re-imported as a DUPLICATE row on the next pull.
           const existing = await db.task.findFirst({
-            where: { sourceType: SOURCE_TYPE, sourceId: { in: [key, g.id] } },
+            where: {
+              sourceType: SOURCE_TYPE,
+              sourceId: { in: [key, g.id, sourceKey("@default", g.id)] },
+            },
           });
 
           if (!existing) {
@@ -173,9 +198,19 @@ export async function syncGoogleTasksForUser(userId: string): Promise<SyncResult
           // the OpsHub row. Ties (equal stamps) mean "already in sync".
           const googleUpdated = g.updated ? new Date(g.updated) : null;
           if (!googleUpdated || googleUpdated.getTime() <= existing.updatedAt.getTime()) {
-            // Still migrate a legacy sourceId so future pushes know the list.
+            // Still migrate legacy/alias source keys so future pushes
+            // know the list — and since a wrong key is how a row ends
+            // up frozen by the push's conservative 404 handling,
+            // re-derive the read-only flag while we're here so it
+            // thaws. (Rows whose key already matches are left alone:
+            // a 403-frozen task must NOT be retried every sync.)
+            // Deliberately NOT added to pulledIds — an OpsHub-newer
+            // row should still push.
             if (existing.sourceId !== key) {
-              await db.task.update({ where: { id: existing.id }, data: { sourceId: key } });
+              await db.task.update({
+                where: { id: existing.id },
+                data: { sourceId: key, sourceReadOnly: isReadOnly(g) },
+              });
             }
             continue;
           }
@@ -223,27 +258,47 @@ export async function syncGoogleTasksForUser(userId: string): Promise<SyncResult
       }
     }
 
-    // ── PUSH: OpsHub → Google (synced tasks only) ────────────────
+    // ── PUSH: OpsHub → Google (tasks in THIS account's lists) ────
+    //
+    // Selected by list ownership, not assignee — see the header note.
+    // A task in my list stays pushable by MY sync even after it's
+    // reassigned to a teammate in OpsHub, and their sync never tries
+    // to patch (or 404-delete) a list it can't reach.
     const pushSince = integration.lastSyncedAt
       ? new Date(integration.lastSyncedAt.getTime() - UPDATED_MIN_BUFFER_MS)
       : null;
+    const myListIds = new Set(lists.map((l) => l.id));
+    if (defaultListId) myListIds.add(defaultListId);
     const changedLocal = await db.task.findMany({
       where: {
         sourceType: SOURCE_TYPE,
-        assigneeId: userId,
         // Read-only tasks (assigned / Gmail-linked) never push — Google
         // 403s on them. We pull them; we don't fight the API to write back.
         sourceReadOnly: false,
         ...(pushSince ? { updatedAt: { gt: pushSince } } : {}),
+        OR: [
+          // Composite keys naming one of this account's lists.
+          ...Array.from(myListIds, (id) => ({ sourceId: { startsWith: `${id}:` } })),
+          // Alias ("@default:") and legacy bare keys can't name their
+          // list — only the assignee's own sync touches those, resolved
+          // against this account with conservative 404 handling below.
+          { assigneeId: userId, sourceId: { startsWith: "@default:" } },
+          { assigneeId: userId, NOT: { sourceId: { contains: ":" } } },
+        ],
       },
     });
 
     for (const task of changedLocal) {
       if (!task.sourceId || pulledIds.has(task.sourceId)) continue;
       const { tasklistId, taskId } = parseSourceId(task.sourceId);
-      // Legacy rows without a list prefix fall back to the old
-      // dedicated-list id; "@default" resolves to the account's main list.
-      const targetList = tasklistId ?? integration.tasklistId ?? "@default";
+      // Alias/legacy keys resolve against this account's default list
+      // (or the retired dedicated list for bare legacy ids).
+      const aliased = tasklistId === null || tasklistId === "@default";
+      const targetList = !aliased
+        ? tasklistId
+        : tasklistId === "@default"
+          ? defaultListId ?? "@default"
+          : integration.tasklistId ?? defaultListId ?? "@default";
       try {
         await patchTask(accessToken, targetList, taskId, {
           title: task.title,
@@ -254,19 +309,36 @@ export async function syncGoogleTasksForUser(userId: string): Promise<SyncResult
             : { status: "needsAction" }),
         });
         result.pushed += 1;
+        // The successful patch proves the task lives in targetList —
+        // pin the real composite key so this row stops depending on
+        // alias resolution (and other accounts can recognize it as
+        // not-theirs).
+        if (aliased && targetList !== "@default") {
+          await db.task.update({
+            where: { id: task.id },
+            data: { sourceId: sourceKey(targetList, taskId) },
+          });
+        }
       } catch (err) {
         const status = (err as Error & { status?: number }).status;
-        // 404 = deleted on the Google side and already past the pull
-        // window — mirror the delete here rather than erroring forever.
-        if (status === 404 && !task.deletedAt) {
-          await db.task.update({ where: { id: task.id }, data: { deletedAt: new Date() } });
+        if (status === 404) {
+          // Gone from a list we KNOW is ours → mirror the deletion
+          // (recoverable from the bin). Alias/legacy rows might really
+          // live somewhere this resolution didn't pick — freeze their
+          // pushes instead of deleting; the next pull re-links the row
+          // (and clears the flag) if the task still exists anywhere.
+          if (!aliased && !task.deletedAt) {
+            await db.task.update({ where: { id: task.id }, data: { deletedAt: new Date() } });
+          } else if (aliased) {
+            await db.task.update({ where: { id: task.id }, data: { sourceReadOnly: true } });
+          }
         } else if (status === 403) {
           // Google won't let us write this task (assigned / Gmail-linked).
           // Flag it read-only so future syncs skip the push — NOT an
           // error; the sync stays "success". The completion/edit still
           // lives correctly in OpsHub; it just can't round-trip.
           await db.task.update({ where: { id: task.id }, data: { sourceReadOnly: true } });
-        } else if (status !== 404) {
+        } else {
           result.errors.push(`push ${task.id}: ${(err as Error).message}`);
         }
       }
@@ -315,14 +387,24 @@ export async function pushNewTaskToGoogle(userId: string, taskId: string): Promi
   if (task.sourceType === SOURCE_TYPE) return {}; // already mirrored
 
   const accessToken = await getValidAccessToken(integration);
-  const created: GoogleTask = await insertTask(accessToken, "@default", {
+  // Resolve the default list's REAL id before inserting. Storing the
+  // "@default" alias key was a duplicate-task bug: the next pull keys
+  // tasks by real list id, never matches the alias row, and re-imports
+  // the freshly pushed task as a second OpsHub row.
+  let listId = "@default";
+  try {
+    listId = (await getDefaultTasklist(accessToken)).id;
+  } catch {
+    /* alias still works for the insert; sync's alias handling covers the rest */
+  }
+  const created: GoogleTask = await insertTask(accessToken, listId, {
     title: task.title,
     notes: task.description ?? undefined,
     due: task.dueDate ? task.dueDate.toISOString() : undefined,
   });
   await db.task.update({
     where: { id: task.id },
-    data: { sourceType: SOURCE_TYPE, sourceId: sourceKey("@default", created.id) },
+    data: { sourceType: SOURCE_TYPE, sourceId: sourceKey(listId, created.id) },
   });
   return {};
 }

@@ -1,11 +1,14 @@
 interface CardProps {
   children: React.ReactNode;
   className?: string;
+  /** DOM id — set when the card is a deep-link anchor target. */
+  id?: string;
 }
 
-export function Card({ children, className = "" }: CardProps) {
+export function Card({ children, className = "", id }: CardProps) {
   return (
     <div
+      id={id}
       className={`rounded-lg bg-card text-card-foreground ${className}`}
       style={{
         border: "1px solid var(--card-border)",

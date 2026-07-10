@@ -1,17 +1,19 @@
 "use client";
 
-import { useState, useEffect, useRef, useTransition } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
-import { format } from "date-fns";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { assignTaskProject } from "@/actions/tasks";
-import { syncGoogleTasksAction, setGoogleAutoSync } from "@/actions/google-tasks";
 import { TaskCheckbox } from "@/app/(platform)/tasks/task-checkbox";
+import {
+  GoogleSyncControls,
+  type GoogleSyncState,
+} from "@/components/shared/google-sync-controls";
 import { formatCalendarDate } from "@/lib/dates";
 import { MyQuickAddTask } from "./my-quick-add-task";
-import { CheckSquare, Clock, CalendarCheck, RefreshCw, Mail } from "lucide-react";
+import { CheckSquare, Clock, CalendarCheck, Mail } from "lucide-react";
 
 export interface MyTaskRow {
   id: string;
@@ -26,23 +28,6 @@ export interface MyTaskRow {
   sourceLink: string | null;
 }
 
-interface GoogleState {
-  connected: boolean;
-  lastSyncedAt: string | null;
-  lastSyncStatus: string | null;
-  lastSyncError: string | null;
-  /** Client-side auto-sync cadence; 0 = off. */
-  autoSyncMinutes: number;
-}
-
-const AUTO_SYNC_OPTIONS = [
-  { value: 0, label: "Manual" },
-  { value: 5, label: "Every 5 min" },
-  { value: 15, label: "Every 15 min" },
-  { value: 30, label: "Every 30 min" },
-  { value: 60, label: "Hourly" },
-];
-
 const FLASH_MESSAGES: Record<string, { tone: "success" | "error"; text: string }> = {
   connected: { tone: "success", text: "Google Tasks connected — your lists synced." },
   denied: { tone: "error", text: "Google connection was cancelled." },
@@ -56,9 +41,10 @@ const FLASH_MESSAGES: Record<string, { tone: "success" | "error"; text: string }
 /**
  * The one task list on /my: OpsHub tasks and Google-synced tasks
  * together, soonest due first. Google is plumbing, not a place — a
- * small mark on synced rows, connect/sync controls in the header, and
- * any task without a project (from either side) can be filed onto one
- * inline. Replaces the separate "Google Tasks inbox" card.
+ * small mark on synced rows, connect/sync controls in the header
+ * (shared GoogleSyncControls, also on /tasks), and any task without a
+ * project (from either side) can be filed onto one inline. Titles
+ * deep-link to /tasks#task-<id>, which opens the task's drawer there.
  */
 export function MyTasksCard({
   tasks,
@@ -70,7 +56,7 @@ export function MyTasksCard({
 }: {
   tasks: MyTaskRow[];
   projects: { id: string; name: string }[];
-  google: GoogleState;
+  google: GoogleSyncState;
   /** ?google=… flag set by the OAuth callback redirect. */
   flash: string | null;
   assigneeId: string;
@@ -80,7 +66,6 @@ export function MyTasksCard({
   const router = useRouter();
   const [, startTransition] = useTransition();
   const [filed, setFiled] = useState<Map<string, string>>(new Map());
-  const [syncing, setSyncing] = useState(false);
   const renderedAt = new Date(now);
 
   async function fileUnder(taskId: string, projectId: string) {
@@ -95,45 +80,6 @@ export function MyTasksCard({
     startTransition(() => router.refresh());
   }
 
-  async function runSync(silent = false) {
-    if (syncing) return;
-    setSyncing(true);
-    try {
-      const result = await syncGoogleTasksAction();
-      if (result.error) {
-        if (!silent) toast.error(`Sync issue: ${result.error}`);
-      } else if (!silent) {
-        const pulled = result.pulledCreated + result.pulledUpdated;
-        toast.success(pulled > 0 ? `Synced — ${pulled} update${pulled === 1 ? "" : "s"} from Google` : "Synced — up to date");
-      }
-      startTransition(() => router.refresh());
-    } catch {
-      if (!silent) toast.error("Couldn't reach Google — try again");
-    } finally {
-      setSyncing(false);
-    }
-  }
-
-  async function changeInterval(minutes: number) {
-    const result = await setGoogleAutoSync(minutes);
-    if (result && "error" in result && result.error) {
-      toast.error(result.error);
-      return;
-    }
-    startTransition(() => router.refresh());
-  }
-
-  // Auto-sync while the page is open, at the chosen cadence. Skips the
-  // tick if a manual/previous sync is still running.
-  const syncRef = useRef(runSync);
-  syncRef.current = runSync;
-  useEffect(() => {
-    if (!google.connected || !google.autoSyncMinutes) return;
-    const ms = google.autoSyncMinutes * 60 * 1000;
-    const timer = setInterval(() => syncRef.current(true), ms);
-    return () => clearInterval(timer);
-  }, [google.connected, google.autoSyncMinutes]);
-
   const flashMessage = flash ? FLASH_MESSAGES[flash] ?? null : null;
 
   return (
@@ -144,52 +90,7 @@ export function MyTasksCard({
             <CheckSquare className="h-4 w-4" />
             My tasks ({tasks.length})
           </CardTitle>
-          {google.connected ? (
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <CalendarCheck className="h-3.5 w-3.5" />
-              <span>
-                {google.lastSyncStatus === "failed"
-                  ? "Google sync failed"
-                  : google.lastSyncedAt
-                    ? `Synced ${format(new Date(google.lastSyncedAt), "MMM d, HH:mm")}`
-                    : "Google connected"}
-              </span>
-              <select
-                value={google.autoSyncMinutes}
-                onChange={(e) => changeInterval(Number(e.target.value))}
-                className="px-1.5 py-1 rounded-md border border-input bg-background"
-                aria-label="Auto-sync interval"
-              >
-                {AUTO_SYNC_OPTIONS.map((o) => (
-                  <option key={o.value} value={o.value}>
-                    {o.label}
-                  </option>
-                ))}
-              </select>
-              <button
-                type="button"
-                onClick={() => runSync(false)}
-                disabled={syncing}
-                className="inline-flex items-center gap-1 px-2 py-1 font-medium rounded-md border border-input bg-background hover:bg-muted disabled:opacity-50"
-              >
-                <RefreshCw className={`h-3 w-3 ${syncing ? "animate-spin" : ""}`} />
-                Sync
-              </button>
-              <form action="/api/integrations/google-tasks/disconnect" method="post">
-                <button type="submit" className="hover:text-destructive hover:underline">
-                  Disconnect
-                </button>
-              </form>
-            </div>
-          ) : (
-            <a
-              href="/api/integrations/google-tasks/connect"
-              className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
-            >
-              <CalendarCheck className="h-3.5 w-3.5" />
-              Connect Google Tasks
-            </a>
-          )}
+          <GoogleSyncControls google={google} />
         </div>
       </CardHeader>
       <CardContent>
@@ -199,11 +100,6 @@ export function MyTasksCard({
             role="status"
           >
             {flashMessage.text}
-          </p>
-        )}
-        {google.lastSyncStatus === "failed" && google.lastSyncError && (
-          <p className="text-xs text-destructive mb-3" role="alert">
-            {google.lastSyncError}
           </p>
         )}
 
@@ -223,7 +119,13 @@ export function MyTasksCard({
                   <TaskCheckbox taskId={task.id} status={task.status} />
                   <div className="min-w-0 flex-1">
                     <p className="font-medium truncate flex items-center gap-1.5">
-                      {task.title}
+                      <Link
+                        href={`/tasks#task-${task.id}`}
+                        className="truncate hover:text-primary hover:underline"
+                        title={`Open "${task.title}" on the tasks page`}
+                      >
+                        {task.title}
+                      </Link>
                       {task.isGoogle && (
                         <CalendarCheck
                           className="h-3 w-3 text-muted-foreground shrink-0"
