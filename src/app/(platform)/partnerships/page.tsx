@@ -13,6 +13,7 @@ import { DownloadCsvButton } from "@/components/shared/download-csv-button";
 import { Prisma } from "@prisma/client";
 import { pluralize } from "@/lib/pluralize";
 import { formatCalendarDate } from "@/lib/dates";
+import { resolveViewPreference } from "@/lib/view-preference";
 import { ViewOptionsBar } from "@/components/shared/view-options-bar";
 import { GroupSection } from "@/components/shared/group-section";
 import { groupRows } from "@/lib/group-rows";
@@ -67,7 +68,7 @@ export default async function PartnershipsPage({ searchParams }: Props) {
     where.status = searchParams.status as Prisma.PartnershipWhereInput["status"];
   }
 
-  const view = searchParams.view === "table" ? "table" : "cards";
+  const view = resolveViewPreference(searchParams.view, "partnerships", ["table", "cards"], "table");
   const groupBy = GROUP_OPTIONS.some((o) => o.value === searchParams.groupBy)
     ? (searchParams.groupBy as GroupKey)
     : null;
@@ -228,9 +229,10 @@ export default async function PartnershipsPage({ searchParams }: Props) {
       <ViewOptionsBar
         view={view}
         viewOptions={[
-          { value: "cards", label: "Cards" },
           { value: "table", label: "Table" },
+          { value: "cards", label: "Cards" },
         ]}
+        storageKey="partnerships"
         groupBy={groupBy}
         groupByOptions={[...GROUP_OPTIONS]}
       />

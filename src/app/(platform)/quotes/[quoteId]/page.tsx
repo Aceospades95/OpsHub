@@ -46,6 +46,13 @@ export default async function QuoteDetailPage({ params }: Props) {
   // so probing ids doesn't confirm a quote exists.
   if (!canAccessQuote(user, quote)) notFound();
 
+  // Prefill for "Email to client" — the client's primary contact.
+  const primaryContact = await db.clientContact.findFirst({
+    where: { clientId: quote.clientId, email: { not: null } },
+    orderBy: [{ isPrimary: "desc" }, { createdAt: "asc" }],
+    select: { email: true },
+  });
+
   // Recompute the discount amount from cached totals — saved with the
   // quote — so the read view doesn't drift if the schema's cached
   // total + taxAmount + subtotal disagree (shouldn't happen, but
@@ -80,6 +87,8 @@ export default async function QuoteDetailPage({ params }: Props) {
               canEdit={perms.canEdit}
               canDelete={perms.canDelete}
               hasProject={quote.project != null}
+              status={quote.status}
+              defaultRecipient={primaryContact?.email ?? null}
             />
           </div>
         }

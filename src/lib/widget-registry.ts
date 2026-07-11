@@ -116,22 +116,15 @@ export const GLOBAL_WIDGETS: WidgetDefinition[] = [
   },
 
   // --- Content & Media ---
-  // widget-notes, widget-markdown, and widget-countdown were placeholder
-  // shells whose UIs only said "coming soon" — they shipped to prod
-  // before their config layer existed. Pulled from the registry so
+  // widget-notes, widget-markdown, widget-countdown, and widget-embed
+  // were placeholder shells whose UIs only said "coming soon" / asked
+  // for config that no config layer exists to provide — they shipped to
+  // prod before their config layer existed. Pulled from the registry so
   // admins don't add a half-empty card to their dashboard. The
   // component files are still here so an existing layout that
   // referenced them by id renders empty rather than crashing; once
   // their config UI lands, re-adding the entries here re-enables the
   // catalog. See widget-renderer.tsx for the runtime side.
-  {
-    id: "widget-embed",
-    label: "Embed / iFrame",
-    description: "Embed external content via URL",
-    category: "content",
-    icon: "Globe",
-    defaultGrid: { w: 6, h: 10, minW: 4, minH: 4 },
-  },
 
   // --- Data & Lists ---
   {

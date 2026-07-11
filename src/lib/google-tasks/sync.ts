@@ -115,9 +115,17 @@ export async function syncGoogleTasksForUser(userId: string): Promise<SyncResult
     const accessToken = await getValidAccessToken(integration);
 
     // ── PULL: Google → OpsHub, across every list on the account ──
-    const updatedMin = integration.lastSyncedAt
-      ? new Date(integration.lastSyncedAt.getTime() - UPDATED_MIN_BUFFER_MS)
-      : null;
+    //
+    // Normally incremental (updatedMin window). One FULL pass runs when
+    // fullPulledAt is null: incremental pulls never revisit unchanged
+    // tasks, so fields added later (sourceLink, sourceReadOnly) would
+    // otherwise stay empty on rows pulled before the field existed —
+    // "the email link doesn't show on my old tasks".
+    const needsFullPull = !integration.fullPulledAt;
+    const updatedMin =
+      !needsFullPull && integration.lastSyncedAt
+        ? new Date(integration.lastSyncedAt.getTime() - UPDATED_MIN_BUFFER_MS)
+        : null;
     const lists = await listTasklists(accessToken);
 
     // The default list's REAL id — the push phase needs it to know
@@ -198,19 +206,29 @@ export async function syncGoogleTasksForUser(userId: string): Promise<SyncResult
           // the OpsHub row. Ties (equal stamps) mean "already in sync".
           const googleUpdated = g.updated ? new Date(g.updated) : null;
           if (!googleUpdated || googleUpdated.getTime() <= existing.updatedAt.getTime()) {
-            // Still migrate legacy/alias source keys so future pushes
-            // know the list — and since a wrong key is how a row ends
-            // up frozen by the push's conservative 404 handling,
-            // re-derive the read-only flag while we're here so it
-            // thaws. (Rows whose key already matches are left alone:
-            // a 403-frozen task must NOT be retried every sync.)
-            // Deliberately NOT added to pulledIds — an OpsHub-newer
-            // row should still push.
+            // Still refresh sync METADATA (not user content), even when
+            // Google's edit isn't newer:
+            //   - migrate legacy/alias source keys so future pushes know
+            //     the list — and since a wrong key is how a row ends up
+            //     frozen by the push's conservative 404 handling,
+            //     re-derive the read-only flag on migration so it thaws
+            //     (rows whose key already matches keep their flag: a
+            //     403-frozen task must NOT be retried every sync);
+            //   - backfill sourceLink (the Gmail/Docs link) — rows pulled
+            //     before the field existed have null here, and the full
+            //     pull walks them exactly once to fix that.
+            // Deliberately NOT added to pulledIds — an OpsHub-newer row
+            // should still push.
+            const metaPatch: { sourceId?: string; sourceReadOnly?: boolean; sourceLink?: string | null } = {};
             if (existing.sourceId !== key) {
-              await db.task.update({
-                where: { id: existing.id },
-                data: { sourceId: key, sourceReadOnly: isReadOnly(g) },
-              });
+              metaPatch.sourceId = key;
+              metaPatch.sourceReadOnly = isReadOnly(g);
+            }
+            if (existing.sourceLink !== sourceLinkOf(g)) {
+              metaPatch.sourceLink = sourceLinkOf(g);
+            }
+            if (Object.keys(metaPatch).length > 0) {
+              await db.task.update({ where: { id: existing.id }, data: metaPatch });
             }
             continue;
           }
@@ -348,6 +366,9 @@ export async function syncGoogleTasksForUser(userId: string): Promise<SyncResult
       where: { id: integration.id },
       data: {
         lastSyncedAt: syncStartedAt,
+        // Stamp the full pass only when it ran clean — a partial full
+        // pull (some list errored) retries next sync.
+        ...(needsFullPull && result.errors.length === 0 ? { fullPulledAt: syncStartedAt } : {}),
         lastSyncStatus: result.errors.length > 0 ? "failed" : "success",
         lastSyncError: result.errors.length > 0 ? result.errors.slice(0, 5).join("\n") : null,
       },

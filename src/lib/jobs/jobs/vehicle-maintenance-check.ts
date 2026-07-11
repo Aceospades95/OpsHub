@@ -24,9 +24,10 @@ export const vehicleMaintenanceCheck: JobDefinition = {
   description:
     "Notifies admins/managers (and the assigned driver) when a vehicle's next service is due within 14 days or overdue",
   schedule: "Daily",
+  supportsDryRun: true,
 
-  async handler() {
-    if (!(await shouldRunDaily("vehicle-maintenance-check"))) {
+  async handler(ctx) {
+    if (!ctx.dryRun && !(await shouldRunDaily("vehicle-maintenance-check"))) {
       return { status: "skipped", output: "Already ran today", processed: 0 };
     }
     const now = new Date();
@@ -42,7 +43,10 @@ export const vehicleMaintenanceCheck: JobDefinition = {
     });
 
     if (vehicles.length === 0) {
-      return { output: "No vehicles in the service window", processed: 0 };
+      return {
+        output: `No vehicles with a next-service date inside the ${MAINTENANCE_DUE_WINDOW_DAYS}-day window`,
+        processed: 0,
+      };
     }
 
     const managers = await db.user.findMany({
@@ -51,19 +55,22 @@ export const vehicleMaintenanceCheck: JobDefinition = {
     });
 
     let notified = 0;
+    const detail: string[] = [];
     for (const vehicle of vehicles) {
       if (!vehicle.nextServiceDate) continue;
+      const days = differenceInDays(vehicle.nextServiceDate, now);
+      const label = vehicleLabel(vehicle);
       // Already notified for this exact service date — re-arms when the
       // date changes (service logged / schedule edited).
       if (
         vehicle.maintenanceNotifiedFor &&
         vehicle.maintenanceNotifiedFor.getTime() === vehicle.nextServiceDate.getTime()
       ) {
+        detail.push(
+          `· ${label}: service ${days < 0 ? `${-days}d overdue` : `due in ${days}d`} — already notified for this date (logging service re-arms it)`
+        );
         continue;
       }
-
-      const days = differenceInDays(vehicle.nextServiceDate, now);
-      const label = vehicleLabel(vehicle);
       const title =
         days < 0
           ? `Vehicle maintenance overdue: ${label}`
@@ -78,6 +85,14 @@ export const vehicleMaintenanceCheck: JobDefinition = {
       // the link — vehicle assignment grants scoped view of the vehicle.
       const recipients = new Map(managers.map((m) => [m.id, m.name]));
       if (vehicle.assignedTo) recipients.set(vehicle.assignedTo.id, vehicle.assignedTo.name);
+
+      if (ctx.dryRun) {
+        detail.push(
+          `→ ${label}: service ${days < 0 ? `${-days}d overdue` : `due in ${days}d`} — WOULD notify ${Array.from(recipients.values()).join(", ")}`
+        );
+        notified += 1;
+        continue;
+      }
 
       let delivered = 0;
       for (const [recipientId, recipientName] of Array.from(recipients.entries())) {
@@ -111,6 +126,9 @@ export const vehicleMaintenanceCheck: JobDefinition = {
 
       if (delivered > 0) {
         notified += 1;
+        detail.push(
+          `→ ${label}: service ${days < 0 ? `${-days}d overdue` : `due in ${days}d`} — notified ${Array.from(recipients.values()).join(", ")}`
+        );
         await db.vehicle.update({
           where: { id: vehicle.id },
           data: { maintenanceNotifiedFor: vehicle.nextServiceDate },
@@ -119,7 +137,10 @@ export const vehicleMaintenanceCheck: JobDefinition = {
     }
 
     return {
-      output: `Checked ${vehicles.length} vehicle${vehicles.length === 1 ? "" : "s"}, notified on ${notified}`,
+      output: [
+        `Checked ${vehicles.length} vehicle${vehicles.length === 1 ? "" : "s"} in the service window, ${ctx.dryRun ? "would notify" : "notified"} on ${notified}.`,
+        ...(detail.length > 0 ? ["", ...detail] : []),
+      ].join("\n"),
       processed: notified,
     };
   },

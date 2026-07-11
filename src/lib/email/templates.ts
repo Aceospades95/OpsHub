@@ -354,6 +354,54 @@ If you're seeing this, the email pipeline is wired up correctly.
   return { subject, html, text };
 };
 
+export interface QuoteSentTemplateData {
+  /** Company display name ("Wynndalco"). */
+  companyName: string;
+  quoteNumber: string;
+  quoteTitle: string;
+  /** Pre-formatted total, e.g. "$12,500.00". */
+  totalFormatted: string;
+  /** Pre-formatted expiry, e.g. "Aug 15, 2026". Null = no expiry. */
+  validUntilFormatted: string | null;
+  /** Optional personal note from the sender, shown above the summary. */
+  message: string | null;
+  /** Sender display name for the sign-off. */
+  senderName: string;
+  /** Tokenized public PDF download link. */
+  downloadUrl: string;
+}
+
+const quoteSent: EmailTemplate<QuoteSentTemplateData> = (data) => {
+  const subject = `${data.companyName} — Quote ${data.quoteNumber}: ${data.quoteTitle}`;
+  const summaryRows = [
+    `<tr><td style="padding:4px 12px 4px 0;color:#888;">Quote</td><td style="padding:4px 0;">${escapeHtml(data.quoteNumber)}</td></tr>`,
+    `<tr><td style="padding:4px 12px 4px 0;color:#888;">Total</td><td style="padding:4px 0;font-weight:600;">${escapeHtml(data.totalFormatted)}</td></tr>`,
+    data.validUntilFormatted
+      ? `<tr><td style="padding:4px 12px 4px 0;color:#888;">Valid until</td><td style="padding:4px 0;">${escapeHtml(data.validUntilFormatted)}</td></tr>`
+      : "",
+  ].join("");
+  const html = shell(
+    `Quote from ${data.companyName}`,
+    `${data.message ? `<p style="white-space:pre-wrap;">${escapeHtml(data.message)}</p>` : ""}
+     <p>Please find our quote <strong>${escapeHtml(data.quoteTitle)}</strong> at the link below.</p>
+     <table style="font-size:14px;border-collapse:collapse;margin:8px 0 16px;">${summaryRows}</table>
+     <p><a href="${data.downloadUrl}" style="display:inline-block;background:#166534;color:#ffffff;padding:10px 18px;border-radius:6px;text-decoration:none;font-weight:600;">Download the quote (PDF)</a></p>
+     <p style="color:#888;font-size:12px;">The link opens a PDF copy of the quote — no sign-in needed.</p>
+     <p>Best regards,<br/>${escapeHtml(data.senderName)}<br/>${escapeHtml(data.companyName)}</p>`
+  );
+  const text = `${data.message ? data.message + "\n\n" : ""}Please find our quote "${data.quoteTitle}" at the link below.
+
+Quote: ${data.quoteNumber}
+Total: ${data.totalFormatted}${data.validUntilFormatted ? `\nValid until: ${data.validUntilFormatted}` : ""}
+
+Download the quote (PDF): ${data.downloadUrl}
+
+Best regards,
+${data.senderName}
+${data.companyName}`;
+  return { subject, html, text };
+};
+
 // ─── Template registry ─────────────────────────────────────────
 
 /**
@@ -371,6 +419,7 @@ export const TEMPLATES: Record<string, EmailTemplate<unknown>> = {
   report: report as EmailTemplate<unknown>,
   test: test as EmailTemplate<unknown>,
   "workflow-digest": workflowDigest as EmailTemplate<unknown>,
+  "quote-sent": quoteSent as EmailTemplate<unknown>,
 };
 
 // Template data map for type-safe calls
@@ -381,6 +430,7 @@ export interface TemplateDataMap {
   report: ReportTemplateData;
   test: TestTemplateData;
   "workflow-digest": WorkflowDigestTemplateData;
+  "quote-sent": QuoteSentTemplateData;
 }
 
 export type TemplateKey = keyof TemplateDataMap;

@@ -245,5 +245,9 @@ function taskRowToState(task: TaskRow): TaskFormState {
     replyTo: typeof cfg.replyTo === "string" ? cfg.replyTo : "",
     subject: typeof cfg.subject === "string" ? cfg.subject : "",
     body: typeof cfg.body === "string" ? cfg.body : "",
+    retentionDays:
+      typeof cfg.retentionDays === "number" && cfg.retentionDays > 0
+        ? String(cfg.retentionDays)
+        : "30",
   };
 }

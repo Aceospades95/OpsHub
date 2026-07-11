@@ -12,6 +12,7 @@ import { ToolCreateButton } from "./tool-create-button";
 import { DownloadCsvButton } from "@/components/shared/download-csv-button";
 import type { Prisma } from "@prisma/client";
 import { pluralize } from "@/lib/pluralize";
+import { resolveViewPreference } from "@/lib/view-preference";
 import { ViewOptionsBar } from "@/components/shared/view-options-bar";
 import { GroupSection } from "@/components/shared/group-section";
 import { groupRows } from "@/lib/group-rows";
@@ -40,7 +41,7 @@ export default async function ToolsPage({
     toolWhere.id = { in: Array.from(scope.toolIds) };
   }
 
-  const view = searchParams.view === "table" ? "table" : "cards";
+  const view = resolveViewPreference(searchParams.view, "tools", ["table", "cards"], "table");
   const groupBy = GROUP_OPTIONS.some((o) => o.value === searchParams.groupBy)
     ? (searchParams.groupBy as GroupKey)
     : null;
@@ -177,9 +178,10 @@ export default async function ToolsPage({
       <ViewOptionsBar
         view={view}
         viewOptions={[
-          { value: "cards", label: "Cards" },
           { value: "table", label: "Table" },
+          { value: "cards", label: "Cards" },
         ]}
+        storageKey="tools"
         groupBy={groupBy}
         groupByOptions={[...GROUP_OPTIONS]}
       />

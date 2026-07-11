@@ -21,6 +21,13 @@ const VIEW_ICONS: Record<string, LucideIcon> = {
  * component decides what to render; the default option is stored as the
  * ABSENCE of the param so plain module links stay clean.
  *
+ * When `storageKey` is set, every view toggle also writes a per-module
+ * cookie (`ohview.<key>`) and sets the param EXPLICITLY — the server
+ * resolves param > cookie > module default via resolveViewPreference,
+ * so the user's last choice sticks across visits. (Explicit params are
+ * required here: clearing the param for the "default" option would let
+ * a stale cookie win over the click.)
+ *
  * Same navigation idiom as CertFilters: merge into the existing search
  * params and router.push, preserving whatever filters the page owns.
  */
@@ -29,6 +36,7 @@ export function ViewOptionsBar({
   viewOptions,
   groupBy,
   groupByOptions,
+  storageKey,
 }: {
   /** Current view value; the FIRST entry of viewOptions is the default. */
   view?: string;
@@ -36,6 +44,8 @@ export function ViewOptionsBar({
   /** Current group key, null = ungrouped (the default). */
   groupBy?: string | null;
   groupByOptions?: ViewOption[];
+  /** Module key for the remembered-view cookie (e.g. "projects"). */
+  storageKey?: string;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -50,6 +60,19 @@ export function ViewOptionsBar({
       router.push(qs ? `${pathname}?${qs}` : pathname);
     },
     [router, pathname, searchParams]
+  );
+
+  const pickView = useCallback(
+    (value: string, isDefault: boolean) => {
+      if (storageKey) {
+        // ~1 year; path=/ so every page under the module sees it.
+        document.cookie = `ohview.${storageKey}=${encodeURIComponent(value)};path=/;max-age=31536000;samesite=lax`;
+        updateParam("view", value);
+        return;
+      }
+      updateParam("view", isDefault ? "" : value);
+    },
+    [storageKey, updateParam]
   );
 
   const hasViews = viewOptions && viewOptions.length > 1;
@@ -72,7 +95,7 @@ export function ViewOptionsBar({
               <button
                 key={opt.value}
                 type="button"
-                onClick={() => updateParam("view", isDefault ? "" : opt.value)}
+                onClick={() => pickView(opt.value, isDefault)}
                 aria-pressed={active}
                 className={`inline-flex items-center gap-1.5 rounded px-2.5 py-1 text-xs font-medium transition-colors ${
                   active

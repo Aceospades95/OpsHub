@@ -9,6 +9,7 @@ import {
   Trash2,
   Download,
   FolderPlus,
+  Mail,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -22,6 +23,7 @@ import {
   saveQuoteAsTemplate,
   convertQuoteToProject,
 } from "@/actions/quotes";
+import { EmailQuoteDialog } from "./email-quote-dialog";
 
 interface Props {
   quoteId: string;
@@ -29,6 +31,10 @@ interface Props {
   canDelete: boolean;
   /** Already linked to a project? Hides the convert option. */
   hasProject: boolean;
+  /** Current status — the email dialog explains the DRAFT→SENT lock. */
+  status: string;
+  /** Prefill for "Email to client" — the client's primary contact. */
+  defaultRecipient: string | null;
 }
 
 export function QuoteActions({
@@ -36,10 +42,13 @@ export function QuoteActions({
   canEdit,
   canDelete,
   hasProject,
+  status,
+  defaultRecipient,
 }: Props) {
   const router = useRouter();
   const [menuOpen, setMenuOpen] = useState(false);
   const [templateOpen, setTemplateOpen] = useState(false);
+  const [emailOpen, setEmailOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const { confirm, ConfirmDialog } = useConfirm();
@@ -127,6 +136,18 @@ export function QuoteActions({
                   <Download className="h-4 w-4" />
                   Download Word (.docx)
                 </a>
+                {canEdit && (
+                  <button
+                    onClick={() => {
+                      setMenuOpen(false);
+                      setEmailOpen(true);
+                    }}
+                    className="flex w-full items-center gap-2 px-3 py-2 text-sm hover:bg-muted text-left"
+                  >
+                    <Mail className="h-4 w-4" />
+                    Email to client
+                  </button>
+                )}
                 <button
                   onClick={handleDuplicate}
                   disabled={pending}
@@ -181,6 +202,14 @@ export function QuoteActions({
         open={templateOpen}
         quoteId={quoteId}
         onClose={() => setTemplateOpen(false)}
+      />
+      <EmailQuoteDialog
+        quoteId={quoteId}
+        open={emailOpen}
+        defaultTo={defaultRecipient}
+        quoteStatus={status}
+        onClose={() => setEmailOpen(false)}
+        onSent={() => router.refresh()}
       />
       <ConfirmDialog />
     </>

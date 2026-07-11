@@ -1,0 +1,428 @@
+# OpsHub Enhancement & Architecture Review — July 2026
+
+Response to the nine-part enhancement request (task emails, quote builder,
+default views, scheduled jobs, notification engine, vehicle maintenance,
+imports, work logs, reliability audit). This document is the blueprint;
+the accompanying commit ships the items marked **✅ shipped**. Everything
+else is designed here and sequenced in the phased roadmap at the end.
+
+The through-line of the whole review: **OpsHub already has the right
+skeletons** — a jobs registry with history and enable/cadence overrides, a
+single `notify()`/`sendEmail()` choke point that audits every send, a
+declarative importer registry, a key/value settings store, a workflow
+engine with DB-editable email templates. What's missing is not
+infrastructure but **configurability and explainability layered onto those
+choke points**. That's good news: "make everything configurable" is mostly
+additive work on existing seams, not rewrites.
+
+---
+
+## 1. Task emails — diagnosed, two real causes ✅ shipped
+
+Both a deployment-lag issue and a genuine bug:
+
+1. **The /tasks page simply didn't render the link yet.** The email chip
+   shipped to *My View* only; the /tasks list, by-project view, and task
+   drawer never got it. Fixed in the previous commit on this branch
+   (`ea5f123`) — synced rows on /tasks now show the Google mark and an
+   "Email" chip in both views, and the drawer shows "Open the linked
+   email". If the deployed image predates that commit, the chip appears
+   after the next deploy.
+2. **Old tasks could never backfill the link (bug).** Incremental syncs
+   only fetch tasks Google reports as *changed* (`updatedMin`), so any
+   task pulled before the `sourceLink` field existed would keep a null
+   link forever unless someone edited it in Google. Fixed: a one-time
+   **full pull** runs on each account's next sync
+   (`GoogleTasksIntegration.fullPulledAt` marker, migration included) and
+   the sync now refreshes link metadata even when the task content hasn't
+   changed. Re-running a backfill later (if another field is added) is
+   "set fullPulledAt to null".
+
+Also note: only tasks that actually carry a Gmail/Docs link in Google get
+a chip — Google only attaches one when the task was created from Gmail
+(or Docs), so most hand-typed tasks legitimately have none.
+
+## 2. Quote builder ✅ shipped
+
+**In-editor document actions.** The editor header now has
+**Download PDF · Preview · Print · Email quote** next to Save. Each
+auto-saves first when there are unsaved edits (the PDF always renders
+persisted data, so exporting a dirty form would otherwise produce a stale
+document — the header shows "Unsaved changes" until saved). Print uses a
+hidden frame so you never leave the editor; Preview opens the PDF inline
+in a tab.
+
+**Email quote** finally connects the dormant send/track plumbing that was
+in the schema from day one but never wired (`publicToken`, `sentAt`,
+`firstViewedAt`, the `VIEWED` status, `QuoteEvent`):
+
+- Sends a branded email (new `quote-sent` template) with a tokenized
+  public PDF link — the client needs no account; possession of the
+  crypto-random token is the credential (share-link trust model).
+- New route `GET /api/public/quotes/[token]/pdf`; the first open stamps
+  `firstViewedAt` and moves SENT → VIEWED, every open logs a client-actor
+  `downloaded` QuoteEvent — so you can see *whether the client opened it*.
+- Sending moves DRAFT/REVISED → SENT (locks editing; revisions remain the
+  change path), stamps `sentAt`, logs a `sent` event.
+- Available in the editor and on the quote detail menu ("Email to
+  client"); the recipient prefills from the client's primary contact.
+
+**PDF redesign.** Full rewrite of the renderer: accent header band +
+embedded company logo (actual logo bytes through the storage driver — the
+old code declared a logo field and never rendered it), document meta grid
+(Prepared for / Prepared by / Quote no. / Valid until), a real line-item
+table (accent header row, zebra striping, right-aligned numerics), tinted
+totals card, titled Assumptions/Terms sections, and a fixed footer with
+`Page X of Y` on every page.
+
+**Branding is configurable, not coded.** New "Document accent color"
+setting in /admin/theme (stored in the same `branding.*` key/value
+namespace as the name/logo) themes the PDF; the default is the Wynndalco
+green (`#166534`). The renderer derives all tints from that one hex, and
+`QuoteDocument` is a pure component of (data, theme) — a future template
+picker is "another component + a selector", not a rewrite. Multiple
+templates and per-quote template choice are Phase C if wanted.
+
+## 3. Default list views ✅ shipped
+
+Every module with a view toggle now **defaults to Table** — projects,
+contracts (were Tree-first), certifications, suppliers, clients,
+subcontractors, partnerships, tools, fleet (were Cards-first). Two
+deliberate exceptions:
+
+- **Bids keeps Pipeline as the default** — it's a stage board, not a card
+  grid; the table is one click away and the choice is remembered.
+- **Quotes and Team are already tables** (no toggle to flip).
+
+**The last choice is remembered per module** (new `resolveViewPreference`
+helper + a per-module cookie written by the shared toggle): explicit
+`?view=` URL always wins (links stay shareable), then your remembered
+choice, then the table default. Cookie over DB on purpose — zero schema,
+survives refreshes and deploys; it's a per-device display preference like
+theme. If you later want it to roam across devices, the helper is the one
+place to swap in a DB read.
+
+## 4. Scheduled jobs — the mystery explained, and the framework upgraded
+
+### Why "9 checked, 0 reminders" was CORRECT (and still terrible UX)
+
+Your certifications page counts **statuses**; the job checks **who needs a
+reminder today**. The job's scope is: not deleted, not stored-EXPIRED,
+**expiration date in the future** (≤400d out), and **no renewal already
+submitted**. From your page numbers (14 Active / 1 Expiring / 3 Expired /
+7 Pending):
+
+- the **3 Expired** are excluded — reminders are *pre-expiry* nudges; an
+  expired cert is past reminding (the cert page and the expired-backstop
+  handle those),
+- most of the **7 Pending** have no expiration date yet — nothing to
+  count down toward,
+- renewals already submitted are muted until sign-off (by design — you
+  asked for that in the June batch),
+- leaving **9 in scope**. Each of those then fires only when it *crosses*
+  one of its configured reminder offsets (per-cert `reminderOffsetsDays`,
+  default 90d) **and that offset hasn't already fired this cycle**
+  (`firedReminderOffsets` dedupe). Your "1 Expiring Soon" cert's offsets
+  had already fired on earlier daily runs; the other 8 haven't reached
+  their first offset yet. Hence 0 sends — correct, and completely opaque.
+
+### What shipped ✅
+
+- **Self-explaining runs.** The certification and vehicle jobs now emit a
+  per-item ledger in the run output, e.g.
+  `· NIST CSF Assessor: expires in 210d — waiting; next reminder fires at
+  90d out (offsets: 90/30/7)` /
+  `· IL Contractor License: expires in 12d — all reminders already sent
+  this cycle (sign-off re-arms them)` /
+  `→ CJIS Cert: expires in 29d — sent the 30-day reminder to Garry
+  Collins, Jake Wright`, plus a summary of what was *out of scope and
+  why* ("Not checked: 7 with no expiration date, 3 already expired, 1
+  with a renewal already submitted"). The next "why did nothing send?"
+  answers itself from /admin/jobs history.
+- **Dry-run / preview mode.** `ctx.dryRun` in the job contract + a
+  **Preview** button in /admin/jobs for jobs that declare support
+  (certification + vehicle checks so far): evaluates everything, prints
+  the would-do ledger, sends and writes nothing. Dry runs are recorded as
+  `skipped` so they can never satisfy (and suppress) the day's real run,
+  and they bypass the "already ran today" gate so previews always work.
+  The runner refuses to dry-run jobs that haven't declared support, so a
+  handler can never execute for real under a "preview" label.
+
+### What already existed (more than was visible)
+
+Enable/disable per job, cadence override (hourly/daily/weekly/monthly/
+manual-only), manual run, full execution history with durations and
+output, concurrency guard, crashed-run reaper — all in /admin/jobs. Your
+"rigid" impression was accurate anyway, because *what each job does* was
+invisible and untunable.
+
+### Jobs v2 design (Phase B) — config over code
+
+Rather than a generic SQL-editing workflow builder (which becomes a
+second programming language with no type checker and real injection/
+authz risk), the plan is **typed, per-job parameters** + the notification
+engine (§5) for everything about the messages:
+
+- `JobConfig.params Json?` — each JobDefinition declares a typed schema
+  for its knobs; /admin/jobs/[jobKey] renders a form from it. Cert check:
+  default offsets, horizon. Vehicle check: due window, escalation
+  thresholds. Bid check: due window. Digests: which reports.
+- Recipients/subject/body move OUT of job code into notification rules
+  (§5) — jobs *emit typed events*; rules decide who hears about them and
+  how.
+- Add `nextRunAt` display (computed from cadence + last completed) and a
+  per-job "Explain scope" panel (the dry-run button already covers this).
+- Retry-with-backoff on failure and failure alerting (a job that fails N
+  consecutive runs notifies admins — currently failures just sit in
+  history).
+- Your custom automations continue to live in **Scheduled Tasks** (email
+  a report / broadcast / purge on a schedule) — that's already a small
+  workflow builder, and it gains new task types as needed.
+
+## 5. Email & notification engine — inventory done, design set
+
+A full sweep found **23 distinct send sites**. The good news: every one
+already flows through two choke points (`notify()` for in-app +
+templated mail, `sendEmail()` for raw mail), every send is audited in
+`EmailLog`, and 5 sites (scheduled tasks, workflow steps) are *already*
+fully admin-configurable with DB-stored templates. The other 18 hardcode
+recipients and subject/body strings at the call site, and there is no
+per-user or per-type preference layer anywhere.
+
+**Design (Phase B): a `NotificationRule` table keyed by notification
+type** — the registry the 18 code-driven sites route through:
+
+```
+NotificationRule {
+  typeKey        String  @unique   // "certification-expiring", "task-assigned", …
+  enabled        Boolean            // kill switch per type
+  channelInApp   Boolean
+  channelEmail   Boolean
+  subjectTemplate String?           // {{variables}} — null = code default
+  bodyTemplate    String?
+  recipientMode  String             // "default" | "roles" | "explicit" | "both"
+  recipientRoles String[]           // e.g. ["ADMIN","MANAGER"]
+  extraRecipients String[]          // user ids and/or raw emails
+  ccAddresses    String[]
+  bccAddresses   String[]
+  digest         String?            // null | "daily" | "weekly" — batch instead of instant
+  throttleHours  Int?               // suppress repeats per entity within N hours
+}
+```
+
+- `notify()` consults the rule before sending: enabled? channels? merge
+  rule recipients with the code-supplied ones; apply subject/body
+  templates over a typed variable map each type declares (the existing
+  `WorkflowEmailTemplate` `{{var}}` substitution is reused).
+- An **/admin/notifications → "Rules" tab** lists every registered type
+  with its trigger description, variables, current recipients, and a
+  test-send button. Unknown/missing rule = today's behavior (code
+  defaults), so rollout is incremental and nothing breaks.
+- Per-user preferences (mute type X, digest-instead-of-instant) hang off
+  the same layer later without touching call sites.
+- Escalation paths (remind → N days silent → escalate to manager + CC
+  list) are modeled as **rule chains** used by the work-log and vehicle
+  systems below — one mechanism, three consumers.
+
+This turn also shipped the groundwork cleanups the sweep flagged: the
+dead `welcome` template and never-emitted `task-completed` /
+`task-due-soon` / `comment-added` types are documented as such (removal
+in Phase B), and the new `quote-sent` template joined the registry.
+
+## 6. Vehicle maintenance — spreadsheet decoded, module extension designed
+
+Your workbook is more sophisticated than the current fleet module in one
+important way: **per-service-type schedules**. The "Service Overview"
+sheet tracks, per vehicle *per service type* (Oil Change / Tire Rotation
+/ Inspection…), a recommended frequency in **months AND miles**, last
+service date/mileage, and estimated current mileage — due is computed
+from whichever bound hits first. OpsHub currently has a single
+`nextServiceDate` per vehicle.
+
+**Phase B design** (schema + flows):
+
+- `VehicleServiceSchedule { vehicleId, serviceType, everyMonths?,
+  everyMiles?, lastServiceDate?, lastServiceMileage? }` — one row per
+  vehicle×service-type, seeded from your sheet by the importer.
+- `Vehicle.currentMileage` + `mileageUpdatedAt`, updated by every
+  maintenance submission (and an optional monthly "odometer check-in"
+  prompt to drivers); estimated mileage extrapolates like your sheet.
+- **Technician submission flow** = the Google Form, in-app: drivers
+  (already scoped to see their vehicle) get a "Log maintenance" form —
+  vehicle (prefilled), service type(s), date, mileage, cost, vendor,
+  notes, receipt/photo uploads (fleet receipts upload path already
+  exists). Submitting updates the matching schedule rows and re-arms
+  reminders. Registration expiry joins as a schedule type (your fleet
+  sheet tracks it; OpsHub doesn't yet).
+- **Reminders/escalation through the notification engine**: due-soon →
+  driver; overdue N days → + supervisor; overdue M days → + management CC
+  list (your "People" sheet's driver→manager mapping becomes data on the
+  vehicle/driver, the thresholds live in the vehicle job's params).
+- **Importer**: `vehicle-maintenance` importer maps your "Maintenance
+  Log" sheet (Timestamp / License Plate / Date / Mileage / Type / Cost /
+  Notes / Driver / Receipt) to maintenance rows matched by plate, and
+  "Vehicle Fleet Overview" upserts vehicles (plate/VIN as match keys,
+  Project link by name, registration expiry). Historical rows import
+  once; the form replaces the sheet going forward.
+
+The vehicle job's new dry-run/ledger output (shipped) already gives you
+the visibility piece for the current single-date model.
+
+## 7. Data imports — audited; enterprise upgrade designed
+
+The audit covered all 20 importers. Materially: most already match
+existing records (each has a hardcoded match key) and support
+create-vs-upsert — but two importers (**employees, clients**) ignore the
+mode toggle and always update; there's **no preview/dry-run**; upsert
+**overwrites every mapped column** (a blank CSV cell wipes existing
+data); silently-dropped foreign keys and enum coercions report as clean
+"imported"; there's no transaction (a mid-file crash leaves partial
+writes, sometimes unaudited); and the result blob miscounts updated rows
+as "errors" (a clean upsert run shows a warning icon).
+
+**Phase B design, in priority order:**
+
+1. **Dry-run preview** (the biggest single win): run the exact commit
+   path with writes disabled, and show create/update/skip/fail per row —
+   plus before→after diffs for updates — before anything commits. The
+   importer contract already returns per-row results, so this is
+   threading a `dryRun` flag through `commit()` exactly like the jobs
+   framework just did.
+2. **Modes**: `create-only | update-only | upsert | skip-duplicates`,
+   honored by *every* importer (fix users/clients), plus **"only fill
+   blanks, never overwrite non-empty"** as a merge option.
+3. **Warning status** for soft failures (dropped FK, coerced enum) so
+   "imported with 3 warnings" is visible and exportable.
+4. **Row-results download** (full CSV of every row's outcome — fix and
+   re-upload failed rows), `ImportLog.failed` column, un-pollute the
+   errors blob, fix the dead pagination on the audit page.
+5. Chunked transactions (per-100-row batches) so a crash can't leave
+   half-written unaudited state.
+
+## 8. Daily work logs & overtime — new module, designed from your sheet
+
+Your workbook shows the real workflow: a form (Timestamp / Email / Name /
+Work Date / Hours / Tickets-Sites / Notes), a roster with Active flags, a
+run log of per-person reminders ("Reminder sent (1/5 days)") and Monday
+escalations to a settings-driven list, frozen weekly snapshots with
+frozen-vs-live deltas, and a rolling 4-week trend.
+
+**Phase C module — `WorkLog` + `ScheduleException` + rules:**
+
+- `WorkLog { userId, workDate (unique per user+date), hours, sites,
+  notes, submittedAt }` — backfill window like today (missing days
+  submittable until week's end); duplicate day = **update, not
+  double-count** (fixes your double-submission problem at the data
+  model).
+- `ScheduleException { userId, date range, type: PTO | SICK | HOLIDAY |
+  UNPAID | OTHER, approved }` + org holiday calendar — entered by
+  managers or the employee, and **the reminder engine treats an
+  excepted day as satisfied**. That single table kills the "sick/PTO
+  people get nagged" class of noise. (If PTO later lives in a real HR
+  system, this table becomes the sync target — the rules don't change.)
+- Reminder rules (running on the jobs framework, messaging through the
+  notification engine): daily reminder only for *missing, non-excepted,
+  employed* workdays (roster = active employees with a start date before
+  the day and no termination); weekly escalation Monday morning listing
+  who's behind and by how many days, to a configurable recipient list;
+  per-person streak counting like your "(1/5 days)" run log. New hires
+  start owing logs from their start date; terminated employees drop out
+  automatically — statuses OpsHub already tracks.
+- **Overtime lens**: weekly rollup per person (hours vs expected,
+  >40h flagged), an `approvedOvertime` marker on a week (manager action)
+  so approved vs unapproved OT is visually distinct, frozen Monday
+  snapshots (a `WorkLogWeekSnapshot` table) preserving the
+  "frozen vs live delta" audit trick from your sheet, and a 4-week trend
+  report in the reports registry.
+- **Importer** for the 500+ historical form responses (match on
+  email+date, the Config sheet maps to users by email).
+
+## 9. Reliability audit — 16 findings, 2 fixed now, the rest sequenced
+
+A full write→read trace of every settings surface, all 15 jobs, 4
+workflow trigger types, the widget catalog, reports, scheduled tasks, and
+the notification registry. **The core is solid** — theme/branding, SSO
+allowlist, sidebar editor, permissions/access-requests, jobs admin,
+scheduled tasks, reports (system + custom builder), page layouts/widgets
+(bar one), Google Tasks settings, comments/mentions all verified
+connected end-to-end. The findings:
+
+| # | Finding | Severity | Status |
+|---|---|---|---|
+| 1 | Recovery bin promises "auto-purge after 30 days" with a live countdown, but nothing ever purges (the purge task type existed in code and wasn't offered by the scheduled-task UI) | High | **✅ fixed** — "Purge old recovery-bin items" is now a creatable scheduled task with a retention setting; create one to make the countdown real |
+| 2 | Per-user "Custom Pages" permission grid saves rows nothing reads — granted users still can't see the page | High | Phase B: honor the rows in the sandbox gate + sidebar, or drop the grid |
+| 3 | Workflow steps offer "HR / IT / Workflow owner" recipients with no role mapping behind them — configured steps fail or stall silently | High | Phase B: hide the options until a role-mapping setting exists (and add an approver fallback) |
+| 4 | "Embed / iFrame" widget in the catalog is a config-less placeholder card | High | **✅ fixed** — delisted from the catalog like the other placeholder widgets |
+| 5 | Cadence override dropdown shows for 3 jobs that never consult a cadence gate (they run every tick regardless) | Med | Phase B: gate them or hide the select |
+| 6 | Offboarding "on scheduled date" trigger can never fire for UI-managed employees (no termination-date field in any form) | Med | Phase B: add the field to the employee form |
+| 7 | "On new User created" onboarding trigger skips CSV-imported and Google-JIT users | Med | Phase B: fire from those paths |
+| 8 | STAGE_CHANGE trigger type is accepted + labeled but nothing fires it | Med | Phase B: remove from the action enum until built |
+| 9 | Sandbox "Layout" select (default/wide/full) changes only a badge | Med | Phase B: apply or drop |
+| 10 | Retired placeholder widgets still render "coming soon" copy in old layouts | Med | Phase B: render a "retired widget" card |
+| 11 | Welcome-email org default helper has no UI writer (harmless; per-user toggle works) | Low | Phase B/C |
+| 12 | Deactivating a custom report doesn't stop existing scheduled emails of it | Low | Phase B |
+| 13 | "Unpublish" custom widget only hides it from the catalog, not from placed layouts | Low | Phase B |
+| 14 | Two widget descriptions oversell ("KPI with trend" has no trend; "Bookmarks" aren't configurable) | Low | Phase B copy fix |
+| 15 | Three notification types registered but never emitted (`task-due-soon` would be genuinely useful to build) | Low | Phase B |
+| 16 | Dead `uploadFileFromForm` action (no call sites) | Low | Phase B delete |
+
+Also fixed under this heading (found during the quote work): the PDF
+renderer's logo support was declared-but-never-rendered, and the entire
+quote send/track schema (`publicToken`, `sentAt`, `firstViewedAt`,
+`VIEWED`, QuoteEvent `sent/downloaded`) was dormant — both are now live
+(§2).
+
+---
+
+## The cohesive design, in one picture
+
+```
+                    ┌──────────────────────────────────────┐
+   typed events     │   NOTIFICATION ENGINE (Phase B)       │   channels
+   from anywhere ──▶│   NotificationRule per type:          │──▶ in-app
+                    │   enabled · recipients · templates    │──▶ email (+CC/BCC)
+   jobs · actions   │   digest · throttle · escalation      │──▶ (SMS later)
+   workflows        └──────────────────────────────────────┘
+                                   ▲
+        ┌──────────────────────────┼──────────────────────────┐
+        │ JOBS FRAMEWORK (v2)      │ RULES DATA                │
+        │ registry + history       │ ScheduleException (PTO…)  │
+        │ enable/cadence (today)   │ VehicleServiceSchedule    │
+        │ dry-run + ledger (today) │ reminder offsets (today)  │
+        │ typed params (Phase B)   │ escalation thresholds     │
+        └──────────────────────────┴──────────────────────────┘
+```
+
+Every automation request in this review — cert reminders, vehicle
+escalations, work-log nagging, bid deadlines — is the same three-layer
+shape: a **job** that evaluates typed **rules data** and emits events
+through the **notification engine**. Build the layers once, and each new
+automation is configuration plus a small evaluator, not a bespoke email
+pipeline. That is the "minimize future development" architecture.
+
+## Phased roadmap
+
+**Phase A — ✅ shipped in this commit**
+Task-email backfill fix · quote editor document actions · email-quote +
+public tokenized PDF + engagement tracking · branded/themable PDF ·
+table-first defaults with remembered preference · jobs dry-run +
+self-explaining runs (cert + vehicle) · recovery-bin purge task creatable
+· embed-widget delisting.
+
+**Phase B — the configurability core (next, ~1–2 sessions)**
+Notification engine (`NotificationRule` + admin Rules tab + route the 18
+code-driven sites through it) · jobs typed params + failure alerting +
+remaining dry-run coverage · import dry-run/preview + modes + warnings +
+results export · vehicle per-service-type schedules + technician
+submission flow + spreadsheet importers + escalation chains · reliability
+findings #2/#3/#5–#10 + the small ones.
+
+**Phase C — new module + polish (after B, ~1–2 sessions)**
+Daily work logs + schedule exceptions + overtime rollups/snapshots +
+historical import · quote template variants (if wanted) · per-user
+notification preferences/digests · `task-due-soon` job.
+
+Phase B before C is deliberate: the work-log module's entire value is its
+*rules-aware reminders*, which want the notification engine to exist
+first — building it on today's hardcoded pattern would recreate the
+Google Sheet's problems inside OpsHub.

@@ -66,6 +66,14 @@ export default async function QuoteEditPage({ params }: Props) {
   // Non-org-wide roles only reach their own quotes — see lib/quotes/access.
   if (!canAccessQuote(user, quote)) notFound();
 
+  // Prefill for "Email quote" — the client's primary contact (or first
+  // contact with an email).
+  const primaryContact = await db.clientContact.findFirst({
+    where: { clientId: quote.clientId, email: { not: null } },
+    orderBy: [{ isPrimary: "desc" }, { createdAt: "asc" }],
+    select: { email: true },
+  });
+
   const editable = quote.status === "DRAFT" || quote.status === "REVISED";
   if (!editable) {
     return (
@@ -128,6 +136,7 @@ export default async function QuoteEditPage({ params }: Props) {
         companyName: branding.companyName,
         companyLogoUrl: branding.companyLogoUrl,
       }}
+      defaultRecipient={primaryContact?.email ?? null}
     />
   );
 }

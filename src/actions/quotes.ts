@@ -1,11 +1,16 @@
 "use server";
 
+import crypto from "crypto";
+
 import { db } from "@/lib/db";
 import { requireAuth, resolveModulePerms } from "@/lib/permissions";
 import { logActivity } from "@/lib/activity";
 import { revalidateQuote, revalidateProject } from "@/lib/revalidate-entity";
-import { computeQuoteTotals } from "@/lib/quotes/totals";
+import { computeQuoteTotals, formatCurrency } from "@/lib/quotes/totals";
 import { nextQuoteNumber } from "@/lib/quotes/numbering";
+import { sendFromTemplate } from "@/lib/email";
+import { getBranding } from "@/lib/branding";
+import { absoluteUrl } from "@/lib/url";
 import { slugify, ensureUniqueSlug } from "@/lib/slug";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
@@ -514,6 +519,88 @@ export async function deleteQuote(id: string) {
 
 export async function duplicateQuote(id: string) {
   return createQuote({ fromQuoteId: id });
+}
+
+/**
+ * Email the quote to a recipient with a tokenized public PDF link.
+ *
+ * Connects the dormant send/track plumbing: mints `publicToken` (used by
+ * /api/public/quotes/[token]/pdf), stamps `sentAt`, moves DRAFT/REVISED →
+ * SENT (which locks the editor — revisions are the change path after a
+ * client has the document), and logs a "sent" QuoteEvent. Recipient is
+ * free-entry so quotes can go to procurement inboxes that aren't stored
+ * contacts; the default the UI offers is the client's primary contact.
+ */
+export async function sendQuoteEmail(input: {
+  id: string;
+  to: string;
+  message?: string | null;
+}) {
+  const user = await requireAuth();
+  const perms = await resolveModulePerms(user.id, user.role, "quotes");
+  if (!perms.canEdit) return { error: "Permission denied" } as const;
+
+  const denied = await assertQuoteAccess(user, input.id);
+  if (denied) return { error: denied.error } as const;
+
+  const to = input.to.trim();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) {
+    return { error: "Enter a valid recipient email address" } as const;
+  }
+  const message = input.message?.trim() ? input.message.trim().slice(0, 2000) : null;
+
+  const quote = await db.quote.findFirst({
+    where: { id: input.id, deletedAt: null },
+    include: { client: { select: { name: true } } },
+  });
+  if (!quote) return { error: "Quote not found" } as const;
+
+  // Mint the share token once; resends reuse it so earlier emails keep
+  // working.
+  let token = quote.publicToken;
+  if (!token) {
+    token = crypto.randomBytes(24).toString("base64url");
+    await db.quote.update({ where: { id: quote.id }, data: { publicToken: token } });
+  }
+
+  const branding = await getBranding();
+  const companyName = branding.companyName ?? "OpsHub";
+  const result = await sendFromTemplate(
+    "quote-sent",
+    {
+      companyName,
+      quoteNumber: quote.quoteNumber,
+      quoteTitle: quote.title,
+      totalFormatted: formatCurrency(quote.total, quote.currency),
+      validUntilFormatted: quote.validUntil
+        ? new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" }).format(quote.validUntil)
+        : null,
+      message,
+      senderName: user.name ?? companyName,
+      downloadUrl: absoluteUrl(`/api/public/quotes/${token}/pdf`),
+    },
+    { to, entityType: "quote", entityId: quote.id }
+  );
+  if (!result.success) {
+    return { error: `Email failed to send: ${result.error ?? "unknown error"}` } as const;
+  }
+
+  await db.quote.update({
+    where: { id: quote.id },
+    data: {
+      sentAt: quote.sentAt ?? new Date(),
+      ...(quote.status === "DRAFT" || quote.status === "REVISED"
+        ? { status: "SENT" as const }
+        : {}),
+    },
+  });
+  await logQuoteEvent(quote.id, "sent", user.id, { to });
+  await logActivity("sent", "quote", quote.id, user.id, quote.title, {
+    clientId: quote.clientId,
+    projectId: quote.projectId,
+  });
+  revalidateQuote(quote.id, { clientId: quote.clientId, projectId: quote.projectId });
+  return { success: true } as const;
 }
 
 export async function saveQuoteAsTemplate(input: { id: string; name: string; description?: string | null }) {

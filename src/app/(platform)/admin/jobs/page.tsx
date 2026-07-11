@@ -279,7 +279,7 @@ export default async function AdminJobsPage() {
                   <div className="flex items-center gap-2 shrink-0">
                     <JobCadenceSelect jobKey={job.key} current={cadenceOverride} />
                     <JobToggleButton jobKey={job.key} isEnabled={isEnabled} />
-                    <JobRunButton jobKey={job.key} />
+                    <JobRunButton jobKey={job.key} supportsDryRun={job.supportsDryRun} />
                     <Link
                       href={`/admin/jobs/${job.key}`}
                       className="text-muted-foreground hover:text-foreground"

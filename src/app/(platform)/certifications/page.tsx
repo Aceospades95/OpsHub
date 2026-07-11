@@ -24,6 +24,7 @@ import type { JurisdictionLevel, CertEngagementType, Prisma } from "@prisma/clie
 import { CertCreateButton } from "./cert-create-button";
 import { CertFilters } from "./cert-filters";
 import { DownloadCsvButton } from "@/components/shared/download-csv-button";
+import { resolveViewPreference } from "@/lib/view-preference";
 import { ViewOptionsBar } from "@/components/shared/view-options-bar";
 import { GroupSection } from "@/components/shared/group-section";
 import { groupRows } from "@/lib/group-rows";
@@ -111,7 +112,7 @@ export default async function CertificationsPage({ searchParams }: PageProps) {
   const statusFilter = CERT_BUCKETS.includes(sp.status as CertBucket)
     ? (sp.status as CertBucket)
     : null;
-  const view = sp.view === "table" ? "table" : "cards";
+  const view = resolveViewPreference(sp.view, "certifications", ["table", "cards"], "table");
   const groupBy = GROUP_OPTIONS.some((o) => o.value === sp.groupBy)
     ? (sp.groupBy as GroupKey)
     : null;
@@ -527,9 +528,10 @@ export default async function CertificationsPage({ searchParams }: PageProps) {
       <ViewOptionsBar
         view={view}
         viewOptions={[
-          { value: "cards", label: "Cards" },
           { value: "table", label: "Table" },
+          { value: "cards", label: "Cards" },
         ]}
+        storageKey="certifications"
         groupBy={groupBy}
         groupByOptions={[...GROUP_OPTIONS]}
       />

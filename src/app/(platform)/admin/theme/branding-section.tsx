@@ -10,6 +10,7 @@ import {
   uploadBrandingImage,
   clearBrandingImage,
   setCompanyName,
+  setBrandAccentColor,
 } from "@/actions/branding";
 import type { BrandingSettings } from "@/lib/branding";
 
@@ -17,11 +18,17 @@ interface Props {
   branding: BrandingSettings;
 }
 
+/** Renderer default when no accent is configured — Wynndalco green. */
+const DEFAULT_DOC_ACCENT = "#166534";
+
 export function BrandingSection({ branding }: Props) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [name, setName] = useState(branding.companyName || "");
   const [nameSaved, setNameSaved] = useState(false);
+  const [accent, setAccent] = useState(branding.accentColor || DEFAULT_DOC_ACCENT);
+  const [accentSaved, setAccentSaved] = useState(false);
+  const [accentError, setAccentError] = useState<string | null>(null);
 
   const handleSaveName = () => {
     startTransition(async () => {
@@ -29,6 +36,20 @@ export function BrandingSection({ branding }: Props) {
       setNameSaved(true);
       router.refresh();
       setTimeout(() => setNameSaved(false), 2500);
+    });
+  };
+
+  const handleSaveAccent = () => {
+    setAccentError(null);
+    startTransition(async () => {
+      const res = await setBrandAccentColor(accent);
+      if (res && "error" in res && res.error) {
+        setAccentError(res.error);
+        return;
+      }
+      setAccentSaved(true);
+      router.refresh();
+      setTimeout(() => setAccentSaved(false), 2500);
     });
   };
 
@@ -82,6 +103,53 @@ export function BrandingSection({ branding }: Props) {
             Shown in the sidebar and on the login screen. Leave blank to use
             the default &ldquo;OpsHub&rdquo;.
           </p>
+        </div>
+
+        {/* Document accent color — themes generated PDFs (quotes) */}
+        <div className="space-y-2">
+          <label className="text-sm font-medium">Document accent color</label>
+          <p className="text-xs text-muted-foreground">
+            Used by generated documents like quote PDFs (header band, table
+            headers, totals). Separate from the on-screen theme so printed
+            documents always follow the corporate identity.
+          </p>
+          <div className="flex items-center gap-2">
+            <input
+              type="color"
+              value={/^#[0-9a-fA-F]{6}$/.test(accent) ? accent : DEFAULT_DOC_ACCENT}
+              onChange={(e) => {
+                setAccent(e.target.value);
+                setAccentSaved(false);
+              }}
+              className="h-9 w-12 rounded border border-input bg-background cursor-pointer"
+              aria-label="Pick document accent color"
+            />
+            <input
+              value={accent}
+              onChange={(e) => {
+                setAccent(e.target.value);
+                setAccentSaved(false);
+              }}
+              placeholder={DEFAULT_DOC_ACCENT}
+              className="w-32 h-9 rounded border border-input bg-background px-3 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary"
+              aria-label="Accent color hex value"
+            />
+            <Button
+              size="sm"
+              onClick={handleSaveAccent}
+              disabled={isPending || accent === (branding.accentColor || DEFAULT_DOC_ACCENT)}
+            >
+              {accentSaved ? (
+                <>
+                  <CheckCircle2 className="h-4 w-4 mr-1.5 text-success" />
+                  Saved
+                </>
+              ) : (
+                "Save"
+              )}
+            </Button>
+          </div>
+          {accentError && <p className="text-xs text-destructive">{accentError}</p>}
         </div>
 
         {/* Company logo */}

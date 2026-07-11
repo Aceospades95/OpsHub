@@ -13,6 +13,7 @@ import Link from "next/link";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { formatCalendarDate } from "@/lib/dates";
 import { effectiveContractStatus } from "@/lib/effective-status";
+import { resolveViewPreference } from "@/lib/view-preference";
 import { ViewOptionsBar } from "@/components/shared/view-options-bar";
 import { GroupSection } from "@/components/shared/group-section";
 import { groupRows } from "@/lib/group-rows";
@@ -68,7 +69,7 @@ export default async function ContractsPage({
   // Optional ?client=<id> filter — used by the client detail page's
   // "Create one →" link so the tree opens scoped to that client.
   const clientFilter = searchParams.client;
-  const view = searchParams.view === "table" ? "table" : "tree";
+  const view = resolveViewPreference(searchParams.view, "contracts", ["table", "tree"], "table");
   const groupBy = GROUP_OPTIONS.some((o) => o.value === searchParams.groupBy)
     ? (searchParams.groupBy as GroupKey)
     : null;
@@ -179,9 +180,10 @@ export default async function ContractsPage({
       <ViewOptionsBar
         view={view}
         viewOptions={[
-          { value: "tree", label: "Tree" },
           { value: "table", label: "Table" },
+          { value: "tree", label: "Tree" },
         ]}
+        storageKey="contracts"
         groupBy={view === "table" ? groupBy : undefined}
         groupByOptions={view === "table" ? [...GROUP_OPTIONS] : undefined}
       />

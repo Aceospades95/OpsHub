@@ -13,7 +13,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ quoteId: string }> }
 ) {
   const user = await requireAuth();
@@ -39,11 +39,14 @@ export async function GET(
   }
 
   const pdf = await renderQuotePdf(data);
+  // ?inline=1 renders in the browser tab (the editor's Preview/Print
+  // buttons); default stays a download.
+  const inline = new URL(req.url).searchParams.get("inline") === "1";
   return new NextResponse(pdf as unknown as BodyInit, {
     status: 200,
     headers: {
       "Content-Type": "application/pdf",
-      "Content-Disposition": `attachment; filename="${data.quoteNumber}.pdf"`,
+      "Content-Disposition": `${inline ? "inline" : "attachment"}; filename="${data.quoteNumber}.pdf"`,
       "Cache-Control": "private, no-store",
     },
   });

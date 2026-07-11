@@ -201,6 +201,37 @@ export async function clearBrandingImage(target: BrandingKey) {
   }
 }
 
+/**
+ * Update or clear the document accent color (quote PDFs etc.).
+ * Accepts "#rrggbb"; empty clears back to the renderer default.
+ */
+export async function setBrandAccentColor(hex: string) {
+  try {
+    const user = await requireAuth();
+    const gate = requireAdmin(user.role);
+    if (gate) return gate;
+
+    const trimmed = hex.trim();
+    if (trimmed && !/^#[0-9a-f]{6}$/i.test(trimmed)) {
+      return { error: "Use a 6-digit hex color like #166534" } as const;
+    }
+    await setBrandingValue(BRANDING_KEYS.accentColor, trimmed || null);
+    try {
+      revalidatePath("/", "layout");
+    } catch (err) {
+      log.warn("branding.setAccent", "revalidatePath threw post-save", {
+        err: err instanceof Error ? err.message : String(err),
+      });
+    }
+    return { success: true } as const;
+  } catch (err) {
+    log.error("branding.setAccent", "Top-level catch", err);
+    return {
+      error: "Could not save the accent color. Check server logs for details.",
+    } as const;
+  }
+}
+
 /** Update or clear the displayed company name. */
 export async function setCompanyName(name: string) {
   try {

@@ -10,6 +10,7 @@ import { Truck, Star, Mail, Phone, MapPin } from "lucide-react";
 import Link from "next/link";
 import { SupplierCreateButton } from "./supplier-create-button";
 import { DownloadCsvButton } from "@/components/shared/download-csv-button";
+import { resolveViewPreference } from "@/lib/view-preference";
 import { ViewOptionsBar } from "@/components/shared/view-options-bar";
 import { GroupSection } from "@/components/shared/group-section";
 import { groupRows } from "@/lib/group-rows";
@@ -65,7 +66,7 @@ export default async function SuppliersPage({
   const perms = await resolveModulePerms(user.id, user.role, "suppliers");
   if (!perms.canView) return <AccessDenied module="suppliers" moduleLabel="Suppliers" moduleDescription="Vendor and supplier management" />;
 
-  const view = searchParams.view === "table" ? "table" : "cards";
+  const view = resolveViewPreference(searchParams.view, "suppliers", ["table", "cards"], "table");
   const groupBy = GROUP_OPTIONS.some((o) => o.value === searchParams.groupBy)
     ? (searchParams.groupBy as GroupKey)
     : null;
@@ -181,9 +182,10 @@ export default async function SuppliersPage({
       <ViewOptionsBar
         view={view}
         viewOptions={[
-          { value: "cards", label: "Cards" },
           { value: "table", label: "Table" },
+          { value: "cards", label: "Cards" },
         ]}
+        storageKey="suppliers"
         groupBy={groupBy}
         groupByOptions={[...GROUP_OPTIONS]}
       />

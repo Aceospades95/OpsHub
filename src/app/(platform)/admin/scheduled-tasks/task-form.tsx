@@ -30,6 +30,8 @@ export interface TaskFormState {
   replyTo: string;
   subject: string;
   body: string;
+  /** PURGE_SOFT_DELETED: recovery-bin retention in days. */
+  retentionDays: string;
 }
 
 export const EMPTY_TASK: TaskFormState = {
@@ -48,6 +50,7 @@ export const EMPTY_TASK: TaskFormState = {
   replyTo: "",
   subject: "",
   body: "",
+  retentionDays: "30",
 };
 
 interface Props {
@@ -103,6 +106,7 @@ export function TaskForm({ state, onChange, reports }: Props) {
         options={[
           { label: "Email a report", value: "EMAIL_REPORT" },
           { label: "Broadcast a message", value: "EMAIL_MESSAGE" },
+          { label: "Purge old recovery-bin items", value: "PURGE_SOFT_DELETED" },
         ]}
       />
 
@@ -202,6 +206,25 @@ export function TaskForm({ state, onChange, reports }: Props) {
         </>
       )}
 
+      {state.taskType === "PURGE_SOFT_DELETED" && (
+        <>
+          <Input
+            label="Retention (days)"
+            type="number"
+            min="1"
+            value={state.retentionDays}
+            onChange={(e) => patch({ retentionDays: e.target.value })}
+          />
+          <p className="text-[11px] text-muted-foreground -mt-3">
+            Soft-deleted records older than this are permanently removed.
+            The recovery bin&apos;s &ldquo;auto-purge&rdquo; countdown only
+            takes effect while a task like this one is active.
+          </p>
+        </>
+      )}
+
+      {state.taskType !== "PURGE_SOFT_DELETED" && (
+        <>
       <Textarea
         label="To"
         value={state.recipients}
@@ -241,6 +264,8 @@ export function TaskForm({ state, onChange, reports }: Props) {
         Helpful when From is a no-reply mailbox — replies will route
         here instead of bouncing.
       </p>
+        </>
+      )}
 
       <label className="flex items-center gap-2 text-sm">
         <input
@@ -291,7 +316,12 @@ export function stateToPayload(state: TaskFormState): {
   };
 
   let config: Record<string, unknown>;
-  if (state.taskType === "EMAIL_REPORT") {
+  if (state.taskType === "PURGE_SOFT_DELETED") {
+    const retention = Number(state.retentionDays);
+    config = {
+      retentionDays: Number.isFinite(retention) && retention > 0 ? retention : 30,
+    };
+  } else if (state.taskType === "EMAIL_REPORT") {
     config = { reportKey: state.reportKey, ...sharedConfig };
   } else {
     config = {
