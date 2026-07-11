@@ -64,7 +64,7 @@ export default async function JobDetailPage({ params }: Props) {
         actions={
           <div className="flex items-center gap-2">
             <JobToggleButton jobKey={job.key} isEnabled={isEnabled} />
-            <JobRunButton jobKey={job.key} />
+            <JobRunButton jobKey={job.key} supportsDryRun={job.supportsDryRun} />
           </div>
         }
       />

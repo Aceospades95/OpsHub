@@ -31,6 +31,22 @@ export async function triggerJob(jobKey: string) {
   return result;
 }
 
+/**
+ * Dry-run a job: evaluate everything and return the would-do ledger
+ * without sending or writing anything. Only jobs that declare
+ * supportsDryRun are previewable — the runner enforces that too.
+ */
+export async function previewJob(jobKey: string) {
+  const user = await requireAuth();
+  const gate = requireAdmin(user.role);
+  if (gate) return gate;
+
+  const result = await runJob(jobKey, user.id, { dryRun: true });
+  revalidatePath("/admin/jobs");
+  revalidatePath(`/admin/jobs/${jobKey}`);
+  return result;
+}
+
 /** Delete a single job log entry — admin maintenance. */
 export async function deleteJobLog(id: string) {
   const user = await requireAuth();

@@ -23,7 +23,7 @@ import { getJob, listJobs } from "./registry";
 export async function runJob(
   jobKey: string,
   triggeredBy: string,
-  options: { force?: boolean } = {}
+  options: { force?: boolean; dryRun?: boolean } = {}
 ): Promise<{
   status: "completed" | "failed" | "skipped" | "unknown" | "disabled";
   output?: string;
@@ -36,10 +36,21 @@ export async function runJob(
     return { status: "unknown", error: `No job registered with key "${jobKey}"` };
   }
 
+  // Dry runs only for handlers that declare support — a handler that
+  // ignores ctx.dryRun would execute for real under a "preview" label.
+  if (options.dryRun && !job.supportsDryRun) {
+    return {
+      status: "failed",
+      error: `Job "${jobKey}" doesn't support dry-run preview yet.`,
+    };
+  }
+
   // Skip disabled jobs unless the caller is force-running (the admin
   // "Run now" button in the UI passes force:true so toggling a job off
-  // doesn't lock out manual testing).
-  if (!options.force) {
+  // doesn't lock out manual testing). Dry runs also bypass the toggle —
+  // previewing a paused job is exactly when you want to see what it
+  // WOULD do.
+  if (!options.force && !options.dryRun) {
     const config = await db.jobConfig.findUnique({ where: { jobKey } });
     if (config && !config.isEnabled) {
       return {
@@ -49,8 +60,9 @@ export async function runJob(
     }
   }
 
-  // Concurrency check — don't double-run
-  if (!options.force) {
+  // Concurrency check — don't double-run. Dry runs write nothing, so
+  // they can't conflict with a live run and skip the guard.
+  if (!options.force && !options.dryRun) {
     const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
 
     // Reap abandoned "running" rows older than an hour. The previous
@@ -104,7 +116,7 @@ export async function runJob(
     },
   });
 
-  const ctx: JobContext = { triggeredAt: startedAt, triggeredBy };
+  const ctx: JobContext = { triggeredAt: startedAt, triggeredBy, dryRun: options.dryRun };
 
   try {
     const result: JobResult = await job.handler(ctx);
@@ -114,22 +126,27 @@ export async function runJob(
     // { status: "skipped" } — used by cadence gates so the admin Jobs
     // page reflects "we evaluated this and chose not to run" instead
     // of leaving no row behind. A skipped run does NOT count toward
-    // the cadence gate (see lib/jobs/gating.ts).
+    // the cadence gate (see lib/jobs/gating.ts). Dry runs are recorded
+    // as "skipped" for the same reason: a preview must never satisfy
+    // (and thereby suppress) the day's real run.
     const finalStatus: "completed" | "skipped" =
-      result.status === "skipped" ? "skipped" : "completed";
+      options.dryRun || result.status === "skipped" ? "skipped" : "completed";
+    const output = options.dryRun
+      ? `DRY RUN — nothing was sent or written.\n${result.output ?? ""}`.trimEnd()
+      : result.output || null;
     await db.jobLog.update({
       where: { id: logRow.id },
       data: {
         status: finalStatus,
         finishedAt,
         durationMs,
-        output: result.output || null,
+        output,
         processed: result.processed ?? null,
       },
     });
     return {
       status: finalStatus,
-      output: result.output,
+      output: output ?? undefined,
       processed: result.processed,
       logId: logRow.id,
     };

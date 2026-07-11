@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Car, Wrench, AlertTriangle, CalendarClock, User } from "lucide-react";
 import Link from "next/link";
 import { formatCalendarDate } from "@/lib/dates";
+import { resolveViewPreference } from "@/lib/view-preference";
 import { ViewOptionsBar } from "@/components/shared/view-options-bar";
 import { GroupSection } from "@/components/shared/group-section";
 import { groupRows } from "@/lib/group-rows";
@@ -58,7 +59,7 @@ export default async function FleetPage({
     );
   }
 
-  const view = searchParams.view === "table" ? "table" : "cards";
+  const view = resolveViewPreference(searchParams.view, "fleet", ["table", "cards"], "table");
   const groupBy = GROUP_OPTIONS.some((o) => o.value === searchParams.groupBy)
     ? (searchParams.groupBy as GroupKey)
     : null;
@@ -317,9 +318,10 @@ export default async function FleetPage({
       <ViewOptionsBar
         view={view}
         viewOptions={[
-          { value: "cards", label: "Cards" },
           { value: "table", label: "Table" },
+          { value: "cards", label: "Cards" },
         ]}
+        storageKey="fleet"
         groupBy={groupBy}
         groupByOptions={[...GROUP_OPTIONS]}
       />

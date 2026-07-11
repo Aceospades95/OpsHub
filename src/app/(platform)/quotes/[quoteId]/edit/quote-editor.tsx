@@ -1,9 +1,21 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Plus, Trash2, ArrowUp, ArrowDown, Save, X } from "lucide-react";
+import { toast } from "sonner";
+import {
+  Plus,
+  Trash2,
+  ArrowUp,
+  ArrowDown,
+  Save,
+  X,
+  Download,
+  Eye,
+  Printer,
+  Mail,
+} from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,6 +25,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { computeQuoteTotals, formatCurrency } from "@/lib/quotes/totals";
 import { updateQuote } from "@/actions/quotes";
+import { EmailQuoteDialog } from "../email-quote-dialog";
 
 type DiscountType = "NONE" | "PERCENT" | "FIXED";
 type RecurringInterval = "MONTHLY" | "QUARTERLY" | "ANNUALLY";
@@ -78,6 +91,8 @@ interface Props {
   users: { id: string; name: string }[];
   catalog: CatalogItem[];
   branding: Branding;
+  /** Prefill for the "Email quote" dialog — client's primary contact. */
+  defaultRecipient: string | null;
 }
 
 let nextLineId = 0;
@@ -106,7 +121,7 @@ function emptyLine(position: number): LineItem {
   };
 }
 
-export function QuoteEditor({ initial, clients, projects, users, catalog, branding }: Props) {
+export function QuoteEditor({ initial, clients, projects, users, catalog, branding, defaultRecipient }: Props) {
   const router = useRouter();
 
   const [title, setTitle] = useState(initial.title);
@@ -133,11 +148,25 @@ export function QuoteEditor({ initial, clients, projects, users, catalog, brandi
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<Date | null>(null);
+  const [emailOpen, setEmailOpen] = useState(false);
 
   const filteredProjects = useMemo(
     () => projects.filter((p) => p.clientId === clientId),
     [projects, clientId]
   );
+
+  // Dirty tracking for the document actions: the PDF renders PERSISTED
+  // data, so exporting with unsaved edits would silently produce a stale
+  // document. Serialize the whole form and compare against the snapshot
+  // taken at mount / after each save — quote forms are small enough that
+  // this is cheap per render.
+  const serialized = JSON.stringify({
+    title, clientId, projectId, validUntil, currency, introText,
+    assumptionsText, termsText, internalNotes, discountType, discountValue,
+    taxRate, assignedToId, items,
+  });
+  const savedSnapshot = useRef(serialized);
+  const dirty = serialized !== savedSnapshot.current;
 
   // Live totals — pure function so the preview updates as the user types.
   const totals = useMemo(
@@ -202,26 +231,30 @@ export function QuoteEditor({ initial, clients, projects, users, catalog, brandi
     });
   }
 
-  function handleSave() {
+  /**
+   * Validate + persist. Returns true on success — the document actions
+   * (Download/Preview/Print/Email) auto-save first so the export always
+   * matches what's on screen.
+   */
+  async function doSave(): Promise<boolean> {
     setError(null);
     const taxRateNum = taxRate.trim() === "" ? null : Number(taxRate);
     if (taxRateNum != null && !Number.isFinite(taxRateNum)) {
       setError("Tax rate must be a number or blank");
-      return;
+      return false;
     }
     if (!title.trim()) {
       setError("Title is required");
-      return;
+      return false;
     }
     for (const it of items) {
       if (!it.name.trim()) {
         setError("Every line item needs a name");
-        return;
+        return false;
       }
     }
 
-    startTransition(async () => {
-      const res = await updateQuote({
+    const res = await updateQuote({
         id: initial.id,
         clientId,
         projectId: projectId || null,
@@ -254,31 +287,80 @@ export function QuoteEditor({ initial, clients, projects, users, catalog, brandi
           recurringInterval: it.recurringInterval,
         })),
       });
-      if ("error" in res) {
-        // Round-7 QA: the server returns both a generic top-level
-        // `error` ("Invalid input") AND a structured `fieldErrors`
-        // map keyed on the field name. Surface the first field-
-        // specific message so the user sees "Title contains
-        // disallowed HTML" instead of the generic banner.
-        const fieldErrors = (res as { fieldErrors?: Record<string, string[] | undefined> }).fieldErrors;
-        if (fieldErrors) {
-          const firstField = Object.keys(fieldErrors).find(
-            (k) => (fieldErrors[k]?.length ?? 0) > 0
-          );
-          if (firstField) {
-            const msg = fieldErrors[firstField]![0];
-            const niceField =
-              firstField.charAt(0).toUpperCase() + firstField.slice(1).replace(/([A-Z])/g, " $1").trim().toLowerCase();
-            setError(`${niceField.charAt(0).toUpperCase()}${niceField.slice(1)}: ${msg}`);
-            return;
-          }
+    if ("error" in res) {
+      // Round-7 QA: the server returns both a generic top-level
+      // `error` ("Invalid input") AND a structured `fieldErrors`
+      // map keyed on the field name. Surface the first field-
+      // specific message so the user sees "Title contains
+      // disallowed HTML" instead of the generic banner.
+      const fieldErrors = (res as { fieldErrors?: Record<string, string[] | undefined> }).fieldErrors;
+      if (fieldErrors) {
+        const firstField = Object.keys(fieldErrors).find(
+          (k) => (fieldErrors[k]?.length ?? 0) > 0
+        );
+        if (firstField) {
+          const msg = fieldErrors[firstField]![0];
+          const niceField =
+            firstField.charAt(0).toUpperCase() + firstField.slice(1).replace(/([A-Z])/g, " $1").trim().toLowerCase();
+          setError(`${niceField.charAt(0).toUpperCase()}${niceField.slice(1)}: ${msg}`);
+          return false;
         }
-        setError(res.error ?? "Unknown error");
-        return;
       }
-      setSavedAt(new Date());
-      router.refresh();
+      setError(res.error ?? "Unknown error");
+      return false;
+    }
+    savedSnapshot.current = serialized;
+    setSavedAt(new Date());
+    router.refresh();
+    return true;
+  }
+
+  function handleSave() {
+    startTransition(async () => {
+      await doSave();
     });
+  }
+
+  /** Save-if-dirty, then run the export action. */
+  function withSavedQuote(action: () => void) {
+    startTransition(async () => {
+      if (dirty || !savedAt) {
+        const ok = await doSave();
+        if (!ok) return;
+      }
+      action();
+    });
+  }
+
+  function openPdf(inline: boolean) {
+    window.open(
+      `/api/quotes/${initial.id}/pdf${inline ? "?inline=1" : ""}`,
+      "_blank",
+      "noopener"
+    );
+  }
+
+  /**
+   * Print via a hidden iframe so the user stays in the editor. Falls
+   * back to opening the inline PDF tab (whose viewer has its own print
+   * button) when the browser blocks iframe printing.
+   */
+  function printPdf() {
+    const frame = document.createElement("iframe");
+    frame.style.display = "none";
+    frame.src = `/api/quotes/${initial.id}/pdf?inline=1`;
+    frame.onload = () => {
+      try {
+        frame.contentWindow?.focus();
+        frame.contentWindow?.print();
+        // Give the print dialog time to take over before cleanup.
+        setTimeout(() => frame.remove(), 60_000);
+      } catch {
+        frame.remove();
+        openPdf(true);
+      }
+    };
+    document.body.appendChild(frame);
   }
 
   return (
@@ -309,24 +391,80 @@ export function QuoteEditor({ initial, clients, projects, users, catalog, brandi
             placeholder={`${clients.find((c) => c.id === clientId)?.name ?? "Client"} — ${initial.quoteNumber}`}
           />
         </div>
-        <div className="flex items-center gap-2">
-          {savedAt && (
-            <span className="text-xs text-muted-foreground">
-              Saved {savedAt.toLocaleTimeString()}
-            </span>
-          )}
-          <Link href={`/quotes/${initial.id}`}>
-            <Button variant="outline">
-              <X className="h-4 w-4 mr-2" />
-              Close
+        <div className="flex flex-col items-end gap-2">
+          <div className="flex items-center gap-2">
+            {savedAt && (
+              <span className="text-xs text-muted-foreground">
+                {dirty ? "Unsaved changes" : `Saved ${savedAt.toLocaleTimeString()}`}
+              </span>
+            )}
+            <Link href={`/quotes/${initial.id}`}>
+              <Button variant="outline">
+                <X className="h-4 w-4 mr-2" />
+                Close
+              </Button>
+            </Link>
+            <Button onClick={handleSave} disabled={pending}>
+              <Save className="h-4 w-4 mr-2" />
+              {pending ? "Saving…" : "Save Draft"}
             </Button>
-          </Link>
-          <Button onClick={handleSave} disabled={pending}>
-            <Save className="h-4 w-4 mr-2" />
-            {pending ? "Saving…" : "Save Draft"}
-          </Button>
+          </div>
+          {/* Document actions — usable without leaving the editor. Each
+           *  auto-saves first when there are unsaved edits so the export
+           *  always matches the screen. */}
+          <div className="flex items-center gap-1.5 flex-wrap justify-end">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={pending}
+              onClick={() => withSavedQuote(() => openPdf(false))}
+            >
+              <Download className="h-3.5 w-3.5 mr-1.5" />
+              Download PDF
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={pending}
+              onClick={() => withSavedQuote(() => openPdf(true))}
+            >
+              <Eye className="h-3.5 w-3.5 mr-1.5" />
+              Preview
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={pending}
+              onClick={() => withSavedQuote(printPdf)}
+            >
+              <Printer className="h-3.5 w-3.5 mr-1.5" />
+              Print
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={pending}
+              onClick={() => withSavedQuote(() => setEmailOpen(true))}
+            >
+              <Mail className="h-3.5 w-3.5 mr-1.5" />
+              Email quote
+            </Button>
+          </div>
         </div>
       </div>
+
+      <EmailQuoteDialog
+        quoteId={initial.id}
+        open={emailOpen}
+        defaultTo={defaultRecipient}
+        quoteStatus={initial.status}
+        onClose={() => setEmailOpen(false)}
+        onSent={() => {
+          toast.success("Quote emailed — status moved to Sent");
+          // Sent quotes lock the editor; land on the read view.
+          router.push(`/quotes/${initial.id}`);
+        }}
+      />
 
       {error && (
         <div className="mb-4 rounded border border-destructive/50 bg-destructive/10 px-4 py-2 text-sm text-destructive">

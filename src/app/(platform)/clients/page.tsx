@@ -14,6 +14,7 @@ import Link from "next/link";
 import { ClientCreateButton } from "./client-create-button";
 import { ClientFilters } from "./client-filters";
 import { Prisma } from "@prisma/client";
+import { resolveViewPreference } from "@/lib/view-preference";
 import { ViewOptionsBar } from "@/components/shared/view-options-bar";
 import { GroupSection } from "@/components/shared/group-section";
 import { groupRows } from "@/lib/group-rows";
@@ -39,7 +40,7 @@ export default async function ClientsPage({
 
   const statusFilter = searchParams.status;
   const sortParam = searchParams.sort;
-  const view = searchParams.view === "table" ? "table" : "cards";
+  const view = resolveViewPreference(searchParams.view, "clients", ["table", "cards"], "table");
   const groupBy = GROUP_OPTIONS.some((o) => o.value === searchParams.groupBy)
     ? (searchParams.groupBy as GroupKey)
     : null;
@@ -201,9 +202,10 @@ export default async function ClientsPage({
         <ViewOptionsBar
           view={view}
           viewOptions={[
-            { value: "cards", label: "Cards" },
             { value: "table", label: "Table" },
+            { value: "cards", label: "Cards" },
           ]}
+          storageKey="clients"
           groupBy={groupBy}
           groupByOptions={[...GROUP_OPTIONS]}
         />

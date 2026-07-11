@@ -13,6 +13,7 @@ import Link from "next/link";
 import { Card, CardContent } from "@/components/ui/card";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { formatCalendarDate } from "@/lib/dates";
+import { resolveViewPreference } from "@/lib/view-preference";
 import { ViewOptionsBar } from "@/components/shared/view-options-bar";
 import { GroupSection } from "@/components/shared/group-section";
 import { groupRows } from "@/lib/group-rows";
@@ -41,7 +42,7 @@ export default async function ProjectsPage({
   if (!perms.canView) return <AccessDenied module="projects" moduleLabel="Projects" moduleDescription="Project portfolio, milestones, staffing, and documents" />;
 
   const focusClientId = searchParams.clientId?.trim() || undefined;
-  const view = searchParams.view === "table" ? "table" : "tree";
+  const view = resolveViewPreference(searchParams.view, "projects", ["table", "tree"], "table");
   const groupBy = GROUP_OPTIONS.some((o) => o.value === searchParams.groupBy)
     ? (searchParams.groupBy as GroupKey)
     : null;
@@ -165,9 +166,10 @@ export default async function ProjectsPage({
       <ViewOptionsBar
         view={view}
         viewOptions={[
-          { value: "tree", label: "Tree" },
           { value: "table", label: "Table" },
+          { value: "tree", label: "Tree" },
         ]}
+        storageKey="projects"
         groupBy={view === "table" ? groupBy : undefined}
         groupByOptions={view === "table" ? [...GROUP_OPTIONS] : undefined}
       />

@@ -22,6 +22,7 @@ export const BRANDING_KEYS = {
   companyName: "branding.companyName",
   companyLogoFileId: "branding.companyLogoFileId",
   backgroundImageFileId: "branding.backgroundImageFileId",
+  accentColor: "branding.accentColor",
 } as const;
 
 export type BrandingKey = keyof typeof BRANDING_KEYS;
@@ -37,6 +38,13 @@ export interface BrandingSettings {
   backgroundImageFileId: string | null;
   /** Public serving URL for the background image, or null. */
   backgroundImageUrl: string | null;
+  /**
+   * Brand accent hex ("#166534") used by generated documents (quote
+   * PDFs). Null → the renderer's built-in default. Kept separate from
+   * the app THEME palette: screen themes can be playful/dark, printed
+   * documents follow the corporate identity.
+   */
+  accentColor: string | null;
 }
 
 /**
@@ -76,6 +84,11 @@ export async function getBranding(): Promise<BrandingSettings> {
   const companyName = map.get(BRANDING_KEYS.companyName) || null;
   const companyLogoFileId = map.get(BRANDING_KEYS.companyLogoFileId) || null;
   const backgroundImageFileId = map.get(BRANDING_KEYS.backgroundImageFileId) || null;
+  // Validate on read so a hand-edited bad value degrades to the default
+  // instead of producing an unparseable PDF stylesheet.
+  const rawAccent = map.get(BRANDING_KEYS.accentColor) || null;
+  const accentColor =
+    rawAccent && /^#[0-9a-f]{6}$/i.test(rawAccent.trim()) ? rawAccent.trim() : null;
 
   // Verify the file rows still exist before returning URLs
   const fileIds = [companyLogoFileId, backgroundImageFileId].filter(
@@ -109,6 +122,7 @@ export async function getBranding(): Promise<BrandingSettings> {
     companyLogoUrl: logoOk ? getFileUrl(companyLogoFileId!) : null,
     backgroundImageFileId: backgroundOk ? backgroundImageFileId : null,
     backgroundImageUrl: backgroundOk ? getFileUrl(backgroundImageFileId!) : null,
+    accentColor,
   };
 }
 

@@ -1538,6 +1538,12 @@ model GoogleTasksIntegration {
   tasklistId           String?
   /// High-water mark for incremental pulls (Google `updatedMin`).
   lastSyncedAt         DateTime?
+  /// When the last FULL pull (no updatedMin window) completed cleanly.
+  /// Null forces the next sync to walk every task once — used to
+  /// backfill fields added after rows were first pulled (sourceLink,
+  /// sourceReadOnly), since incremental pulls never revisit unchanged
+  /// tasks. Reset to null to re-run a backfill after adding a field.
+  fullPulledAt         DateTime?
   lastSyncStatus       String? // "success" | "failed"
   lastSyncError        String?   @db.Text
   /// Client-side auto-sync cadence while /my is open. Null / 0 = off.

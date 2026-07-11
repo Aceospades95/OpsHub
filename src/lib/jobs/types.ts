@@ -12,6 +12,15 @@ export interface JobContext {
   triggeredAt: Date;
   /** "cron" for scheduled runs, or a user id for manual runs */
   triggeredBy: string;
+  /**
+   * Preview mode: evaluate everything and EXPLAIN what would happen in
+   * `output`, but write nothing and send nothing. Only honored by jobs
+   * that declare `supportsDryRun` — the runner refuses to dry-run
+   * anything else, so a handler can never accidentally execute for
+   * real under a "preview" label. Handlers must also bypass their
+   * cadence gate when set (a preview should always evaluate).
+   */
+  dryRun?: boolean;
 }
 
 /** What a job handler returns. All fields optional — silent success is fine. */
@@ -50,6 +59,12 @@ export interface JobDefinition {
    * endpoint.
    */
   schedule: string;
+  /**
+   * True when the handler honors `ctx.dryRun` (evaluates + explains,
+   * writes nothing). Gates the admin "Preview" button and the runner's
+   * dryRun option.
+   */
+  supportsDryRun?: boolean;
   /** The job implementation. Should not throw — return a result instead. */
   handler: (ctx: JobContext) => Promise<JobResult>;
 }

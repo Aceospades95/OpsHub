@@ -9,6 +9,7 @@ import { Target, CalendarClock, AlertTriangle, Hourglass, Trophy, Globe, User } 
 import Link from "next/link";
 import { formatCalendarDate } from "@/lib/dates";
 import { formatCurrency } from "@/lib/quotes/totals";
+import { resolveViewPreference } from "@/lib/view-preference";
 import { ViewOptionsBar } from "@/components/shared/view-options-bar";
 import { GroupSection } from "@/components/shared/group-section";
 import { groupRows } from "@/lib/group-rows";
@@ -65,7 +66,7 @@ export default async function BidsPage({
 
   // "pipeline" (stage sections, the default) vs flat "table" — same
   // two-view idiom as projects/contracts (tree default + flat table).
-  const view = searchParams.view === "table" ? "table" : "pipeline";
+  const view = resolveViewPreference(searchParams.view, "bids", ["table", "pipeline"], "pipeline");
   const groupBy = GROUP_OPTIONS.some((o) => o.value === searchParams.groupBy)
     ? (searchParams.groupBy as GroupKey)
     : null;
@@ -294,6 +295,7 @@ export default async function BidsPage({
           { value: "pipeline", label: "Pipeline" },
           { value: "table", label: "Table" },
         ]}
+        storageKey="bids"
         groupBy={groupBy}
         groupByOptions={view === "table" ? [...GROUP_OPTIONS] : []}
       />
