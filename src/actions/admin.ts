@@ -16,6 +16,7 @@ import { absoluteUrl } from "@/lib/url";
 import { hash } from "bcryptjs";
 import { z } from "zod";
 import { nameField } from "@/lib/validation";
+import { parseCalendarDateString } from "@/lib/dates";
 import { issueSignupToken, INVITE_TOKEN_TTL_MS, consumeSignupToken } from "@/lib/signup-tokens";
 
 function requireAdminOrManager(role: string): { error: string } | null {
@@ -480,6 +481,27 @@ export async function updateUser(_prev: unknown, formData: FormData) {
 
   if (!parsed.success) return { error: "Invalid input", fieldErrors: parsed.error.flatten().fieldErrors };
 
+  // Termination date (drives the SCHEDULED_DATE offboarding trigger).
+  // Only forms that render the field post it — when absent leave the
+  // stored value untouched so e.g. the admin Users edit dialog doesn't
+  // silently clear it; present-but-empty is an explicit clear.
+  const terminationRaw = formData.get("terminationDate");
+  let terminationDate: Date | null | undefined = undefined;
+  if (terminationRaw !== null) {
+    const value = String(terminationRaw).trim();
+    if (value === "") {
+      terminationDate = null;
+    } else {
+      terminationDate = parseCalendarDateString(value);
+      if (!terminationDate) {
+        return {
+          error: "Invalid input",
+          fieldErrors: { terminationDate: ["Enter a valid date"] },
+        };
+      }
+    }
+  }
+
   // Look up the target before any writes: a MANAGER may not edit an
   // account that outranks them (e.g. demote an ADMIN), nor assign a role
   // above their own rank. Also turns a missing id into a clean error
@@ -532,7 +554,12 @@ export async function updateUser(_prev: unknown, formData: FormData) {
   // Use null instead of undefined to actually clear the field
   await db.user.update({
     where: { id },
-    data: { ...parsed.data, managerId: managerId, ...promotedFromRoleUpdate },
+    data: {
+      ...parsed.data,
+      managerId: managerId,
+      ...promotedFromRoleUpdate,
+      ...(terminationDate !== undefined ? { terminationDate } : {}),
+    },
   });
   await logActivity("updated", "user", id, admin.id, parsed.data.name);
   revalidateUser(id, {

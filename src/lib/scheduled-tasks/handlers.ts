@@ -63,6 +63,14 @@ const emailReportHandler: Handler = async ({ taskName, config }) => {
     if (!row) {
       throw new Error(`EMAIL_REPORT: custom report '${customId}' not found`);
     }
+    // Deactivating a custom report must stop its scheduled emails too —
+    // skip with a visible warning instead of sending stale data.
+    if (!row.isActive) {
+      return {
+        output: `${row.name} — skipped: report deactivated`,
+        warning: "skipped: report deactivated",
+      };
+    }
     reportName = row.name;
     reportDescription = row.description ?? "Custom report";
     output = await runCustomReportFromRow(row);

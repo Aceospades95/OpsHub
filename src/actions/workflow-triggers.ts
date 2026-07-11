@@ -6,10 +6,13 @@ import { revalidateWorkflowTemplate } from "@/lib/revalidate-entity";
 import { z } from "zod";
 import type { WorkflowTriggerType } from "@prisma/client";
 
+// STAGE_CHANGE stays in the Prisma enum but is deliberately absent here:
+// it has no fire path (see lib/workflows/triggers.ts "reserved"), so the
+// actions refuse to create or update rows of that type. Existing rows
+// render as inactive in the triggers panel and can still be deleted.
 const triggerTypeSchema = z.enum([
   "ENTITY_CREATE",
   "SCHEDULED_DATE",
-  "STAGE_CHANGE",
   "PROJECT_ASSIGNMENT",
 ]);
 

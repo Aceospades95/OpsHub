@@ -1,7 +1,7 @@
 import { auth } from "@/lib/auth";
 import { redirect, notFound } from "next/navigation";
 import { db } from "@/lib/db";
-import { canAccessSandbox } from "@/lib/permissions";
+import { canAccessSandbox, getGrantedCustomPageIds } from "@/lib/permissions";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -19,7 +19,8 @@ export default async function SandboxDetailPage({ params }: Props) {
   const { pageId } = await params;
   const session = await auth();
   if (!session?.user) redirect("/login");
-  if (!canAccessSandbox(session.user.role as Role)) redirect("/dashboard");
+
+  const hasSandboxRole = canAccessSandbox(session.user.role as Role);
 
   // Resolve by slug-or-id — the sidebar / detail UI display /sandbox/<slug>
   // URLs while old links use the cuid. Mirrors the intranet detail page.
@@ -37,16 +38,48 @@ export default async function SandboxDetailPage({ params }: Props) {
   const isAdmin = session.user.role === "ADMIN";
   const isOwner = page.createdById === session.user.id;
 
-  // Non-admin, non-owner can only see published pages
-  if (!isAdmin && !isOwner && !page.published) redirect("/sandbox");
+  if (!hasSandboxRole) {
+    // Non-admin roles can open a page only when it's published AND they
+    // hold an explicit `custom-page-{id}` grant from the team
+    // permissions grid. Grants never expose drafts.
+    const granted =
+      page.published &&
+      (await getGrantedCustomPageIds(session.user.id)).has(page.id);
+    if (!granted) redirect("/dashboard");
+  } else if (!isAdmin && !isOwner && !page.published) {
+    // DEVELOPER (non-owner) can only see published pages
+    redirect("/sandbox");
+  }
 
-  const canEdit = isAdmin || isOwner;
-  const canDelete = isAdmin || isOwner;
+  const canEdit = hasSandboxRole && (isAdmin || isOwner);
+  const canDelete = hasSandboxRole && (isAdmin || isOwner);
 
-  const [projects, clients] = await Promise.all([
-    db.project.findMany({ where: { deletedAt: null }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
-    db.client.findMany({ where: { deletedAt: null }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
-  ]);
+  // Project/client pickers only feed the edit dialog — skip the org-wide
+  // lists for grant-only viewers who can't edit anyway.
+  const [projects, clients] = canEdit
+    ? await Promise.all([
+        db.project.findMany({ where: { deletedAt: null }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
+        db.client.findMany({ where: { deletedAt: null }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
+      ])
+    : [[], []];
+
+  // The saved layout drives the reading width — it used to be persisted
+  // but only rendered as the badge below. "default" keeps the classic
+  // 2/3 content column, "wide" widens to a 3/4 column inside a
+  // max-w-screen-2xl container, "full" spans the whole shell width with
+  // minimal spacing and the details card stacked below the content.
+  const containerClass =
+    page.layout === "full"
+      ? "w-full space-y-4"
+      : page.layout === "wide"
+        ? "mx-auto w-full max-w-screen-2xl grid grid-cols-1 gap-6 lg:grid-cols-4"
+        : "grid grid-cols-1 gap-6 lg:grid-cols-3";
+  const contentClass =
+    page.layout === "full"
+      ? "space-y-4"
+      : page.layout === "wide"
+        ? "lg:col-span-3 space-y-6"
+        : "lg:col-span-2 space-y-6";
 
   return (
     <div>
@@ -77,8 +110,8 @@ export default async function SandboxDetailPage({ params }: Props) {
         <span className="text-sm text-muted-foreground">/sandbox/{page.slug}</span>
       </div>
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        <div className="lg:col-span-2 space-y-6">
+      <div className={containerClass}>
+        <div className={contentClass}>
           {page.content ? (
             <Card>
               <CardHeader>

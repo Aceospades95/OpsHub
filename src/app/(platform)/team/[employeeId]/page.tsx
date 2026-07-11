@@ -47,6 +47,7 @@ export default async function EmployeeDetailPage({ params }: Props) {
       hasLoginAccess: true,
       authProvider: true,
       managerId: true,
+      terminationDate: true,
       createdAt: true,
       manager: { select: { id: true, name: true, jobTitle: true, avatar: true } },
       directReports: {
@@ -166,6 +167,11 @@ export default async function EmployeeDetailPage({ params }: Props) {
   const serializedEmployee = {
     ...employee,
     createdAt: employee.createdAt.toISOString(),
+    // HR-sensitive — only the ADMIN/MANAGER viewers who get the edit
+    // dialog receive the real value; everyone else gets null.
+    terminationDate: canManage
+      ? employee.terminationDate?.toISOString() || null
+      : null,
     assignments: employee.assignments.map((a) => ({
       ...a,
       startDate: a.startDate?.toISOString() || null,

@@ -22,6 +22,29 @@ interface Props {
 }
 
 /**
+ * Recipient roles with no runtime mapping — resolveRoleEmail /
+ * resolveRoleUserId (lib/workflows/context.ts) resolve them to a
+ * fallback or null, so steps saved with one mis-route or fail at run
+ * time. They're no longer offered in the pickers; existing saved
+ * values surface via withUnmappedOption below so the editor re-points
+ * them instead of the select silently snapping to the first option.
+ */
+const UNMAPPED_ROLES = new Set(["hr", "it", "owner"]);
+
+function withUnmappedOption(
+  options: { label: string; value: string }[],
+  current: unknown
+): { label: string; value: string }[] {
+  if (typeof current === "string" && UNMAPPED_ROLES.has(current)) {
+    return [
+      ...options,
+      { label: `${current} (unmapped role — pick a new recipient)`, value: current },
+    ];
+  }
+  return options;
+}
+
+/**
  * Per-step-type config form. Renders the right inputs based on the
  * step type so each kind of step gets a tailored editor — e.g. an email
  * step shows recipient + template pickers; a wait step shows only a
@@ -47,14 +70,14 @@ export function StepConfigForm({ stepType, config, onChange, emailTemplates }: P
             label="Send to"
             value={(c.toRecipient as string) ?? "subject"}
             onChange={(e) => patch({ toRecipient: e.target.value })}
-            options={[
-              { label: "The subject (employee/candidate)", value: "subject" },
-              { label: "Their manager", value: "manager" },
-              { label: "HR", value: "hr" },
-              { label: "IT", value: "it" },
-              { label: "Workflow owner", value: "owner" },
-              { label: "Custom email", value: "custom" },
-            ]}
+            options={withUnmappedOption(
+              [
+                { label: "The subject (employee/candidate)", value: "subject" },
+                { label: "Their manager", value: "manager" },
+                { label: "Custom email", value: "custom" },
+              ],
+              c.toRecipient
+            )}
           />
           {(c.toRecipient as string) === "custom" && (
             <Input
@@ -124,13 +147,13 @@ export function StepConfigForm({ stepType, config, onChange, emailTemplates }: P
             label="Assignee"
             value={(c.assignee as string) ?? "manager"}
             onChange={(e) => patch({ assignee: e.target.value })}
-            options={[
-              { label: "Specific user", value: "specific_user" },
-              { label: "Subject's manager", value: "manager" },
-              { label: "HR", value: "hr" },
-              { label: "IT", value: "it" },
-              { label: "Workflow owner", value: "owner" },
-            ]}
+            options={withUnmappedOption(
+              [
+                { label: "Specific user", value: "specific_user" },
+                { label: "Subject's manager", value: "manager" },
+              ],
+              c.assignee
+            )}
           />
           {(c.assignee as string) === "specific_user" && (
             <Input
@@ -244,13 +267,13 @@ export function StepConfigForm({ stepType, config, onChange, emailTemplates }: P
             label="Approver"
             value={(c.approver as string) ?? "manager"}
             onChange={(e) => patch({ approver: e.target.value })}
-            options={[
-              { label: "Specific user", value: "specific_user" },
-              { label: "Manager", value: "manager" },
-              { label: "HR", value: "hr" },
-              { label: "IT", value: "it" },
-              { label: "Workflow owner", value: "owner" },
-            ]}
+            options={withUnmappedOption(
+              [
+                { label: "Specific user", value: "specific_user" },
+                { label: "Manager", value: "manager" },
+              ],
+              c.approver
+            )}
           />
           {(c.approver as string) === "specific_user" && (
             <Input
@@ -328,13 +351,13 @@ export function StepConfigForm({ stepType, config, onChange, emailTemplates }: P
             label="Send to"
             value={(c.to as string) ?? "subject"}
             onChange={(e) => patch({ to: e.target.value })}
-            options={[
-              { label: "Subject", value: "subject" },
-              { label: "Manager", value: "manager" },
-              { label: "HR", value: "hr" },
-              { label: "IT", value: "it" },
-              { label: "Workflow owner", value: "owner" },
-            ]}
+            options={withUnmappedOption(
+              [
+                { label: "Subject", value: "subject" },
+                { label: "Manager", value: "manager" },
+              ],
+              c.to
+            )}
           />
           <Select
             label="Email template"
@@ -465,10 +488,11 @@ function AttendeeMultiSelect({
   const ATTENDEES: { value: string; label: string }[] = [
     { value: "subject", label: "Subject" },
     { value: "manager", label: "Manager" },
-    { value: "hr", label: "HR" },
-    { value: "it", label: "IT" },
-    { value: "owner", label: "Owner" },
   ];
+
+  // Previously-saved attendees using the removed hr/it/owner roles stay
+  // visible as removable chips instead of silently disappearing.
+  const unmapped = value.filter((v) => UNMAPPED_ROLES.has(v));
 
   function toggle(v: string) {
     if (value.includes(v)) onChange(value.filter((x) => x !== v));
@@ -496,6 +520,17 @@ function AttendeeMultiSelect({
             </button>
           );
         })}
+        {unmapped.map((v) => (
+          <button
+            key={v}
+            type="button"
+            onClick={() => toggle(v)}
+            title="This role has no recipient mapping — click to remove it"
+            className="px-3 py-1.5 text-xs rounded-full bg-destructive/10 text-destructive hover:bg-destructive/20"
+          >
+            {v} (unmapped role — click to remove)
+          </button>
+        ))}
       </div>
     </div>
   );
