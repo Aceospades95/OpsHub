@@ -13,8 +13,16 @@
 
 import type { TermType, Priority } from "@prisma/client";
 import { db } from "@/lib/db";
-import { logActivity } from "@/lib/activity";
 import type { ImporterDefinition, ImportRowResult } from "../types";
+import {
+  applyMode,
+  buildResult,
+  logImportActivity,
+  mergeFillBlanks,
+  skipExistsMessage,
+  skipNoMatchMessage,
+  warnList,
+} from "../helpers";
 
 const VALID_TYPES: TermType[] = [
   "SLA",
@@ -101,12 +109,8 @@ export const contractTermsImporter: ImporterDefinition = {
   },
 
   async commit(rows, ctx) {
+    const db = ctx.db; // ALL commit reads/writes go through ctx.db
     const results: ImportRowResult[] = [];
-    let imported = 0;
-    let updated = 0;
-    let skipped = 0;
-    let failed = 0;
-    const upsert = ctx.mode === "upsert";
 
     const contracts = await db.contract.findMany({
       where: { contractNumber: { not: null } },
@@ -131,29 +135,26 @@ export const contractTermsImporter: ImporterDefinition = {
     for (let i = 0; i < rows.length; i++) {
       const rowNumber = i + 1;
       const raw = rows[i];
+      const warnings: string[] = [];
       const title = (raw.title || "").trim();
       const description = (raw.description || "").trim();
       const contractNumberRaw = (raw.contractNumber || "").trim();
 
       if (!title) {
-        failed++;
         results.push({ row: rowNumber, status: "failed", message: "Missing title" });
         continue;
       }
       if (!description) {
-        failed++;
         results.push({ row: rowNumber, status: "failed", message: "Missing description" });
         continue;
       }
       if (!contractNumberRaw) {
-        failed++;
         results.push({ row: rowNumber, status: "failed", message: "Missing contractNumber" });
         continue;
       }
 
       const contract = contractByNumber.get(contractNumberRaw.toLowerCase());
       if (!contract) {
-        failed++;
         results.push({
           row: rowNumber,
           status: "failed",
@@ -162,17 +163,24 @@ export const contractTermsImporter: ImporterDefinition = {
         continue;
       }
 
-      const typeRaw = (raw.type || "OTHER").trim().toUpperCase();
+      const typeInput = (raw.type || "").trim();
+      const typeRaw = (typeInput || "OTHER").toUpperCase();
       const type = VALID_TYPES.includes(typeRaw as TermType) ? (typeRaw as TermType) : "OTHER";
+      if (typeInput && !VALID_TYPES.includes(typeRaw as TermType)) {
+        warnings.push(`Invalid type "${typeInput}" — defaulted to OTHER`);
+      }
 
-      const priorityRaw = (raw.priority || "MEDIUM").trim().toUpperCase();
+      const priorityInput = (raw.priority || "").trim();
+      const priorityRaw = (priorityInput || "MEDIUM").toUpperCase();
       const priority = VALID_PRIORITIES.includes(priorityRaw as Priority)
         ? (priorityRaw as Priority)
         : "MEDIUM";
+      if (priorityInput && !VALID_PRIORITIES.includes(priorityRaw as Priority)) {
+        warnings.push(`Invalid priority "${priorityInput}" — defaulted to MEDIUM`);
+      }
 
       const key = termMatchKey(contract.id, title);
       if (seenInBatch.has(key)) {
-        skipped++;
         results.push({
           row: rowNumber,
           status: "skipped",
@@ -192,38 +200,41 @@ export const contractTermsImporter: ImporterDefinition = {
       };
 
       const existing = existingByKey.get(key);
+      const action = applyMode(existing, ctx.mode);
 
       try {
-        if (existing && upsert) {
+        if (action === "update" && existing) {
+          let updateData: Partial<typeof data> = data;
+          if (ctx.mode === "fill-blanks") {
+            const current = await db.contractTerm.findUnique({ where: { id: existing.id } });
+            updateData = mergeFillBlanks(current, data);
+          }
           const term = await db.contractTerm.update({
             where: { id: existing.id },
-            data,
+            data: updateData,
           });
-          updated++;
-          results.push({ row: rowNumber, status: "updated" });
-          await logActivity("imported", "contractTerm", term.id, ctx.triggeredBy, `${title} (updated)`, {
+          results.push({ row: rowNumber, status: "updated", warnings: warnList(warnings) });
+          await logImportActivity(ctx, "imported", "contractTerm", term.id, `${title} (updated)`, {
             clientId: contract.clientId,
             projectId: contract.projectId,
           });
-        } else if (existing && !upsert) {
-          skipped++;
+        } else if (action === "skip") {
+          const label = `Term "${title}" on ${contractNumberRaw}`;
           results.push({
             row: rowNumber,
             status: "skipped",
-            message: `Term already exists: "${title}" on ${contractNumberRaw}. Re-run with "Update existing rows" enabled to update it.`,
+            message: existing ? skipExistsMessage(label) : skipNoMatchMessage(label),
           });
         } else {
           const term = await db.contractTerm.create({ data });
           existingByKey.set(key, { id: term.id });
-          imported++;
-          results.push({ row: rowNumber, status: "imported" });
-          await logActivity("imported", "contractTerm", term.id, ctx.triggeredBy, title, {
+          results.push({ row: rowNumber, status: "imported", warnings: warnList(warnings) });
+          await logImportActivity(ctx, "imported", "contractTerm", term.id, title, {
             clientId: contract.clientId,
             projectId: contract.projectId,
           });
         }
       } catch (err) {
-        failed++;
         results.push({
           row: rowNumber,
           status: "failed",
@@ -232,6 +243,6 @@ export const contractTermsImporter: ImporterDefinition = {
       }
     }
 
-    return { imported, updated, skipped, failed, rows: results };
+    return buildResult(results);
   },
 };

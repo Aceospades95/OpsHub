@@ -15,8 +15,14 @@
  */
 
 import { db } from "@/lib/db";
-import { logActivity } from "@/lib/activity";
 import type { ImporterDefinition, ImportRowResult } from "../types";
+import {
+  applyMode,
+  buildResult,
+  logImportActivity,
+  skipExistsMessage,
+  skipNoMatchMessage,
+} from "../helpers";
 
 function projectRelationMatchKey(projectId: string, relatedProjectId: string): string {
   return `${projectId}|${relatedProjectId}`;
@@ -59,12 +65,8 @@ export const projectRelationsImporter: ImporterDefinition = {
   },
 
   async commit(rows, ctx) {
+    const db = ctx.db; // ALL commit reads/writes go through ctx.db
     const results: ImportRowResult[] = [];
-    let imported = 0;
-    let updated = 0;
-    let skipped = 0;
-    let failed = 0;
-    const upsert = ctx.mode === "upsert";
 
     const projects = await db.project.findMany({ select: { id: true, name: true, clientId: true } });
     const projectByName = new Map(projects.map((p) => [p.name.toLowerCase(), p]));
@@ -88,12 +90,10 @@ export const projectRelationsImporter: ImporterDefinition = {
       const right = (raw.relatedProjectName || "").trim();
 
       if (!left) {
-        failed++;
         results.push({ row: rowNumber, status: "failed", message: "Missing projectName" });
         continue;
       }
       if (!right) {
-        failed++;
         results.push({ row: rowNumber, status: "failed", message: "Missing relatedProjectName" });
         continue;
       }
@@ -101,17 +101,14 @@ export const projectRelationsImporter: ImporterDefinition = {
       const leftProject = projectByName.get(left.toLowerCase());
       const rightProject = projectByName.get(right.toLowerCase());
       if (!leftProject) {
-        failed++;
         results.push({ row: rowNumber, status: "failed", message: `Project not found: "${left}"` });
         continue;
       }
       if (!rightProject) {
-        failed++;
         results.push({ row: rowNumber, status: "failed", message: `Project not found: "${right}"` });
         continue;
       }
       if (leftProject.id === rightProject.id) {
-        failed++;
         results.push({
           row: rowNumber,
           status: "failed",
@@ -122,54 +119,46 @@ export const projectRelationsImporter: ImporterDefinition = {
 
       const key = projectRelationMatchKey(leftProject.id, rightProject.id);
       if (seenInBatch.has(key)) {
-        if (upsert) {
-          updated++;
-          results.push({ row: rowNumber, status: "updated" });
-        } else {
-          skipped++;
-          results.push({
-            row: rowNumber,
-            status: "skipped",
-            message: `Duplicate row in file: "${left}" → "${right}"`,
-          });
-        }
+        results.push({
+          row: rowNumber,
+          status: "skipped",
+          message: `Duplicate row in file: "${left}" → "${right}"`,
+        });
         continue;
       }
       seenInBatch.add(key);
 
       const existing = existingByKey.get(key);
+      const action = applyMode(existing, ctx.mode);
 
       try {
-        if (existing && upsert) {
-          // Pure link, nothing to mutate — count it as updated for
-          // consistency with the rest of the upsert importers.
-          updated++;
+        if (action === "update" && existing) {
+          // Pure link, nothing to mutate — count it as updated (no-op)
+          // for consistency with the rest of the mode-aware importers.
           results.push({ row: rowNumber, status: "updated" });
-        } else if (existing && !upsert) {
-          skipped++;
+        } else if (action === "skip") {
+          const label = `Relation "${left} → ${right}"`;
           results.push({
             row: rowNumber,
             status: "skipped",
-            message: `Relation "${left} → ${right}" already exists. Re-run with "Update existing rows" enabled to refresh it.`,
+            message: existing ? skipExistsMessage(label) : skipNoMatchMessage(label),
           });
         } else {
           const rel = await db.projectRelation.create({
             data: { projectId: leftProject.id, relatedProjectId: rightProject.id },
           });
           existingByKey.set(key, { id: rel.id });
-          imported++;
           results.push({ row: rowNumber, status: "imported" });
-          await logActivity(
+          await logImportActivity(
+            ctx,
             "imported",
             "projectRelation",
             rel.id,
-            ctx.triggeredBy,
             `${left} ↔ ${right}`,
             { projectId: leftProject.id, clientId: leftProject.clientId }
           );
         }
       } catch (err) {
-        failed++;
         results.push({
           row: rowNumber,
           status: "failed",
@@ -178,6 +167,6 @@ export const projectRelationsImporter: ImporterDefinition = {
       }
     }
 
-    return { imported, updated, skipped, failed, rows: results };
+    return buildResult(results);
   },
 };

@@ -12,8 +12,16 @@
  */
 
 import { db } from "@/lib/db";
-import { logActivity } from "@/lib/activity";
 import type { ImporterDefinition, ImportRowResult } from "../types";
+import {
+  applyMode,
+  buildResult,
+  logImportActivity,
+  mergeFillBlanks,
+  skipExistsMessage,
+  skipNoMatchMessage,
+  warnList,
+} from "../helpers";
 
 function parseDate(v: string | undefined): Date | null {
   if (!v || v.trim() === "") return null;
@@ -107,12 +115,8 @@ export const milestonesImporter: ImporterDefinition = {
   },
 
   async commit(rows, ctx) {
+    const db = ctx.db; // ALL commit reads/writes go through ctx.db
     const results: ImportRowResult[] = [];
-    let imported = 0;
-    let updated = 0;
-    let skipped = 0;
-    let failed = 0;
-    const upsert = ctx.mode === "upsert";
 
     const projects = await db.project.findMany({ select: { id: true, name: true, clientId: true } });
     const projectByName = new Map(projects.map((p) => [p.name.toLowerCase(), p]));
@@ -135,23 +139,21 @@ export const milestonesImporter: ImporterDefinition = {
     for (let i = 0; i < rows.length; i++) {
       const rowNumber = i + 1;
       const raw = rows[i];
+      const warnings: string[] = [];
       const projectNameRaw = (raw.projectName || "").trim();
       const title = (raw.title || "").trim();
 
       if (!projectNameRaw) {
-        failed++;
         results.push({ row: rowNumber, status: "failed", message: "Missing projectName" });
         continue;
       }
       if (!title) {
-        failed++;
         results.push({ row: rowNumber, status: "failed", message: "Missing title" });
         continue;
       }
 
       const project = projectByName.get(projectNameRaw.toLowerCase());
       if (!project) {
-        failed++;
         results.push({
           row: rowNumber,
           status: "failed",
@@ -166,10 +168,15 @@ export const milestonesImporter: ImporterDefinition = {
         completedAtRaw ?? (completed ? new Date() : null);
 
       const assigneeEmails = splitList(raw.assigneeEmails).map((e) => e.toLowerCase());
+      const unresolvedAssignees = assigneeEmails.filter((e) => !userByEmail.has(e));
+      if (unresolvedAssignees.length > 0) {
+        warnings.push(
+          `Assignee${unresolvedAssignees.length === 1 ? "" : "s"} not found: ${unresolvedAssignees.map((e) => `"${e}"`).join(", ")} — skipped on this milestone`
+        );
+      }
 
       const key = milestoneMatchKey(project.id, title);
       if (seenInBatch.has(key)) {
-        skipped++;
         results.push({
           row: rowNumber,
           status: "skipped",
@@ -189,9 +196,10 @@ export const milestonesImporter: ImporterDefinition = {
       };
 
       const existing = existingByKey.get(key);
+      const action = applyMode(existing, ctx.mode);
 
       /** Resolve and write the milestone's assignees. Used by both the
-       *  create and upsert branches; the upsert branch wipes the
+       *  create and update branches; the update branch wipes the
        *  existing rows first so the CSV is authoritative. */
       const writeAssignees = async (milestoneId: string) => {
         if (assigneeEmails.length === 0) return;
@@ -207,45 +215,56 @@ export const milestonesImporter: ImporterDefinition = {
       };
 
       try {
-        if (existing && upsert) {
+        if (action === "update" && existing) {
+          let updateData: Partial<typeof data> = data;
+          if (ctx.mode === "fill-blanks") {
+            const current = await db.milestone.findUnique({ where: { id: existing.id } });
+            updateData = mergeFillBlanks(current, data);
+          }
           const milestone = await db.milestone.update({
             where: { id: existing.id },
-            data,
+            data: updateData,
           });
           // Replace the assignee set when the CSV row provides one.
-          // Empty cells leave the existing list alone — admins can
-          // explicitly clear assignees by passing a sentinel "-" if we
-          // ever need that, but the current rule is "non-empty wins".
+          // Empty cells leave the existing list alone — the rule is
+          // "non-empty wins". In fill-blanks mode the CSV list only
+          // lands when the milestone has no assignees yet.
           if (assigneeEmails.length > 0) {
-            await db.milestoneAssignee.deleteMany({ where: { milestoneId: milestone.id } });
-            await writeAssignees(milestone.id);
+            if (ctx.mode === "fill-blanks") {
+              const assigneeCount = await db.milestoneAssignee.count({
+                where: { milestoneId: milestone.id },
+              });
+              if (assigneeCount === 0) {
+                await writeAssignees(milestone.id);
+              }
+            } else {
+              await db.milestoneAssignee.deleteMany({ where: { milestoneId: milestone.id } });
+              await writeAssignees(milestone.id);
+            }
           }
-          updated++;
-          results.push({ row: rowNumber, status: "updated" });
-          await logActivity("imported", "milestone", milestone.id, ctx.triggeredBy, `${title} (updated)`, {
+          results.push({ row: rowNumber, status: "updated", warnings: warnList(warnings) });
+          await logImportActivity(ctx, "imported", "milestone", milestone.id, `${title} (updated)`, {
             projectId: project.id,
             clientId: project.clientId,
           });
-        } else if (existing && !upsert) {
-          skipped++;
+        } else if (action === "skip") {
+          const label = `Milestone "${title}" in ${projectNameRaw}`;
           results.push({
             row: rowNumber,
             status: "skipped",
-            message: `Milestone already exists: "${title}" in ${projectNameRaw}. Re-run with "Update existing rows" enabled to update it.`,
+            message: existing ? skipExistsMessage(label) : skipNoMatchMessage(label),
           });
         } else {
           const milestone = await db.milestone.create({ data });
           existingByKey.set(key, { id: milestone.id });
           await writeAssignees(milestone.id);
-          imported++;
-          results.push({ row: rowNumber, status: "imported" });
-          await logActivity("imported", "milestone", milestone.id, ctx.triggeredBy, title, {
+          results.push({ row: rowNumber, status: "imported", warnings: warnList(warnings) });
+          await logImportActivity(ctx, "imported", "milestone", milestone.id, title, {
             projectId: project.id,
             clientId: project.clientId,
           });
         }
       } catch (err) {
-        failed++;
         results.push({
           row: rowNumber,
           status: "failed",
@@ -254,6 +273,6 @@ export const milestonesImporter: ImporterDefinition = {
       }
     }
 
-    return { imported, updated, skipped, failed, rows: results };
+    return buildResult(results);
   },
 };

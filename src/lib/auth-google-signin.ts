@@ -40,6 +40,17 @@ export interface GoogleSignInDeps {
   db: Pick<PrismaClient, "account" | "user" | "allowedDomain">;
   /** Logger for the data-corruption / race-condition error paths. */
   log?: (message: string) => void;
+  /**
+   * ENTITY_CREATE workflow trigger hook, fired best-effort when a new
+   * User row is JIT-provisioned (Path 3). Injectable for tests;
+   * defaults to the real src/lib/workflows/triggers implementation via
+   * dynamic import. Failures NEVER block the sign-in.
+   */
+  fireEntityCreateTriggers?: (event: {
+    entityType: "User";
+    entityId: string;
+    createdById: string;
+  }) => Promise<unknown>;
 }
 
 export interface GoogleSignInInput {
@@ -55,7 +66,7 @@ export interface GoogleSignInInput {
  */
 export async function handleGoogleSignIn(
   { user, account, profile }: GoogleSignInInput,
-  { db, log = console.error }: GoogleSignInDeps
+  { db, log = console.error, fireEntityCreateTriggers }: GoogleSignInDeps
 ): Promise<SignInOutcome> {
   if (account?.provider !== "google") return true;
 
@@ -223,5 +234,43 @@ export async function handleGoogleSignIn(
       },
     });
   }
+
+  // Fire ENTITY_CREATE workflow triggers for the JIT-provisioned user —
+  // the same onboarding auto-start hook the admin create-user action and
+  // the CSV users importer fire. Best-effort: a failed/missing trigger
+  // must NEVER block the sign-in (losing onboarding automation is
+  // recoverable; a rejected first sign-in is a support ticket).
+  //
+  // This module is (transitively) part of a CLIENT bundle — a client
+  // component imports @/lib/permissions → @/lib/auth → this file — so
+  // the fallback import of the trigger engine (which drags in the email
+  // layer → nodemailer → node:fs) MUST be gated behind the
+  // compile-time NEXT_RUNTIME define. Webpack replaces it per bundle
+  // and dead-code-eliminates the whole branch (import included) from
+  // client/edge builds; only the Node server bundle keeps it. Same
+  // pattern as instrumentation.ts. That's also why this file otherwise
+  // has zero runtime imports.
+  try {
+    let fire = fireEntityCreateTriggers;
+    if (!fire && process.env.NEXT_RUNTIME === "nodejs") {
+      fire = (await import("@/lib/workflows/triggers")).fireEntityCreateTriggers;
+    }
+    if (fire) {
+      await fire({
+        entityType: "User",
+        entityId: created.id,
+        // Self-service provisioning — the new user is their own creator
+        // for attribution purposes.
+        createdById: created.id,
+      });
+    }
+  } catch (err) {
+    log(
+      `[auth] ENTITY_CREATE triggers failed for JIT-provisioned user ${created.id}: ${
+        err instanceof Error ? err.message : String(err)
+      }`
+    );
+  }
+
   return true;
 }

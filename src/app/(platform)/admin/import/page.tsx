@@ -80,13 +80,26 @@ export default async function AdminImportPage() {
           ) : (
             <div className="space-y-2">
               {recentRuns.map((run) => {
-                const hasErrors = run.errors !== null;
+                // Stored `failed` when present; legacy rows (stored 0)
+                // fall back to the arithmetic derivation. A run is only
+                // flagged when something actually failed or warned —
+                // clean skipped/updated rows are normal upsert traffic,
+                // not errors (the old `errors !== null` check made every
+                // successful upsert run show a warning icon).
+                const failedCount =
+                  run.failed > 0
+                    ? run.failed
+                    : Math.max(
+                        0,
+                        run.rowCount - run.imported - run.updated - run.skipped
+                      );
+                const hasIssues = failedCount > 0 || run.warnings > 0;
                 return (
                   <div
                     key={run.id}
                     className="flex items-start gap-3 rounded border border-border p-3"
                   >
-                    {hasErrors ? (
+                    {hasIssues ? (
                       <AlertCircle className="h-4 w-4 text-warning mt-0.5 shrink-0" />
                     ) : (
                       <CheckCircle2 className="h-4 w-4 text-success mt-0.5 shrink-0" />
@@ -99,8 +112,8 @@ export default async function AdminImportPage() {
                         <p className="text-sm font-medium truncate">{run.filename}</p>
                       </div>
                       <p className="text-xs text-muted-foreground mt-0.5">
-                        {run.rowCount} rows · {run.imported} imported · {run.skipped} skipped
-                        {hasErrors && " · errors below"}
+                        {run.rowCount} rows · {run.imported} imported · {run.updated} updated · {run.skipped} skipped · {failedCount} failed
+                        {run.warnings > 0 && ` · ${run.warnings} with warnings`}
                       </p>
                     </div>
                     <div className="text-xs text-muted-foreground text-right shrink-0">

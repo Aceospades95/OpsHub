@@ -15,8 +15,15 @@
  */
 
 import { db } from "@/lib/db";
-import { logActivity } from "@/lib/activity";
 import type { ImporterDefinition, ImportRowResult } from "../types";
+import {
+  applyMode,
+  buildResult,
+  isBlank,
+  logImportActivity,
+  skipExistsMessage,
+  skipNoMatchMessage,
+} from "../helpers";
 
 function supplierProjectMatchKey(supplierId: string, projectId: string): string {
   return `${supplierId}|${projectId}`;
@@ -62,12 +69,8 @@ export const supplierProjectsImporter: ImporterDefinition = {
   },
 
   async commit(rows, ctx) {
+    const db = ctx.db; // ALL commit reads/writes go through ctx.db
     const results: ImportRowResult[] = [];
-    let imported = 0;
-    let updated = 0;
-    let skipped = 0;
-    let failed = 0;
-    const upsert = ctx.mode === "upsert";
 
     const suppliers = await db.supplier.findMany({ select: { id: true, name: true } });
     const supplierByName = new Map(suppliers.map((s) => [s.name.toLowerCase(), s.id]));
@@ -90,42 +93,32 @@ export const supplierProjectsImporter: ImporterDefinition = {
       const projectNameRaw = (raw.projectName || "").trim();
 
       if (!supplierNameRaw) {
-        failed++;
         results.push({ row: rowNumber, status: "failed", message: "Missing supplierName" });
         continue;
       }
       if (!projectNameRaw) {
-        failed++;
         results.push({ row: rowNumber, status: "failed", message: "Missing projectName" });
         continue;
       }
 
       const supplierId = supplierByName.get(supplierNameRaw.toLowerCase());
       if (!supplierId) {
-        failed++;
         results.push({ row: rowNumber, status: "failed", message: `Supplier not found: "${supplierNameRaw}"` });
         continue;
       }
       const project = projectByName.get(projectNameRaw.toLowerCase());
       if (!project) {
-        failed++;
         results.push({ row: rowNumber, status: "failed", message: `Project not found: "${projectNameRaw}"` });
         continue;
       }
 
       const key = supplierProjectMatchKey(supplierId, project.id);
       if (seenInBatch.has(key)) {
-        if (upsert) {
-          updated++;
-          results.push({ row: rowNumber, status: "updated" });
-        } else {
-          skipped++;
-          results.push({
-            row: rowNumber,
-            status: "skipped",
-            message: `Duplicate row in file: "${supplierNameRaw}" → "${projectNameRaw}"`,
-          });
-        }
+        results.push({
+          row: rowNumber,
+          status: "skipped",
+          message: `Duplicate row in file: "${supplierNameRaw}" → "${projectNameRaw}"`,
+        });
         continue;
       }
       seenInBatch.add(key);
@@ -137,46 +130,58 @@ export const supplierProjectsImporter: ImporterDefinition = {
       };
 
       const existing = existingByKey.get(key);
+      const action = applyMode(existing, ctx.mode);
 
       try {
-        if (existing && upsert) {
+        if (action === "update" && existing) {
+          // notes is the only mutable field. In fill-blanks mode only
+          // write it when the incoming value is non-empty AND the
+          // stored value is empty.
+          let notesUpdate: { notes?: string | null } = { notes: data.notes };
+          if (ctx.mode === "fill-blanks") {
+            const current = await db.supplierProject.findUnique({
+              where: { id: existing.id },
+              select: { notes: true },
+            });
+            notesUpdate =
+              !isBlank(data.notes) && isBlank(current?.notes)
+                ? { notes: data.notes }
+                : {};
+          }
           const link = await db.supplierProject.update({
             where: { id: existing.id },
-            data: { notes: data.notes },
+            data: notesUpdate,
           });
-          updated++;
           results.push({ row: rowNumber, status: "updated" });
-          await logActivity(
+          await logImportActivity(
+            ctx,
             "imported",
             "supplierProject",
             link.id,
-            ctx.triggeredBy,
             `${supplierNameRaw} → ${projectNameRaw} (updated)`,
             { projectId: project.id, clientId: project.clientId }
           );
-        } else if (existing && !upsert) {
-          skipped++;
+        } else if (action === "skip") {
+          const label = `Link "${supplierNameRaw}" → "${projectNameRaw}"`;
           results.push({
             row: rowNumber,
             status: "skipped",
-            message: `Supplier "${supplierNameRaw}" already linked to "${projectNameRaw}". Re-run with "Update existing rows" enabled to update the notes.`,
+            message: existing ? skipExistsMessage(label) : skipNoMatchMessage(label),
           });
         } else {
           const link = await db.supplierProject.create({ data });
           existingByKey.set(key, { id: link.id });
-          imported++;
           results.push({ row: rowNumber, status: "imported" });
-          await logActivity(
+          await logImportActivity(
+            ctx,
             "imported",
             "supplierProject",
             link.id,
-            ctx.triggeredBy,
             `${supplierNameRaw} → ${projectNameRaw}`,
             { projectId: project.id, clientId: project.clientId }
           );
         }
       } catch (err) {
-        failed++;
         results.push({
           row: rowNumber,
           status: "failed",
@@ -185,6 +190,6 @@ export const supplierProjectsImporter: ImporterDefinition = {
       }
     }
 
-    return { imported, updated, skipped, failed, rows: results };
+    return buildResult(results);
   },
 };

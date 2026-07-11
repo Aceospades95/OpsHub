@@ -409,13 +409,41 @@ table-first defaults with remembered preference · jobs dry-run +
 self-explaining runs (cert + vehicle) · recovery-bin purge task creatable
 · embed-widget delisting.
 
-**Phase B — the configurability core (next, ~1–2 sessions)**
-Notification engine (`NotificationRule` + admin Rules tab + route the 18
-code-driven sites through it) · jobs typed params + failure alerting +
-remaining dry-run coverage · import dry-run/preview + modes + warnings +
-results export · vehicle per-service-type schedules + technician
-submission flow + spreadsheet importers + escalation chains · reliability
-findings #2/#3/#5–#10 + the small ones.
+**Phase B — the configurability core — ✅ shipped 2026-07-11**
+All four workstreams landed (commits `86b2463`, `6fded5f`, `e33d16d`, +
+the import-framework commit):
+
+- *Notification engine*: `NotificationRule` consulted by `notify()` on
+  every send — per-type enable, in-app/email channel toggles, recipients
+  added by role/user/external address, email subject+body `{{variable}}`
+  overrides, per-entity throttling; emails personalized per recipient
+  inside the engine; type registry + "Delivery rules" admin section at
+  /admin/notifications with per-type test sends. Dead never-emitted
+  types removed (#15).
+- *Jobs v2*: `JobConfig.params` + `paramsSchema` → admin-editable typed
+  settings per job (bid window; fleet due windows + escalation
+  thresholds); 3-consecutive-failure admin alerting (`job-failing`
+  through the engine); cadence overrides now real for the every-tick
+  jobs (#5).
+- *Imports v2*: true dry-run preview (transaction-rollback of the real
+  commit path) with per-row create/update/skip/fail/warning outcomes;
+  four modes incl. fill-blanks honored by ALL importers (users/clients
+  mode bug fixed); warning status for dropped FKs/coerced enums;
+  ImportLog failed/warnings counters, clean errors blob, working cursor
+  pagination, row-results CSV export; onboarding triggers now fire for
+  imported + Google-JIT users (#7). New importers: `vehicles`,
+  `vehicle-service-schedules`, `vehicle-maintenance` (fleet spreadsheet
+  → OpsHub, with schedule re-arm + odometer roll-forward).
+- *Fleet v2*: `VehicleServiceSchedule` (months AND miles, due =
+  first-tripping bound) with CRUD + computed status on the vehicle page;
+  driver "Log maintenance" submissions (records + schedule re-arm +
+  mileage + office ping); registration expiry tracking; maintenance job
+  v2 with per-schedule ledger, tunable windows, and weekly manager
+  escalations (`vehicle-maintenance-overdue` — put management on that
+  type's delivery rule for the CC list).
+- *Reliability findings*: #2, #3, #6, #8–#10, #12–#14, #16 all fixed
+  (see the findings table above — every row now ✅ except the Phase C
+  items noted).
 
 **Phase C — new module + polish (after B, ~1–2 sessions)**
 Daily work logs + schedule exceptions + overtime rollups/snapshots +

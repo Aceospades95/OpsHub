@@ -9,8 +9,16 @@
 import type { SupplierStatus } from "@prisma/client";
 import { normalizeSupplierCategory } from "@/lib/supplier-categories";
 import { db } from "@/lib/db";
-import { logActivity } from "@/lib/activity";
-import type { ImporterDefinition, ImportResult, ImportRowResult } from "../types";
+import type { ImporterDefinition, ImportRowResult } from "../types";
+import {
+  applyMode,
+  buildResult,
+  logImportActivity,
+  mergeFillBlanks,
+  skipExistsMessage,
+  skipNoMatchMessage,
+  warnList,
+} from "../helpers";
 
 const VALID_STATUSES: SupplierStatus[] = ["ACTIVE", "INACTIVE", "ARCHIVED"];
 
@@ -87,12 +95,11 @@ export const suppliersImporter: ImporterDefinition = {
   },
 
   async commit(rows, ctx) {
+    const db = ctx.db; // ALL commit reads/writes go through ctx.db
     const results: ImportRowResult[] = [];
-    let imported = 0, updated = 0, skipped = 0, failed = 0;
-    const upsert = ctx.mode === "upsert";
 
     // Match by lowercased supplier name. Used for both dedupe and the
-    // upsert update path.
+    // update path.
     const byName = new Map(
       (await db.supplier.findMany({ select: { id: true, name: true } }))
         .map((s) => [s.name.toLowerCase(), s.id])
@@ -101,17 +108,18 @@ export const suppliersImporter: ImporterDefinition = {
     for (let i = 0; i < rows.length; i++) {
       const rowNumber = i + 1;
       const raw = rows[i];
+      const warnings: string[] = [];
       const name = (raw.name || "").trim();
       // Same normalization as the create/update forms — a CSV "Fleet
       // Maintenance" must merge with the picker's "fleet_maintenance".
       const category = normalizeSupplierCategory(raw.category || "");
 
-      if (!name) { failed++; results.push({ row: rowNumber, status: "failed", message: "Missing name" }); continue; }
-      if (!category) { failed++; results.push({ row: rowNumber, status: "failed", message: "Missing category" }); continue; }
+      if (!name) { results.push({ row: rowNumber, status: "failed", message: "Missing name" }); continue; }
+      if (!category) { results.push({ row: rowNumber, status: "failed", message: "Missing category" }); continue; }
 
       const statusRaw = (raw.status || "ACTIVE").trim().toUpperCase();
       const status = VALID_STATUSES.includes(statusRaw as SupplierStatus) ? (statusRaw as SupplierStatus) : null;
-      if (!status) { failed++; results.push({ row: rowNumber, status: "failed", message: `Invalid status "${raw.status}"` }); continue; }
+      if (!status) { results.push({ row: rowNumber, status: "failed", message: `Invalid status "${raw.status}"` }); continue; }
 
       const data = {
         name,
@@ -129,30 +137,37 @@ export const suppliersImporter: ImporterDefinition = {
       };
 
       const existingId = byName.get(name.toLowerCase()) || null;
+      const action = applyMode(existingId, ctx.mode);
 
       try {
-        if (existingId && upsert) {
-          const supplier = await db.supplier.update({ where: { id: existingId }, data });
-          updated++; results.push({ row: rowNumber, status: "updated" });
-          await logActivity("imported", "supplier", supplier.id, ctx.triggeredBy, `${name} (updated)`);
-        } else if (existingId && !upsert) {
-          skipped++;
+        if (action === "update" && existingId) {
+          let updateData: Partial<typeof data> = data;
+          if (ctx.mode === "fill-blanks") {
+            const current = await db.supplier.findUnique({ where: { id: existingId } });
+            updateData = mergeFillBlanks(current, data);
+          }
+          const supplier = await db.supplier.update({ where: { id: existingId }, data: updateData });
+          results.push({ row: rowNumber, status: "updated", warnings: warnList(warnings) });
+          await logImportActivity(ctx, "imported", "supplier", supplier.id, `${name} (updated)`);
+        } else if (action === "skip") {
           results.push({
             row: rowNumber,
             status: "skipped",
-            message: `Supplier already exists: "${name}". Re-run with "Update existing rows" enabled to update it.`,
+            message: existingId
+              ? skipExistsMessage(`Supplier "${name}"`)
+              : skipNoMatchMessage(`Supplier "${name}"`),
           });
         } else {
           const supplier = await db.supplier.create({ data });
           byName.set(name.toLowerCase(), supplier.id);
-          imported++; results.push({ row: rowNumber, status: "imported" });
-          await logActivity("imported", "supplier", supplier.id, ctx.triggeredBy, name);
+          results.push({ row: rowNumber, status: "imported", warnings: warnList(warnings) });
+          await logImportActivity(ctx, "imported", "supplier", supplier.id, name);
         }
       } catch (err) {
-        failed++; results.push({ row: rowNumber, status: "failed", message: err instanceof Error ? err.message : "DB error" });
+        results.push({ row: rowNumber, status: "failed", message: err instanceof Error ? err.message : "DB error" });
       }
     }
 
-    return { imported, updated, skipped, failed, rows: results };
+    return buildResult(results);
   },
 };

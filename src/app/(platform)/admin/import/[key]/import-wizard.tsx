@@ -7,13 +7,20 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
   Upload,
-  CheckCircle2,
   AlertCircle,
+  ArrowLeft,
   ArrowRight,
   RotateCcw,
   Download,
+  Eye,
+  Play,
 } from "lucide-react";
-import { previewImport, commitImport } from "@/actions/import";
+import {
+  previewImport,
+  previewCommitImport,
+  commitImport,
+} from "@/actions/import";
+import { buildRowResultsCsv } from "@/lib/importers/row-results-csv";
 
 interface ImporterFieldLite {
   key: string;
@@ -29,13 +36,50 @@ interface PreviewState {
   mapping: Record<string, string | undefined>;
 }
 
+interface RowOutcome {
+  row: number;
+  status: string;
+  message?: string;
+  warnings?: string[];
+}
+
 interface CommitOutcome {
   imported: number;
   updated: number;
   skipped: number;
   failed: number;
-  rowOutcomes: { row: number; status: string; message?: string }[];
+  warnings: number;
+  rowOutcomes: RowOutcome[];
 }
+
+type ImportModeOption = "create" | "update" | "upsert" | "fill-blanks";
+
+const MODE_OPTIONS: {
+  value: ImportModeOption;
+  label: string;
+  hint: string;
+}[] = [
+  {
+    value: "create",
+    label: "Create new only",
+    hint: "Rows matching an existing record are skipped. Only new records are created.",
+  },
+  {
+    value: "update",
+    label: "Update existing only",
+    hint: "Rows with no existing match are skipped. No new records are created.",
+  },
+  {
+    value: "upsert",
+    label: "Create + update",
+    hint: "New rows are created; matching rows are fully updated in place.",
+  },
+  {
+    value: "fill-blanks",
+    label: "Create + fill blanks only",
+    hint: "New rows are created; on matches, only currently-empty fields are filled. Existing data is never overwritten.",
+  },
+];
 
 interface Props {
   importerKey: string;
@@ -44,20 +88,76 @@ interface Props {
    *  blank template. Driven by whether the importer's exportRows() is
    *  defined. */
   supportsExport: boolean;
-  /** When true, the wizard surfaces the "Update existing rows on match"
-   *  toggle. Driven by whether the importer's commit() honors
-   *  ctx.mode === "upsert". */
+  /** When true, the wizard surfaces the import-mode selector. Driven by
+   *  whether the importer's commit() honors ctx.mode via a natural key. */
   supportsUpsert: boolean;
   /** Human-readable description of the natural-key match shown next to
-   *  the toggle. Required when supportsUpsert is true. */
+   *  the mode selector. Required when supportsUpsert is true. */
   upsertKeyDescription?: string;
 }
 
+/** Client-side blob download of the per-row outcomes as CSV. */
+function downloadRowResults(outcomes: RowOutcome[], importerKey: string) {
+  const csv = buildRowResultsCsv(outcomes);
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `import-${importerKey}-row-results.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function statusBadgeClass(status: string): string {
+  switch (status) {
+    case "failed":
+      return "text-destructive border-destructive/50";
+    case "skipped":
+      return "text-warning border-warning/50";
+    case "updated":
+      return "text-blue-600 border-blue-600/50";
+    default:
+      return "text-success border-success/50";
+  }
+}
+
+/** The five stat tiles shared by the dry-run and result screens. */
+function StatTiles({ outcome }: { outcome: CommitOutcome }) {
+  return (
+    <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
+      <div className="rounded border border-border p-4 text-center">
+        <p className="text-3xl font-bold text-success">{outcome.imported}</p>
+        <p className="text-xs text-muted-foreground mt-1">Created</p>
+      </div>
+      <div className="rounded border border-border p-4 text-center">
+        <p className="text-3xl font-bold text-blue-600">{outcome.updated}</p>
+        <p className="text-xs text-muted-foreground mt-1">Updated</p>
+      </div>
+      <div className="rounded border border-border p-4 text-center">
+        <p className="text-3xl font-bold text-warning">{outcome.skipped}</p>
+        <p className="text-xs text-muted-foreground mt-1">Skipped</p>
+      </div>
+      <div className="rounded border border-border p-4 text-center">
+        <p className="text-3xl font-bold text-destructive">{outcome.failed}</p>
+        <p className="text-xs text-muted-foreground mt-1">Failed</p>
+      </div>
+      <div className="rounded border border-border p-4 text-center">
+        <p className="text-3xl font-bold text-amber-600">{outcome.warnings}</p>
+        <p className="text-xs text-muted-foreground mt-1">Warnings</p>
+      </div>
+    </div>
+  );
+}
+
 /**
- * Wizard with three states:
+ * Wizard with four states:
  *   1. Upload — pick a file
- *   2. Preview + map — show first 20 rows + mapping form
- *   3. Result — show how many rows imported / skipped / failed
+ *   2. Map + configure — first-20-rows preview, column mapping, mode
+ *   3. Dry run (optional but primary) — full per-row outcomes with
+ *      nothing persisted
+ *   4. Result — what actually happened
  */
 export function ImportWizard({
   importerKey,
@@ -72,11 +172,15 @@ export function ImportWizard({
   const [pickedFile, setPickedFile] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<PreviewState | null>(null);
+  const [dryRun, setDryRun] = useState<CommitOutcome | null>(null);
   const [outcome, setOutcome] = useState<CommitOutcome | null>(null);
-  // Default ON when the importer supports upsert. Re-uploading a CSV
-  // (intentional or after a partial failure) almost always means
-  // "update what's there" rather than "create duplicates."
-  const [upsertMode, setUpsertMode] = useState<boolean>(supportsUpsert);
+  // Default "upsert" (Create + update) when the importer matches on a
+  // natural key — re-uploading a CSV (intentional or after a partial
+  // failure) almost always means "update what's there" rather than
+  // "create duplicates."
+  const [mode, setMode] = useState<ImportModeOption>(
+    supportsUpsert ? "upsert" : "create"
+  );
 
   // ── STEP 1 → 2: Upload + parse + auto-map ─────────
   const handleUpload = () => {
@@ -104,10 +208,8 @@ export function ImportWizard({
     });
   };
 
-  // ── STEP 2 → 3: Commit ─────────────────────────
-  const handleCommit = () => {
-    setError(null);
-    if (!pickedFile || !preview) return;
+  const buildCommitFormData = (): FormData | null => {
+    if (!pickedFile || !preview) return null;
 
     // Validate required fields are mapped
     const missing = fields
@@ -115,14 +217,45 @@ export function ImportWizard({
       .map((f) => f.label);
     if (missing.length > 0) {
       setError(`Missing required mapping: ${missing.join(", ")}`);
-      return;
+      return null;
     }
 
     const formData = new FormData();
     formData.set("importerKey", importerKey);
     formData.set("file", pickedFile);
     formData.set("mapping", JSON.stringify(preview.mapping));
-    formData.set("mode", supportsUpsert && upsertMode ? "upsert" : "create");
+    formData.set("mode", supportsUpsert ? mode : "create");
+    return formData;
+  };
+
+  // ── STEP 2 → 3: Dry-run preview (nothing persisted) ──
+  const handleDryRun = () => {
+    setError(null);
+    const formData = buildCommitFormData();
+    if (!formData) return;
+
+    startTransition(async () => {
+      const result = await previewCommitImport(null, formData);
+      if (!result.success) {
+        setError(result.error || "Preview failed");
+        return;
+      }
+      setDryRun({
+        imported: result.imported || 0,
+        updated: result.updated || 0,
+        skipped: result.skipped || 0,
+        failed: result.failed || 0,
+        warnings: result.warnings || 0,
+        rowOutcomes: result.rowOutcomes || [],
+      });
+    });
+  };
+
+  // ── STEP 2/3 → 4: Commit ─────────────────────────
+  const handleCommit = () => {
+    setError(null);
+    const formData = buildCommitFormData();
+    if (!formData) return;
 
     startTransition(async () => {
       const result = await commitImport(null, formData);
@@ -130,11 +263,13 @@ export function ImportWizard({
         setError(result.error || "Import failed");
         return;
       }
+      setDryRun(null);
       setOutcome({
         imported: result.imported || 0,
         updated: result.updated || 0,
         skipped: result.skipped || 0,
         failed: result.failed || 0,
+        warnings: result.warnings || 0,
         rowOutcomes: result.rowOutcomes || [],
       });
       router.refresh();
@@ -144,6 +279,7 @@ export function ImportWizard({
   const handleReset = () => {
     setPickedFile(null);
     setPreview(null);
+    setDryRun(null);
     setOutcome(null);
     setError(null);
     if (fileRef.current) fileRef.current.value = "";
@@ -157,10 +293,14 @@ export function ImportWizard({
     });
   };
 
-  // ── Render: result screen takes priority over preview ──
+  // ── Render: result screen takes priority ─────────
   if (outcome) {
-    const failedRows = outcome.rowOutcomes.filter((r) => r.status === "failed");
-    const skippedRows = outcome.rowOutcomes.filter((r) => r.status === "skipped");
+    const issueRows = outcome.rowOutcomes.filter(
+      (r) =>
+        r.status === "failed" ||
+        r.status === "skipped" ||
+        (r.warnings && r.warnings.length > 0)
+    );
 
     return (
       <Card>
@@ -168,52 +308,141 @@ export function ImportWizard({
           <CardTitle>Import complete</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-            <div className="rounded border border-border p-4 text-center">
-              <p className="text-3xl font-bold text-success">{outcome.imported}</p>
-              <p className="text-xs text-muted-foreground mt-1">Created</p>
-            </div>
-            <div className="rounded border border-border p-4 text-center">
-              <p className="text-3xl font-bold text-blue-600">{outcome.updated}</p>
-              <p className="text-xs text-muted-foreground mt-1">Updated</p>
-            </div>
-            <div className="rounded border border-border p-4 text-center">
-              <p className="text-3xl font-bold text-warning">{outcome.skipped}</p>
-              <p className="text-xs text-muted-foreground mt-1">Skipped</p>
-            </div>
-            <div className="rounded border border-border p-4 text-center">
-              <p className="text-3xl font-bold text-destructive">{outcome.failed}</p>
-              <p className="text-xs text-muted-foreground mt-1">Failed</p>
-            </div>
-          </div>
+          <StatTiles outcome={outcome} />
 
-          {(failedRows.length > 0 || skippedRows.length > 0) && (
+          {issueRows.length > 0 && (
             <div className="space-y-2">
               <h3 className="text-sm font-semibold">Issues</h3>
               <div className="rounded border border-border divide-y divide-border max-h-96 overflow-y-auto">
-                {[...failedRows, ...skippedRows].map((r) => (
+                {issueRows.map((r) => (
                   <div key={`${r.row}-${r.status}`} className="flex items-start gap-2 p-2 text-xs">
                     <Badge
                       variant="outline"
-                      className={`text-[10px] shrink-0 ${
-                        r.status === "failed"
-                          ? "text-destructive border-destructive/50"
-                          : "text-warning border-warning/50"
-                      }`}
+                      className={`text-[10px] shrink-0 ${statusBadgeClass(
+                        r.status === "imported" || r.status === "updated"
+                          ? "skipped" // warning rows get the warning tone
+                          : r.status
+                      )}`}
                     >
-                      Row {r.row}
+                      Row {r.row} · {r.warnings && r.warnings.length > 0 && r.status !== "failed" && r.status !== "skipped" ? `${r.status} with warnings` : r.status}
                     </Badge>
-                    <span className="text-muted-foreground">{r.message}</span>
+                    <span className="text-muted-foreground">
+                      {[r.message, ...(r.warnings || [])].filter(Boolean).join(" · ")}
+                    </span>
                   </div>
                 ))}
               </div>
             </div>
           )}
 
-          <div className="flex gap-2 justify-end pt-2">
+          <div className="flex flex-wrap gap-2 justify-end pt-2">
+            <Button
+              variant="outline"
+              onClick={() => downloadRowResults(outcome.rowOutcomes, importerKey)}
+            >
+              <Download className="h-4 w-4 mr-1.5" />
+              Download row results (CSV)
+            </Button>
             <Button variant="outline" onClick={handleReset}>
               <RotateCcw className="h-4 w-4 mr-1.5" />
               Import another file
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  // ── Dry-run preview screen ────────────────────────
+  if (dryRun && preview) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Preview — nothing has been written</CardTitle>
+          <p className="text-sm text-muted-foreground">
+            This is a dry run of the full import ({preview.totalRows} row
+            {preview.totalRows === 1 ? "" : "s"}, mode:{" "}
+            {MODE_OPTIONS.find((m) => m.value === mode)?.label || mode}). All
+            changes were rolled back. If the outcomes look right, run the
+            import for real.
+          </p>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <StatTiles outcome={dryRun} />
+
+          <div>
+            <h3 className="text-sm font-semibold mb-2">
+              Per-row outcomes
+              {dryRun.rowOutcomes.length < preview.totalRows
+                ? ` (first ${dryRun.rowOutcomes.length} of ${preview.totalRows})`
+                : ""}
+            </h3>
+            <div className="rounded border border-border max-h-96 overflow-y-auto">
+              <table className="w-full text-xs">
+                <thead className="bg-muted/30 sticky top-0">
+                  <tr className="text-left text-[10px] uppercase tracking-wider text-muted-foreground">
+                    <th className="px-3 py-2 font-semibold w-14">Row</th>
+                    <th className="px-3 py-2 font-semibold w-24">Status</th>
+                    <th className="px-3 py-2 font-semibold">Message / warnings</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {dryRun.rowOutcomes.map((r) => (
+                    <tr
+                      key={`${r.row}-${r.status}`}
+                      className="border-t border-border/50 align-top"
+                    >
+                      <td className="px-3 py-1.5 tabular-nums text-muted-foreground">
+                        {r.row}
+                      </td>
+                      <td className="px-3 py-1.5">
+                        <Badge
+                          variant="outline"
+                          className={`text-[10px] ${statusBadgeClass(r.status)}`}
+                        >
+                          {r.status}
+                        </Badge>
+                      </td>
+                      <td className="px-3 py-1.5 text-muted-foreground">
+                        {[r.message, ...(r.warnings || [])].filter(Boolean).join(" · ") || (
+                          <span className="text-muted-foreground/40">—</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {error && (
+            <div className="rounded bg-destructive/10 p-3 text-sm text-destructive flex items-center gap-2">
+              <AlertCircle className="h-4 w-4 shrink-0" />
+              {error}
+            </div>
+          )}
+
+          <div className="flex justify-between pt-2">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setDryRun(null);
+                setError(null);
+              }}
+              disabled={isPending}
+            >
+              <ArrowLeft className="h-4 w-4 mr-1.5" />
+              Back
+            </Button>
+            <Button onClick={handleCommit} disabled={isPending}>
+              {isPending ? (
+                "Importing..."
+              ) : (
+                <>
+                  Looks good — run import
+                  <Play className="h-4 w-4 ml-1.5" />
+                </>
+              )}
             </Button>
           </div>
         </CardContent>
@@ -296,26 +525,36 @@ export function ImportWizard({
           </div>
 
           {supportsUpsert && (
-            <div className="rounded border border-border bg-muted/30 p-3">
-              <label className="flex items-start gap-2 text-sm cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={upsertMode}
-                  onChange={(e) => setUpsertMode(e.target.checked)}
-                  className="mt-0.5 rounded"
-                />
-                <div className="space-y-1">
-                  <p className="font-medium">Update existing rows on match</p>
-                  <p className="text-xs text-muted-foreground">
-                    {upsertKeyDescription || "Match existing rows by their natural key and update them in place."}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {upsertMode
-                      ? "Rows that match existing records will be UPDATED. New rows will be created."
-                      : "Rows that match existing records will be SKIPPED. Only new rows will be created."}
-                  </p>
-                </div>
-              </label>
+            <div className="rounded border border-border bg-muted/30 p-3 space-y-2">
+              <p className="text-sm font-medium">How should existing records be handled?</p>
+              <p className="text-xs text-muted-foreground">
+                {upsertKeyDescription || "Existing rows are matched by their natural key."}
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                {MODE_OPTIONS.map((opt) => (
+                  <label
+                    key={opt.value}
+                    className={`flex items-start gap-2 text-sm cursor-pointer rounded border p-2 transition-colors ${
+                      mode === opt.value
+                        ? "border-primary bg-primary/5"
+                        : "border-border hover:bg-muted/40"
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="import-mode"
+                      value={opt.value}
+                      checked={mode === opt.value}
+                      onChange={() => setMode(opt.value)}
+                      className="mt-0.5"
+                    />
+                    <span>
+                      <span className="font-medium block">{opt.label}</span>
+                      <span className="text-xs text-muted-foreground">{opt.hint}</span>
+                    </span>
+                  </label>
+                ))}
+              </div>
             </div>
           )}
 
@@ -326,21 +565,33 @@ export function ImportWizard({
             </div>
           )}
 
-          <div className="flex justify-between pt-2">
+          <div className="flex flex-wrap justify-between gap-2 pt-2">
             <Button variant="outline" onClick={handleReset} disabled={isPending}>
               <RotateCcw className="h-4 w-4 mr-1.5" />
               Start over
             </Button>
-            <Button onClick={handleCommit} disabled={isPending}>
-              {isPending ? (
-                "Importing..."
-              ) : (
-                <>
-                  Import {preview.totalRows} row{preview.totalRows === 1 ? "" : "s"}
-                  <ArrowRight className="h-4 w-4 ml-1.5" />
-                </>
-              )}
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button variant="outline" onClick={handleCommit} disabled={isPending}>
+                {isPending ? (
+                  "Working..."
+                ) : (
+                  <>
+                    Import now
+                    <ArrowRight className="h-4 w-4 ml-1.5" />
+                  </>
+                )}
+              </Button>
+              <Button onClick={handleDryRun} disabled={isPending}>
+                {isPending ? (
+                  "Working..."
+                ) : (
+                  <>
+                    <Eye className="h-4 w-4 mr-1.5" />
+                    Preview import
+                  </>
+                )}
+              </Button>
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -378,7 +629,8 @@ export function ImportWizard({
         </div>
         <p className="text-sm text-muted-foreground">
           Pick a CSV file to import. After upload you&rsquo;ll see a preview
-          of the first 20 rows and can map columns before committing.
+          of the first 20 rows, map columns, and can dry-run the whole import
+          before committing.
           {supportsExport
             ? " To update existing records, click \"Download current data\", edit in Excel, and re-upload — rows are matched by their key (e.g. email or name) and updated in place."
             : ""}

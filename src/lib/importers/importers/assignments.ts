@@ -15,8 +15,16 @@
 
 import type { AssignmentStatus } from "@prisma/client";
 import { db } from "@/lib/db";
-import { logActivity } from "@/lib/activity";
 import type { ImporterDefinition, ImportRowResult } from "../types";
+import {
+  applyMode,
+  buildResult,
+  logImportActivity,
+  mergeFillBlanks,
+  skipExistsMessage,
+  skipNoMatchMessage,
+  warnList,
+} from "../helpers";
 
 const VALID_STATUSES: AssignmentStatus[] = ["ACTIVE", "PLANNED", "COMPLETED", "ON_HOLD"];
 
@@ -152,12 +160,8 @@ export const assignmentsImporter: ImporterDefinition = {
   },
 
   async commit(rows, ctx) {
+    const db = ctx.db; // ALL commit reads/writes go through ctx.db
     const results: ImportRowResult[] = [];
-    let imported = 0;
-    let updated = 0;
-    let skipped = 0;
-    let failed = 0;
-    const upsert = ctx.mode === "upsert";
 
     const users = await db.user.findMany({
       where: { isActive: true },
@@ -208,15 +212,14 @@ export const assignmentsImporter: ImporterDefinition = {
     for (let i = 0; i < rows.length; i++) {
       const rowNumber = i + 1;
       const raw = rows[i];
+      const warnings: string[] = [];
       const employeeEmail = (raw.employeeEmail || "").trim().toLowerCase();
       if (!employeeEmail) {
-        failed++;
         results.push({ row: rowNumber, status: "failed", message: "Missing employeeEmail" });
         continue;
       }
       const employeeId = userByEmail.get(employeeEmail);
       if (!employeeId) {
-        failed++;
         results.push({
           row: rowNumber,
           status: "failed",
@@ -230,19 +233,30 @@ export const assignmentsImporter: ImporterDefinition = {
         ? (statusRaw as AssignmentStatus)
         : null;
       if (!status) {
-        failed++;
         results.push({ row: rowNumber, status: "failed", message: `Invalid status "${raw.status}"` });
         continue;
       }
 
       const projectName = (raw.projectName || "").trim().toLowerCase();
       const projectId = projectName ? projectByName.get(projectName) || null : null;
+      if (projectName && !projectId) {
+        warnings.push(`Project not found: "${(raw.projectName || "").trim()}" — imported without project link`);
+      }
       const clientName = (raw.clientName || "").trim().toLowerCase();
       const clientId = clientName ? clientByName.get(clientName) || null : null;
+      if (clientName && !clientId) {
+        warnings.push(`Client not found: "${(raw.clientName || "").trim()}" — imported without client link`);
+      }
       const offeringName = (raw.serviceOfferingName || "").trim().toLowerCase();
       const serviceOfferingId = offeringName ? offeringByName.get(offeringName) || null : null;
+      if (offeringName && !serviceOfferingId) {
+        warnings.push(`Service offering not found: "${(raw.serviceOfferingName || "").trim()}" — imported without offering link`);
+      }
       const roleDefName = (raw.roleDefinitionName || "").trim().toLowerCase();
       const roleDefinitionId = roleDefName ? roleDefByName.get(roleDefName) || null : null;
+      if (roleDefName && !roleDefinitionId) {
+        warnings.push(`Role definition not found: "${(raw.roleDefinitionName || "").trim()}" — imported without role definition link`);
+      }
 
       // If both a project and a role definition resolve, see if a
       // ProjectRole slot exists for that pair. Linking the assignment
@@ -255,7 +269,6 @@ export const assignmentsImporter: ImporterDefinition = {
       const allocationRaw = (raw.allocationFte || "").trim();
       const allocationFte = allocationRaw ? parseFloat(allocationRaw) || 0 : 0;
       if (allocationFte < 0 || allocationFte > 2) {
-        failed++;
         results.push({
           row: rowNumber,
           status: "failed",
@@ -266,7 +279,6 @@ export const assignmentsImporter: ImporterDefinition = {
 
       const key = assignmentMatchKey(employeeId, projectId, roleDefinitionId);
       if (seenInBatch.has(key)) {
-        skipped++;
         results.push({
           row: rowNumber,
           status: "skipped",
@@ -293,46 +305,49 @@ export const assignmentsImporter: ImporterDefinition = {
       };
 
       const existing = existingByKey.get(key);
+      const action = applyMode(existing, ctx.mode);
 
       try {
-        if (existing && upsert) {
+        if (action === "update" && existing) {
+          let updateData: Partial<typeof data> = data;
+          if (ctx.mode === "fill-blanks") {
+            const current = await db.assignment.findUnique({ where: { id: existing.id } });
+            updateData = mergeFillBlanks(current, data);
+          }
           const assignment = await db.assignment.update({
             where: { id: existing.id },
-            data,
+            data: updateData,
           });
-          updated++;
-          results.push({ row: rowNumber, status: "updated" });
-          await logActivity(
+          results.push({ row: rowNumber, status: "updated", warnings: warnList(warnings) });
+          await logImportActivity(
+            ctx,
             "imported",
             "assignment",
             assignment.id,
-            ctx.triggeredBy,
             `Assignment for ${employeeEmail} (updated)`,
             { projectId: assignment.projectId, clientId: assignment.clientId }
           );
-        } else if (existing && !upsert) {
-          skipped++;
+        } else if (action === "skip") {
+          const label = `Assignment ${employeeEmail}${raw.projectName ? ` on ${raw.projectName}` : ""}${raw.roleDefinitionName ? ` as ${raw.roleDefinitionName}` : ""}`;
           results.push({
             row: rowNumber,
             status: "skipped",
-            message: `Assignment already exists: ${employeeEmail}${raw.projectName ? ` on ${raw.projectName}` : ""}${raw.roleDefinitionName ? ` as ${raw.roleDefinitionName}` : ""}. Re-run with "Update existing rows" enabled to update it.`,
+            message: existing ? skipExistsMessage(label) : skipNoMatchMessage(label),
           });
         } else {
           const assignment = await db.assignment.create({ data });
           existingByKey.set(key, { id: assignment.id });
-          imported++;
-          results.push({ row: rowNumber, status: "imported" });
-          await logActivity(
+          results.push({ row: rowNumber, status: "imported", warnings: warnList(warnings) });
+          await logImportActivity(
+            ctx,
             "imported",
             "assignment",
             assignment.id,
-            ctx.triggeredBy,
             `Assignment for ${employeeEmail}`,
             { projectId: assignment.projectId, clientId: assignment.clientId }
           );
         }
       } catch (err) {
-        failed++;
         results.push({
           row: rowNumber,
           status: "failed",
@@ -341,6 +356,6 @@ export const assignmentsImporter: ImporterDefinition = {
       }
     }
 
-    return { imported, updated, skipped, failed, rows: results };
+    return buildResult(results);
   },
 };

@@ -280,7 +280,7 @@ function RuleDialog({
           value={extraEmails}
           onChange={(e) => setExtraEmails(e.target.value)}
           rows={2}
-          placeholder="ownership@wynndalco.com, fleet-vendor@example.com"
+          placeholder="ownership@example.com, fleet-vendor@example.com"
         />
 
         <div className="space-y-2">

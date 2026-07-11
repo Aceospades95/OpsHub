@@ -13,8 +13,16 @@
 
 import type { IntranetCategory } from "@prisma/client";
 import { db } from "@/lib/db";
-import { logActivity } from "@/lib/activity";
 import type { ImporterDefinition, ImportRowResult } from "../types";
+import {
+  applyMode,
+  buildResult,
+  logImportActivity,
+  mergeFillBlanks,
+  skipExistsMessage,
+  skipNoMatchMessage,
+  warnList,
+} from "../helpers";
 
 const VALID_CATEGORIES: IntranetCategory[] = [
   "EXPENSE_REPORT",
@@ -123,12 +131,8 @@ export const intranetImporter: ImporterDefinition = {
   },
 
   async commit(rows, ctx) {
+    const db = ctx.db; // ALL commit reads/writes go through ctx.db
     const results: ImportRowResult[] = [];
-    let imported = 0;
-    let updated = 0;
-    let skipped = 0;
-    let failed = 0;
-    const upsert = ctx.mode === "upsert";
 
     // Pre-fetch every resource keyed by (lowercased title + category)
     // for upsert matching and in-batch dedupe.
@@ -143,24 +147,27 @@ export const intranetImporter: ImporterDefinition = {
     for (let i = 0; i < rows.length; i++) {
       const rowNumber = i + 1;
       const raw = rows[i];
+      const warnings: string[] = [];
       const title = (raw.title || "").trim();
       if (!title) {
-        failed++;
         results.push({ row: rowNumber, status: "failed", message: "Missing title" });
         continue;
       }
 
-      const categoryRaw = (raw.category || "OTHER").trim().toUpperCase();
+      const categoryInput = (raw.category || "").trim();
+      const categoryRaw = (categoryInput || "OTHER").toUpperCase();
       const category = VALID_CATEGORIES.includes(categoryRaw as IntranetCategory)
         ? (categoryRaw as IntranetCategory)
         : "OTHER";
+      if (categoryInput && !VALID_CATEGORIES.includes(categoryRaw as IntranetCategory)) {
+        warnings.push(`Invalid category "${categoryInput}" — defaulted to OTHER`);
+      }
 
       const sortOrderRaw = (raw.sortOrder || "").trim();
       const sortOrder = sortOrderRaw ? parseInt(sortOrderRaw, 10) || 0 : 0;
 
       const key = intranetMatchKey(title, category);
       if (seenInBatch.has(key)) {
-        skipped++;
         results.push({
           row: rowNumber,
           status: "skipped",
@@ -181,32 +188,35 @@ export const intranetImporter: ImporterDefinition = {
       };
 
       const existing = existingByKey.get(key);
+      const action = applyMode(existing, ctx.mode);
 
       try {
-        if (existing && upsert) {
+        if (action === "update" && existing) {
+          let updateData: Partial<typeof data> = data;
+          if (ctx.mode === "fill-blanks") {
+            const current = await db.intranetResource.findUnique({ where: { id: existing.id } });
+            updateData = mergeFillBlanks(current, data);
+          }
           const resource = await db.intranetResource.update({
             where: { id: existing.id },
-            data,
+            data: updateData,
           });
-          updated++;
-          results.push({ row: rowNumber, status: "updated" });
-          await logActivity("imported", "intranetResource", resource.id, ctx.triggeredBy, `${title} (updated)`);
-        } else if (existing && !upsert) {
-          skipped++;
+          results.push({ row: rowNumber, status: "updated", warnings: warnList(warnings) });
+          await logImportActivity(ctx, "imported", "intranetResource", resource.id, `${title} (updated)`);
+        } else if (action === "skip") {
+          const label = `Resource "${title}" in ${category}`;
           results.push({
             row: rowNumber,
             status: "skipped",
-            message: `Resource already exists: "${title}" in ${category}. Re-run with "Update existing rows" enabled to update it.`,
+            message: existing ? skipExistsMessage(label) : skipNoMatchMessage(label),
           });
         } else {
           const resource = await db.intranetResource.create({ data });
           existingByKey.set(key, { id: resource.id });
-          imported++;
-          results.push({ row: rowNumber, status: "imported" });
-          await logActivity("imported", "intranetResource", resource.id, ctx.triggeredBy, title);
+          results.push({ row: rowNumber, status: "imported", warnings: warnList(warnings) });
+          await logImportActivity(ctx, "imported", "intranetResource", resource.id, title);
         }
       } catch (err) {
-        failed++;
         results.push({
           row: rowNumber,
           status: "failed",
@@ -215,6 +225,6 @@ export const intranetImporter: ImporterDefinition = {
       }
     }
 
-    return { imported, updated, skipped, failed, rows: results };
+    return buildResult(results);
   },
 };

@@ -16,8 +16,15 @@
 
 import type { Role } from "@prisma/client";
 import { db } from "@/lib/db";
-import { logActivity } from "@/lib/activity";
 import type { ImporterDefinition, ImportRowResult } from "../types";
+import {
+  applyMode,
+  buildResult,
+  logImportActivity,
+  skipExistsMessage,
+  skipNoMatchMessage,
+  warnList,
+} from "../helpers";
 
 const VALID_ROLES: Role[] = ["GUEST", "VIEWER", "CONTRIBUTOR", "DEVELOPER", "MANAGER", "ADMIN"];
 
@@ -64,12 +71,8 @@ export const projectMembersImporter: ImporterDefinition = {
   },
 
   async commit(rows, ctx) {
+    const db = ctx.db; // ALL commit reads/writes go through ctx.db
     const results: ImportRowResult[] = [];
-    let imported = 0;
-    let updated = 0;
-    let skipped = 0;
-    let failed = 0;
-    const upsert = ctx.mode === "upsert";
 
     const projects = await db.project.findMany({ select: { id: true, name: true, clientId: true } });
     const projectByName = new Map(projects.map((p) => [p.name.toLowerCase(), p]));
@@ -92,23 +95,21 @@ export const projectMembersImporter: ImporterDefinition = {
     for (let i = 0; i < rows.length; i++) {
       const rowNumber = i + 1;
       const raw = rows[i];
+      const warnings: string[] = [];
       const projectNameRaw = (raw.projectName || "").trim();
       const employeeEmail = (raw.employeeEmail || "").trim().toLowerCase();
 
       if (!projectNameRaw) {
-        failed++;
         results.push({ row: rowNumber, status: "failed", message: "Missing projectName" });
         continue;
       }
       if (!employeeEmail) {
-        failed++;
         results.push({ row: rowNumber, status: "failed", message: "Missing employeeEmail" });
         continue;
       }
 
       const project = projectByName.get(projectNameRaw.toLowerCase());
       if (!project) {
-        failed++;
         results.push({
           row: rowNumber,
           status: "failed",
@@ -119,7 +120,6 @@ export const projectMembersImporter: ImporterDefinition = {
 
       const userId = userByEmail.get(employeeEmail);
       if (!userId) {
-        failed++;
         results.push({
           row: rowNumber,
           status: "failed",
@@ -128,14 +128,17 @@ export const projectMembersImporter: ImporterDefinition = {
         continue;
       }
 
-      const roleRaw = (raw.role || "CONTRIBUTOR").trim().toUpperCase();
+      const roleInput = (raw.role || "").trim();
+      const roleRaw = (roleInput || "CONTRIBUTOR").toUpperCase();
       const role = VALID_ROLES.includes(roleRaw as Role)
         ? (roleRaw as Role)
         : "CONTRIBUTOR";
+      if (roleInput && !VALID_ROLES.includes(roleRaw as Role)) {
+        warnings.push(`Invalid role "${roleInput}" — defaulted to CONTRIBUTOR`);
+      }
 
       const key = memberMatchKey(userId, project.id);
       if (seenInBatch.has(key)) {
-        skipped++;
         results.push({
           row: rowNumber,
           status: "skipped",
@@ -146,40 +149,41 @@ export const projectMembersImporter: ImporterDefinition = {
       seenInBatch.add(key);
 
       const existing = existingByKey.get(key);
+      const action = applyMode(existing, ctx.mode);
 
       try {
-        if (existing && upsert) {
-          const member = await db.projectMember.update({
-            where: { id: existing.id },
-            data: { role },
-          });
-          updated++;
-          results.push({ row: rowNumber, status: "updated" });
-          await logActivity("imported", "projectMember", member.id, ctx.triggeredBy, `${employeeEmail} → ${projectNameRaw} (updated)`, {
+        if (action === "update" && existing) {
+          // role is the only mutable field on a membership — and it is
+          // never blank (enum with a default), so fill-blanks mode is a
+          // deliberate no-op update here: existing roles are kept.
+          const member =
+            ctx.mode === "fill-blanks"
+              ? await db.projectMember.update({ where: { id: existing.id }, data: {} })
+              : await db.projectMember.update({ where: { id: existing.id }, data: { role } });
+          results.push({ row: rowNumber, status: "updated", warnings: warnList(warnings) });
+          await logImportActivity(ctx, "imported", "projectMember", member.id, `${employeeEmail} → ${projectNameRaw} (updated)`, {
             projectId: project.id,
             clientId: project.clientId,
           });
-        } else if (existing && !upsert) {
-          skipped++;
+        } else if (action === "skip") {
+          const label = `Membership ${employeeEmail} on "${projectNameRaw}"`;
           results.push({
             row: rowNumber,
             status: "skipped",
-            message: `Already a member of "${projectNameRaw}". Re-run with "Update existing rows" enabled to update the role.`,
+            message: existing ? skipExistsMessage(label) : skipNoMatchMessage(label),
           });
         } else {
           const member = await db.projectMember.create({
             data: { projectId: project.id, userId, role },
           });
           existingByKey.set(key, { id: member.id });
-          imported++;
-          results.push({ row: rowNumber, status: "imported" });
-          await logActivity("imported", "projectMember", member.id, ctx.triggeredBy, `${employeeEmail} → ${projectNameRaw}`, {
+          results.push({ row: rowNumber, status: "imported", warnings: warnList(warnings) });
+          await logImportActivity(ctx, "imported", "projectMember", member.id, `${employeeEmail} → ${projectNameRaw}`, {
             projectId: project.id,
             clientId: project.clientId,
           });
         }
       } catch (err) {
-        failed++;
         results.push({
           row: rowNumber,
           status: "failed",
@@ -188,6 +192,6 @@ export const projectMembersImporter: ImporterDefinition = {
       }
     }
 
-    return { imported, updated, skipped, failed, rows: results };
+    return buildResult(results);
   },
 };

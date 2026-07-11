@@ -1,7 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // Mock @/lib/db before importing the module under test so the
-// importer's static `import { db } from "@/lib/db"` picks up the mock.
+// importer's static `import { db } from "@/lib/db"` (used by
+// sampleRows/exportRows) picks up the mock instead of instantiating a
+// real PrismaClient. commit() itself receives the client via ctx.db —
+// we pass the same mock object there.
 vi.mock("@/lib/db", () => ({
   db: {
     user: { findMany: vi.fn() },
@@ -9,18 +12,17 @@ vi.mock("@/lib/db", () => ({
     client: { findMany: vi.fn() },
     task: {
       findMany: vi.fn(),
+      findUnique: vi.fn(),
       create: vi.fn(),
       update: vi.fn(),
     },
+    activityLog: { create: vi.fn() },
   },
-}));
-
-vi.mock("@/lib/activity", () => ({
-  logActivity: vi.fn(),
 }));
 
 import { db } from "@/lib/db";
 import { tasksImporter } from "./tasks";
+import type { ImportContext, ImportMode } from "../types";
 
 const userFindMany = db.user.findMany as ReturnType<typeof vi.fn>;
 const projectFindMany = db.project.findMany as ReturnType<typeof vi.fn>;
@@ -28,6 +30,15 @@ const clientFindMany = db.client.findMany as ReturnType<typeof vi.fn>;
 const taskFindMany = db.task.findMany as ReturnType<typeof vi.fn>;
 const taskCreate = db.task.create as ReturnType<typeof vi.fn>;
 const taskUpdate = db.task.update as ReturnType<typeof vi.fn>;
+
+/** Build an ImportContext whose ctx.db is the shared mock client. */
+function mkCtx(mode: ImportMode): ImportContext {
+  return {
+    triggeredBy: "u1",
+    mode,
+    db: db as unknown as ImportContext["db"],
+  };
+}
 
 describe("tasks importer commit()", () => {
   beforeEach(() => {
@@ -60,7 +71,7 @@ describe("tasks importer commit()", () => {
           clientName: "Acme Corp",
         },
       ],
-      { triggeredBy: "u1", mode: "create" }
+      mkCtx("create")
     );
 
     expect(result.imported).toBe(1);
@@ -90,7 +101,7 @@ describe("tasks importer commit()", () => {
           clientName: "Acme Corp",
         },
       ],
-      { triggeredBy: "u1", mode: "create" }
+      mkCtx("create")
     );
 
     expect(result.imported).toBe(0);
@@ -127,7 +138,7 @@ describe("tasks importer commit()", () => {
           priority: "HIGH",
         },
       ],
-      { triggeredBy: "u1", mode: "upsert" }
+      mkCtx("upsert")
     );
 
     expect(result.imported).toBe(0);
@@ -162,7 +173,7 @@ describe("tasks importer commit()", () => {
           clientName: "acme corp",
         },
       ],
-      { triggeredBy: "u1", mode: "upsert" }
+      mkCtx("upsert")
     );
 
     expect(result.updated).toBe(1);
@@ -187,7 +198,7 @@ describe("tasks importer commit()", () => {
 
     const result = await tasksImporter.commit(
       [{ title: "Personal todo" }],
-      { triggeredBy: "u1", mode: "upsert" }
+      mkCtx("upsert")
     );
 
     expect(result.updated).toBe(1);
@@ -216,7 +227,7 @@ describe("tasks importer commit()", () => {
           clientName: "Acme Corp",
         },
       ],
-      { triggeredBy: "u1", mode: "create" }
+      mkCtx("create")
     );
 
     expect(result.imported).toBe(1);
@@ -256,7 +267,7 @@ describe("tasks importer commit()", () => {
           clientName: "Ghost Co", // not in DB
         },
       ],
-      { triggeredBy: "u1", mode: "upsert" }
+      mkCtx("upsert")
     );
 
     expect(result.imported).toBe(0);
@@ -304,7 +315,7 @@ describe("tasks importer commit()", () => {
           clientName: "Acme Corp",
         },
       ],
-      { triggeredBy: "u1", mode: "upsert" }
+      mkCtx("upsert")
     );
 
     expect(result.imported).toBe(0);
