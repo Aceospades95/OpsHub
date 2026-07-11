@@ -2,7 +2,7 @@ import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import type { Role } from "@prisma/client";
-import { getVisibleModules, canAccessSandbox } from "@/lib/permissions";
+import { getVisibleModules, canAccessSandbox, getGrantedCustomPageIds } from "@/lib/permissions";
 import { getSidebarConfig } from "@/actions/sidebar";
 import { getBellUnreadCount, getUserNotifications } from "@/lib/notifications";
 import { getBranding } from "@/lib/branding";
@@ -47,15 +47,25 @@ export async function PlatformShell({ children }: { children: React.ReactNode })
 
   const [sidebarConfig, customPages, unreadCount, recentNotifications, branding, visibleModules] = await Promise.all([
     getSidebarConfig(),
-    // Sandbox custom pages are ADMIN / DEVELOPER tooling — don't ship the
-    // list (titles + slugs) to roles that can't open /sandbox at all.
+    // Sandbox custom pages: ADMIN / DEVELOPER get every published page;
+    // other roles only get the published pages they hold an explicit
+    // `custom-page-{id}` grant for (team permissions grid), so the
+    // sidebar shows those without shipping the full list to everyone.
     canAccessSandbox(role)
       ? db.sandboxPage.findMany({
           where: { published: true },
           select: { id: true, title: true, slug: true },
           orderBy: { title: "asc" },
         })
-      : Promise.resolve([]),
+      : getGrantedCustomPageIds(session.user.id).then((ids) =>
+          ids.size === 0
+            ? []
+            : db.sandboxPage.findMany({
+                where: { id: { in: Array.from(ids) }, published: true },
+                select: { id: true, title: true, slug: true },
+                orderBy: { title: "asc" },
+              })
+        ),
     getBellUnreadCount(session.user.id, freshUser?.role ?? session.user.role),
     getUserNotifications(session.user.id, { limit: 10 }),
     getBranding(),

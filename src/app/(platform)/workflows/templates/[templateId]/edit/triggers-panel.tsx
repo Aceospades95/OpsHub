@@ -42,10 +42,15 @@ interface Props {
   canEdit: boolean;
 }
 
-const TRIGGER_LABEL: Record<WorkflowTriggerType, string> = {
+// STAGE_CHANGE is intentionally missing — it has no fire path and the
+// server action no longer accepts it, so it can't be created or offered.
+// Existing rows of that type fall back to the raw enum value and render
+// as "Inactive — not yet supported" below.
+type CreatableTriggerType = Exclude<WorkflowTriggerType, "STAGE_CHANGE">;
+
+const TRIGGER_LABEL: Partial<Record<WorkflowTriggerType, string>> = {
   ENTITY_CREATE: "On entity create",
   SCHEDULED_DATE: "On schedule (date field)",
-  STAGE_CHANGE: "On stage change",
   PROJECT_ASSIGNMENT: "On project assignment",
 };
 
@@ -77,6 +82,10 @@ export function TriggersPanel({
   }
 
   function handleToggle(t: TriggerRow) {
+    const { triggerType } = t;
+    // STAGE_CHANGE rows can't be re-saved — the server action rejects
+    // the type. They only render the "not yet supported" badge + delete.
+    if (triggerType === "STAGE_CHANGE") return;
     let cfg: Record<string, unknown> = {};
     try {
       cfg = JSON.parse(t.config) as Record<string, unknown>;
@@ -87,7 +96,7 @@ export function TriggersPanel({
       updateWorkflowTrigger({
         id: t.id,
         workflowTemplateId: templateId,
-        triggerType: t.triggerType,
+        triggerType,
         config: cfg,
         isActive: !t.isActive,
       })
@@ -162,13 +171,17 @@ export function TriggersPanel({
                 >
                   <div className="min-w-0">
                     <p className="text-sm font-medium">
-                      {TRIGGER_LABEL[t.triggerType]}
+                      {TRIGGER_LABEL[t.triggerType] ?? t.triggerType}
                     </p>
                     <p className="text-xs text-muted-foreground">
                       {describeTrigger(t)}
                     </p>
                     <div className="flex gap-1 mt-1">
-                      {t.isActive ? (
+                      {t.triggerType === "STAGE_CHANGE" ? (
+                        <Badge variant="outline" className="text-[10px]">
+                          Inactive — not yet supported
+                        </Badge>
+                      ) : t.isActive ? (
                         <Badge variant="success" className="text-[10px]">
                           Active
                         </Badge>
@@ -181,19 +194,21 @@ export function TriggersPanel({
                   </div>
                   {canEdit && (
                     <div className="flex gap-1">
-                      <button
-                        type="button"
-                        onClick={() => handleToggle(t)}
-                        disabled={pending}
-                        className="p-1 text-muted-foreground hover:text-foreground"
-                        aria-label={t.isActive ? "Disable" : "Enable"}
-                      >
-                        {t.isActive ? (
-                          <PowerOff className="h-3 w-3" />
-                        ) : (
-                          <Power className="h-3 w-3" />
-                        )}
-                      </button>
+                      {t.triggerType !== "STAGE_CHANGE" && (
+                        <button
+                          type="button"
+                          onClick={() => handleToggle(t)}
+                          disabled={pending}
+                          className="p-1 text-muted-foreground hover:text-foreground"
+                          aria-label={t.isActive ? "Disable" : "Enable"}
+                        >
+                          {t.isActive ? (
+                            <PowerOff className="h-3 w-3" />
+                          ) : (
+                            <Power className="h-3 w-3" />
+                          )}
+                        </button>
+                      )}
                       <button
                         type="button"
                         onClick={() => handleDelete(t.id)}
@@ -246,7 +261,7 @@ function AddTriggerDialog({
   onClose: (changed: boolean) => void;
   onError: (msg: string) => void;
 }) {
-  const [type, setType] = useState<WorkflowTriggerType>("ENTITY_CREATE");
+  const [type, setType] = useState<CreatableTriggerType>("ENTITY_CREATE");
   // PROJECT_ASSIGNMENT-specific config
   const [projectId, setProjectId] = useState("");
   // SCHEDULED_DATE-specific config
@@ -258,7 +273,7 @@ function AddTriggerDialog({
   const supportsScheduledDate = subjectEntityType === "EMPLOYEE";
   const supportsEntityCreate = subjectEntityType !== "CUSTOM";
 
-  const options: { value: WorkflowTriggerType; label: string }[] = [];
+  const options: { value: CreatableTriggerType; label: string }[] = [];
   if (supportsEntityCreate) {
     options.push({
       value: "ENTITY_CREATE",
@@ -322,7 +337,7 @@ function AddTriggerDialog({
           <Select
             label="Trigger type"
             value={type}
-            onChange={(e) => setType(e.target.value as WorkflowTriggerType)}
+            onChange={(e) => setType(e.target.value as CreatableTriggerType)}
             options={options.map((o) => ({ label: o.label, value: o.value }))}
           />
 

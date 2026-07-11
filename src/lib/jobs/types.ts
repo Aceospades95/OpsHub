@@ -39,6 +39,26 @@ export interface JobResult {
 }
 
 /**
+ * One tunable knob a job exposes to /admin/jobs/[jobKey]. The stored
+ * values live in JobConfig.params (JSON); handlers read them merged
+ * over code defaults via getJobParams().
+ */
+export interface JobParamField {
+  /** Key inside JobConfig.params and the defaults object. */
+  key: string;
+  label: string;
+  type: "number" | "boolean";
+  help?: string;
+  min?: number;
+  /**
+   * The code default, shown as the form placeholder. Keep in sync with
+   * the handler's getJobParams defaults (optional so declaring the
+   * schema stays lightweight; the handler's defaults are authoritative).
+   */
+  defaultValue?: number | boolean;
+}
+
+/**
  * A scheduled job definition. Add new entries to the JOBS registry in
  * src/lib/jobs/registry.ts to make them runnable.
  *
@@ -65,6 +85,13 @@ export interface JobDefinition {
    * dryRun option.
    */
   supportsDryRun?: boolean;
+  /**
+   * Declares the job's tunable parameters. When present,
+   * /admin/jobs/[jobKey] renders an editable settings form; the handler
+   * reads merged values via getJobParams(key, defaults). Omit for jobs
+   * with nothing to tune.
+   */
+  paramsSchema?: JobParamField[];
   /** The job implementation. Should not throw — return a result instead. */
   handler: (ctx: JobContext) => Promise<JobResult>;
 }

@@ -9,11 +9,13 @@ import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { pluralize } from "@/lib/pluralize";
+import { DownloadResultsButton } from "./download-results-button";
 
 interface RowOutcome {
   row: number;
   status: string;
   message?: string;
+  warnings?: string[];
 }
 
 interface Props {
@@ -22,9 +24,9 @@ interface Props {
 
 /**
  * Drill-down on a single ImportLog. Shows the run summary + every
- * non-imported row from the persisted `errors` JSON blob (skipped or
- * failed). Imported-without-issue rows aren't tracked individually
- * — count is enough.
+ * non-clean row from the persisted `errors` JSON blob: failed, skipped,
+ * and written-with-warnings rows. Clean imported/updated rows aren't
+ * tracked individually — count is enough.
  */
 export default async function ImportLogDetailPage({ params }: Props) {
   const user = await requireAuth();
@@ -40,8 +42,8 @@ export default async function ImportLogDetailPage({ params }: Props) {
   });
 
   // The errors column stores either null (clean run) or a JSON array
-  // of { row, status, message } per non-imported row. Parse defensively
-  // — a corrupted blob shouldn't crash the page.
+  // of { row, status, message, warnings? } per non-clean row. Parse
+  // defensively — a corrupted blob shouldn't crash the page.
   let issueRows: RowOutcome[] = [];
   if (log.errors) {
     try {
@@ -52,9 +54,19 @@ export default async function ImportLogDetailPage({ params }: Props) {
     }
   }
 
-  const failedCount = log.rowCount - log.imported - log.updated - log.skipped;
+  // Stored `failed` when present; legacy rows (default 0) derive it.
+  const failedCount =
+    log.failed > 0
+      ? log.failed
+      : Math.max(0, log.rowCount - log.imported - log.updated - log.skipped);
+
+  // Order: failures first, then skips, then warning rows.
   const failedRows = issueRows.filter((r) => r.status === "failed");
   const skippedRows = issueRows.filter((r) => r.status === "skipped");
+  const warningRows = issueRows.filter(
+    (r) => r.status !== "failed" && r.status !== "skipped"
+  );
+  const orderedRows = [...failedRows, ...skippedRows, ...warningRows];
 
   return (
     <div>
@@ -71,9 +83,17 @@ export default async function ImportLogDetailPage({ params }: Props) {
         description={`Run on ${format(log.createdAt, "MMMM d, yyyy 'at' h:mm a")} by ${
           triggeredBy?.name ?? log.triggeredBy
         } via the ${log.importerKey} importer.`}
+        actions={
+          issueRows.length > 0 ? (
+            <DownloadResultsButton
+              outcomes={orderedRows}
+              filename={`import-${log.importerKey}-${log.id}-row-results.csv`}
+            />
+          ) : undefined
+        }
       />
 
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-6">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
         <SummaryCard label="Total rows" value={log.rowCount} />
         <SummaryCard label="Created" value={log.imported} tone="success" />
         <SummaryCard label="Updated" value={log.updated} tone="info" />
@@ -82,6 +102,11 @@ export default async function ImportLogDetailPage({ params }: Props) {
           label="Failed"
           value={failedCount}
           tone={failedCount > 0 ? "destructive" : undefined}
+        />
+        <SummaryCard
+          label="Warnings"
+          value={log.warnings}
+          tone={log.warnings > 0 ? "warning" : undefined}
         />
       </div>
 
@@ -106,15 +131,15 @@ export default async function ImportLogDetailPage({ params }: Props) {
               <thead className="bg-muted/30 border-y border-border">
                 <tr className="text-left text-[10px] uppercase tracking-wider text-muted-foreground">
                   <th className="px-4 py-2 font-semibold w-16">Row</th>
-                  <th className="px-4 py-2 font-semibold w-24">Status</th>
-                  <th className="px-4 py-2 font-semibold">Message</th>
+                  <th className="px-4 py-2 font-semibold w-32">Status</th>
+                  <th className="px-4 py-2 font-semibold">Message / warnings</th>
                 </tr>
               </thead>
               <tbody>
-                {[...failedRows, ...skippedRows].map((r) => (
+                {orderedRows.map((r) => (
                   <tr
                     key={`${r.row}-${r.status}`}
-                    className="border-b border-border/40 last:border-b-0"
+                    className="border-b border-border/40 last:border-b-0 align-top"
                   >
                     <td className="px-4 py-2 tabular-nums text-xs text-muted-foreground">
                       {r.row}
@@ -125,14 +150,20 @@ export default async function ImportLogDetailPage({ params }: Props) {
                         className={`text-[10px] ${
                           r.status === "failed"
                             ? "text-destructive border-destructive/50"
-                            : "text-warning border-warning/50"
+                            : r.status === "skipped"
+                              ? "text-warning border-warning/50"
+                              : "text-amber-600 border-amber-600/50"
                         }`}
                       >
-                        {r.status}
+                        {r.status === "failed" || r.status === "skipped"
+                          ? r.status
+                          : `${r.status} with warnings`}
                       </Badge>
                     </td>
                     <td className="px-4 py-2 text-xs text-muted-foreground">
-                      {r.message ?? "—"}
+                      {[r.message, ...(r.warnings ?? [])]
+                        .filter(Boolean)
+                        .join(" · ") || "—"}
                     </td>
                   </tr>
                 ))}

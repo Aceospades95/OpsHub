@@ -1,7 +1,7 @@
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
-import { canAccessSandbox } from "@/lib/permissions";
+import { canAccessSandbox, getGrantedCustomPageIds } from "@/lib/permissions";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -17,31 +17,56 @@ import type { Role } from "@prisma/client";
 export default async function SandboxListPage() {
   const session = await auth();
   if (!session?.user) redirect("/login");
-  if (!canAccessSandbox(session.user.role as Role)) redirect("/dashboard");
 
+  const hasSandboxRole = canAccessSandbox(session.user.role as Role);
   const isAdmin = session.user.role === "ADMIN";
 
-  const pages = await db.sandboxPage.findMany({
-    where: isAdmin
-      ? {}
-      : {
-          OR: [
-            { createdById: session.user.id },
-            { published: true },
-          ],
-        },
-    orderBy: { updatedAt: "desc" },
-    include: {
-      createdBy: { select: { name: true } },
-      project: { select: { id: true, name: true } },
-      client: { select: { id: true, name: true } },
-    },
-  });
+  let pages;
+  if (hasSandboxRole) {
+    pages = await db.sandboxPage.findMany({
+      where: isAdmin
+        ? {}
+        : {
+            OR: [
+              { createdById: session.user.id },
+              { published: true },
+            ],
+          },
+      orderBy: { updatedAt: "desc" },
+      include: {
+        createdBy: { select: { name: true } },
+        project: { select: { id: true, name: true } },
+        client: { select: { id: true, name: true } },
+      },
+    });
+  } else {
+    // Non-admin roles reach this page only through explicit per-user
+    // `custom-page-{id}` grants from the team permissions grid, and
+    // only see the published pages those grants point at.
+    const grantedIds = await getGrantedCustomPageIds(session.user.id);
+    pages = grantedIds.size === 0
+      ? []
+      : await db.sandboxPage.findMany({
+          where: { id: { in: Array.from(grantedIds) }, published: true },
+          orderBy: { updatedAt: "desc" },
+          include: {
+            createdBy: { select: { name: true } },
+            project: { select: { id: true, name: true } },
+            client: { select: { id: true, name: true } },
+          },
+        });
+    if (pages.length === 0) redirect("/dashboard");
+  }
 
-  const [projects, clients] = await Promise.all([
-    db.project.findMany({ where: { deletedAt: null }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
-    db.client.findMany({ where: { deletedAt: null }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
-  ]);
+  // Project/client pickers only feed the create dialog, which is
+  // admin/developer tooling — don't ship the full org lists to
+  // grant-only viewers.
+  const [projects, clients] = hasSandboxRole
+    ? await Promise.all([
+        db.project.findMany({ where: { deletedAt: null }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
+        db.client.findMany({ where: { deletedAt: null }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
+      ])
+    : [[], []];
 
   return (
     <div>
@@ -50,11 +75,11 @@ export default async function SandboxListPage() {
        *  Settings hub links to /sandbox under "Custom Pages", so
        *  giving this page the same back-link as every other
        *  admin sub-page keeps the navigation symmetric. */}
-      <SettingsNav />
+      {hasSandboxRole && <SettingsNav />}
       <PageHeader
         title="Custom Pages"
-        description="Create and manage custom pages and modules"
-        actions={<SandboxCreateButton projects={projects} clients={clients} />}
+        description={hasSandboxRole ? "Create and manage custom pages and modules" : "Custom pages shared with you"}
+        actions={hasSandboxRole ? <SandboxCreateButton projects={projects} clients={clients} /> : undefined}
       />
 
       {pages.length === 0 ? (

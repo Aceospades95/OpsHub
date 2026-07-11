@@ -7,12 +7,26 @@
 
 export { parseCsv } from "./csv-parser";
 export { getImporter, listImporters, IMPORTERS } from "./registry";
+export {
+  applyMode,
+  mergeFillBlanks,
+  isBlank,
+  buildResult,
+  warnList,
+  addWarning,
+  skipExistsMessage,
+  skipNoMatchMessage,
+  logImportActivity,
+} from "./helpers";
+export type { ModeAction } from "./helpers";
 export type {
   ImporterDefinition,
   ImportField,
   ImportRowResult,
   ImportResult,
   ImportContext,
+  ImportMode,
+  ImportDb,
 } from "./types";
 export type { ParsedCsv } from "./csv-parser";
 

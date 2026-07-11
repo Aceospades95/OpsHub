@@ -12,8 +12,14 @@
  */
 
 import { db } from "@/lib/db";
-import { logActivity } from "@/lib/activity";
 import type { ImporterDefinition, ImportRowResult } from "../types";
+import {
+  applyMode,
+  buildResult,
+  logImportActivity,
+  skipExistsMessage,
+  skipNoMatchMessage,
+} from "../helpers";
 
 function projectToolMatchKey(projectId: string, toolId: string): string {
   return `${projectId}|${toolId}`;
@@ -50,12 +56,8 @@ export const projectToolsImporter: ImporterDefinition = {
   },
 
   async commit(rows, ctx) {
+    const db = ctx.db; // ALL commit reads/writes go through ctx.db
     const results: ImportRowResult[] = [];
-    let imported = 0;
-    let updated = 0;
-    let skipped = 0;
-    let failed = 0;
-    const upsert = ctx.mode === "upsert";
 
     const projects = await db.project.findMany({ select: { id: true, name: true, clientId: true } });
     const projectByName = new Map(projects.map((p) => [p.name.toLowerCase(), p]));
@@ -78,77 +80,63 @@ export const projectToolsImporter: ImporterDefinition = {
       const toolNameRaw = (raw.toolName || "").trim();
 
       if (!projectNameRaw) {
-        failed++;
         results.push({ row: rowNumber, status: "failed", message: "Missing projectName" });
         continue;
       }
       if (!toolNameRaw) {
-        failed++;
         results.push({ row: rowNumber, status: "failed", message: "Missing toolName" });
         continue;
       }
 
       const project = projectByName.get(projectNameRaw.toLowerCase());
       if (!project) {
-        failed++;
         results.push({ row: rowNumber, status: "failed", message: `Project not found: "${projectNameRaw}"` });
         continue;
       }
       const toolId = toolByName.get(toolNameRaw.toLowerCase());
       if (!toolId) {
-        failed++;
         results.push({ row: rowNumber, status: "failed", message: `Tool not found: "${toolNameRaw}"` });
         continue;
       }
 
       const key = projectToolMatchKey(project.id, toolId);
       if (seenInBatch.has(key)) {
-        if (upsert) {
-          // No editable fields → DB no-op, but report as updated so
-          // admins re-running the same file see a stable count.
-          updated++;
-          results.push({ row: rowNumber, status: "updated" });
-        } else {
-          skipped++;
-          results.push({
-            row: rowNumber,
-            status: "skipped",
-            message: `Duplicate row in file: "${toolNameRaw}" → "${projectNameRaw}"`,
-          });
-        }
+        results.push({
+          row: rowNumber,
+          status: "skipped",
+          message: `Duplicate row in file: "${toolNameRaw}" → "${projectNameRaw}"`,
+        });
         continue;
       }
       seenInBatch.add(key);
 
       const existing = existingByKey.get(key);
+      const action = applyMode(existing, ctx.mode);
 
       try {
-        if (existing && upsert) {
-          // Pure link, nothing to mutate — count it as updated for
-          // consistency with the rest of the upsert importers.
-          updated++;
+        if (action === "update" && existing) {
+          // Pure link, nothing to mutate — count it as updated (no-op)
+          // for consistency with the rest of the mode-aware importers.
           results.push({ row: rowNumber, status: "updated" });
-        } else if (existing && !upsert) {
-          skipped++;
+        } else if (action === "skip") {
+          const label = `Link "${toolNameRaw}" → "${projectNameRaw}"`;
           results.push({
             row: rowNumber,
             status: "skipped",
-            message: `Tool "${toolNameRaw}" already linked to "${projectNameRaw}". Re-run with "Update existing rows" enabled to refresh it.`,
+            message: existing ? skipExistsMessage(label) : skipNoMatchMessage(label),
           });
         } else {
           const link = await db.projectTool.create({
             data: { projectId: project.id, toolId },
           });
           existingByKey.set(key, { id: link.id });
-          imported++;
           results.push({ row: rowNumber, status: "imported" });
-          await logActivity("imported", "projectTool", link.id, ctx.triggeredBy, `${toolNameRaw} → ${projectNameRaw}`, {
+          await logImportActivity(ctx, "imported", "projectTool", link.id, `${toolNameRaw} → ${projectNameRaw}`, {
             projectId: project.id,
             clientId: project.clientId,
           });
         }
       } catch (err) {
-        failed++;
         results.push({
           row: rowNumber,
           status: "failed",
@@ -157,6 +145,6 @@ export const projectToolsImporter: ImporterDefinition = {
       }
     }
 
-    return { imported, updated, skipped, failed, rows: results };
+    return buildResult(results);
   },
 };

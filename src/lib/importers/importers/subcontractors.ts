@@ -13,8 +13,16 @@
 
 import type { SubcontractorType, SubcontractorStatus, ComplianceStatus } from "@prisma/client";
 import { db } from "@/lib/db";
-import { logActivity } from "@/lib/activity";
 import type { ImporterDefinition, ImportRowResult } from "../types";
+import {
+  applyMode,
+  buildResult,
+  logImportActivity,
+  mergeFillBlanks,
+  skipExistsMessage,
+  skipNoMatchMessage,
+  warnList,
+} from "../helpers";
 
 const VALID_TYPES: SubcontractorType[] = ["COMPANY", "INDIVIDUAL", "AGENCY"];
 const VALID_STATUSES: SubcontractorStatus[] = ["ACTIVE", "INACTIVE", "ARCHIVED"];
@@ -81,9 +89,8 @@ export const subcontractorsImporter: ImporterDefinition = {
   },
 
   async commit(rows, ctx) {
+    const db = ctx.db; // ALL commit reads/writes go through ctx.db
     const results: ImportRowResult[] = [];
-    let imported = 0, updated = 0, skipped = 0, failed = 0;
-    const upsert = ctx.mode === "upsert";
 
     const byName = new Map(
       (await db.subcontractor.findMany({ where: { deletedAt: null }, select: { id: true, name: true } }))
@@ -93,25 +100,37 @@ export const subcontractorsImporter: ImporterDefinition = {
     for (let i = 0; i < rows.length; i++) {
       const rowNumber = i + 1;
       const raw = rows[i];
+      const warnings: string[] = [];
       const name = (raw.name || "").trim();
       if (!name) {
-        failed++;
         results.push({ row: rowNumber, status: "failed", message: "Missing name" });
         continue;
       }
 
-      const typeRaw = (raw.type || "COMPANY").trim().toUpperCase();
+      const typeInput = (raw.type || "").trim();
+      const typeRaw = (typeInput || "COMPANY").toUpperCase();
       const type = VALID_TYPES.includes(typeRaw as SubcontractorType)
         ? (typeRaw as SubcontractorType)
         : "COMPANY";
-      const statusRaw = (raw.status || "ACTIVE").trim().toUpperCase();
+      if (typeInput && !VALID_TYPES.includes(typeRaw as SubcontractorType)) {
+        warnings.push(`Invalid type "${typeInput}" — defaulted to COMPANY`);
+      }
+      const statusInput = (raw.status || "").trim();
+      const statusRaw = (statusInput || "ACTIVE").toUpperCase();
       const status = VALID_STATUSES.includes(statusRaw as SubcontractorStatus)
         ? (statusRaw as SubcontractorStatus)
         : "ACTIVE";
-      const complianceRaw = (raw.complianceStatus || "PENDING").trim().toUpperCase();
+      if (statusInput && !VALID_STATUSES.includes(statusRaw as SubcontractorStatus)) {
+        warnings.push(`Invalid status "${statusInput}" — defaulted to ACTIVE`);
+      }
+      const complianceInput = (raw.complianceStatus || "").trim();
+      const complianceRaw = (complianceInput || "PENDING").toUpperCase();
       const complianceStatus = VALID_COMPLIANCE.includes(complianceRaw as ComplianceStatus)
         ? (complianceRaw as ComplianceStatus)
         : "PENDING";
+      if (complianceInput && !VALID_COMPLIANCE.includes(complianceRaw as ComplianceStatus)) {
+        warnings.push(`Invalid compliance status "${complianceInput}" — defaulted to PENDING`);
+      }
 
       const data = {
         name,
@@ -131,29 +150,33 @@ export const subcontractorsImporter: ImporterDefinition = {
       };
 
       const existingId = byName.get(name.toLowerCase()) || null;
+      const action = applyMode(existingId, ctx.mode);
 
       try {
-        if (existingId && upsert) {
-          const sub = await db.subcontractor.update({ where: { id: existingId }, data });
-          updated++;
-          results.push({ row: rowNumber, status: "updated" });
-          await logActivity("imported", "subcontractor", sub.id, ctx.triggeredBy, `${name} (updated)`);
-        } else if (existingId && !upsert) {
-          skipped++;
+        if (action === "update" && existingId) {
+          let updateData: Partial<typeof data> = data;
+          if (ctx.mode === "fill-blanks") {
+            const current = await db.subcontractor.findUnique({ where: { id: existingId } });
+            updateData = mergeFillBlanks(current, data);
+          }
+          const sub = await db.subcontractor.update({ where: { id: existingId }, data: updateData });
+          results.push({ row: rowNumber, status: "updated", warnings: warnList(warnings) });
+          await logImportActivity(ctx, "imported", "subcontractor", sub.id, `${name} (updated)`);
+        } else if (action === "skip") {
           results.push({
             row: rowNumber,
             status: "skipped",
-            message: `Subcontractor already exists: "${name}". Re-run with "Update existing rows" enabled to update it.`,
+            message: existingId
+              ? skipExistsMessage(`Subcontractor "${name}"`)
+              : skipNoMatchMessage(`Subcontractor "${name}"`),
           });
         } else {
           const sub = await db.subcontractor.create({ data });
           byName.set(name.toLowerCase(), sub.id);
-          imported++;
-          results.push({ row: rowNumber, status: "imported" });
-          await logActivity("imported", "subcontractor", sub.id, ctx.triggeredBy, name);
+          results.push({ row: rowNumber, status: "imported", warnings: warnList(warnings) });
+          await logImportActivity(ctx, "imported", "subcontractor", sub.id, name);
         }
       } catch (err) {
-        failed++;
         results.push({
           row: rowNumber,
           status: "failed",
@@ -162,6 +185,6 @@ export const subcontractorsImporter: ImporterDefinition = {
       }
     }
 
-    return { imported, updated, skipped, failed, rows: results };
+    return buildResult(results);
   },
 };

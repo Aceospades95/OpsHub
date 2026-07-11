@@ -33,7 +33,7 @@ export const GLOBAL_WIDGETS: WidgetDefinition[] = [
   {
     id: "widget-kpi-card",
     label: "KPI Card",
-    description: "Display a key performance indicator with trend",
+    description: "Counts of clients, active projects, and open tasks",
     category: "analytics",
     icon: "TrendingUp",
     defaultGrid: { w: 4, h: 6, minW: 3, minH: 4 },
@@ -85,7 +85,7 @@ export const GLOBAL_WIDGETS: WidgetDefinition[] = [
   {
     id: "widget-quick-links",
     label: "Quick Links",
-    description: "Bookmarks and shortcuts to frequently used pages",
+    description: "Quick links to common pages",
     category: "productivity",
     icon: "Link",
     defaultGrid: { w: 4, h: 6, minW: 3, minH: 4 },
@@ -120,11 +120,10 @@ export const GLOBAL_WIDGETS: WidgetDefinition[] = [
   // were placeholder shells whose UIs only said "coming soon" / asked
   // for config that no config layer exists to provide — they shipped to
   // prod before their config layer existed. Pulled from the registry so
-  // admins don't add a half-empty card to their dashboard. The
-  // component files are still here so an existing layout that
-  // referenced them by id renders empty rather than crashing; once
-  // their config UI lands, re-adding the entries here re-enables the
-  // catalog. See widget-renderer.tsx for the runtime side.
+  // admins don't add a half-empty card to their dashboard. The notes /
+  // markdown / countdown placeholder components were deleted; layouts
+  // that still reference those ids get RetiredWidgetCard (see
+  // widget-renderer.tsx) telling the viewer to remove the card.
 
   // --- Data & Lists ---
   {

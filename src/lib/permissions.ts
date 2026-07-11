@@ -319,6 +319,29 @@ export function canAccessSandbox(role: Role): boolean {
   return role === "ADMIN" || role === "DEVELOPER";
 }
 
+/** Module-permission key prefix for per-user custom (sandbox) page grants. */
+const CUSTOM_PAGE_MODULE_PREFIX = "custom-page-";
+
+/**
+ * Sandbox page ids this user holds an explicit `custom-page-{id}`
+ * canView grant for (written by the Custom Pages rows of the team
+ * permissions grid). ADMIN / DEVELOPER never need grants — they pass
+ * canAccessSandbox — so this is the non-admin access path. Callers
+ * must still restrict to published pages; a grant alone never exposes
+ * drafts.
+ */
+export async function getGrantedCustomPageIds(userId: string): Promise<Set<string>> {
+  const rows = await db.modulePermission.findMany({
+    where: {
+      userId,
+      canView: true,
+      module: { startsWith: CUSTOM_PAGE_MODULE_PREFIX },
+    },
+    select: { module: true },
+  });
+  return new Set(rows.map((r) => r.module.slice(CUSTOM_PAGE_MODULE_PREFIX.length)));
+}
+
 /**
  * Coarse "can this role manage staffing at all?" check. Used for quick
  * sidebar / button visibility. Fine-grained per-project authorization uses

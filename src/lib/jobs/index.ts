@@ -7,4 +7,5 @@
 
 export { runJob, runAllJobs } from "./runner";
 export { getJob, listJobs, JOBS } from "./registry";
-export type { JobDefinition, JobContext, JobResult } from "./types";
+export { getJobParams } from "./params";
+export type { JobDefinition, JobContext, JobResult, JobParamField } from "./types";

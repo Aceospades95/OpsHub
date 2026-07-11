@@ -13,8 +13,16 @@
 
 import type { PartnershipType, PartnershipStatus, PartnershipTier } from "@prisma/client";
 import { db } from "@/lib/db";
-import { logActivity } from "@/lib/activity";
 import type { ImporterDefinition, ImportRowResult } from "../types";
+import {
+  applyMode,
+  buildResult,
+  logImportActivity,
+  mergeFillBlanks,
+  skipExistsMessage,
+  skipNoMatchMessage,
+  warnList,
+} from "../helpers";
 
 const VALID_TYPES: PartnershipType[] = ["TECHNOLOGY", "STRATEGIC", "REFERRAL", "RESELLER", "OTHER"];
 const VALID_STATUSES: PartnershipStatus[] = ["ACTIVE", "INACTIVE", "ARCHIVED"];
@@ -87,9 +95,8 @@ export const partnershipsImporter: ImporterDefinition = {
   },
 
   async commit(rows, ctx) {
+    const db = ctx.db; // ALL commit reads/writes go through ctx.db
     const results: ImportRowResult[] = [];
-    let imported = 0, updated = 0, skipped = 0, failed = 0;
-    const upsert = ctx.mode === "upsert";
 
     const byName = new Map(
       (await db.partnership.findMany({ where: { deletedAt: null }, select: { id: true, name: true } }))
@@ -99,25 +106,37 @@ export const partnershipsImporter: ImporterDefinition = {
     for (let i = 0; i < rows.length; i++) {
       const rowNumber = i + 1;
       const raw = rows[i];
+      const warnings: string[] = [];
       const name = (raw.name || "").trim();
       if (!name) {
-        failed++;
         results.push({ row: rowNumber, status: "failed", message: "Missing name" });
         continue;
       }
 
-      const typeRaw = (raw.type || "STRATEGIC").trim().toUpperCase();
+      const typeInput = (raw.type || "").trim();
+      const typeRaw = (typeInput || "STRATEGIC").toUpperCase();
       const type = VALID_TYPES.includes(typeRaw as PartnershipType)
         ? (typeRaw as PartnershipType)
         : "STRATEGIC";
-      const statusRaw = (raw.status || "ACTIVE").trim().toUpperCase();
+      if (typeInput && !VALID_TYPES.includes(typeRaw as PartnershipType)) {
+        warnings.push(`Invalid type "${typeInput}" — defaulted to STRATEGIC`);
+      }
+      const statusInput = (raw.status || "").trim();
+      const statusRaw = (statusInput || "ACTIVE").toUpperCase();
       const status = VALID_STATUSES.includes(statusRaw as PartnershipStatus)
         ? (statusRaw as PartnershipStatus)
         : "ACTIVE";
-      const tierRaw = (raw.tier || "").trim().toUpperCase();
+      if (statusInput && !VALID_STATUSES.includes(statusRaw as PartnershipStatus)) {
+        warnings.push(`Invalid status "${statusInput}" — defaulted to ACTIVE`);
+      }
+      const tierInput = (raw.tier || "").trim();
+      const tierRaw = tierInput.toUpperCase();
       const tier = tierRaw && VALID_TIERS.includes(tierRaw as PartnershipTier)
         ? (tierRaw as PartnershipTier)
         : null;
+      if (tierInput && !tier) {
+        warnings.push(`Invalid tier "${tierInput}" — imported without a tier`);
+      }
 
       const data = {
         name,
@@ -136,29 +155,33 @@ export const partnershipsImporter: ImporterDefinition = {
       };
 
       const existingId = byName.get(name.toLowerCase()) || null;
+      const action = applyMode(existingId, ctx.mode);
 
       try {
-        if (existingId && upsert) {
-          const p = await db.partnership.update({ where: { id: existingId }, data });
-          updated++;
-          results.push({ row: rowNumber, status: "updated" });
-          await logActivity("imported", "partnership", p.id, ctx.triggeredBy, `${name} (updated)`);
-        } else if (existingId && !upsert) {
-          skipped++;
+        if (action === "update" && existingId) {
+          let updateData: Partial<typeof data> = data;
+          if (ctx.mode === "fill-blanks") {
+            const current = await db.partnership.findUnique({ where: { id: existingId } });
+            updateData = mergeFillBlanks(current, data);
+          }
+          const p = await db.partnership.update({ where: { id: existingId }, data: updateData });
+          results.push({ row: rowNumber, status: "updated", warnings: warnList(warnings) });
+          await logImportActivity(ctx, "imported", "partnership", p.id, `${name} (updated)`);
+        } else if (action === "skip") {
           results.push({
             row: rowNumber,
             status: "skipped",
-            message: `Partnership already exists: "${name}". Re-run with "Update existing rows" enabled to update it.`,
+            message: existingId
+              ? skipExistsMessage(`Partnership "${name}"`)
+              : skipNoMatchMessage(`Partnership "${name}"`),
           });
         } else {
           const p = await db.partnership.create({ data });
           byName.set(name.toLowerCase(), p.id);
-          imported++;
-          results.push({ row: rowNumber, status: "imported" });
-          await logActivity("imported", "partnership", p.id, ctx.triggeredBy, name);
+          results.push({ row: rowNumber, status: "imported", warnings: warnList(warnings) });
+          await logImportActivity(ctx, "imported", "partnership", p.id, name);
         }
       } catch (err) {
-        failed++;
         results.push({
           row: rowNumber,
           status: "failed",
@@ -167,6 +190,6 @@ export const partnershipsImporter: ImporterDefinition = {
       }
     }
 
-    return { imported, updated, skipped, failed, rows: results };
+    return buildResult(results);
   },
 };

@@ -10,8 +10,16 @@
  */
 
 import { db } from "@/lib/db";
-import { logActivity } from "@/lib/activity";
 import type { ImporterDefinition, ImportRowResult } from "../types";
+import {
+  applyMode,
+  buildResult,
+  logImportActivity,
+  mergeFillBlanks,
+  skipExistsMessage,
+  skipNoMatchMessage,
+  warnList,
+} from "../helpers";
 
 const VALID_TYPES = ["internal", "external", "embedded"] as const;
 type ToolType = (typeof VALID_TYPES)[number];
@@ -95,15 +103,11 @@ export const toolsImporter: ImporterDefinition = {
   },
 
   async commit(rows, ctx) {
+    const db = ctx.db; // ALL commit reads/writes go through ctx.db
     const results: ImportRowResult[] = [];
-    let imported = 0;
-    let updated = 0;
-    let skipped = 0;
-    let failed = 0;
-    const upsert = ctx.mode === "upsert";
 
     // Pre-fetch every tool keyed by lowercased name. Used for both
-    // dedupe and the upsert update path.
+    // dedupe and the update path.
     const existingByKey = new Map(
       (await db.tool.findMany({ select: { id: true, name: true } }))
         .map((t) => [t.name.toLowerCase(), { id: t.id }])
@@ -113,21 +117,24 @@ export const toolsImporter: ImporterDefinition = {
     for (let i = 0; i < rows.length; i++) {
       const rowNumber = i + 1;
       const raw = rows[i];
+      const warnings: string[] = [];
       const name = (raw.name || "").trim();
       if (!name) {
-        failed++;
         results.push({ row: rowNumber, status: "failed", message: "Missing name" });
         continue;
       }
 
-      const toolTypeRaw = (raw.toolType || "internal").trim().toLowerCase();
+      const toolTypeInput = (raw.toolType || "").trim();
+      const toolTypeRaw = (toolTypeInput || "internal").toLowerCase();
       const toolType: ToolType = (VALID_TYPES as readonly string[]).includes(toolTypeRaw)
         ? (toolTypeRaw as ToolType)
         : "internal";
+      if (toolTypeInput && !(VALID_TYPES as readonly string[]).includes(toolTypeRaw)) {
+        warnings.push(`Invalid tool type "${toolTypeInput}" — defaulted to internal`);
+      }
 
       const key = name.toLowerCase();
       if (seenInBatch.has(key)) {
-        skipped++;
         results.push({
           row: rowNumber,
           status: "skipped",
@@ -147,29 +154,33 @@ export const toolsImporter: ImporterDefinition = {
       };
 
       const existing = existingByKey.get(key);
+      const action = applyMode(existing, ctx.mode);
 
       try {
-        if (existing && upsert) {
-          const tool = await db.tool.update({ where: { id: existing.id }, data });
-          updated++;
-          results.push({ row: rowNumber, status: "updated" });
-          await logActivity("imported", "tool", tool.id, ctx.triggeredBy, `${name} (updated)`);
-        } else if (existing && !upsert) {
-          skipped++;
+        if (action === "update" && existing) {
+          let updateData: Partial<typeof data> = data;
+          if (ctx.mode === "fill-blanks") {
+            const current = await db.tool.findUnique({ where: { id: existing.id } });
+            updateData = mergeFillBlanks(current, data);
+          }
+          const tool = await db.tool.update({ where: { id: existing.id }, data: updateData });
+          results.push({ row: rowNumber, status: "updated", warnings: warnList(warnings) });
+          await logImportActivity(ctx, "imported", "tool", tool.id, `${name} (updated)`);
+        } else if (action === "skip") {
           results.push({
             row: rowNumber,
             status: "skipped",
-            message: `Tool already exists: "${name}". Re-run with "Update existing rows" enabled to update it.`,
+            message: existing
+              ? skipExistsMessage(`Tool "${name}"`)
+              : skipNoMatchMessage(`Tool "${name}"`),
           });
         } else {
           const tool = await db.tool.create({ data });
           existingByKey.set(key, { id: tool.id });
-          imported++;
-          results.push({ row: rowNumber, status: "imported" });
-          await logActivity("imported", "tool", tool.id, ctx.triggeredBy, name);
+          results.push({ row: rowNumber, status: "imported", warnings: warnList(warnings) });
+          await logImportActivity(ctx, "imported", "tool", tool.id, name);
         }
       } catch (err) {
-        failed++;
         results.push({
           row: rowNumber,
           status: "failed",
@@ -178,6 +189,6 @@ export const toolsImporter: ImporterDefinition = {
       }
     }
 
-    return { imported, updated, skipped, failed, rows: results };
+    return buildResult(results);
   },
 };

@@ -8,8 +8,16 @@
 
 import type { ProjectStatus } from "@prisma/client";
 import { db } from "@/lib/db";
-import { logActivity } from "@/lib/activity";
-import type { ImporterDefinition, ImportResult, ImportRowResult } from "../types";
+import type { ImporterDefinition, ImportRowResult } from "../types";
+import {
+  applyMode,
+  buildResult,
+  logImportActivity,
+  mergeFillBlanks,
+  skipExistsMessage,
+  skipNoMatchMessage,
+  warnList,
+} from "../helpers";
 
 const VALID_STATUSES: ProjectStatus[] = [
   "PLANNING", "ACTIVE", "ON_HOLD", "COMPLETED", "ARCHIVED",
@@ -75,10 +83,8 @@ export const projectsImporter: ImporterDefinition = {
   },
 
   async commit(rows, ctx) {
+    const db = ctx.db; // ALL commit reads/writes go through ctx.db
     const results: ImportRowResult[] = [];
-    let imported = 0, updated = 0, failed = 0;
-    const skipped = 0;
-    const upsert = ctx.mode === "upsert";
 
     const clients = await db.client.findMany({ select: { id: true, name: true } });
     const clientByName = new Map(clients.map((c) => [c.name.toLowerCase(), c.id]));
@@ -105,25 +111,30 @@ export const projectsImporter: ImporterDefinition = {
     for (let i = 0; i < rows.length; i++) {
       const rowNumber = i + 1;
       const raw = rows[i];
+      const warnings: string[] = [];
       const name = (raw.name || "").trim();
       const clientNameRaw = (raw.clientName || "").trim();
 
-      if (!name) { failed++; results.push({ row: rowNumber, status: "failed", message: "Missing name" }); continue; }
-      if (!clientNameRaw) { failed++; results.push({ row: rowNumber, status: "failed", message: "Missing client name" }); continue; }
+      if (!name) { results.push({ row: rowNumber, status: "failed", message: "Missing name" }); continue; }
+      if (!clientNameRaw) { results.push({ row: rowNumber, status: "failed", message: "Missing client name" }); continue; }
 
       const clientId = clientByName.get(clientNameRaw.toLowerCase());
-      if (!clientId) { failed++; results.push({ row: rowNumber, status: "failed", message: `Client not found: "${clientNameRaw}"` }); continue; }
+      if (!clientId) { results.push({ row: rowNumber, status: "failed", message: `Client not found: "${clientNameRaw}"` }); continue; }
 
       const statusRaw = (raw.status || "PLANNING").trim().toUpperCase();
       const status = VALID_STATUSES.includes(statusRaw as ProjectStatus) ? (statusRaw as ProjectStatus) : null;
-      if (!status) { failed++; results.push({ row: rowNumber, status: "failed", message: `Invalid status "${raw.status}"` }); continue; }
+      if (!status) { results.push({ row: rowNumber, status: "failed", message: `Invalid status "${raw.status}"` }); continue; }
 
       const offeringName = (raw.serviceOfferingName || "").trim().toLowerCase();
       const serviceOfferingId = offeringName ? offeringByName.get(offeringName) || null : null;
+      if (offeringName && !serviceOfferingId) {
+        warnings.push(`Service offering not found: "${(raw.serviceOfferingName || "").trim()}" — imported without offering link`);
+      }
 
       // Resolve parent project: prefer (parentName + same client). If not
       // found there, fall back to a globally unique name match. Ambiguous
-      // names produce a soft-skip on the link (row still imports).
+      // names produce a soft-skip on the link (row still imports, with a
+      // warning).
       const parentNameRaw = (raw.parentProjectName || "").trim().toLowerCase();
       let parentProjectId: string | null = null;
       if (parentNameRaw) {
@@ -131,6 +142,14 @@ export const projectsImporter: ImporterDefinition = {
           projectsByNameAndClient.get(`${parentNameRaw}|${clientId}`) ||
           projectsByNameUnique.get(parentNameRaw) ||
           null;
+        if (!parentProjectId) {
+          const ambiguous = projectsByNameUnique.get(parentNameRaw) === null;
+          warnings.push(
+            ambiguous
+              ? `Parent project name "${(raw.parentProjectName || "").trim()}" is ambiguous across clients — imported without parent link`
+              : `Parent project not found: "${(raw.parentProjectName || "").trim()}" — imported without parent link`
+          );
+        }
       }
 
       // Match existing by (client + lowercased name). This is the
@@ -138,6 +157,7 @@ export const projectsImporter: ImporterDefinition = {
       // same project, even if the user re-uploaded the file.
       const matchKey = `${name.toLowerCase()}|${clientId}`;
       const existingId = projectsByNameAndClient.get(matchKey) || null;
+      const action = applyMode(existingId, ctx.mode);
 
       const data = {
         name,
@@ -151,22 +171,28 @@ export const projectsImporter: ImporterDefinition = {
       };
 
       try {
-        if (existingId && upsert) {
-          const project = await db.project.update({ where: { id: existingId }, data });
-          updated++; results.push({ row: rowNumber, status: "updated" });
-          await logActivity("imported", "project", project.id, ctx.triggeredBy, `${name} (updated)`, {
+        if (action === "update" && existingId) {
+          let updateData: Partial<typeof data> = data;
+          if (ctx.mode === "fill-blanks") {
+            const current = await db.project.findUnique({ where: { id: existingId } });
+            updateData = mergeFillBlanks(current, data);
+          }
+          const project = await db.project.update({ where: { id: existingId }, data: updateData });
+          results.push({ row: rowNumber, status: "updated", warnings: warnList(warnings) });
+          await logImportActivity(ctx, "imported", "project", project.id, `${name} (updated)`, {
             projectId: project.id, clientId: project.clientId,
           });
-        } else if (existingId && !upsert) {
+        } else if (action === "skip") {
+          const label = `Project "${name}" for client "${clientNameRaw}"`;
           results.push({
             row: rowNumber,
             status: "skipped",
-            message: `Already exists for client "${clientNameRaw}". Re-run with "Update existing rows" enabled to update it.`,
+            message: existingId ? skipExistsMessage(label) : skipNoMatchMessage(label),
           });
         } else {
           const project = await db.project.create({ data });
-          imported++; results.push({ row: rowNumber, status: "imported" });
-          await logActivity("imported", "project", project.id, ctx.triggeredBy, name, {
+          results.push({ row: rowNumber, status: "imported", warnings: warnList(warnings) });
+          await logImportActivity(ctx, "imported", "project", project.id, name, {
             projectId: project.id, clientId: project.clientId,
           });
           projectsByNameAndClient.set(matchKey, project.id);
@@ -178,12 +204,11 @@ export const projectsImporter: ImporterDefinition = {
           }
         }
       } catch (err) {
-        failed++; results.push({ row: rowNumber, status: "failed", message: err instanceof Error ? err.message : "DB error" });
+        results.push({ row: rowNumber, status: "failed", message: err instanceof Error ? err.message : "DB error" });
       }
     }
 
-    const skippedTotal = results.filter((r) => r.status === "skipped").length;
-    return { imported, updated, skipped: skipped + skippedTotal, failed, rows: results };
+    return buildResult(results);
   },
 
   async exportRows() {

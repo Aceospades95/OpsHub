@@ -14,6 +14,7 @@
  */
 
 import { tickAll } from "@/lib/scheduled-tasks/runner";
+import { shouldRunTick } from "../gating";
 import type { JobDefinition } from "../types";
 
 export const customScheduledTasks: JobDefinition = {
@@ -24,6 +25,10 @@ export const customScheduledTasks: JobDefinition = {
   schedule: "Hourly",
 
   async handler() {
+    // See workflows-tick: makes the admin cadence override real (#5).
+    if (!(await shouldRunTick("custom-scheduled-tasks"))) {
+      return { status: "skipped", output: "Within cadence window (admin override)", processed: 0 };
+    }
     const r = await tickAll();
     const summary = `${r.fired} fired, ${r.failed} failed, ${r.skipped} skipped (of ${r.considered} active)`;
     return { output: summary, processed: r.fired };

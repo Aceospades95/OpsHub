@@ -6,6 +6,8 @@
  * audit logging, and an admin wizard surfaces the per-importer flow.
  */
 
+import type { Prisma, PrismaClient } from "@prisma/client";
+
 /**
  * A field that the importer expects in the CSV. Used for both validation
  * (required fields must be present) and the column-mapping UI (label +
@@ -35,35 +37,83 @@ export interface ImportRowResult {
   status: "imported" | "updated" | "skipped" | "failed";
   /** Reason for skipped/failed; ignored for imported / updated */
   message?: string;
+  /**
+   * Non-fatal issues on a row that still imported/updated: a dropped
+   * foreign-key link (unresolved projectName / clientName /
+   * assigneeEmail / parent link / …) or an invalid enum value coerced
+   * to a default. The row is written, but the operator should know
+   * the data isn't exactly what the CSV said.
+   */
+  warnings?: string[];
 }
 
 /** Aggregate result returned by an import run. */
 export interface ImportResult {
   imported: number;
-  /** Existing rows updated in upsert mode. 0 in create-only mode. */
+  /** Existing rows updated in upsert / update / fill-blanks mode. */
   updated: number;
   skipped: number;
   failed: number;
+  /**
+   * Rows written (imported or updated) WITH at least one warning.
+   * Subset of imported + updated, not an additional bucket.
+   */
+  warnings: number;
   /** Per-row outcomes for the audit log and UI display */
   rows: ImportRowResult[];
 }
 
 /**
- * Import mode. "create" (default) inserts new rows and reports duplicates
- * as skipped/failed; "upsert" matches existing rows by the importer's
- * natural key and updates them in place. The wizard exposes this as the
- * "Update existing rows on match" toggle.
+ * Import mode — how a row that matches an existing record (by the
+ * importer's natural key) is handled:
+ *
+ *   create       existing matches are SKIPPED ("already exists");
+ *                only new rows are inserted.
+ *   update       rows with NO existing match are SKIPPED ("no existing
+ *                record"); matches are updated in place.
+ *   upsert       create + full update (the wizard default).
+ *   fill-blanks  like upsert, but an UPDATE only writes fields whose
+ *                incoming value is non-empty AND whose existing value
+ *                is null/empty — existing data is never overwritten.
+ *                Creates behave exactly like create.
+ *
+ * Importers should route the decision through `applyMode()` (and
+ * `mergeFillBlanks()` for the fill-blanks update payload) from
+ * ./helpers instead of hand-rolling mode checks.
  */
-export type ImportMode = "create" | "upsert";
+export type ImportMode = "create" | "update" | "upsert" | "fill-blanks";
+
+/**
+ * The Prisma client handed to commit handlers. A plain PrismaClient on
+ * real commits; a transaction client on preview runs (the preview
+ * action wraps commit() in a transaction it always rolls back, so
+ * nothing an importer writes through ctx.db survives a preview).
+ */
+export type ImportDb = Prisma.TransactionClient | PrismaClient;
 
 /**
  * Context passed to a commit handler. Lets the handler attribute new
- * rows to the user who triggered the import.
+ * rows to the user who triggered the import, and carries the DB
+ * client every read/write inside commit() MUST go through (never the
+ * global db — previews rely on ctx.db being a rolled-back
+ * transaction).
  */
 export interface ImportContext {
   triggeredBy: string;
   /** Defaults to "create" for backwards compatibility. */
   mode?: ImportMode;
+  /**
+   * Prisma client for ALL reads + writes inside commit(). Real commits
+   * receive the global client; previews receive a transaction client
+   * that is rolled back after commit() returns.
+   */
+  db: ImportDb;
+  /**
+   * True when this run is a dry-run preview. Importers must gate any
+   * side effect that does NOT go through ctx.db (workflow triggers,
+   * emails, …) on this flag so previews leak nothing.
+   */
+  isPreview?: boolean;
 }
 
 /**
@@ -85,16 +135,16 @@ export interface ImporterDefinition {
   /** Field schema — drives the mapping UI and validation */
   fields: ImportField[];
   /**
-   * True when this importer's `commit()` honors `ctx.mode === "upsert"`
-   * by matching rows on a stable natural key (name, contractNumber,
-   * email, etc.) and updating in place. The wizard hides the "Update
-   * existing rows" toggle for importers that don't set this so users
-   * don't get silent no-op behavior. Defaults to false.
+   * True when this importer's `commit()` honors the full `ctx.mode`
+   * contract (create / update / upsert / fill-blanks) by matching rows
+   * on a stable natural key (name, contractNumber, email, etc.). The
+   * wizard hides the mode selector for importers that don't set this
+   * so users don't get silent no-op behavior. Defaults to false.
    */
   supportsUpsert?: boolean;
   /**
    * Human-readable description of the natural key used for upsert
-   * matching, shown on the wizard alongside the mode toggle so users
+   * matching, shown on the wizard alongside the mode selector so users
    * know what's being matched (e.g. "Matched by contract number, then
    * (client + title) as a fallback"). Required when supportsUpsert is
    * true. Ignored otherwise.
@@ -103,8 +153,8 @@ export interface ImporterDefinition {
   /**
    * Commit a batch of rows. Each input object is keyed by the field key
    * (post-mapping). The handler is responsible for its own validation,
-   * deduplication, and DB writes. Should never throw — return failures
-   * via the rows array instead.
+   * deduplication, and DB writes — all through ctx.db. Should never
+   * throw — return failures via the rows array instead.
    */
   commit(
     rows: Record<string, string>[],

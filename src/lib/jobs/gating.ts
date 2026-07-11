@@ -144,3 +144,33 @@ export async function shouldRunMonthly(jobKey: string): Promise<boolean> {
 export async function shouldRunHourly(jobKey: string): Promise<boolean> {
   return shouldRunCadence(jobKey, "HOURLY");
 }
+
+/**
+ * Gate for jobs whose NATURAL cadence is "every cron tick" (the engine
+ * tick runs per-minute, google-tasks-sync per 5 minutes — driven by
+ * dedicated cron entries, see docs/deployment.md). With no JobConfig
+ * override this returns true unconditionally so the dedicated cadence
+ * is untouched; when an admin sets an override, it becomes real
+ * (previously the override dropdown displayed for these jobs but
+ * changed nothing — audit finding #5).
+ */
+export async function shouldRunTick(jobKey: string): Promise<boolean> {
+  try {
+    const row = await db.jobConfig.findUnique({
+      where: { jobKey },
+      select: { cadence: true },
+    });
+    const override = row?.cadence as CadenceOverride | null | undefined;
+    if (!override || !(CADENCE_OVERRIDES as readonly string[]).includes(override)) {
+      return true;
+    }
+    if (override === "DISABLED") return false;
+    const windowMs = windowMsFor(override);
+    if (windowMs == null) return false;
+    const last = await lastCompletedAt(jobKey);
+    if (!last) return true;
+    return Date.now() - last.getTime() >= windowMs;
+  } catch {
+    return true;
+  }
+}

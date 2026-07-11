@@ -35,6 +35,7 @@ export function VehicleFields({
     currentMileage: number | null;
     nextServiceDate: string | null;
     nextServiceMileage: number | null;
+    registrationExpiresAt: string | null;
     notes: string | null;
   };
   users: { id: string; name: string }[];
@@ -93,6 +94,14 @@ export function VehicleFields({
           label="…or at mileage"
           type="number"
           defaultValue={vehicle?.nextServiceMileage != null ? String(vehicle.nextServiceMileage) : ""}
+        />
+      </div>
+      <div className="grid grid-cols-2 gap-4">
+        <Input
+          name="registrationExpiresAt"
+          label="Registration expires"
+          type="date"
+          defaultValue={toCalendarDateString(vehicle?.registrationExpiresAt)}
         />
       </div>
       <Textarea name="notes" label="Notes" defaultValue={vehicle?.notes ?? ""} />

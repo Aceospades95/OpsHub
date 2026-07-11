@@ -39,6 +39,22 @@ export async function CustomWidgetRenderer({ widgetId }: Props) {
     );
   }
 
+  // Unpublishing pulls the widget from the catalog AND from every layout
+  // it's already placed on — otherwise "Unpublish" would only stop new
+  // placements while existing dashboards kept showing the live data.
+  if (!widget.isPublished) {
+    return (
+      <Card className="h-full">
+        <CardContent className="p-4">
+          <p className="text-sm text-muted-foreground">
+            &quot;{widget.name}&quot; is unpublished. An admin can republish
+            it from the Widget Builder, or remove it from this layout.
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
+
   let config: WidgetConfig;
   try {
     config = JSON.parse(widget.config) as WidgetConfig;

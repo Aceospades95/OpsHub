@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { syncGoogleTasksForUser } from "@/lib/google-tasks/sync";
 import { googleTasksConfigured } from "@/lib/google-tasks/api";
+import { shouldRunTick } from "../gating";
 import type { JobDefinition } from "../types";
 
 /**
@@ -18,6 +19,11 @@ export const googleTasksSync: JobDefinition = {
     "Pulls quick-added Google Tasks into the /my inbox and pushes completions/edits of synced tasks back to Google.",
   schedule: "Every 5 minutes (recommended cron: ?job=google-tasks-sync)",
   async handler() {
+    // Natural cadence = the dedicated 5-minute cron entry; the gate only
+    // bites when an admin sets a cadence override (audit finding #5).
+    if (!(await shouldRunTick("google-tasks-sync"))) {
+      return { status: "skipped", output: "Within cadence window (admin override)", processed: 0 };
+    }
     if (!googleTasksConfigured()) {
       return { output: "Skipped — GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET not set", status: "skipped" };
     }

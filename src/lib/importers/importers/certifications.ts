@@ -15,8 +15,16 @@ import type {
   CertEngagementType,
 } from "@prisma/client";
 import { db } from "@/lib/db";
-import { logActivity } from "@/lib/activity";
 import type { ImporterDefinition, ImportRowResult } from "../types";
+import {
+  applyMode,
+  buildResult,
+  logImportActivity,
+  mergeFillBlanks,
+  skipExistsMessage,
+  skipNoMatchMessage,
+  warnList,
+} from "../helpers";
 
 const VALID_STATUSES: CertificationStatus[] = [
   "ACTIVE",
@@ -323,12 +331,8 @@ export const certificationsImporter: ImporterDefinition = {
   },
 
   async commit(rows, ctx) {
+    const db = ctx.db; // ALL commit reads/writes go through ctx.db
     const results: ImportRowResult[] = [];
-    let imported = 0;
-    let updated = 0;
-    let skipped = 0;
-    let failed = 0;
-    const upsert = ctx.mode === "upsert";
 
     // Pre-fetch lookups
     const users = await db.user.findMany({
@@ -354,10 +358,10 @@ export const certificationsImporter: ImporterDefinition = {
     for (let i = 0; i < rows.length; i++) {
       const rowNumber = i + 1;
       const raw = rows[i];
+      const warnings: string[] = [];
       const name = (raw.name || "").trim();
 
       if (!name) {
-        failed++;
         results.push({ row: rowNumber, status: "failed", message: "Missing name" });
         continue;
       }
@@ -367,41 +371,66 @@ export const certificationsImporter: ImporterDefinition = {
         ? (statusRaw as CertificationStatus)
         : null;
       if (!status) {
-        failed++;
         results.push({ row: rowNumber, status: "failed", message: `Invalid status "${raw.status}"` });
         continue;
       }
 
-      const typeRaw = (raw.type || "OTHER").trim().toUpperCase();
+      const typeInput = (raw.type || "").trim();
+      const typeRaw = (typeInput || "OTHER").toUpperCase();
       const type = VALID_TYPES.includes(typeRaw as CertificationType)
         ? (typeRaw as CertificationType)
         : "OTHER";
+      if (typeInput && !VALID_TYPES.includes(typeRaw as CertificationType)) {
+        warnings.push(`Invalid type "${typeInput}" — defaulted to OTHER`);
+      }
 
-      const jurisdictionRaw = (raw.jurisdictionLevel || "OTHER").trim().toUpperCase();
+      const jurisdictionInput = (raw.jurisdictionLevel || "").trim();
+      const jurisdictionRaw = (jurisdictionInput || "OTHER").toUpperCase();
       const jurisdictionLevel = VALID_JURISDICTIONS.includes(
         jurisdictionRaw as JurisdictionLevel
       )
         ? (jurisdictionRaw as JurisdictionLevel)
         : "OTHER";
+      if (
+        jurisdictionInput &&
+        !VALID_JURISDICTIONS.includes(jurisdictionRaw as JurisdictionLevel)
+      ) {
+        warnings.push(`Invalid jurisdiction level "${jurisdictionInput}" — defaulted to OTHER`);
+      }
 
-      const engagementRaw = (raw.engagementType || "CERTIFICATION").trim().toUpperCase();
+      const engagementInput = (raw.engagementType || "").trim();
+      const engagementRaw = (engagementInput || "CERTIFICATION").toUpperCase();
       const engagementType = VALID_ENGAGEMENT_TYPES.includes(
         engagementRaw as CertEngagementType
       )
         ? (engagementRaw as CertEngagementType)
         : "CERTIFICATION";
+      if (
+        engagementInput &&
+        !VALID_ENGAGEMENT_TYPES.includes(engagementRaw as CertEngagementType)
+      ) {
+        warnings.push(`Invalid engagement type "${engagementInput}" — defaulted to CERTIFICATION`);
+      }
 
       const assigneeEmail = (raw.assigneeEmail || "").trim().toLowerCase();
       const assigneeId = assigneeEmail ? userByEmail.get(assigneeEmail) || null : null;
+      if (assigneeEmail && !assigneeId) {
+        warnings.push(`Assignee not found: "${(raw.assigneeEmail || "").trim()}" — imported without assignee`);
+      }
       const pocEmail = (raw.pointOfContactEmail || "").trim().toLowerCase();
       const pointOfContactId = pocEmail ? userByEmail.get(pocEmail) || null : null;
+      if (pocEmail && !pointOfContactId) {
+        warnings.push(`Point of contact not found: "${(raw.pointOfContactEmail || "").trim()}" — imported without point of contact`);
+      }
       const clientName = (raw.clientName || "").trim().toLowerCase();
       const clientId = clientName ? clientByName.get(clientName) || null : null;
+      if (clientName && !clientId) {
+        warnings.push(`Client not found: "${(raw.clientName || "").trim()}" — imported without client link`);
+      }
       const reminderOffsetsDays = parseOffsets(raw.reminderOffsetsDays);
 
       const key = certMatchKey(name, clientId);
       if (seenInBatch.has(key)) {
-        skipped++;
         results.push({
           row: rowNumber,
           status: "skipped",
@@ -447,36 +476,39 @@ export const certificationsImporter: ImporterDefinition = {
       };
 
       const existing = existingByKey.get(key);
+      const action = applyMode(existing, ctx.mode);
 
       try {
-        if (existing && upsert) {
+        if (action === "update" && existing) {
+          let updateData: Partial<typeof data> = data;
+          if (ctx.mode === "fill-blanks") {
+            const current = await db.certification.findUnique({ where: { id: existing.id } });
+            updateData = mergeFillBlanks(current, data);
+          }
           const cert = await db.certification.update({
             where: { id: existing.id },
-            data,
+            data: updateData,
           });
-          updated++;
-          results.push({ row: rowNumber, status: "updated" });
-          await logActivity("imported", "certification", cert.id, ctx.triggeredBy, `${name} (updated)`, {
+          results.push({ row: rowNumber, status: "updated", warnings: warnList(warnings) });
+          await logImportActivity(ctx, "imported", "certification", cert.id, `${name} (updated)`, {
             clientId: cert.clientId,
           });
-        } else if (existing && !upsert) {
-          skipped++;
+        } else if (action === "skip") {
+          const label = `Certification "${name}"${raw.clientName ? ` for ${raw.clientName}` : ""}`;
           results.push({
             row: rowNumber,
             status: "skipped",
-            message: `Certification already exists: "${name}"${raw.clientName ? ` for ${raw.clientName}` : ""}. Re-run with "Update existing rows" enabled to update it.`,
+            message: existing ? skipExistsMessage(label) : skipNoMatchMessage(label),
           });
         } else {
           const cert = await db.certification.create({ data });
           existingByKey.set(key, { id: cert.id });
-          imported++;
-          results.push({ row: rowNumber, status: "imported" });
-          await logActivity("imported", "certification", cert.id, ctx.triggeredBy, name, {
+          results.push({ row: rowNumber, status: "imported", warnings: warnList(warnings) });
+          await logImportActivity(ctx, "imported", "certification", cert.id, name, {
             clientId: cert.clientId,
           });
         }
       } catch (err) {
-        failed++;
         results.push({
           row: rowNumber,
           status: "failed",
@@ -485,6 +517,6 @@ export const certificationsImporter: ImporterDefinition = {
       }
     }
 
-    return { imported, updated, skipped, failed, rows: results };
+    return buildResult(results);
   },
 };

@@ -37,11 +37,40 @@
 import { db } from "@/lib/db";
 import { log } from "@/lib/log";
 import { revalidatePath } from "next/cache";
-import type { Notification } from "@prisma/client";
+import type { Notification, NotificationRule } from "@prisma/client";
 import { sendFromTemplate, type TemplateDataMap, type TemplateKey } from "@/lib/email";
 import type { NotificationType } from "./types";
 
 export { NOTIFICATION_TYPE_LABELS, type NotificationType } from "./types";
+export {
+  NOTIFICATION_TYPE_REGISTRY,
+  NOTIFICATION_TYPE_INFO,
+  TEMPLATE_VARIABLES,
+  type NotificationTypeInfo,
+} from "./registry";
+
+/**
+ * {{variable}} substitution for rule subject/body templates. Unknown
+ * variables render as empty strings — a typo degrades to a blank, not
+ * a crash or a leaked placeholder.
+ */
+function substituteVars(template: string, vars: Record<string, string>): string {
+  return template.replace(/\{\{\s*(\w+)\s*\}\}/g, (_m, key: string) => vars[key] ?? "");
+}
+
+/**
+ * Load the admin-configured rule for a type. Null (no row / lookup
+ * failure) = stock behavior, so the rules layer can never take
+ * notifications down.
+ */
+async function resolveRule(type: NotificationType): Promise<NotificationRule | null> {
+  try {
+    return await db.notificationRule.findUnique({ where: { typeKey: type } });
+  } catch (err) {
+    log.error("notifications.rules", "Rule lookup failed", err, { type });
+    return null;
+  }
+}
 
 interface NotifyParams<K extends TemplateKey = TemplateKey> {
   /** One user id or many. Each recipient gets their own Notification row. */
@@ -64,11 +93,31 @@ interface NotifyParams<K extends TemplateKey = TemplateKey> {
     templateKey: K;
     data: TemplateDataMap[K];
   };
+  /**
+   * Skip the rule's ADDED recipients (roles/users/extra emails) while
+   * still honoring enabled/channels/templates — used by the admin
+   * "test this rule" button so a test reaches only the tester.
+   */
+  suppressRuleRecipients?: boolean;
 }
 
 /**
  * Create notification rows for one or many recipients. Optionally fires
  * matching emails through the email layer.
+ *
+ * THE RULES LAYER — before anything sends, the type's NotificationRule
+ * (admin-editable at /admin/notifications) is consulted:
+ *   - enabled=false          → nothing sends, either channel
+ *   - throttleHours          → repeat sends for the same type+entity
+ *                              inside the window are suppressed
+ *   - recipientRoles/UserIds → ADDED to the caller's recipients
+ *   - channelInApp/Email     → per-channel gates
+ *   - subject/bodyTemplate   → override the outgoing email's heading and
+ *                              body ({{variables}} — see registry.ts)
+ *   - extraEmails            → raw addresses that get their own copy
+ * No rule row = stock behavior. Emails are personalized per recipient:
+ * the "notification" template's recipientName is set to each
+ * addressee's real name (callers used to hand-loop for this).
  */
 export async function notify<K extends TemplateKey = TemplateKey>(
   params: NotifyParams<K>
@@ -77,59 +126,132 @@ export async function notify<K extends TemplateKey = TemplateKey>(
     ? params.recipientId
     : [params.recipientId];
 
-  if (recipients.length === 0) return [];
+  const rule = await resolveRule(params.type);
+  if (rule && !rule.enabled) return [];
 
-  // Deduplicate — a broadcast shouldn't spam the same person twice
-  const uniqueRecipients = Array.from(new Set(recipients));
+  // Throttle: same type + same entity inside the window → suppressed
+  // entirely (both channels). Entity-less notifications can't throttle.
+  if (rule?.throttleHours && params.entityId) {
+    const windowStart = new Date(Date.now() - rule.throttleHours * 60 * 60 * 1000);
+    const recent = await db.notification.findFirst({
+      where: {
+        type: params.type,
+        entityId: params.entityId,
+        createdAt: { gte: windowStart },
+      },
+      select: { id: true },
+    });
+    if (recent) return [];
+  }
+
+  // Recipient set = caller's recipients + rule-added roles/users, all
+  // resolved against ACTIVE users (also gives us names for email
+  // personalization in one query).
+  const expandRule = rule && !params.suppressRuleRecipients ? rule : null;
+  const candidateIds = new Set(recipients);
+  if (expandRule) {
+    for (const id of expandRule.recipientUserIds) candidateIds.add(id);
+  }
+  const roleUsers =
+    expandRule && expandRule.recipientRoles.length > 0
+      ? await db.user.findMany({
+          // Role is an enum column; filter in JS so an outdated stored
+          // role string can't throw a Prisma enum-cast error.
+          where: { isActive: true },
+          select: { id: true, role: true },
+        })
+      : [];
+  for (const u of roleUsers) {
+    if (expandRule!.recipientRoles.includes(u.role)) candidateIds.add(u.id);
+  }
+
+  if (candidateIds.size === 0 && (expandRule?.extraEmails.length ?? 0) === 0) return [];
+
+  const users = await db.user.findMany({
+    where: { id: { in: Array.from(candidateIds) }, isActive: true },
+    select: { id: true, name: true, email: true, hasLoginAccess: true },
+  });
+  const uniqueRecipients = users.map((u) => u.id);
 
   // Write one row per recipient. createManyAndReturn gives us the
   // created rows directly — the previous createMany + re-fetch by
   // (recipient, type, title, createdAt >= now) was racy under
   // concurrent identical notifications.
   const now = new Date();
-  const created = await db.notification.createManyAndReturn({
-    data: uniqueRecipients.map((recipientId) => ({
-      recipientId,
-      type: params.type,
-      title: params.title,
-      body: params.body || null,
-      href: params.href || null,
-      entityType: params.entityType || null,
-      entityId: params.entityId || null,
-      actorId: params.actorId || null,
-      createdAt: now,
-    })),
-  });
+  let created: Notification[] = [];
+  if (uniqueRecipients.length > 0 && rule?.channelInApp !== false) {
+    created = await db.notification.createManyAndReturn({
+      data: uniqueRecipients.map((recipientId) => ({
+        recipientId,
+        type: params.type,
+        title: params.title,
+        body: params.body || null,
+        href: params.href || null,
+        entityType: params.entityType || null,
+        entityId: params.entityId || null,
+        actorId: params.actorId || null,
+        createdAt: now,
+      })),
+    });
 
-  // Revalidate the affected users' notifications page + the global
-  // /notifications view. The bell component does its own fetch on
-  // client-side dropdown open, so it doesn't need explicit invalidation.
-  revalidatePath("/notifications");
-  for (const recipientId of uniqueRecipients) {
-    revalidatePath(`/team/${recipientId}`);
+    // Revalidate the affected users' notifications page + the global
+    // /notifications view. The bell component does its own fetch on
+    // client-side dropdown open, so it doesn't need explicit invalidation.
+    revalidatePath("/notifications");
+    for (const recipientId of uniqueRecipients) {
+      revalidatePath(`/team/${recipientId}`);
+    }
   }
 
   // Fire-and-forget email if requested. We wait for completion so
   // EmailLog rows are consistent, but we swallow errors so notify()
   // itself always succeeds.
-  if (params.email) {
+  if (params.email && rule?.channelEmail !== false) {
     try {
-      const users = await db.user.findMany({
-        where: { id: { in: uniqueRecipients }, isActive: true },
-        select: { id: true, email: true, hasLoginAccess: true },
-      });
+      // Rule overrides apply to the generic "notification" template
+      // (heading doubles as the subject there). Other templates carry
+      // bespoke typed data the admin can't safely rewrite.
+      const isGenericTemplate = params.email.templateKey === "notification";
+      const baseData = params.email.data as unknown as Record<string, unknown>;
+
+      const renderFor = (recipientName: string): TemplateDataMap[K] => {
+        const vars: Record<string, string> = {
+          recipientName,
+          title: params.title,
+          body: params.body ?? "",
+          heading: isGenericTemplate ? String(baseData.heading ?? params.title) : params.title,
+          emailBody: isGenericTemplate ? String(baseData.body ?? params.body ?? "") : params.body ?? "",
+          href: params.href ?? "",
+        };
+        const data: Record<string, unknown> = { ...baseData };
+        if ("recipientName" in data) data.recipientName = recipientName;
+        if (isGenericTemplate && rule?.subjectTemplate) {
+          data.heading = substituteVars(rule.subjectTemplate, vars);
+        }
+        if (isGenericTemplate && rule?.bodyTemplate) {
+          data.body = substituteVars(rule.bodyTemplate, vars);
+        }
+        return data as unknown as TemplateDataMap[K];
+      };
+
       for (const user of users) {
         // Skip no-login placeholder users (email is fake)
         if (!user.hasLoginAccess) continue;
-        await sendFromTemplate(
-          params.email.templateKey,
-          params.email.data,
-          {
-            to: user.email,
-            entityType: params.entityType,
-            entityId: params.entityId,
-          }
-        );
+        await sendFromTemplate(params.email.templateKey, renderFor(user.name), {
+          to: user.email,
+          entityType: params.entityType,
+          entityId: params.entityId,
+        });
+      }
+
+      // Raw external addresses from the rule get their own copies.
+      for (const address of expandRule?.extraEmails ?? []) {
+        if (!address.includes("@")) continue;
+        await sendFromTemplate(params.email.templateKey, renderFor("team"), {
+          to: address,
+          entityType: params.entityType,
+          entityId: params.entityId,
+        });
       }
     } catch (err) {
       log.error("notifications.email", "Email delivery failed", err);

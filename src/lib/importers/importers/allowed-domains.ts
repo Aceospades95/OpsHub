@@ -10,8 +10,14 @@
  */
 
 import { db } from "@/lib/db";
-import { logActivity } from "@/lib/activity";
 import type { ImporterDefinition, ImportRowResult } from "../types";
+import {
+  applyMode,
+  buildResult,
+  logImportActivity,
+  skipExistsMessage,
+  skipNoMatchMessage,
+} from "../helpers";
 
 function normalizeDomain(raw: string): string {
   return raw
@@ -57,12 +63,8 @@ export const allowedDomainsImporter: ImporterDefinition = {
   },
 
   async commit(rows, ctx) {
+    const db = ctx.db; // ALL commit reads/writes go through ctx.db
     const results: ImportRowResult[] = [];
-    let imported = 0;
-    let updated = 0;
-    let skipped = 0;
-    let failed = 0;
-    const upsert = ctx.mode === "upsert";
 
     const existing = new Set(
       (await db.allowedDomain.findMany({ select: { domain: true } })).map((d) =>
@@ -76,14 +78,12 @@ export const allowedDomainsImporter: ImporterDefinition = {
       const raw = rows[i];
       const domainRaw = (raw.domain || "").trim();
       if (!domainRaw) {
-        failed++;
         results.push({ row: rowNumber, status: "failed", message: "Missing domain" });
         continue;
       }
 
       const domain = normalizeDomain(domainRaw);
       if (!isPlausibleDomain(domain)) {
-        failed++;
         results.push({
           row: rowNumber,
           status: "failed",
@@ -92,48 +92,42 @@ export const allowedDomainsImporter: ImporterDefinition = {
         continue;
       }
       if (seenInBatch.has(domain)) {
-        if (upsert) {
-          updated++;
-          results.push({ row: rowNumber, status: "updated" });
-        } else {
-          skipped++;
-          results.push({
-            row: rowNumber,
-            status: "skipped",
-            message: `Duplicate row in file: "${domain}"`,
-          });
-        }
+        results.push({
+          row: rowNumber,
+          status: "skipped",
+          message: `Duplicate row in file: "${domain}"`,
+        });
         continue;
       }
-      if (existing.has(domain)) {
-        seenInBatch.add(domain);
-        if (upsert) {
-          // No editable fields beyond `domain` itself, so the upsert
-          // is an effective no-op against the DB — but we still report
-          // it as updated so admins re-running the same file see a
-          // consistent count rather than mysterious skips.
-          updated++;
-          results.push({ row: rowNumber, status: "updated" });
-        } else {
-          skipped++;
-          results.push({
-            row: rowNumber,
-            status: "skipped",
-            message: `Domain already on the allow-list: "${domain}". Re-run with "Update existing rows" enabled to refresh it.`,
-          });
-        }
+      seenInBatch.add(domain);
+
+      const action = applyMode(existing.has(domain), ctx.mode);
+
+      if (action === "update") {
+        // No editable fields beyond `domain` itself, so the update is
+        // an effective no-op against the DB — but we still report it
+        // as updated so admins re-running the same file see a
+        // consistent count rather than mysterious skips.
+        results.push({ row: rowNumber, status: "updated" });
+        continue;
+      }
+      if (action === "skip") {
+        results.push({
+          row: rowNumber,
+          status: "skipped",
+          message: existing.has(domain)
+            ? skipExistsMessage(`Domain "${domain}"`)
+            : skipNoMatchMessage(`Domain "${domain}"`),
+        });
         continue;
       }
 
       try {
         const created = await db.allowedDomain.create({ data: { domain } });
-        seenInBatch.add(domain);
         existing.add(domain);
-        imported++;
         results.push({ row: rowNumber, status: "imported" });
-        await logActivity("imported", "allowedDomain", created.id, ctx.triggeredBy, domain);
+        await logImportActivity(ctx, "imported", "allowedDomain", created.id, domain);
       } catch (err) {
-        failed++;
         results.push({
           row: rowNumber,
           status: "failed",
@@ -142,6 +136,6 @@ export const allowedDomainsImporter: ImporterDefinition = {
       }
     }
 
-    return { imported, updated, skipped, failed, rows: results };
+    return buildResult(results);
   },
 };

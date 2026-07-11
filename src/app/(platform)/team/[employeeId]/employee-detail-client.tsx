@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 
 import { formatDistanceToNow } from "date-fns";
+import { formatCalendarDate, toCalendarDateString } from "@/lib/dates";
 import { updateUser, deleteUser, saveModulePermissions, saveEntityPermission, deleteEntityPermission, resetUserPassword } from "@/actions/admin";
 import { unlinkGoogleAccount } from "@/actions/auth";
 import { deleteAssignment } from "@/actions/assignments";
@@ -59,6 +60,8 @@ interface Employee {
   hasLoginAccess: boolean;
   authProvider: string;
   managerId: string | null;
+  /** HR-sensitive — the server only populates this for canManage viewers. */
+  terminationDate: string | null;
   createdAt: string;
   manager: { id: string; name: string; jobTitle: string | null; avatar: string | null } | null;
   directReports: { id: string; name: string; email: string; role: string; jobTitle: string | null; avatar: string | null }[];
@@ -337,6 +340,16 @@ export function EmployeeDetailClient({
                 <Input name="location" label="Location" defaultValue={employee.location || ""} />
               </div>
               <Select name="managerId" label="Manager" defaultValue={employee.managerId || ""} options={allUsers.map(u => ({ label: u.name, value: u.id }))} placeholder="None" />
+              {/* Last day of employment — drives the SCHEDULED_DATE
+                  offboarding trigger. Leave empty for active employees;
+                  clearing the field clears the stored date. */}
+              <Input
+                name="terminationDate"
+                label="Termination Date"
+                type="date"
+                defaultValue={toCalendarDateString(employee.terminationDate)}
+                error={fieldErrors?.terminationDate?.[0]}
+              />
               <label className="flex items-center gap-2 text-sm">
                 <input type="checkbox" name="isActive" value="true" defaultChecked={employee.isActive} className="rounded" />
                 Active
@@ -443,6 +456,10 @@ function OverviewTab({ employee, totalFte, activeAssignments, canManage, onAddAs
               <InfoField label="Phone" value={employee.phone} />
               <InfoField label="System Role" value={employee.role} />
               <InfoField label="Status" value={employee.isActive ? "Active" : "Inactive"} />
+              {/* HR-sensitive; the server nulls it for non-manage viewers */}
+              {canManage && employee.terminationDate && (
+                <InfoField label="Termination Date" value={formatCalendarDate(employee.terminationDate, "MMM d, yyyy")} />
+              )}
               {employee.manager && (
                 <div>
                   <p className="text-muted-foreground text-xs mb-0.5">Reports To</p>

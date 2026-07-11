@@ -10,14 +10,17 @@
  * Optional: industry, website, status, accountManagerEmail, description, summary
  *
  * Behavior:
- *   - name is the de-dup key. Match is case-insensitive on the trimmed
- *     name. Existing rows UPDATE; new rows INSERT. Re-uploading is
- *     idempotent when names haven't changed.
+ *   - name is the match key, case-insensitive on the trimmed name.
+ *     What happens on a match follows ctx.mode (create → skip,
+ *     update/upsert → update, fill-blanks → only fill empty fields).
+ *     Pre-2026-07 this importer ignored the mode and always upserted —
+ *     that bug is fixed.
  *   - status defaults to ACTIVE. Must be one of the ClientStatus enum
  *     values when supplied (case-insensitive).
  *   - accountManagerEmail resolves against existing Users in a second
  *     pass; unresolvable emails leave accountManagerId untouched (the
- *     row still imports — bad email shouldn't fail the import).
+ *     row still imports with a warning — bad email shouldn't fail the
+ *     import).
  *
  * NOT supported via this importer (use the UI for these):
  *   - Renaming a client. Renames look like "delete A + create B" to
@@ -28,8 +31,17 @@
 
 import type { ClientStatus } from "@prisma/client";
 import { db } from "@/lib/db";
-import { logActivity } from "@/lib/activity";
 import type { ImporterDefinition, ImportRowResult } from "../types";
+import {
+  addWarning,
+  applyMode,
+  buildResult,
+  logImportActivity,
+  mergeFillBlanks,
+  skipExistsMessage,
+  skipNoMatchMessage,
+  warnList,
+} from "../helpers";
 
 const VALID_STATUSES: ClientStatus[] = [
   "ACTIVE",
@@ -132,11 +144,8 @@ export const clientsImporter: ImporterDefinition = {
   },
 
   async commit(rows, ctx) {
+    const db = ctx.db; // ALL commit reads/writes go through ctx.db
     const results: ImportRowResult[] = [];
-    let imported = 0;
-    let updated = 0;
-    let skipped = 0;
-    let failed = 0;
 
     // Pre-fetch existing clients keyed by lowercased trimmed name so
     // duplicate detection AND the UPDATE path share one read.
@@ -147,23 +156,28 @@ export const clientsImporter: ImporterDefinition = {
     );
 
     const seenInBatch = new Set<string>();
-    /** Rows that need an account-manager link resolved post-batch. */
-    const pendingManagerLinks: { clientId: string; managerEmail: string }[] = [];
+    /** Rows that need an account-manager link resolved post-batch.
+     *  resultIndex lets an unresolved email warn on the right row. */
+    const pendingManagerLinks: {
+      clientId: string;
+      managerEmail: string;
+      managerEmailRaw: string;
+      resultIndex: number;
+    }[] = [];
 
     for (let i = 0; i < rows.length; i++) {
       const rowNumber = i + 1;
       const raw = rows[i];
+      const warnings: string[] = [];
 
       const name = (raw.name || "").trim();
       if (!name) {
-        failed++;
         results.push({ row: rowNumber, status: "failed", message: "Missing name" });
         continue;
       }
 
       const nameKey = name.toLowerCase();
       if (seenInBatch.has(nameKey)) {
-        skipped++;
         results.push({
           row: rowNumber,
           status: "skipped",
@@ -178,7 +192,6 @@ export const clientsImporter: ImporterDefinition = {
         ? (statusRaw as ClientStatus)
         : null;
       if (!status) {
-        failed++;
         results.push({
           row: rowNumber,
           status: "failed",
@@ -197,12 +210,29 @@ export const clientsImporter: ImporterDefinition = {
       };
 
       const existing = existingByName.get(nameKey);
+      const modeAction = applyMode(existing, ctx.mode);
+
+      if (modeAction === "skip") {
+        results.push({
+          row: rowNumber,
+          status: "skipped",
+          message: existing
+            ? skipExistsMessage(`Client "${name}"`)
+            : skipNoMatchMessage(`Client "${name}"`),
+        });
+        continue;
+      }
 
       try {
         let clientId: string;
         let action: "imported" | "updated";
-        if (existing) {
-          await db.client.update({ where: { id: existing.id }, data });
+        if (modeAction === "update" && existing) {
+          let updateData: Partial<typeof data> = data;
+          if (ctx.mode === "fill-blanks") {
+            const current = await db.client.findUnique({ where: { id: existing.id } });
+            updateData = mergeFillBlanks(current, data);
+          }
+          await db.client.update({ where: { id: existing.id }, data: updateData });
           clientId = existing.id;
           action = "updated";
         } else {
@@ -215,22 +245,20 @@ export const clientsImporter: ImporterDefinition = {
           existingByName.set(nameKey, { id: clientId });
         }
 
-        if (action === "updated") {
-          updated++;
-          results.push({ row: rowNumber, status: "updated" });
-        } else {
-          imported++;
-          results.push({ row: rowNumber, status: "imported" });
-        }
-
         const managerEmail = (raw.accountManagerEmail || "").trim().toLowerCase();
         if (managerEmail) {
-          pendingManagerLinks.push({ clientId, managerEmail });
+          pendingManagerLinks.push({
+            clientId,
+            managerEmail,
+            managerEmailRaw: (raw.accountManagerEmail || "").trim(),
+            resultIndex: results.length,
+          });
         }
 
-        await logActivity(action, "client", clientId, ctx.triggeredBy, name);
+        results.push({ row: rowNumber, status: action, warnings: warnList(warnings) });
+
+        await logImportActivity(ctx, action, "client", clientId, name);
       } catch (err) {
-        failed++;
         results.push({
           row: rowNumber,
           status: "failed",
@@ -239,8 +267,9 @@ export const clientsImporter: ImporterDefinition = {
       }
     }
 
-    // Second pass — resolve account-manager emails. Silently leave
-    // accountManagerId unchanged when no User matches.
+    // Second pass — resolve account-manager emails. An unresolved
+    // email no longer drops silently: the row keeps its written status
+    // but records a warning.
     if (pendingManagerLinks.length > 0) {
       const emails = Array.from(
         new Set(pendingManagerLinks.map((p) => p.managerEmail))
@@ -253,16 +282,31 @@ export const clientsImporter: ImporterDefinition = {
         managers.map((m) => [m.email.toLowerCase(), m.id])
       );
       for (const link of pendingManagerLinks) {
+        const target = results[link.resultIndex];
         const managerId = byEmail.get(link.managerEmail);
-        if (managerId) {
-          await db.client.update({
-            where: { id: link.clientId },
-            data: { accountManagerId: managerId },
-          });
+        if (!managerId) {
+          addWarning(target, `Account manager not found: "${link.managerEmailRaw}" — link not set`);
+          continue;
+        }
+        try {
+          if (ctx.mode === "fill-blanks") {
+            // Never overwrite an existing account manager.
+            await db.client.updateMany({
+              where: { id: link.clientId, accountManagerId: null },
+              data: { accountManagerId: managerId },
+            });
+          } else {
+            await db.client.update({
+              where: { id: link.clientId },
+              data: { accountManagerId: managerId },
+            });
+          }
+        } catch {
+          addWarning(target, `Account manager link to "${link.managerEmailRaw}" could not be written`);
         }
       }
     }
 
-    return { imported, updated, skipped, failed, rows: results };
+    return buildResult(results);
   },
 };

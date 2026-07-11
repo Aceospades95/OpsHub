@@ -9,6 +9,9 @@ import { formatDistanceToNow } from "date-fns";
 import Link from "next/link";
 import { NotificationsAdminActions } from "./notifications-admin-actions";
 import { NOTIFICATION_TYPE_LABELS, type NotificationType } from "@/lib/notifications/types";
+import { NOTIFICATION_TYPE_REGISTRY } from "@/lib/notifications/registry";
+import { NotificationRules, type RuleRow } from "./notification-rules";
+import { Role } from "@prisma/client";
 
 export const metadata = { title: "Notifications · OpsHub" };
 
@@ -16,7 +19,7 @@ export default async function AdminNotificationsPage() {
   const user = await requireAuth();
   if (user.role !== "ADMIN") redirect("/dashboard");
 
-  const [notifications, totals, typeStats] = await Promise.all([
+  const [notifications, totals, typeStats, ruleRows, activeUsers] = await Promise.all([
     db.notification.findMany({
       orderBy: { createdAt: "desc" },
       take: 100,
@@ -35,7 +38,28 @@ export default async function AdminNotificationsPage() {
       orderBy: { _count: { type: "desc" } },
       take: 10,
     }),
+    db.notificationRule.findMany(),
+    db.user.findMany({
+      where: { isActive: true, hasLoginAccess: true },
+      select: { id: true, name: true },
+      orderBy: { name: "asc" },
+    }),
   ]);
+
+  const rules: Record<string, RuleRow> = {};
+  for (const r of ruleRows) {
+    rules[r.typeKey] = {
+      enabled: r.enabled,
+      channelInApp: r.channelInApp,
+      channelEmail: r.channelEmail,
+      recipientRoles: r.recipientRoles,
+      recipientUserIds: r.recipientUserIds,
+      extraEmails: r.extraEmails,
+      subjectTemplate: r.subjectTemplate,
+      bodyTemplate: r.bodyTemplate,
+      throttleHours: r.throttleHours,
+    };
+  }
 
   // Aggregate unread/read — the groupBy above gives us rows keyed on readAt
   // which is null for unread and a timestamp for read. Split into two counts.
@@ -79,6 +103,14 @@ export default async function AdminNotificationsPage() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Delivery rules — the notification engine's admin surface */}
+      <NotificationRules
+        types={NOTIFICATION_TYPE_REGISTRY}
+        rules={rules}
+        users={activeUsers}
+        roles={Object.values(Role)}
+      />
 
       {/* By type breakdown */}
       {typeStats.length > 0 && (

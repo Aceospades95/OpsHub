@@ -1,6 +1,7 @@
 import { isGlobalWidget, isCustomWidget } from "@/lib/widget-registry";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { CustomWidgetRenderer } from "./custom-widget-renderer";
+import { RetiredWidgetCard } from "./retired-widget-card";
 import { WidgetKpiCard } from "./widget-kpi-card";
 import { WidgetProgressTracker } from "./widget-progress-tracker";
 import { WidgetStatsSummary } from "./widget-stats-summary";
@@ -11,16 +12,13 @@ import { WidgetQuickLinks } from "./widget-quick-links";
 import { WidgetCalendar } from "./widget-calendar";
 import { WidgetMyTasks } from "./widget-my-tasks";
 import { WidgetRecentActivity } from "./widget-recent-activity";
-import { WidgetNotes } from "./widget-notes";
 import { WidgetRecentProjects } from "./widget-recent-projects";
 import { WidgetRecentContracts } from "./widget-recent-contracts";
 import { WidgetRecentDocuments } from "./widget-recent-documents";
 import { WidgetRecentlyViewed } from "./widget-recently-viewed";
 import { WidgetProjectStatus } from "./widget-project-status";
 import { WidgetContractAlerts } from "./widget-contract-alerts";
-import { WidgetCountdown } from "./widget-countdown";
 import { WidgetEmbed } from "./widget-embed";
-import { WidgetMarkdown } from "./widget-markdown";
 
 interface WidgetRendererProps {
   widgetId: string;
@@ -38,23 +36,29 @@ const WIDGET_MAP: Record<string, React.ComponentType<{ userId: string }>> = {
   "widget-calendar": WidgetCalendar,
   "widget-my-tasks": WidgetMyTasks,
   "widget-recent-activity": WidgetRecentActivity,
-  "widget-notes": WidgetNotes,
   "widget-recent-projects": WidgetRecentProjects,
   "widget-recent-contracts": WidgetRecentContracts,
   "widget-recent-documents": WidgetRecentDocuments,
   "widget-recently-viewed": WidgetRecentlyViewed,
   "widget-project-status": WidgetProjectStatus,
   "widget-contract-alerts": WidgetContractAlerts,
-  "widget-countdown": WidgetCountdown,
   "widget-embed": WidgetEmbed,
-  "widget-markdown": WidgetMarkdown,
 };
+
+// Placeholder widgets pulled from the registry before their config layer
+// shipped (see lib/widget-registry.ts). Layouts that still reference them
+// get a neutral "retired" card instead of fake data / "coming soon" copy.
+const RETIRED_WIDGETS = new Set(["widget-notes", "widget-countdown", "widget-markdown"]);
 
 export async function WidgetRenderer({ widgetId, userId }: WidgetRendererProps) {
   // Custom widgets built via Widget Builder
   if (isCustomWidget(widgetId)) {
     const actualId = widgetId.replace("custom-widget-", "");
     return <CustomWidgetRenderer widgetId={actualId} userId={userId} />;
+  }
+
+  if (RETIRED_WIDGETS.has(widgetId)) {
+    return <RetiredWidgetCard widgetId={widgetId} />;
   }
 
   if (!isGlobalWidget(widgetId)) return null;

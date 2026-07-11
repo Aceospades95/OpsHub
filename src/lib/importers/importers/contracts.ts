@@ -10,8 +10,16 @@
 
 import type { ContractStatus, ContractType } from "@prisma/client";
 import { db } from "@/lib/db";
-import { logActivity } from "@/lib/activity";
-import type { ImporterDefinition, ImportResult, ImportRowResult } from "../types";
+import type { ImporterDefinition, ImportRowResult } from "../types";
+import {
+  applyMode,
+  buildResult,
+  logImportActivity,
+  mergeFillBlanks,
+  skipExistsMessage,
+  skipNoMatchMessage,
+  warnList,
+} from "../helpers";
 
 const VALID_STATUSES: ContractStatus[] = [
   "DRAFT", "UNDER_REVIEW", "ACTIVE", "EXPIRING_SOON", "EXPIRED", "TERMINATED", "RENEWED",
@@ -137,12 +145,8 @@ export const contractsImporter: ImporterDefinition = {
   },
 
   async commit(rows, ctx) {
+    const db = ctx.db; // ALL commit reads/writes go through ctx.db
     const results: ImportRowResult[] = [];
-    let imported = 0;
-    let updated = 0;
-    const skipped = 0;
-    let failed = 0;
-    const upsert = ctx.mode === "upsert";
 
     const clients = await db.client.findMany({ select: { id: true, name: true } });
     const clientByName = new Map(clients.map((c) => [c.name.toLowerCase(), c.id]));
@@ -181,36 +185,47 @@ export const contractsImporter: ImporterDefinition = {
     for (let i = 0; i < rows.length; i++) {
       const rowNumber = i + 1;
       const raw = rows[i];
+      const warnings: string[] = [];
       const title = (raw.title || "").trim();
       const clientNameRaw = (raw.clientName || "").trim();
 
-      if (!title) { failed++; results.push({ row: rowNumber, status: "failed", message: "Missing title" }); continue; }
-      if (!clientNameRaw) { failed++; results.push({ row: rowNumber, status: "failed", message: "Missing client name" }); continue; }
+      if (!title) { results.push({ row: rowNumber, status: "failed", message: "Missing title" }); continue; }
+      if (!clientNameRaw) { results.push({ row: rowNumber, status: "failed", message: "Missing client name" }); continue; }
 
       const clientId = clientByName.get(clientNameRaw.toLowerCase());
-      if (!clientId) { failed++; results.push({ row: rowNumber, status: "failed", message: `Client not found: "${clientNameRaw}"` }); continue; }
+      if (!clientId) { results.push({ row: rowNumber, status: "failed", message: `Client not found: "${clientNameRaw}"` }); continue; }
 
       const statusRaw = (raw.status || "DRAFT").trim().toUpperCase();
       const status = VALID_STATUSES.includes(statusRaw as ContractStatus) ? (statusRaw as ContractStatus) : null;
-      if (!status) { failed++; results.push({ row: rowNumber, status: "failed", message: `Invalid status "${raw.status}"` }); continue; }
+      if (!status) { results.push({ row: rowNumber, status: "failed", message: `Invalid status "${raw.status}"` }); continue; }
 
       const typeRaw = (raw.contractType || "").trim();
       const contractType = typeRaw
         ? VALID_TYPES.find((t) => t.toUpperCase() === typeRaw.toUpperCase()) || null
         : null;
+      if (typeRaw && !contractType) {
+        warnings.push(`Invalid contract type "${typeRaw}" — imported without a type`);
+      }
 
       // Resolve parent contract by contract number (case-insensitive). Soft
-      // failure: unknown parent number → skip the link rather than failing
-      // the row, since callers may import children before parents.
+      // failure: unknown parent number → drop the link (with a warning)
+      // rather than failing the row, since callers may import children
+      // before parents.
       const parentNumberRaw = (raw.parentContractNumber || "").trim();
       const parentContractId = parentNumberRaw
         ? parentByNumber.get(parentNumberRaw.toLowerCase()) || null
         : null;
+      if (parentNumberRaw && !parentContractId) {
+        warnings.push(`Parent contract not found: "${parentNumberRaw}" — imported without parent link`);
+      }
 
       const projectNameRaw = (raw.projectName || "").trim();
       const projectId = projectNameRaw
         ? projectByName.get(projectNameRaw.toLowerCase()) || null
         : null;
+      if (projectNameRaw && !projectId) {
+        warnings.push(`Project not found: "${projectNameRaw}" — imported without project link`);
+      }
 
       // If a document URL is given but no source type, default to external_url
       // (for google_drive/etc., the importer requires the caller to set it
@@ -253,30 +268,37 @@ export const contractsImporter: ImporterDefinition = {
         (contractNumberRaw && byNumber.get(contractNumberRaw.toLowerCase())) ||
         byClientTitle.get(`${clientId}::${title.toLowerCase()}`) ||
         null;
+      const action = applyMode(existingId, ctx.mode);
 
       try {
-        if (existingId && upsert) {
-          const contract = await db.contract.update({ where: { id: existingId }, data });
-          updated++; results.push({ row: rowNumber, status: "updated" });
-          await logActivity("imported", "contract", contract.id, ctx.triggeredBy, `${title} (updated)`, {
+        if (action === "update" && existingId) {
+          let updateData: Partial<typeof data> = data;
+          if (ctx.mode === "fill-blanks") {
+            const current = await db.contract.findUnique({ where: { id: existingId } });
+            updateData = mergeFillBlanks(current, data);
+          }
+          const contract = await db.contract.update({ where: { id: existingId }, data: updateData });
+          results.push({ row: rowNumber, status: "updated", warnings: warnList(warnings) });
+          await logImportActivity(ctx, "imported", "contract", contract.id, `${title} (updated)`, {
             clientId: contract.clientId,
             projectId: contract.projectId,
           });
           if (contract.contractNumber) {
             parentByNumber.set(contract.contractNumber.toLowerCase(), contract.id);
           }
-        } else if (existingId && !upsert) {
-          // Create-only mode: don't duplicate. Skip with a clear message
-          // pointing the user at the upsert toggle.
+        } else if (action === "skip") {
+          const label = `Contract "${title}" (matched by ${contractNumberRaw && byNumber.get(contractNumberRaw.toLowerCase()) ? "contract number" : "client + title"})`;
           results.push({
             row: rowNumber,
             status: "skipped",
-            message: `Already exists (matched by ${contractNumberRaw ? "contract number" : "client + title"}). Re-run with "Update existing rows" enabled to update it.`,
+            message: existingId
+              ? skipExistsMessage(label)
+              : skipNoMatchMessage(`Contract "${title}"`),
           });
         } else {
           const contract = await db.contract.create({ data });
-          imported++; results.push({ row: rowNumber, status: "imported" });
-          await logActivity("imported", "contract", contract.id, ctx.triggeredBy, title, {
+          results.push({ row: rowNumber, status: "imported", warnings: warnList(warnings) });
+          await logImportActivity(ctx, "imported", "contract", contract.id, title, {
             clientId: contract.clientId,
             projectId: contract.projectId,
           });
@@ -287,14 +309,11 @@ export const contractsImporter: ImporterDefinition = {
           byClientTitle.set(`${contract.clientId}::${contract.title.toLowerCase()}`, contract.id);
         }
       } catch (err) {
-        failed++; results.push({ row: rowNumber, status: "failed", message: err instanceof Error ? err.message : "DB error" });
+        results.push({ row: rowNumber, status: "failed", message: err instanceof Error ? err.message : "DB error" });
       }
     }
 
-    // skipped is incremented in the !upsert branch via results.push but
-    // the local var stays 0 because we counted via results length below.
-    const skippedTotal = results.filter((r) => r.status === "skipped").length;
-    return { imported, updated, skipped: skipped + skippedTotal, failed, rows: results };
+    return buildResult(results);
   },
 
   async exportRows() {

@@ -8,8 +8,64 @@
 
 import { db } from "@/lib/db";
 import { log } from "@/lib/log";
+import { notify } from "@/lib/notifications";
+import { absoluteUrl } from "@/lib/url";
 import type { JobContext, JobResult } from "./types";
 import { getJob, listJobs } from "./registry";
+
+/** Consecutive failures that trip the admin alert. */
+const FAILURE_ALERT_STREAK = 3;
+
+/**
+ * Alert admins when a job hits exactly FAILURE_ALERT_STREAK consecutive
+ * failed runs — once per streak, not on every subsequent failure (the
+ * streak resets on any completed run). Failures used to just accumulate
+ * silently in /admin/jobs history; a broken cron job could sit dead for
+ * weeks. Best-effort: alerting must never mask the original failure.
+ */
+async function maybeAlertJobFailing(jobKey: string, jobName: string, error: string) {
+  try {
+    const recent = await db.jobLog.findMany({
+      where: { jobKey, status: { in: ["completed", "failed"] } },
+      orderBy: { startedAt: "desc" },
+      take: FAILURE_ALERT_STREAK + 1,
+      select: { status: true },
+    });
+    const streak = recent.slice(0, FAILURE_ALERT_STREAK);
+    const prior = recent[FAILURE_ALERT_STREAK];
+    const atThreshold =
+      streak.length === FAILURE_ALERT_STREAK &&
+      streak.every((r) => r.status === "failed") &&
+      prior?.status !== "failed";
+    if (!atThreshold) return;
+
+    const admins = await db.user.findMany({
+      where: { isActive: true, role: "ADMIN" },
+      select: { id: true },
+    });
+    if (admins.length === 0) return;
+    await notify({
+      recipientId: admins.map((a) => a.id),
+      type: "job-failing",
+      title: `Scheduled job failing: ${jobName}`,
+      body: `${FAILURE_ALERT_STREAK} consecutive runs have failed. Latest error: ${error.slice(0, 200)}`,
+      href: `/admin/jobs/${jobKey}`,
+      entityType: "job",
+      entityId: jobKey,
+      email: {
+        templateKey: "notification",
+        data: {
+          recipientName: "Admin",
+          heading: `Scheduled job failing: ${jobName}`,
+          body: `The "${jobName}" job has failed ${FAILURE_ALERT_STREAK} runs in a row. It will keep retrying on schedule, but something needs attention. Latest error: ${error.slice(0, 300)}`,
+          cta: { label: "Open job history", url: absoluteUrl(`/admin/jobs/${jobKey}`) },
+        },
+      },
+    });
+  } catch (err) {
+    log.error("jobs.failureAlert", "Failed to send job-failing alert", err, { jobKey });
+  }
+}
 
 /**
  * Run a single job by key. Records start/finish in JobLog. Returns the
@@ -164,6 +220,10 @@ export async function runJob(
       },
     });
     log.error("jobs.runner", "Job handler threw", err, { jobKey });
+    // Dry-run failures are experiments, not incidents.
+    if (!options.dryRun) {
+      await maybeAlertJobFailing(jobKey, job.name, errorMessage);
+    }
     return {
       status: "failed",
       error: errorMessage,

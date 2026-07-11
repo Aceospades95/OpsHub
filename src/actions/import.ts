@@ -8,9 +8,12 @@ import {
   getImporter,
   autoMapHeaders,
   applyMapping,
+  type ImporterDefinition,
+  type ImportMode,
+  type ImportResult,
   type ParsedCsv,
 } from "@/lib/importers";
-import { asUploadedFile } from "@/lib/uploaded-file";
+import { asUploadedFile, type UploadedFile } from "@/lib/uploaded-file";
 import { revalidatePath } from "next/cache";
 
 function requireAdmin(role: string): { error: string } | null {
@@ -19,6 +22,15 @@ function requireAdmin(role: string): { error: string } | null {
 }
 
 const MAX_CSV_BYTES = 10 * 1024 * 1024; // 10 MB
+
+/** Max per-row outcomes returned to the wizard (preview + commit). */
+const MAX_ROW_OUTCOMES = 2000;
+
+/** Interactive-transaction ceiling for dry-run previews. Generous —
+ *  the preview replays the full commit against the DB. */
+const PREVIEW_TX_TIMEOUT_MS = 60_000;
+
+const VALID_MODES: ImportMode[] = ["create", "update", "upsert", "fill-blanks"];
 
 // `asUploadedFile` lives in src/lib/uploaded-file.ts now — same helper
 // is used by the branding, portal-upload, and admin-file-upload paths
@@ -42,8 +54,9 @@ interface PreviewResponse {
  * of the first 20 rows. Does NOT write any data to the DB — just inspects
  * the file so the wizard UI can show what's about to be imported.
  *
- * The wizard then calls commitImport() with the user-confirmed mapping
- * to actually run the importer.
+ * The wizard then calls previewCommitImport() (dry run) and/or
+ * commitImport() with the user-confirmed mapping to actually run the
+ * importer.
  */
 export async function previewImport(
   _prev: unknown,
@@ -129,16 +142,237 @@ export async function previewImport(
   }
 }
 
+interface RowOutcomeLite {
+  row: number;
+  status: string;
+  message?: string;
+  warnings?: string[];
+}
+
 interface CommitResponse {
   success: boolean;
   error?: string;
   imported?: number;
-  /** Existing rows updated when running in upsert mode. */
+  /** Existing rows updated when running in update/upsert/fill-blanks mode. */
   updated?: number;
   skipped?: number;
   failed?: number;
-  rowOutcomes?: { row: number; status: string; message?: string }[];
+  /** Rows written WITH at least one warning (subset of imported+updated). */
+  warnings?: number;
+  rowOutcomes?: RowOutcomeLite[];
   logId?: string;
+}
+
+/**
+ * Shared front half of previewCommitImport / commitImport: auth,
+ * importer lookup, file + mapping validation, CSV parse, mapping
+ * application, and mode parsing. Returns either an error response or
+ * everything the commit run needs.
+ */
+async function prepareCommitRun(formData: FormData): Promise<
+  | { ok: false; response: CommitResponse }
+  | {
+      ok: true;
+      userId: string;
+      importer: ImporterDefinition;
+      importerKey: string;
+      blob: UploadedFile;
+      parsed: ParsedCsv;
+      mappedRows: Record<string, string>[];
+      mode: ImportMode;
+    }
+> {
+  const user = await requireAuth();
+  const gate = requireAdmin(user.role);
+  if (gate) return { ok: false, response: { success: false, error: gate.error } };
+
+  const importerKey = formData.get("importerKey") as string;
+  const importer = getImporter(importerKey);
+  if (!importer) {
+    return {
+      ok: false,
+      response: { success: false, error: `Unknown importer "${importerKey}"` },
+    };
+  }
+
+  const blob = asUploadedFile(formData.get("file"));
+  if (!blob) {
+    return {
+      ok: false,
+      response: {
+        success: false,
+        error:
+          "The upload form lost the file between preview and import. Click 'Start over' and pick the file again.",
+      },
+    };
+  }
+  if (blob.size > MAX_CSV_BYTES) {
+    return {
+      ok: false,
+      response: {
+        success: false,
+        error: `File is ${(blob.size / 1024 / 1024).toFixed(1)}MB which exceeds the ${MAX_CSV_BYTES / 1024 / 1024}MB limit.`,
+      },
+    };
+  }
+
+  const mappingRaw = formData.get("mapping") as string;
+  let mapping: Record<string, string | undefined>;
+  try {
+    mapping = JSON.parse(mappingRaw);
+  } catch {
+    return {
+      ok: false,
+      response: {
+        success: false,
+        error: "Internal error: column mapping was malformed. Click 'Start over' and try again.",
+      },
+    };
+  }
+
+  // Required-field check on the mapping itself.
+  const missingRequired = importer.fields
+    .filter((f) => f.required && !mapping[f.key])
+    .map((f) => f.label);
+  if (missingRequired.length > 0) {
+    return {
+      ok: false,
+      response: {
+        success: false,
+        error: `Required column${missingRequired.length === 1 ? "" : "s"} ${missingRequired.map((l) => `"${l}"`).join(", ")} ${missingRequired.length === 1 ? "isn't" : "aren't"} mapped. Pick the matching CSV header in the dropdown above each unmapped field, then click Import again.`,
+      },
+    };
+  }
+
+  const text = await blob.text();
+  let parsed: ParsedCsv;
+  try {
+    parsed = parseCsv(text);
+  } catch (err) {
+    return {
+      ok: false,
+      response: {
+        success: false,
+        error:
+          err instanceof Error
+            ? `Could not parse this file as CSV: ${err.message}.`
+            : "Could not parse this file as CSV.",
+      },
+    };
+  }
+
+  const mappedRows = applyMapping(parsed, mapping);
+
+  // Mode selector from the wizard. Default "create" (silent skips on
+  // duplicate match, no row updates) for backwards compatibility with
+  // callers that don't send a mode. The wizard defaults to "upsert"
+  // for importers that support natural-key matching.
+  const modeRaw = formData.get("mode");
+  const mode: ImportMode = VALID_MODES.includes(modeRaw as ImportMode)
+    ? (modeRaw as ImportMode)
+    : "create";
+
+  return {
+    ok: true,
+    userId: user.id,
+    importer,
+    importerKey,
+    blob,
+    parsed,
+    mappedRows,
+    mode,
+  };
+}
+
+function successResponse(result: ImportResult, logId?: string): CommitResponse {
+  return {
+    success: true,
+    imported: result.imported,
+    updated: result.updated,
+    skipped: result.skipped,
+    failed: result.failed,
+    warnings: result.warnings,
+    rowOutcomes: result.rows.slice(0, MAX_ROW_OUTCOMES), // cap response size
+    logId,
+  };
+}
+
+/** Sentinel thrown inside the preview transaction to force a rollback
+ *  after the importer has produced its result. Never leaves this file. */
+class PreviewRollback extends Error {
+  constructor() {
+    super("preview-rollback");
+    this.name = "PreviewRollback";
+  }
+}
+
+/**
+ * TRUE dry-run: run the importer's real commit() — same validation,
+ * same matching, same writes — inside a transaction that is ALWAYS
+ * rolled back, and return the exact summary + per-row outcomes the
+ * real run would produce. Nothing is persisted: every read/write in
+ * commit() goes through ctx.db (the transaction client), including
+ * activity-log rows, and side effects that bypass the DB (workflow
+ * triggers) are gated on ctx.isPreview.
+ *
+ * Caveat: a row that fails at the DATABASE level (constraint
+ * violation) aborts the underlying Postgres transaction, so rows
+ * after it report failures the real run wouldn't have. Validation
+ * failures — the overwhelming majority — behave identically.
+ */
+export async function previewCommitImport(
+  _prev: unknown,
+  formData: FormData
+): Promise<CommitResponse> {
+  try {
+    const prep = await prepareCommitRun(formData);
+    if (!prep.ok) return prep.response;
+    const { importer, importerKey, mappedRows, mode, userId } = prep;
+
+    let result: ImportResult | undefined;
+    try {
+      await db.$transaction(
+        async (tx) => {
+          result = await importer.commit(mappedRows, {
+            triggeredBy: userId,
+            mode,
+            db: tx,
+            isPreview: true,
+          });
+          // Force the rollback — the whole point of the preview.
+          throw new PreviewRollback();
+        },
+        { timeout: PREVIEW_TX_TIMEOUT_MS }
+      );
+    } catch (err) {
+      if (!(err instanceof PreviewRollback)) {
+        log.error("import.previewCommit", "Preview transaction threw", err, {
+          importerKey,
+        });
+        return {
+          success: false,
+          error: "Preview failed. Check server logs for details.",
+        };
+      }
+    }
+
+    if (!result) {
+      return {
+        success: false,
+        error: "Preview produced no result. Check server logs for details.",
+      };
+    }
+
+    // No ImportLog row, no revalidate — previews leave zero trace.
+    return successResponse(result);
+  } catch (err) {
+    log.error("import.previewCommit", "Top-level catch", err);
+    return {
+      success: false,
+      error:
+        "Could not preview the import. Check server logs for details, or contact an administrator.",
+    };
+  }
 }
 
 /**
@@ -150,6 +384,11 @@ interface CommitResponse {
  * Mapping is supplied as JSON in the `mapping` form field — keys are
  * importer field keys, values are CSV header names. Fields with no
  * mapping are left empty in the input rows.
+ *
+ * Deliberately NOT wrapped in a transaction: a 5,000-row import that
+ * dies at row 4,999 keeps the first 4,998 writes (today's
+ * partial-write semantics). The dry-run preview is the all-or-nothing
+ * path.
  */
 export async function commitImport(
   _prev: unknown,
@@ -159,79 +398,18 @@ export async function commitImport(
   // requireAuth / Prisma / revalidatePath surfaces as a graceful
   // wizard error instead of a 500 page.
   try {
-    const user = await requireAuth();
-    const gate = requireAdmin(user.role);
-    if (gate) return { success: false, error: gate.error };
+    const prep = await prepareCommitRun(formData);
+    if (!prep.ok) return prep.response;
+    const { importer, importerKey, blob, parsed, mappedRows, mode, userId } = prep;
 
-    const importerKey = formData.get("importerKey") as string;
-    const importer = getImporter(importerKey);
-    if (!importer) {
-      return { success: false, error: `Unknown importer "${importerKey}"` };
-    }
-
-    const blob = asUploadedFile(formData.get("file"));
-    if (!blob) {
-      return {
-        success: false,
-        error:
-          "The upload form lost the file between preview and import. Click 'Start over' and pick the file again.",
-      };
-    }
-    if (blob.size > MAX_CSV_BYTES) {
-      return {
-        success: false,
-        error: `File is ${(blob.size / 1024 / 1024).toFixed(1)}MB which exceeds the ${MAX_CSV_BYTES / 1024 / 1024}MB limit.`,
-      };
-    }
-
-    const mappingRaw = formData.get("mapping") as string;
-    let mapping: Record<string, string | undefined>;
+    let result: ImportResult;
     try {
-      mapping = JSON.parse(mappingRaw);
-    } catch {
-      return {
-        success: false,
-        error: "Internal error: column mapping was malformed. Click 'Start over' and try again.",
-      };
-    }
-
-    // Required-field check on the mapping itself.
-    const missingRequired = importer.fields
-      .filter((f) => f.required && !mapping[f.key])
-      .map((f) => f.label);
-    if (missingRequired.length > 0) {
-      return {
-        success: false,
-        error: `Required column${missingRequired.length === 1 ? "" : "s"} ${missingRequired.map((l) => `"${l}"`).join(", ")} ${missingRequired.length === 1 ? "isn't" : "aren't"} mapped. Pick the matching CSV header in the dropdown above each unmapped field, then click Import again.`,
-      };
-    }
-
-    const text = await blob.text();
-    let parsed: ParsedCsv;
-    try {
-      parsed = parseCsv(text);
-    } catch (err) {
-      return {
-        success: false,
-        error:
-          err instanceof Error
-            ? `Could not parse this file as CSV: ${err.message}.`
-            : "Could not parse this file as CSV.",
-      };
-    }
-
-    const mappedRows = applyMapping(parsed, mapping);
-
-    // Mode toggle from the wizard. The default is "create" — silent
-    // skips on duplicate match, no row updates. Users opt into
-    // "upsert" via the "Update existing rows on match" checkbox when
-    // they're re-uploading a corrected file or downloaded export.
-    // Importers that don't set supportsUpsert ignore the mode.
-    const mode = formData.get("mode") === "upsert" ? "upsert" : "create";
-
-    let result;
-    try {
-      result = await importer.commit(mappedRows, { triggeredBy: user.id, mode });
+      result = await importer.commit(mappedRows, {
+        triggeredBy: userId,
+        mode,
+        db,
+        isPreview: false,
+      });
     } catch (err) {
       // Importer-thrown errors can include row-level Prisma details
       // (foreign-key constraint violations, table names). Log them
@@ -250,7 +428,26 @@ export async function commitImport(
     // operator can fix the migration drift.
     let logId: string | undefined;
     try {
-      const log = await db.importLog.create({
+      // Only non-clean rows land in the errors blob: failures, skips,
+      // and written-with-warnings rows. Clean updated rows used to be
+      // included, which made every successful upsert run look like it
+      // had errors on the landing page.
+      const issueRows = result.rows
+        .filter(
+          (r) =>
+            r.status === "failed" ||
+            r.status === "skipped" ||
+            (r.warnings && r.warnings.length > 0)
+        )
+        .map((r) => ({
+          row: r.row,
+          status: r.status,
+          message: r.message,
+          // Carried so the log-detail page can render + export
+          // per-row warnings; absent on clean rows.
+          ...(r.warnings && r.warnings.length > 0 ? { warnings: r.warnings } : {}),
+        }));
+      const importLog = await db.importLog.create({
         data: {
           importerKey,
           filename: blob.name,
@@ -258,18 +455,13 @@ export async function commitImport(
           imported: result.imported,
           updated: result.updated,
           skipped: result.skipped,
-          errors:
-            result.failed > 0 || result.rows.some((r) => r.status !== "imported")
-              ? JSON.stringify(
-                  result.rows
-                    .filter((r) => r.status !== "imported")
-                    .map((r) => ({ row: r.row, status: r.status, message: r.message }))
-                )
-              : null,
-          triggeredBy: user.id,
+          failed: result.failed,
+          warnings: result.warnings,
+          errors: issueRows.length > 0 ? JSON.stringify(issueRows) : null,
+          triggeredBy: userId,
         },
       });
-      logId = log.id;
+      logId = importLog.id;
     } catch (err) {
       log.error("import.commit", "Failed to write ImportLog row", err);
     }
@@ -283,15 +475,7 @@ export async function commitImport(
       log.error("import.commit", "revalidatePath threw post-import", err);
     }
 
-    return {
-      success: true,
-      imported: result.imported,
-      updated: result.updated,
-      skipped: result.skipped,
-      failed: result.failed,
-      rowOutcomes: result.rows.slice(0, 100), // cap response size
-      logId,
-    };
+    return successResponse(result, logId);
   } catch (err) {
     log.error("import.commit", "Top-level catch", err);
     return {

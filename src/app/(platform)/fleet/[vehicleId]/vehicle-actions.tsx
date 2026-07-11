@@ -23,6 +23,8 @@ interface Props {
     /** ISO string or null — serialized server-side. */
     nextServiceDate: string | null;
     nextServiceMileage: number | null;
+    /** ISO string or null — serialized server-side. */
+    registrationExpiresAt: string | null;
     notes: string | null;
   };
   users: { id: string; name: string }[];

@@ -17,21 +17,35 @@ import { differenceInDays } from "date-fns";
 import { formatCalendarDate } from "@/lib/dates";
 import { PRE_SUBMISSION_STATUSES, BID_DUE_WINDOW_DAYS } from "@/lib/bids";
 import { shouldRunDaily } from "../gating";
+import { getJobParams } from "../params";
 import type { JobDefinition } from "../types";
 
 export const bidDueCheck: JobDefinition = {
   key: "bid-due-check",
   name: "Bid deadline check",
   description:
-    "Notifies the bid owner and admins/managers when an open bid's response is due within 7 days or overdue",
+    "Notifies the bid owner and admins/managers when an open bid's response is due soon (window configurable below) or overdue",
   schedule: "Daily",
+  paramsSchema: [
+    {
+      key: "dueSoonDays",
+      label: "Due-soon window (days)",
+      type: "number",
+      min: 1,
+      defaultValue: BID_DUE_WINDOW_DAYS,
+      help: "Notify when an open bid's response deadline is within this many days",
+    },
+  ],
 
   async handler() {
     if (!(await shouldRunDaily("bid-due-check"))) {
       return { status: "skipped", output: "Already ran today", processed: 0 };
     }
+    const { dueSoonDays } = await getJobParams("bid-due-check", {
+      dueSoonDays: BID_DUE_WINDOW_DAYS,
+    });
     const now = new Date();
-    const horizon = new Date(now.getTime() + BID_DUE_WINDOW_DAYS * 24 * 60 * 60 * 1000);
+    const horizon = new Date(now.getTime() + dueSoonDays * 24 * 60 * 60 * 1000);
 
     const bids = await db.bidOpportunity.findMany({
       where: {

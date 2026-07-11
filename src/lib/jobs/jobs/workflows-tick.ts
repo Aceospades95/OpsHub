@@ -16,6 +16,7 @@
  */
 
 import { tick } from "@/lib/workflows/engine";
+import { shouldRunTick } from "../gating";
 import type { JobDefinition } from "../types";
 
 export const workflowsTick: JobDefinition = {
@@ -26,6 +27,12 @@ export const workflowsTick: JobDefinition = {
   schedule: "Every minute",
 
   async handler() {
+    // Default cadence is every cron tick; the gate only bites when an
+    // admin sets a JobConfig cadence override (previously the override
+    // dropdown showed for this job but changed nothing — audit #5).
+    if (!(await shouldRunTick("workflows-tick"))) {
+      return { status: "skipped", output: "Within cadence window (admin override)", processed: 0 };
+    }
     const result = await tick();
     const summary = `${result.fired} fired, ${result.completed} completed, ${result.failed} failed`;
     return {

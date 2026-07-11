@@ -35,6 +35,9 @@ import { toolsImporter } from "./importers/tools";
 import { clientContactsImporter } from "./importers/client-contacts";
 import { assignmentsImporter } from "./importers/assignments";
 import { allowedDomainsImporter } from "./importers/allowed-domains";
+import { vehiclesImporter } from "./importers/vehicles";
+import { vehicleServiceSchedulesImporter } from "./importers/vehicle-service-schedules";
+import { vehicleMaintenanceImporter } from "./importers/vehicle-maintenance";
 
 export const IMPORTERS: ImporterDefinition[] = [
   // Recommended import order top-to-bottom: top-level entities first,
@@ -61,6 +64,11 @@ export const IMPORTERS: ImporterDefinition[] = [
   supplierProjectsImporter,
   projectRelationsImporter,
   allowedDomainsImporter,
+  // Fleet: vehicles first, then their child schedule/maintenance rows
+  // (both match the vehicle by license plate).
+  vehiclesImporter,
+  vehicleServiceSchedulesImporter,
+  vehicleMaintenanceImporter,
 ];
 
 const IMPORTER_MAP = new Map<string, ImporterDefinition>(

@@ -16,8 +16,15 @@
  */
 
 import { db } from "@/lib/db";
-import { logActivity } from "@/lib/activity";
 import type { ImporterDefinition, ImportRowResult } from "../types";
+import {
+  applyMode,
+  buildResult,
+  logImportActivity,
+  mergeFillBlanks,
+  skipExistsMessage,
+  skipNoMatchMessage,
+} from "../helpers";
 
 function parseBool(value: string | undefined, defaultValue: boolean): boolean {
   if (value === undefined || value === "") return defaultValue;
@@ -84,12 +91,8 @@ export const clientContactsImporter: ImporterDefinition = {
   },
 
   async commit(rows, ctx) {
+    const db = ctx.db; // ALL commit reads/writes go through ctx.db
     const results: ImportRowResult[] = [];
-    let imported = 0;
-    let updated = 0;
-    let skipped = 0;
-    let failed = 0;
-    const upsert = ctx.mode === "upsert";
 
     const clients = await db.client.findMany({ select: { id: true, name: true } });
     const clientByName = new Map(clients.map((c) => [c.name.toLowerCase(), c.id]));
@@ -115,19 +118,16 @@ export const clientContactsImporter: ImporterDefinition = {
       const clientNameRaw = (raw.clientName || "").trim();
 
       if (!name) {
-        failed++;
         results.push({ row: rowNumber, status: "failed", message: "Missing name" });
         continue;
       }
       if (!clientNameRaw) {
-        failed++;
         results.push({ row: rowNumber, status: "failed", message: "Missing client name" });
         continue;
       }
 
       const clientId = clientByName.get(clientNameRaw.toLowerCase());
       if (!clientId) {
-        failed++;
         results.push({
           row: rowNumber,
           status: "failed",
@@ -141,7 +141,6 @@ export const clientContactsImporter: ImporterDefinition = {
       const key = contactMatchKey(clientId, email, name);
 
       if (seenInBatch.has(key)) {
-        skipped++;
         results.push({
           row: rowNumber,
           status: "skipped",
@@ -162,10 +161,19 @@ export const clientContactsImporter: ImporterDefinition = {
       };
 
       const existing = existingByKey.get(key);
+      const action = applyMode(existing, ctx.mode);
 
       try {
-        if (existing && upsert) {
-          if (isPrimary) {
+        if (action === "update" && existing) {
+          let updateData: Partial<typeof data> = data;
+          if (ctx.mode === "fill-blanks") {
+            const current = await db.clientContact.findUnique({ where: { id: existing.id } });
+            updateData = mergeFillBlanks(current, data);
+          }
+          // Unsetting the previous primary only applies when this
+          // update actually writes isPrimary (fill-blanks never flips
+          // booleans, so it never steals the primary slot).
+          if (isPrimary && updateData.isPrimary === true) {
             await db.clientContact.updateMany({
               where: { clientId, isPrimary: true, NOT: { id: existing.id } },
               data: { isPrimary: false },
@@ -173,19 +181,18 @@ export const clientContactsImporter: ImporterDefinition = {
           }
           const contact = await db.clientContact.update({
             where: { id: existing.id },
-            data,
+            data: updateData,
           });
-          updated++;
           results.push({ row: rowNumber, status: "updated" });
-          await logActivity("imported", "clientContact", contact.id, ctx.triggeredBy, `${name} (updated)`, {
+          await logImportActivity(ctx, "imported", "clientContact", contact.id, `${name} (updated)`, {
             clientId,
           });
-        } else if (existing && !upsert) {
-          skipped++;
+        } else if (action === "skip") {
+          const label = `Contact "${name}" for ${clientNameRaw}`;
           results.push({
             row: rowNumber,
             status: "skipped",
-            message: `Contact already exists: "${name}" for ${clientNameRaw}. Re-run with "Update existing rows" enabled to update it.`,
+            message: existing ? skipExistsMessage(label) : skipNoMatchMessage(label),
           });
         } else {
           if (isPrimary) {
@@ -196,14 +203,12 @@ export const clientContactsImporter: ImporterDefinition = {
           }
           const contact = await db.clientContact.create({ data });
           existingByKey.set(key, { id: contact.id });
-          imported++;
           results.push({ row: rowNumber, status: "imported" });
-          await logActivity("imported", "clientContact", contact.id, ctx.triggeredBy, name, {
+          await logImportActivity(ctx, "imported", "clientContact", contact.id, name, {
             clientId,
           });
         }
       } catch (err) {
-        failed++;
         results.push({
           row: rowNumber,
           status: "failed",
@@ -212,6 +217,6 @@ export const clientContactsImporter: ImporterDefinition = {
       }
     }
 
-    return { imported, updated, skipped, failed, rows: results };
+    return buildResult(results);
   },
 };
