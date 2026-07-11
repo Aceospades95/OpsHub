@@ -1318,8 +1318,17 @@ model ImportLog {
   /// and for create-only imports.
   updated     Int      @default(0)
   skipped     Int // skipped (duplicates, dry-run, etc.)
+  /// Rows that failed validation / FK resolution and were not written.
+  /// Derived arithmetically for legacy rows (rowCount - imported -
+  /// updated - skipped); stored explicitly from 2026-07 on.
+  failed      Int      @default(0)
+  /// Rows written WITH warnings (dropped foreign key, coerced enum, …).
+  /// Subset of imported+updated, not an additional bucket.
+  warnings    Int      @default(0)
   /**
-   * JSON array of { row, message } error entries
+   * JSON array of { row, status, message } entries for every non-clean
+   * row (failed / skipped / warning). Updated rows without warnings are
+   * NOT recorded here (pre-2026-07 blobs included them).
    */
   errors      String?  @db.Text
   triggeredBy String // user id
@@ -1374,6 +1383,11 @@ model JobLog {
 model JobConfig {
   jobKey    String   @id
   isEnabled Boolean  @default(true)
+  /// Typed per-job parameters (JSON object). Each JobDefinition declares
+  /// a paramsSchema describing its knobs (due windows, escalation
+  /// thresholds, …); /admin/jobs/[jobKey] renders a form from it and
+  /// handlers read merged values via getJobParams(). Null = code defaults.
+  params    Json?
   /// Optional cadence override. When null the job uses its code-defined
   /// cadence (the gate in lib/jobs/gating.ts checks shouldRunDaily /
   /// shouldRunWeekly / shouldRunMonthly directly). When set, the same
@@ -1385,6 +1399,37 @@ model JobConfig {
   /// triggers from /admin/jobs).
   cadence   String?
   updatedAt DateTime @updatedAt
+}
+
+/// Per-notification-type delivery rule — the admin-editable layer the
+/// notification engine (src/lib/notifications) consults on every
+/// notify() call. ABSENCE of a row = code defaults (enabled, both
+/// channels, caller-supplied recipients only), so rollout is
+/// incremental and deleting a rule restores stock behavior.
+model NotificationRule {
+  id              String   @id @default(cuid())
+  /// Matches a key in NOTIFICATION_TYPE_REGISTRY ("task-assigned", …).
+  typeKey         String   @unique
+  /// Master kill switch: false = neither in-app rows nor emails.
+  enabled         Boolean  @default(true)
+  channelInApp    Boolean  @default(true)
+  channelEmail    Boolean  @default(true)
+  /// Roles whose active users are ADDED to the caller's recipients.
+  recipientRoles  String[] @default([])
+  /// Specific user ids ADDED to the caller's recipients.
+  recipientUserIds String[] @default([])
+  /// Raw external addresses that get their own copy of the email.
+  extraEmails     String[] @default([])
+  /// Optional overrides applied to the outgoing EMAIL (not the in-app
+  /// row). {{variable}} placeholders substitute from the per-type
+  /// variable map documented in the registry.
+  subjectTemplate String?
+  bodyTemplate    String?  @db.Text
+  /// Suppress repeat sends of the same type for the same entity within
+  /// N hours (null = no throttling). In-app and email both suppressed.
+  throttleHours   Int?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 }
 
 // ─── NOTIFICATIONS ─────────────────────────────────────
@@ -2452,6 +2497,13 @@ model Vehicle {
   nextServiceMileage     Int?
   /// Job-dedupe stamp — see the model comment.
   maintenanceNotifiedFor DateTime?
+  /// When currentMileage was last reported (maintenance submission or
+  /// manual odometer update) — staleness signal for mileage-based due
+  /// estimates.
+  mileageUpdatedAt       DateTime?
+  /// Registration/plates expiry — tracked like a service schedule in
+  /// the fleet spreadsheet this module replaces.
+  registrationExpiresAt  DateTime?
   notes                  String?       @db.Text
   createdAt              DateTime      @default(now())
   updatedAt              DateTime      @updatedAt
@@ -2460,10 +2512,42 @@ model Vehicle {
 
   assignedTo         User?                      @relation("VehicleAssignee", fields: [assignedToId], references: [id], onDelete: SetNull)
   maintenanceRecords VehicleMaintenanceRecord[]
+  serviceSchedules   VehicleServiceSchedule[]
 
   @@index([status])
   @@index([assignedToId])
   @@index([nextServiceDate])
+}
+
+/// Recurring service plan for one vehicle × one service type ("Oil
+/// Change every 3 months / 4,000 miles") — the per-service-type model
+/// from the fleet spreadsheet's Service Overview sheet. Due is computed
+/// from whichever bound (time since last service, miles since last
+/// service vs Vehicle.currentMileage) trips first; either bound may be
+/// null for time-only / mileage-only schedules.
+model VehicleServiceSchedule {
+  id                 String    @id @default(cuid())
+  vehicleId          String
+  /// Free-form but normalized service label ("Oil Change") — matches
+  /// VehicleMaintenanceRecord.serviceType so a logged service re-arms
+  /// its schedule row.
+  serviceType        String
+  everyMonths        Int?
+  everyMiles         Int?
+  lastServiceDate    DateTime?
+  lastServiceMileage Int?
+  /// Due-state the maintenance job last notified for (the computed due
+  /// date at send time) — re-arms automatically when a logged service
+  /// moves the schedule forward. Mirrors Vehicle.maintenanceNotifiedFor.
+  notifiedForDueAt   DateTime?
+  notes              String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  vehicle Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+
+  @@unique([vehicleId, serviceType])
+  @@index([vehicleId])
 }
 
 model VehicleMaintenanceRecord {

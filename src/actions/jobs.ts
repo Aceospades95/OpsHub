@@ -5,6 +5,7 @@ import { requireAuth } from "@/lib/permissions";
 import { runJob, getJob } from "@/lib/jobs";
 import { logActivity } from "@/lib/activity";
 import { revalidatePath } from "next/cache";
+import { Prisma } from "@prisma/client";
 
 function requireAdmin(role: string): { error: string } | null {
   if (role !== "ADMIN") return { error: "Admin access required" };
@@ -86,6 +87,55 @@ export async function toggleJobEnabled(jobKey: string, isEnabled: boolean) {
     user.id,
     jobKey
   );
+  revalidatePath("/admin/jobs");
+  revalidatePath(`/admin/jobs/${jobKey}`);
+  return { success: true } as const;
+}
+
+/**
+ * Save a job's tunable parameters (validated against its declared
+ * paramsSchema — unknown keys and type mismatches are rejected so a
+ * crafted POST can't smuggle arbitrary JSON into JobConfig). Passing an
+ * empty object clears back to code defaults.
+ */
+export async function setJobParams(jobKey: string, params: Record<string, unknown>) {
+  const user = await requireAuth();
+  const gate = requireAdmin(user.role);
+  if (gate) return gate;
+
+  const job = getJob(jobKey);
+  if (!job) {
+    return { error: `No job registered with key "${jobKey}"` } as const;
+  }
+  const schema = job.paramsSchema ?? [];
+  if (schema.length === 0) {
+    return { error: "This job has no tunable parameters." } as const;
+  }
+
+  const clean: Record<string, number | boolean> = {};
+  for (const field of schema) {
+    const value = params[field.key];
+    if (value === undefined || value === null || value === "") continue;
+    if (field.type === "number") {
+      const n = Number(value);
+      if (!Number.isFinite(n)) {
+        return { error: `${field.label} must be a number` } as const;
+      }
+      if (field.min !== undefined && n < field.min) {
+        return { error: `${field.label} must be at least ${field.min}` } as const;
+      }
+      clean[field.key] = n;
+    } else {
+      clean[field.key] = value === true || value === "true";
+    }
+  }
+
+  await db.jobConfig.upsert({
+    where: { jobKey },
+    update: { params: Object.keys(clean).length > 0 ? clean : Prisma.DbNull },
+    create: { jobKey, isEnabled: true, params: clean },
+  });
+  await logActivity("updated", "job", jobKey, user.id, "parameters updated");
   revalidatePath("/admin/jobs");
   revalidatePath(`/admin/jobs/${jobKey}`);
   return { success: true } as const;

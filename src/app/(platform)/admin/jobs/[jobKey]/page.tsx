@@ -17,6 +17,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { JobRunButton } from "../job-run-button";
 import { JobToggleButton } from "../job-toggle-button";
+import { JobParamsForm } from "../job-params-form";
 
 interface Props {
   params: Promise<{ jobKey: string }>;
@@ -45,6 +46,28 @@ export default async function JobDetailPage({ params }: Props) {
   ]);
 
   const isEnabled = config?.isEnabled ?? true;
+
+  // Stored params filtered to declared schema keys with matching types
+  // (mirrors getJobParams) so the form never renders junk from a
+  // hand-edited row.
+  const paramDefaults: Record<string, number | boolean> = {};
+  for (const f of job.paramsSchema ?? []) {
+    if (f.defaultValue !== undefined) paramDefaults[f.key] = f.defaultValue;
+  }
+  const rawParams =
+    config?.params && typeof config.params === "object" && !Array.isArray(config.params)
+      ? (config.params as Record<string, unknown>)
+      : {};
+  const paramsForForm: Record<string, number | boolean> = {};
+  for (const f of job.paramsSchema ?? []) {
+    const v = rawParams[f.key];
+    if (
+      (f.type === "number" && typeof v === "number" && Number.isFinite(v)) ||
+      (f.type === "boolean" && typeof v === "boolean")
+    ) {
+      paramsForForm[f.key] = v;
+    }
+  }
   const completedTotal = totals.find((t) => t.status === "completed")?._count._all ?? 0;
   const failedTotal = totals.find((t) => t.status === "failed")?._count._all ?? 0;
   const runningTotal = totals.find((t) => t.status === "running")?._count._all ?? 0;
@@ -92,6 +115,22 @@ export default async function JobDetailPage({ params }: Props) {
           still trigger it manually with <strong>Run now</strong>; that bypasses
           the pause for one-off testing.
         </div>
+      )}
+
+      {job.paramsSchema && job.paramsSchema.length > 0 && (
+        <Card className="mb-6">
+          <CardHeader>
+            <CardTitle>Settings</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <JobParamsForm
+              jobKey={job.key}
+              schema={job.paramsSchema}
+              current={paramsForForm}
+              defaults={paramDefaults}
+            />
+          </CardContent>
+        </Card>
       )}
 
       <Card>
