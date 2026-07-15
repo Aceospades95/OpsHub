@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Plus, Save, Trash2, X, Eye } from "lucide-react";
+import { Save, Trash2, X, Eye } from "lucide-react";
 import type { CustomReportEntity } from "@prisma/client";
 
 import { Button } from "@/components/ui/button";
@@ -75,6 +75,13 @@ export function ReportBuilder({
     [catalog, entityType]
   );
 
+  // Scalar columns only — the report runtime rejects ordering through a
+  // relation ("manager.name"), so those never appear as sort options.
+  const sortableColumns = useMemo(
+    () => entityDef.columns.filter((c) => !c.key.includes(".")),
+    [entityDef]
+  );
+
   // When the entity changes, drop any column / filter / sort selection
   // that doesn't apply to the new entity. Keep what survives.
   useEffect(() => {
@@ -89,7 +96,7 @@ export function ReportBuilder({
     setFilters((prev) => prev.filter((f) => validFilterKeys.has(f.field)));
     setSortBy((prev) => {
       const stripped = prev.startsWith("-") ? prev.slice(1) : prev;
-      if (validColumnKeys.has(stripped)) return prev;
+      if (validColumnKeys.has(stripped) && !stripped.includes(".")) return prev;
       return entityDef.defaultSort ?? "";
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -132,7 +139,11 @@ export function ReportBuilder({
         op: f.op,
         value: f.value,
       })),
-      sortBy: sortBy.trim() || null,
+      // Relation sorts are un-runnable (see sortableColumns) — a stale
+      // saved value like "manager.name" gets normalized to the default
+      // rather than round-tripping a report that errors when run.
+      sortBy:
+        sortBy.trim() && !sortBy.includes(".") ? sortBy.trim() : null,
       limit:
         limit.trim() === "" || isNaN(Number(limit))
           ? null
@@ -145,13 +156,20 @@ export function ReportBuilder({
     setPreviewing(true);
     setError(null);
     startTransition(async () => {
-      const res = await previewCustomReport(buildPayload());
-      setPreviewing(false);
-      if ("error" in res) {
-        setError(res.error ?? "Preview failed");
-        return;
+      try {
+        const res = await previewCustomReport(buildPayload());
+        if ("error" in res) {
+          setError(res.error ?? "Preview failed");
+          return;
+        }
+        setPreview(res.output);
+      } catch {
+        // Network / unexpected action failure — don't leave the button
+        // stuck on "Running…".
+        setError("Preview failed. Try again.");
+      } finally {
+        setPreviewing(false);
       }
-      setPreview(res.output);
     });
   }
 
@@ -162,19 +180,23 @@ export function ReportBuilder({
       return;
     }
     startTransition(async () => {
-      const payload = buildPayload();
-      const res = reportId
-        ? await updateCustomReport({ id: reportId, ...payload })
-        : await createCustomReport(payload);
-      if ("error" in res) {
-        setError(res.error ?? "Save failed");
-        return;
+      try {
+        const payload = buildPayload();
+        const res = reportId
+          ? await updateCustomReport({ id: reportId, ...payload })
+          : await createCustomReport(payload);
+        if ("error" in res) {
+          setError(res.error ?? "Save failed");
+          return;
+        }
+        if (!reportId && "id" in res) {
+          router.push(`/admin/reports/custom/${res.id}/edit`);
+          return;
+        }
+        router.refresh();
+      } catch {
+        setError("Save failed. Try again.");
       }
-      if (!reportId && "id" in res) {
-        router.push(`/admin/reports/custom/${res.id}/edit`);
-        return;
-      }
-      router.refresh();
     });
   }
 
@@ -211,6 +233,7 @@ export function ReportBuilder({
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="Untitled report"
+            aria-label="Report name"
             className="text-2xl font-bold bg-transparent border-0 outline-none focus:ring-0 p-0 w-full"
           />
         </div>
@@ -369,11 +392,18 @@ export function ReportBuilder({
                       </span>
                       <Select
                         value={f.op}
-                        onChange={(e) =>
-                          updateFilter(idx, {
-                            op: e.target.value as SerializedFilter["op"],
-                          })
-                        }
+                        onChange={(e) => {
+                          const nextOp = e.target.value as SerializedFilter["op"];
+                          // Leaving "in" for a single-value operator: keep
+                          // only the first picked value so the filter
+                          // doesn't silently no-op with "A,B" as an equals
+                          // value.
+                          const patch: Partial<SerializedFilter> =
+                            f.op === "in" && nextOp !== "in"
+                              ? { op: nextOp, value: splitInList(f.value)[0] ?? "" }
+                              : { op: nextOp };
+                          updateFilter(idx, patch);
+                        }}
                         options={def.operators.map((o) => ({
                           label: opLabel(o),
                           value: o,
@@ -382,18 +412,52 @@ export function ReportBuilder({
                       />
                       {supportsValue &&
                         (def.type === "enum" && def.enumValues ? (
-                          <Select
-                            value={String(f.value ?? "")}
-                            onChange={(e) =>
-                              updateFilter(idx, { value: e.target.value })
-                            }
-                            options={def.enumValues.map((v) => ({
-                              label: v,
-                              value: v,
-                            }))}
-                            placeholder="Pick"
-                            className="h-8 flex-1 text-xs"
-                          />
+                          f.op === "in" ? (
+                            // "in" accepts a comma-separated list — a single
+                            // select would cap it at one value, so render
+                            // toggleable chips instead.
+                            <div className="flex flex-1 flex-wrap gap-1">
+                              {def.enumValues.map((v) => {
+                                const selected = splitInList(f.value);
+                                const active = selected.includes(v);
+                                return (
+                                  <button
+                                    key={v}
+                                    type="button"
+                                    aria-pressed={active}
+                                    onClick={() => {
+                                      const next = active
+                                        ? selected.filter((x) => x !== v)
+                                        : [...selected, v];
+                                      updateFilter(idx, {
+                                        value: next.join(","),
+                                      });
+                                    }}
+                                    className={`px-2 py-0.5 text-[10px] rounded-full border transition-colors ${
+                                      active
+                                        ? "border-primary bg-primary/10 text-primary"
+                                        : "border-border text-muted-foreground hover:border-primary/40"
+                                    }`}
+                                  >
+                                    {v}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          ) : (
+                            <Select
+                              value={String(f.value ?? "")}
+                              onChange={(e) =>
+                                updateFilter(idx, { value: e.target.value })
+                              }
+                              options={def.enumValues.map((v) => ({
+                                label: v,
+                                value: v,
+                              }))}
+                              placeholder="Pick"
+                              className="h-8 flex-1 text-xs"
+                            />
+                          )
                         ) : def.type === "boolean" ? (
                           <Select
                             value={String(f.value ?? "")}
@@ -459,11 +523,14 @@ export function ReportBuilder({
                 onChange={(e) => setSortBy(e.target.value)}
                 placeholder="Default"
                 options={[
-                  ...entityDef.columns.map((c) => ({
+                  // Relation columns ("manager.name" etc.) are excluded:
+                  // the runtime can't order through a relation, so
+                  // offering them here produced reports that error out.
+                  ...sortableColumns.map((c) => ({
                     label: `${c.label} ↑`,
                     value: c.key,
                   })),
-                  ...entityDef.columns.map((c) => ({
+                  ...sortableColumns.map((c) => ({
                     label: `${c.label} ↓`,
                     value: `-${c.key}`,
                   })),
@@ -509,8 +576,8 @@ export function ReportBuilder({
               {!preview ? (
                 <p className="text-xs text-muted-foreground">
                   Click <strong>Run preview</strong> to see the first 50
-                  rows against current data. The preview re-runs every
-                  time you change the report.
+                  rows against current data. Run it again after changing
+                  columns or filters to refresh the result.
                 </p>
               ) : (
                 <div className="text-xs">
@@ -520,6 +587,12 @@ export function ReportBuilder({
                   {preview.rows.length === 0 ? (
                     <p className="text-muted-foreground">No matching rows.</p>
                   ) : (
+                    // The panel is narrow (1/3 grid column) — without
+                    // nowrap cells the table crushed every column and
+                    // wrapped values line-by-line. Headers and cells stay
+                    // on one line; the wrapper scrolls horizontally and
+                    // long free-text truncates with the full value on
+                    // hover.
                     <div className="overflow-x-auto">
                       <table className="w-full">
                         <thead>
@@ -527,10 +600,12 @@ export function ReportBuilder({
                             {preview.columns.map((c) => (
                               <th
                                 key={c.key}
-                                className={`pb-1.5 px-1.5 ${
+                                className={`pb-1.5 px-1.5 whitespace-nowrap ${
                                   c.align === "right"
                                     ? "text-right"
-                                    : "text-left"
+                                    : c.align === "center"
+                                      ? "text-center"
+                                      : "text-left"
                                 }`}
                               >
                                 {c.label}
@@ -544,10 +619,13 @@ export function ReportBuilder({
                               {preview.columns.map((c) => (
                                 <td
                                   key={c.key}
-                                  className={`py-1.5 px-1.5 ${
+                                  title={row[c.key]}
+                                  className={`py-1.5 px-1.5 max-w-[16rem] truncate ${
                                     c.align === "right"
                                       ? "text-right tabular-nums"
-                                      : ""
+                                      : c.align === "center"
+                                        ? "text-center"
+                                        : ""
                                   }`}
                                 >
                                   {row[c.key]}
@@ -568,6 +646,16 @@ export function ReportBuilder({
       <ConfirmDialog />
     </div>
   );
+}
+
+/** Split a saved "in" filter value into its list items. Mirrors the
+ *  runtime, which splits on commas/semicolons/whitespace. */
+function splitInList(value: unknown): string[] {
+  if (Array.isArray(value)) return value.map(String).filter(Boolean);
+  return String(value ?? "")
+    .split(/[,;\s]+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
 }
 
 function opLabel(op: SerializedFilter["op"]): string {
@@ -592,8 +680,3 @@ function opLabel(op: SerializedFilter["op"]): string {
       return "is set";
   }
 }
-
-// "Add filter…" zero-state — the picker uses a select with a placeholder
-// option. We patched the Plus icon out because the select UI is more
-// compact in the card header. Keeping the import to satisfy TS.
-void Plus;

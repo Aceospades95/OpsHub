@@ -27,7 +27,7 @@ export function DisplayTable({ config, data, fields }: DisplayProps) {
         <thead>
           <tr className="border-b border-border">
             {columns.map((col) => (
-              <th key={col} className="text-left py-2 px-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+              <th key={col} className="text-left py-2 px-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap">
                 {fieldMap.get(col)?.label || col}
               </th>
             ))}
@@ -36,11 +36,25 @@ export function DisplayTable({ config, data, fields }: DisplayProps) {
         <tbody>
           {data.rows.map((row, i) => (
             <tr key={i} className="border-b border-border/50 hover:bg-muted">
-              {columns.map((col) => (
-                <td key={col} className="py-2 px-3">
-                  {formatValue(row[col], fieldMap.get(col)?.type || "string")}
-                </td>
-              ))}
+              {columns.map((col) => {
+                const type = fieldMap.get(col)?.type || "string";
+                const raw = row[col];
+                // Dates/numbers/badges stay on one line; free text
+                // truncates instead of stretching the widget sideways.
+                return (
+                  <td
+                    key={col}
+                    title={type === "string" && raw != null ? String(raw) : undefined}
+                    className={`py-2 px-3 ${
+                      type === "string"
+                        ? "max-w-[16rem] truncate"
+                        : "whitespace-nowrap"
+                    } ${type === "number" ? "tabular-nums" : ""}`}
+                  >
+                    {formatValue(raw, type)}
+                  </td>
+                );
+              })}
             </tr>
           ))}
         </tbody>

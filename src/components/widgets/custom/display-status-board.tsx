@@ -30,15 +30,20 @@ export function DisplayStatusBoard({ config, data, fields }: DisplayProps) {
   const columns = Array.from(groups.entries());
 
   return (
-    <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(${Math.min(columns.length, 5)}, 1fr)` }}>
+    // minmax(0, 1fr) lets columns shrink below their content width so a
+    // long status label can't blow the grid out of the widget.
+    <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(${Math.min(columns.length, 5)}, minmax(0, 1fr))` }}>
       {columns.map(([status, items], i) => (
-        <div key={status}>
-          <div className={`px-2 py-1 rounded-t-md text-xs font-semibold ${COLUMN_COLORS[i % COLUMN_COLORS.length].text} ${COLUMN_COLORS[i % COLUMN_COLORS.length].bg}`}>
+        <div key={status} className="min-w-0">
+          <div
+            title={`${status.replace(/_/g, " ")} (${items.length})`}
+            className={`px-2 py-1 rounded-t-md text-xs font-semibold truncate ${COLUMN_COLORS[i % COLUMN_COLORS.length].text} ${COLUMN_COLORS[i % COLUMN_COLORS.length].bg}`}
+          >
             {status.replace(/_/g, " ")} ({items.length})
           </div>
           <div className="border border-t-0 border-border rounded-b-md p-1 space-y-1 min-h-[40px]">
             {items.slice(0, 8).map((row, j) => (
-              <div key={j} className="px-2 py-1 text-xs rounded hover:bg-muted truncate">
+              <div key={j} className="px-2 py-1 text-xs rounded hover:bg-muted truncate" title={String(row[labelField] ?? "")}>
                 {String(row[labelField] ?? `Item ${j + 1}`)}
               </div>
             ))}

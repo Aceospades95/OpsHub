@@ -19,8 +19,10 @@ export function DisplayBarChart({ data }: DisplayProps) {
       {entries.map(([label, count], i) => (
         <div key={label}>
           <div className="flex justify-between text-xs mb-0.5">
-            <span className="text-muted-foreground truncate">{label.replace(/_/g, " ")}</span>
-            <span className="font-medium ml-2">{count}</span>
+            <span className="text-muted-foreground truncate min-w-0" title={label.replace(/_/g, " ")}>
+              {label.replace(/_/g, " ")}
+            </span>
+            <span className="font-medium ml-2 shrink-0 tabular-nums">{count}</span>
           </div>
           <div className="h-5 bg-muted rounded overflow-hidden">
             <div

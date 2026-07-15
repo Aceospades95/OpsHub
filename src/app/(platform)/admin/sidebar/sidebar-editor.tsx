@@ -68,6 +68,10 @@ export function SidebarEditor({ initialConfig, customPages }: Props) {
       router.refresh();
       // Reload config from server
       window.location.reload();
+    } else {
+      // Surface the failure — the button previously just stopped
+      // spinning with no feedback.
+      setMessage({ type: "error", text: result.error || "Failed to reset" });
     }
     setSaving(false);
   }
@@ -248,7 +252,10 @@ export function SidebarEditor({ initialConfig, customPages }: Props) {
                     }`}
                   >
                     <GripVertical className="h-6 w-6 text-muted-foreground shrink-0" />
-                    <span className={`flex-1 text-sm ${item.visible ? "font-medium" : "line-through text-muted-foreground"}`}>
+                    <span
+                      className={`flex-1 min-w-0 truncate text-sm ${item.visible ? "font-medium" : "line-through text-muted-foreground"}`}
+                      title={getItemLabel(item)}
+                    >
                       {getItemLabel(item)}
                     </span>
                     {item.key.startsWith("custom-") && (

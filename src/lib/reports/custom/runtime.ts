@@ -329,20 +329,25 @@ function buildOrderBy(
   config: CustomReportConfig,
   def: EntityDef,
   includes: Set<string>
-): Record<string, "asc" | "desc"> | undefined {
+): Record<string, "asc" | "desc" | Record<string, "asc" | "desc">> | undefined {
   const columnKeys = new Set(def.columns.map((c) => c.key));
 
   const raw = parseSortKey(config.sortBy, def, columnKeys);
   if (!raw) return undefined;
   const { key, desc } = raw;
 
-  // Don't allow sorting through a relation — Prisma supports it but
-  // the syntax is more complex and we want predictable behavior.
-  // Strip the "relation.field" form back to the relation root.
+  // Relation sorts ("client.name") need Prisma's NESTED form —
+  // `{ client: { name: "desc" } }`. The old code stripped to the
+  // relation root (`{ client: "desc" }`), which Prisma rejects for
+  // to-one relations, so every saved report sorted by a relation
+  // column errored at run time (QA sweep finding). The builder UI no
+  // longer offers relation sorts, but stale saved reports must keep
+  // working.
   if (key.includes(".")) {
-    const relation = key.split(".")[0];
+    const [relation, subField] = key.split(".");
+    if (!subField) return undefined;
     includes.add(relation);
-    return { [relation]: desc ? "desc" : "asc" };
+    return { [relation]: { [subField]: desc ? "desc" : "asc" } };
   }
   return { [key]: desc ? "desc" : "asc" };
 }

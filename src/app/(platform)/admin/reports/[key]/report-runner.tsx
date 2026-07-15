@@ -213,20 +213,28 @@ export function ReportRunner({ reportKey, reportName, recipients }: Props) {
                     <tbody>
                       {output.rows.map((row, idx) => (
                         <tr key={idx} className="border-t border-border/50">
-                          {output.columns.map((c) => (
-                            <td
-                              key={c.key}
-                              className={`p-2 whitespace-nowrap text-muted-foreground ${
-                                c.align === "right"
-                                  ? "text-right"
-                                  : c.align === "center"
-                                    ? "text-center"
-                                    : "text-left"
-                              }`}
-                            >
-                              {formatCell(row[c.key])}
-                            </td>
-                          ))}
+                          {output.columns.map((c) => {
+                            const value = formatCell(row[c.key]);
+                            return (
+                              // max-w + truncate keeps long free-text
+                              // (titles, descriptions) from stretching the
+                              // whole table sideways; short numeric/date
+                              // values are unaffected. Full value on hover.
+                              <td
+                                key={c.key}
+                                title={value}
+                                className={`p-2 max-w-[28rem] truncate text-muted-foreground ${
+                                  c.align === "right"
+                                    ? "text-right tabular-nums"
+                                    : c.align === "center"
+                                      ? "text-center"
+                                      : "text-left"
+                                }`}
+                              >
+                                {value}
+                              </td>
+                            );
+                          })}
                         </tr>
                       ))}
                     </tbody>

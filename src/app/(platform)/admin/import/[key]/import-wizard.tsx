@@ -326,7 +326,7 @@ export function ImportWizard({
                     >
                       Row {r.row} · {r.warnings && r.warnings.length > 0 && r.status !== "failed" && r.status !== "skipped" ? `${r.status} with warnings` : r.status}
                     </Badge>
-                    <span className="text-muted-foreground">
+                    <span className="text-muted-foreground min-w-0 break-words">
                       {[r.message, ...(r.warnings || [])].filter(Boolean).join(" · ")}
                     </span>
                   </div>
@@ -377,7 +377,7 @@ export function ImportWizard({
                 ? ` (first ${dryRun.rowOutcomes.length} of ${preview.totalRows})`
                 : ""}
             </h3>
-            <div className="rounded border border-border max-h-96 overflow-y-auto">
+            <div className="rounded border border-border max-h-96 overflow-y-auto overflow-x-auto">
               <table className="w-full text-xs">
                 <thead className="bg-muted/30 sticky top-0">
                   <tr className="text-left text-[10px] uppercase tracking-wider text-muted-foreground">
@@ -403,7 +403,7 @@ export function ImportWizard({
                           {r.status}
                         </Badge>
                       </td>
-                      <td className="px-3 py-1.5 text-muted-foreground">
+                      <td className="px-3 py-1.5 text-muted-foreground break-words">
                         {[r.message, ...(r.warnings || [])].filter(Boolean).join(" · ") || (
                           <span className="text-muted-foreground/40">—</span>
                         )}
@@ -513,7 +513,14 @@ export function ImportWizard({
                   {preview.previewRows.map((row, idx) => (
                     <tr key={idx} className="border-t border-border/50">
                       {preview.headers.map((h) => (
-                        <td key={h} className="p-2 whitespace-nowrap text-muted-foreground">
+                        // Long free-text values truncate (full value on
+                        // hover) instead of stretching every other column
+                        // off-screen; short values still stay on one line.
+                        <td
+                          key={h}
+                          title={row[h] || undefined}
+                          className="p-2 max-w-[28rem] truncate text-muted-foreground"
+                        >
                           {row[h] || <span className="text-muted-foreground/40">—</span>}
                         </td>
                       ))}
