@@ -93,7 +93,7 @@ export interface EntityDef {
    *  entity definition just needs to fetch with the right includes. */
   fetch: (params: {
     where: Record<string, unknown>;
-    orderBy: Record<string, "asc" | "desc"> | undefined;
+    orderBy: Record<string, "asc" | "desc" | Record<string, "asc" | "desc">> | undefined;
     take: number;
     includes: Set<string>;
   }) => Promise<Record<string, unknown>[]>;

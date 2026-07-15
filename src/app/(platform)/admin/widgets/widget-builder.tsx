@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Save, Eye, Trash2, Plus, RefreshCw } from "lucide-react";
+import { Save, Trash2, Plus, RefreshCw } from "lucide-react";
 import { createCustomWidget, updateCustomWidget, previewCustomWidget } from "@/actions/custom-widgets";
 import { DATA_SOURCES } from "@/lib/widget-builder/data-source-registry";
 import type { WidgetConfig, FilterConfig, DisplayType, AggregationType } from "@/lib/widget-builder/widget-config-types";
@@ -56,9 +56,84 @@ const OPERATORS = [
   { value: "lt", label: "<" },
   { value: "lte", label: "<=" },
   { value: "in", label: "in" },
+  { value: "notIn", label: "not in" },
   { value: "isNull", label: "is empty" },
   { value: "isNotNull", label: "is not empty" },
 ];
+
+/**
+ * Coerce raw form values to the types the data-source executor feeds
+ * Prisma. The inputs keep plain strings while typing; without this a
+ * saved `value > "10000"` (string) or `isActive equals "true"` (string)
+ * hits Prisma as the wrong type and the widget errors at render time.
+ * "in"/"notIn" become real arrays — the executor wraps non-arrays as a
+ * single-element list, so a raw "A,B" string would match nothing.
+ */
+function normalizeConfigForPersist(config: WidgetConfig): WidgetConfig {
+  const fields = DATA_SOURCES[config.dataSourceId]?.fields || [];
+  const byKey = new Map(fields.map((f) => [f.key, f]));
+
+  // Keep aggregation coherent with the display type so what the preview
+  // shows is exactly what a saved dashboard renders:
+  //   stat-card / progress-bar → a scalar aggregation (never countByField)
+  //   counter-row / bar-chart  → always countByField over the group field
+  //   list / table / status-board → row mode (no aggregation)
+  let aggregation = config.aggregation;
+  if (["stat-card", "progress-bar"].includes(config.displayType)) {
+    if (!aggregation || aggregation.type === "countByField") {
+      aggregation = { type: "count" };
+    }
+  } else if (["counter-row", "bar-chart"].includes(config.displayType)) {
+    aggregation = {
+      type: "countByField",
+      groupByField: config.groupByField || aggregation?.groupByField,
+    };
+  } else {
+    aggregation = undefined;
+  }
+
+  const filters: FilterConfig[] = [];
+  for (const f of config.filters) {
+    if (f.operator === "isNull" || f.operator === "isNotNull") {
+      filters.push(f);
+      continue;
+    }
+    if (f.operator === "in" || f.operator === "notIn") {
+      const list = Array.isArray(f.value)
+        ? f.value.map(String).filter(Boolean)
+        : String(f.value ?? "")
+            .split(/[,;]+/)
+            .map((s) => s.trim())
+            .filter(Boolean);
+      // No values picked yet ⇒ no filter (an empty `in` list would
+      // match nothing / everything).
+      if (list.length > 0) filters.push({ ...f, value: list });
+      continue;
+    }
+    const raw = String(f.value ?? "").trim();
+    // An empty value means "not configured" — drop the clause rather
+    // than coercing it into `equals ""` / `equals 0` / `equals false`.
+    if (raw === "") continue;
+    const def = byKey.get(f.field);
+    if (def?.type === "number") {
+      const n = Number(raw);
+      if (Number.isFinite(n)) filters.push({ ...f, value: n });
+      continue;
+    }
+    if (def?.type === "boolean") {
+      filters.push({ ...f, value: raw === "true" });
+      continue;
+    }
+    if (def?.type === "date") {
+      const d = new Date(raw);
+      if (!isNaN(d.getTime())) filters.push({ ...f, value: d.toISOString() });
+      continue;
+    }
+    filters.push(f);
+  }
+
+  return { ...config, aggregation, filters };
+}
 
 interface WidgetBuilderProps {
   widgetId?: string;
@@ -99,7 +174,7 @@ export function WidgetBuilder({
   const [isPublished, setIsPublished] = useState(initialIsPublished);
   const [config, setConfig] = useState<WidgetConfig>(initialConfig || defaultConfig());
   const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState("");
+  const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   // Preview state
   const [previewData, setPreviewData] = useState<{ rows: Record<string, unknown>[]; aggregate?: number | Record<string, number> } | null>(null);
@@ -108,6 +183,11 @@ export function WidgetBuilder({
 
   const ds = DATA_SOURCES[config.dataSourceId];
   const fields = ds?.fields || [];
+  // Relation fields ("Client", "Assignee"…) are display-only: the
+  // executor allowlists scalar columns for filtering/sorting/grouping
+  // and silently drops anything else. Offering them in those pickers
+  // made controls that looked set but did nothing.
+  const scalarFields = fields.filter((f) => !f.relation);
 
   const updateConfig = useCallback((partial: Partial<WidgetConfig>) => {
     setConfig((prev) => ({ ...prev, ...partial }));
@@ -115,50 +195,62 @@ export function WidgetBuilder({
 
   async function handlePreview() {
     setPreviewing(true);
-    const result = await previewCustomWidget(JSON.stringify(config));
-    if ("data" in result && result.data) {
-      setPreviewData(result.data);
-      setPreviewFields(result.fields || []);
-    } else {
-      setMessage(result.error || "Preview failed");
+    setMessage(null);
+    try {
+      const result = await previewCustomWidget(
+        JSON.stringify(normalizeConfigForPersist(config))
+      );
+      if ("data" in result && result.data) {
+        setPreviewData(result.data);
+        setPreviewFields(result.fields || []);
+      } else {
+        setMessage({ type: "error", text: result.error || "Preview failed" });
+      }
+    } catch {
+      setMessage({ type: "error", text: "Preview failed. Check the filter values and try again." });
+    } finally {
+      setPreviewing(false);
     }
-    setPreviewing(false);
   }
 
   async function handleSave() {
-    if (!name.trim()) { setMessage("Name is required"); return; }
+    if (!name.trim()) { setMessage({ type: "error", text: "Name is required" }); return; }
     setSaving(true);
-    setMessage("");
+    setMessage(null);
 
     const payload = {
       name: name.trim(),
       description: description.trim() || undefined,
-      config: JSON.stringify(config),
+      config: JSON.stringify(normalizeConfigForPersist(config)),
       icon,
       category,
       isPublished,
     };
 
-    const result = widgetId
-      ? await updateCustomWidget(widgetId, payload)
-      : await createCustomWidget(payload);
+    try {
+      const result = widgetId
+        ? await updateCustomWidget(widgetId, payload)
+        : await createCustomWidget(payload);
 
-    if ("error" in result) {
-      setMessage(result.error || "Failed to save");
-    } else {
-      setMessage("Saved!");
-      if (!widgetId && "id" in result) {
-        router.push(`/admin/widgets/${result.id}`);
+      if ("error" in result) {
+        setMessage({ type: "error", text: result.error || "Failed to save" });
       } else {
-        router.refresh();
+        setMessage({ type: "success", text: "Saved!" });
+        if (!widgetId && "id" in result) {
+          router.push(`/admin/widgets/${result.id}`);
+        } else {
+          router.refresh();
+        }
       }
+    } catch {
+      setMessage({ type: "error", text: "Failed to save. Try again." });
     }
     setSaving(false);
-    setTimeout(() => setMessage(""), 3000);
+    setTimeout(() => setMessage(null), 3000);
   }
 
   function addFilter() {
-    const firstField = fields[0]?.key || "name";
+    const firstField = scalarFields[0]?.key || "name";
     updateConfig({
       filters: [...config.filters, { field: firstField, operator: "equals", value: "" }],
     });
@@ -177,6 +269,18 @@ export function WidgetBuilder({
   function handleDataSourceChange(newId: string) {
     const newDs = DATA_SOURCES[newId];
     if (!newDs) return;
+    // Rebuild the aggregation for the new source — keeping the old one
+    // carried a stale field/groupByField from the previous source's
+    // schema, which the executor drops (widget rendered "No data").
+    let aggregation: WidgetConfig["aggregation"];
+    let groupByField: string | undefined;
+    if (["stat-card", "progress-bar"].includes(config.displayType)) {
+      aggregation = { type: "count" };
+    } else if (["counter-row", "bar-chart"].includes(config.displayType)) {
+      const enumField = newDs.fields.find((f) => f.type === "enum" && !f.relation);
+      aggregation = { type: "countByField", groupByField: enumField?.key };
+      groupByField = enumField?.key;
+    }
     updateConfig({
       dataSourceId: newId,
       filters: [],
@@ -184,14 +288,25 @@ export function WidgetBuilder({
       columns: undefined,
       labelField: undefined,
       valueField: undefined,
-      groupByField: undefined,
+      groupByField,
+      aggregation,
     });
     setPreviewData(null);
   }
 
-  const needsAggregation = ["stat-card", "counter-row", "progress-bar", "bar-chart"].includes(config.displayType);
+  // Only the single-number displays expose an aggregation picker.
+  // Counter Row / Bar Chart always use countByField (set when the
+  // display type is picked) — offering "count"/"sum" there produced a
+  // scalar the grouped displays can't render ("No data").
+  const needsAggregation = ["stat-card", "progress-bar"].includes(config.displayType);
   const needsGroupBy = ["counter-row", "bar-chart", "status-board"].includes(config.displayType);
   const needsColumns = ["list", "table"].includes(config.displayType);
+  // Scalar aggregations for stat-card / progress-bar. countByField is
+  // excluded — it returns a per-group object those displays render as 0.
+  const scalarAggregations = (ds?.aggregations || ["count"]).filter(
+    (a) => a !== "countByField"
+  );
+  const numericFields = scalarFields.filter((f) => f.type === "number");
 
   return (
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
@@ -255,19 +370,57 @@ export function WidgetBuilder({
                 </button>
               </div>
               {config.filters.map((filter, i) => (
-                <div key={i} className="flex items-center gap-2 mt-1">
-                  <select value={filter.field} onChange={(e) => updateFilter(i, { field: e.target.value })}
-                    className="flex-1 px-2 py-1 text-sm border border-input rounded bg-background">
-                    {fields.map((f) => <option key={f.key} value={f.key}>{f.label}</option>)}
+                <div key={i} className="flex items-center gap-2 mt-1 flex-wrap sm:flex-nowrap">
+                  <select value={filter.field}
+                    onChange={(e) => updateFilter(i, { field: e.target.value, value: "" })}
+                    className="flex-1 min-w-[8rem] px-2 py-1 text-sm border border-input rounded bg-background">
+                    {scalarFields.map((f) => <option key={f.key} value={f.key}>{f.label}</option>)}
                   </select>
-                  <select value={filter.operator} onChange={(e) => updateFilter(i, { operator: e.target.value as FilterConfig["operator"] })}
+                  <select value={filter.operator}
+                    onChange={(e) => {
+                      const op = e.target.value as FilterConfig["operator"];
+                      // List ops store arrays, scalar ops store scalars —
+                      // reset the value when crossing that boundary so a
+                      // stale shape can't linger in the config.
+                      const wasList = filter.operator === "in" || filter.operator === "notIn";
+                      const isList = op === "in" || op === "notIn";
+                      updateFilter(i, wasList !== isList ? { operator: op, value: "" } : { operator: op });
+                    }}
                     className="w-28 px-2 py-1 text-sm border border-input rounded bg-background">
                     {OPERATORS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                   </select>
                   {filter.operator !== "isNull" && filter.operator !== "isNotNull" && (
                     (() => {
                       const fieldDef = fields.find((f) => f.key === filter.field);
+                      const isListOp = filter.operator === "in" || filter.operator === "notIn";
                       if (fieldDef?.type === "enum" && fieldDef.enumValues) {
+                        if (isListOp) {
+                          // Multi-value chips — a single select can't
+                          // express "status in [A, B]".
+                          const selected = Array.isArray(filter.value)
+                            ? filter.value.map(String)
+                            : String(filter.value ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+                          return (
+                            <div className="flex flex-1 flex-wrap gap-1">
+                              {fieldDef.enumValues.map((v) => {
+                                const active = selected.includes(v);
+                                return (
+                                  <button key={v} type="button" aria-pressed={active}
+                                    onClick={() => updateFilter(i, {
+                                      value: active ? selected.filter((x) => x !== v) : [...selected, v],
+                                    })}
+                                    className={`px-2 py-0.5 text-xs rounded-full border transition-colors ${
+                                      active
+                                        ? "border-primary bg-primary/10 text-primary"
+                                        : "border-border text-muted-foreground hover:border-primary/30"
+                                    }`}>
+                                    {v}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          );
+                        }
                         return (
                           <select value={String(filter.value)} onChange={(e) => updateFilter(i, { value: e.target.value })}
                             className="flex-1 px-2 py-1 text-sm border border-input rounded bg-background">
@@ -276,13 +429,38 @@ export function WidgetBuilder({
                           </select>
                         );
                       }
+                      if (fieldDef?.type === "boolean" && !isListOp) {
+                        return (
+                          <select value={String(filter.value)} onChange={(e) => updateFilter(i, { value: e.target.value })}
+                            className="flex-1 px-2 py-1 text-sm border border-input rounded bg-background">
+                            <option value="">Select...</option>
+                            <option value="true">true</option>
+                            <option value="false">false</option>
+                          </select>
+                        );
+                      }
+                      if (fieldDef?.type === "date" && !isListOp) {
+                        return (
+                          <input type="date" value={String(filter.value)} onChange={(e) => updateFilter(i, { value: e.target.value })}
+                            className="flex-1 px-2 py-1 text-sm border border-input rounded bg-background" />
+                        );
+                      }
+                      if (fieldDef?.type === "number" && !isListOp) {
+                        return (
+                          <input type="number" value={String(filter.value)} onChange={(e) => updateFilter(i, { value: e.target.value })}
+                            className="flex-1 px-2 py-1 text-sm border border-input rounded bg-background" placeholder="Value" />
+                        );
+                      }
                       return (
-                        <input type="text" value={String(filter.value)} onChange={(e) => updateFilter(i, { value: e.target.value })}
-                          className="flex-1 px-2 py-1 text-sm border border-input rounded bg-background" placeholder="Value" />
+                        <input type="text"
+                          value={Array.isArray(filter.value) ? filter.value.join(", ") : String(filter.value)}
+                          onChange={(e) => updateFilter(i, { value: e.target.value })}
+                          className="flex-1 px-2 py-1 text-sm border border-input rounded bg-background"
+                          placeholder={isListOp ? "Comma-separated values" : "Value"} />
                       );
                     })()
                   )}
-                  <button onClick={() => removeFilter(i)} className="text-destructive hover:text-destructive/80 p-1">
+                  <button onClick={() => removeFilter(i)} className="text-destructive hover:text-destructive/80 p-1" aria-label="Remove filter">
                     <Trash2 className="h-3.5 w-3.5" />
                   </button>
                 </div>
@@ -295,7 +473,16 @@ export function WidgetBuilder({
                 <label className="text-xs font-medium text-muted-foreground">Sort By</label>
                 <select value={config.sort.field} onChange={(e) => updateConfig({ sort: { ...config.sort, field: e.target.value } })}
                   className="w-full mt-1 px-2 py-1 text-sm border border-input rounded bg-background">
-                  {fields.map((f) => <option key={f.key} value={f.key}>{f.label}</option>)}
+                  {scalarFields.map((f) => <option key={f.key} value={f.key}>{f.label}</option>)}
+                  {/* Saved configs may still point at a relation field —
+                      surface it (the executor falls back to the default
+                      sort) instead of letting the select silently show
+                      the first option. */}
+                  {!scalarFields.some((f) => f.key === config.sort.field) && (
+                    <option value={config.sort.field}>
+                      {config.sort.field} (unsupported — uses default)
+                    </option>
+                  )}
                 </select>
               </div>
               <div>
@@ -327,7 +514,7 @@ export function WidgetBuilder({
                     if (["stat-card", "progress-bar"].includes(dt.value)) {
                       updates.aggregation = { type: "count" };
                     } else if (["counter-row", "bar-chart"].includes(dt.value)) {
-                      const enumField = fields.find((f) => f.type === "enum");
+                      const enumField = scalarFields.find((f) => f.type === "enum");
                       updates.aggregation = { type: "countByField", groupByField: enumField?.key };
                       updates.groupByField = enumField?.key;
                     } else {
@@ -354,18 +541,34 @@ export function WidgetBuilder({
                   <label className="text-xs font-medium text-muted-foreground">Aggregation</label>
                   <select
                     value={config.aggregation?.type || "count"}
-                    onChange={(e) => updateConfig({ aggregation: { ...config.aggregation, type: e.target.value as AggregationType } })}
+                    onChange={(e) => {
+                      const type = e.target.value as AggregationType;
+                      const needsField = ["sum", "avg", "min", "max"].includes(type);
+                      updateConfig({
+                        aggregation: {
+                          ...config.aggregation,
+                          type,
+                          // Pre-pick the first numeric field so "sum"
+                          // doesn't silently fall back to a plain count
+                          // while the field is unset.
+                          field: needsField
+                            ? config.aggregation?.field || numericFields[0]?.key
+                            : undefined,
+                        },
+                      });
+                    }}
                     className="w-full mt-1 px-2 py-1 text-sm border border-input rounded bg-background"
                   >
-                    {(ds?.aggregations || ["count"]).map((a) => <option key={a} value={a}>{a}</option>)}
+                    {scalarAggregations.map((a) => <option key={a} value={a}>{a}</option>)}
                   </select>
                 </div>
                 {config.aggregation?.type && ["sum", "avg", "min", "max"].includes(config.aggregation.type) && (
                   <div>
                     <label className="text-xs font-medium text-muted-foreground">Numeric Field</label>
-                    <select value={config.aggregation?.field || ""} onChange={(e) => updateConfig({ aggregation: { ...config.aggregation!, field: e.target.value } })}
+                    <select value={config.aggregation?.field || ""} onChange={(e) => updateConfig({ aggregation: { ...config.aggregation!, field: e.target.value || undefined } })}
                       className="w-full mt-1 px-2 py-1 text-sm border border-input rounded bg-background">
-                      {fields.filter((f) => f.type === "number").map((f) => <option key={f.key} value={f.key}>{f.label}</option>)}
+                      <option value="">Select field...</option>
+                      {numericFields.map((f) => <option key={f.key} value={f.key}>{f.label}</option>)}
                     </select>
                   </div>
                 )}
@@ -378,16 +581,31 @@ export function WidgetBuilder({
                 <label className="text-xs font-medium text-muted-foreground">Group By Field</label>
                 <select value={config.groupByField || config.aggregation?.groupByField || ""}
                   onChange={(e) => {
-                    updateConfig({
-                      groupByField: e.target.value,
-                      aggregation: { ...config.aggregation, type: config.aggregation?.type || "countByField", groupByField: e.target.value },
-                    });
+                    const v = e.target.value || undefined;
+                    if (config.displayType === "status-board") {
+                      // Status board groups fetched rows client-side.
+                      // Setting a countByField aggregation here switched
+                      // the query to aggregate mode (rows: []) and blanked
+                      // the board.
+                      updateConfig({ groupByField: v, aggregation: undefined });
+                    } else {
+                      updateConfig({
+                        groupByField: v,
+                        aggregation: { type: "countByField", groupByField: v },
+                      });
+                    }
                   }}
                   className="w-full mt-1 px-2 py-1 text-sm border border-input rounded bg-background">
                   <option value="">Select field...</option>
-                  {fields.filter((f) => f.type === "enum" || f.type === "string").map((f) => (
-                    <option key={f.key} value={f.key}>{f.label}</option>
-                  ))}
+                  {/* countByField runs server-side over scalar columns
+                      only; the status board groups client-side, where
+                      flattened relation values (e.g. Client name) work
+                      too. */}
+                  {(config.displayType === "status-board" ? fields : scalarFields)
+                    .filter((f) => f.type === "enum" || f.type === "string")
+                    .map((f) => (
+                      <option key={f.key} value={f.key}>{f.label}</option>
+                    ))}
                 </select>
               </div>
             )}
@@ -457,7 +675,7 @@ export function WidgetBuilder({
           <Button variant="outline" onClick={handlePreview} disabled={previewing}>
             <RefreshCw className={`h-4 w-4 mr-1 ${previewing ? "animate-spin" : ""}`} /> Preview
           </Button>
-          {message && <span className={`text-sm ${message.includes("!") ? "text-success" : "text-destructive"}`}>{message}</span>}
+          {message && <span className={`text-sm ${message.type === "success" ? "text-success" : "text-destructive"}`}>{message.text}</span>}
         </div>
       </div>
 

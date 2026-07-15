@@ -107,6 +107,31 @@ export async function adminDeleteNotification(notificationId: string) {
   return { success: true };
 }
 
+/**
+ * Set the caller's own per-type mute preferences (Preferences section
+ * on /notifications). Both-unmuted deletes the row — absence = stock.
+ */
+export async function setNotificationPref(
+  typeKey: string,
+  prefs: { muteInApp: boolean; muteEmail: boolean }
+) {
+  const user = await requireAuth();
+  if (!NOTIFICATION_TYPE_INFO.has(typeKey as NotificationType)) {
+    return { error: `Unknown notification type "${typeKey}"` } as const;
+  }
+  if (!prefs.muteInApp && !prefs.muteEmail) {
+    await db.userNotificationPref.deleteMany({ where: { userId: user.id, typeKey } });
+  } else {
+    await db.userNotificationPref.upsert({
+      where: { userId_typeKey: { userId: user.id, typeKey } },
+      update: { muteInApp: prefs.muteInApp, muteEmail: prefs.muteEmail },
+      create: { userId: user.id, typeKey, ...prefs },
+    });
+  }
+  revalidatePath("/notifications");
+  return { success: true } as const;
+}
+
 // ─── Notification rules (the engine's admin-editable layer) ─────────
 
 export interface NotificationRuleInput {

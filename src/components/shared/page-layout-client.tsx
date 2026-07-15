@@ -83,6 +83,9 @@ export function PageLayoutClient({
   const [gap, setGap] = useState(initialGap);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
+  // Tracks whether `message` is an error so it doesn't render in the
+  // success color ("Failed to save" used to show green).
+  const [messageIsError, setMessageIsError] = useState(false);
   const [templates, setTemplates] = useState<LayoutTemplate[]>(initialTemplates);
   const [showTemplateMenu, setShowTemplateMenu] = useState(false);
   const [templateName, setTemplateName] = useState("");
@@ -192,10 +195,12 @@ export function PageLayoutClient({
     const config: PageLayoutConfig = { cards, gap };
     const result = await savePageLayout(pageType, config);
     if (result.success) {
+      setMessageIsError(false);
       setMessage("Layout saved!");
       setEditing(false);
       router.refresh();
     } else {
+      setMessageIsError(true);
       setMessage(result.error || "Failed to save");
     }
     setSaving(false);
@@ -222,7 +227,12 @@ export function PageLayoutClient({
         ...prev.filter((t) => !(t.name === templateName.trim() && t.pageType === pageType)),
       ]);
       setTemplateName("");
+      setMessageIsError(false);
       setMessage("Template saved!");
+      setTimeout(() => setMessage(""), 2000);
+    } else {
+      setMessageIsError(true);
+      setMessage(result.error || "Failed to save template");
       setTimeout(() => setMessage(""), 2000);
     }
     setSaving(false);
@@ -237,6 +247,7 @@ export function PageLayoutClient({
       router.refresh();
       window.location.reload();
     } else {
+      setMessageIsError(true);
       setMessage(result.error || "Failed to load template");
       setTimeout(() => setMessage(""), 2000);
     }
@@ -587,7 +598,11 @@ export function PageLayoutClient({
           <Button variant="ghost" size="sm" onClick={handleCancel}>
             <X className="h-4 w-4 mr-1" /> Cancel
           </Button>
-          {message && <span className="text-sm font-medium text-success">{message}</span>}
+          {message && (
+            <span className={`text-sm font-medium ${messageIsError ? "text-destructive" : "text-success"}`}>
+              {message}
+            </span>
+          )}
         </div>
       </div>
 

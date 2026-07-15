@@ -21,6 +21,7 @@ import { workflowHealth } from "./reports/workflow-health";
 import { subcontractorCompliance } from "./reports/subcontractor-compliance";
 import { partnershipPipeline } from "./reports/partnership-pipeline";
 import { bidsWinRate } from "./reports/bids-win-rate";
+import { workLogsWeekly } from "./reports/work-logs-weekly";
 
 export const REPORTS: ReportDefinition[] = [
   contractsExpiring,
@@ -32,6 +33,7 @@ export const REPORTS: ReportDefinition[] = [
   subcontractorCompliance,
   partnershipPipeline,
   bidsWinRate,
+  workLogsWeekly,
   activityAudit,
   activityAuditFull,
 ];

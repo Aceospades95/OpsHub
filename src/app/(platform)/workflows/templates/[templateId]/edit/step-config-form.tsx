@@ -5,7 +5,6 @@ import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Plus, Trash2 } from "lucide-react";
-import { useState } from "react";
 import type { WorkflowStepType } from "@prisma/client";
 
 interface EmailTemplateOption {

@@ -41,6 +41,7 @@ export type FileAuthzInput = {
   subcontractorId: string | null;
   partnershipId: string | null;
   bidOpportunityId: string | null;
+  vehicleId: string | null;
 };
 
 export type FileAuthzResult =
@@ -152,6 +153,21 @@ export async function checkFileReadPermission(
       foundAnyParent = true;
       const perms = await resolveModulePerms(userId, role, "bids");
       if (perms.canView) allowedByAny = true;
+    }
+  }
+
+  // ─── Vehicle (fleet module OR assigned-driver scope) ─
+  if (!allowedByAny && file.vehicleId) {
+    const vehicle = await db.vehicle.findUnique({
+      where: { id: file.vehicleId },
+      select: { id: true, deletedAt: true },
+    });
+    if (vehicle && !vehicle.deletedAt) {
+      foundAnyParent = true;
+      const perms = await resolveModulePerms(userId, role, "fleet");
+      if (perms.canView || canViewEntity(scope, "vehicle", vehicle.id)) {
+        allowedByAny = true;
+      }
     }
   }
 

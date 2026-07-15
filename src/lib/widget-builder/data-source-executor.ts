@@ -33,20 +33,79 @@ function scalarFieldKeys(dataSourceId: string): Set<string> {
   return new Set(ds.fields.filter((f) => !f.relation).map((f) => f.key));
 }
 
+/**
+ * Coerce a persisted filter value to the field's declared type.
+ * Widget configs saved before the builder normalized values carry
+ * string-typed booleans/numbers/dates ("true", "10000") that Prisma
+ * rejects at query time — the QA sweep found saved widgets erroring on
+ * render because of it. Returns undefined when the value can't
+ * represent the type, which drops the clause (matching the runtime's
+ * "silently drop garbage" convention for custom reports).
+ */
+function coerceFilterValue(
+  type: string | undefined,
+  raw: unknown
+): unknown | undefined {
+  if (raw === null || raw === undefined || raw === "") return undefined;
+  switch (type) {
+    case "boolean": {
+      if (typeof raw === "boolean") return raw;
+      if (raw === "true") return true;
+      if (raw === "false") return false;
+      return undefined;
+    }
+    case "number": {
+      const n = typeof raw === "number" ? raw : Number(raw);
+      return Number.isFinite(n) ? n : undefined;
+    }
+    case "date": {
+      const d = raw instanceof Date ? raw : new Date(String(raw));
+      return isNaN(d.getTime()) ? undefined : d;
+    }
+    default:
+      return String(raw);
+  }
+}
+
 function buildWhere(dataSourceId: string, filters: FilterConfig[]): Record<string, unknown> {
+  const ds = getDataSource(dataSourceId);
   const allowed = scalarFieldKeys(dataSourceId);
+  const typeOf = new Map((ds?.fields ?? []).map((f) => [f.key, f.type]));
   const where: Record<string, unknown> = {};
   for (const f of filters) {
     if (!allowed.has(f.field)) continue;
+    const fieldType = typeOf.get(f.field);
+    // in/notIn accept arrays or comma-lists; each member coerces
+    // independently and failures drop out.
+    const asList = (raw: unknown): unknown[] => {
+      const parts = Array.isArray(raw)
+        ? raw
+        : String(raw ?? "")
+            .split(",")
+            .map((s) => s.trim())
+            .filter(Boolean);
+      return parts
+        .map((p) => coerceFilterValue(fieldType, p))
+        .filter((v) => v !== undefined);
+    };
+    const value = coerceFilterValue(fieldType, f.value);
     switch (f.operator) {
-      case "equals": where[f.field] = f.value; break;
-      case "contains": where[f.field] = { contains: f.value, mode: "insensitive" }; break;
-      case "gt": where[f.field] = { gt: f.value }; break;
-      case "gte": where[f.field] = { gte: f.value }; break;
-      case "lt": where[f.field] = { lt: f.value }; break;
-      case "lte": where[f.field] = { lte: f.value }; break;
-      case "in": where[f.field] = { in: Array.isArray(f.value) ? f.value : [f.value] }; break;
-      case "notIn": where[f.field] = { notIn: Array.isArray(f.value) ? f.value : [f.value] }; break;
+      case "equals": if (value !== undefined) where[f.field] = value; break;
+      case "contains": if (value !== undefined) where[f.field] = { contains: String(value), mode: "insensitive" }; break;
+      case "gt": if (value !== undefined) where[f.field] = { gt: value }; break;
+      case "gte": if (value !== undefined) where[f.field] = { gte: value }; break;
+      case "lt": if (value !== undefined) where[f.field] = { lt: value }; break;
+      case "lte": if (value !== undefined) where[f.field] = { lte: value }; break;
+      case "in": {
+        const list = asList(f.value);
+        if (list.length > 0) where[f.field] = { in: list };
+        break;
+      }
+      case "notIn": {
+        const list = asList(f.value);
+        if (list.length > 0) where[f.field] = { notIn: list };
+        break;
+      }
       case "isNull": where[f.field] = null; break;
       case "isNotNull": where[f.field] = { not: null }; break;
     }

@@ -171,7 +171,21 @@ export async function notify<K extends TemplateKey = TemplateKey>(
     where: { id: { in: Array.from(candidateIds) }, isActive: true },
     select: { id: true, name: true, email: true, hasLoginAccess: true },
   });
-  const uniqueRecipients = users.map((u) => u.id);
+
+  // Per-user mutes (set on /notifications → Preferences) apply after
+  // the rule expands recipients: a mute always wins for that person,
+  // per channel, regardless of who added them.
+  const prefs =
+    users.length > 0
+      ? await db.userNotificationPref.findMany({
+          where: { typeKey: params.type, userId: { in: users.map((u) => u.id) } },
+        })
+      : [];
+  const prefByUser = new Map(prefs.map((p) => [p.userId, p]));
+
+  const inAppRecipients = users
+    .filter((u) => !prefByUser.get(u.id)?.muteInApp)
+    .map((u) => u.id);
 
   // Write one row per recipient. createManyAndReturn gives us the
   // created rows directly — the previous createMany + re-fetch by
@@ -179,9 +193,9 @@ export async function notify<K extends TemplateKey = TemplateKey>(
   // concurrent identical notifications.
   const now = new Date();
   let created: Notification[] = [];
-  if (uniqueRecipients.length > 0 && rule?.channelInApp !== false) {
+  if (inAppRecipients.length > 0 && rule?.channelInApp !== false) {
     created = await db.notification.createManyAndReturn({
-      data: uniqueRecipients.map((recipientId) => ({
+      data: inAppRecipients.map((recipientId) => ({
         recipientId,
         type: params.type,
         title: params.title,
@@ -198,7 +212,7 @@ export async function notify<K extends TemplateKey = TemplateKey>(
     // /notifications view. The bell component does its own fetch on
     // client-side dropdown open, so it doesn't need explicit invalidation.
     revalidatePath("/notifications");
-    for (const recipientId of uniqueRecipients) {
+    for (const recipientId of inAppRecipients) {
       revalidatePath(`/team/${recipientId}`);
     }
   }
@@ -237,6 +251,8 @@ export async function notify<K extends TemplateKey = TemplateKey>(
       for (const user of users) {
         // Skip no-login placeholder users (email is fake)
         if (!user.hasLoginAccess) continue;
+        // Per-user email mute (set on /notifications → Preferences).
+        if (prefByUser.get(user.id)?.muteEmail) continue;
         await sendFromTemplate(params.email.templateKey, renderFor(user.name), {
           to: user.email,
           entityType: params.entityType,

@@ -20,6 +20,7 @@ import {
   Wrench,
   Blocks,
   Globe,
+  ClipboardList,
   Settings,
   ChevronLeft,
   ChevronRight,
@@ -70,6 +71,7 @@ const ICON_MAP: Record<string, LucideIcon> = {
   Wrench,
   Blocks,
   Globe,
+  ClipboardList,
   Settings,
 };
 

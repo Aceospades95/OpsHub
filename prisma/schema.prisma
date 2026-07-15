@@ -373,6 +373,13 @@ model User {
   disciplinaryReports            DisciplinaryReport[]                @relation("DisciplinaryEmployee")
   issuedDisciplinaryReports      DisciplinaryReport[]                @relation("DisciplinaryIssuer")
   ownedBids                      BidOpportunity[]                    @relation("BidOwner")
+  workLogs                       WorkLog[]
+  scheduleExceptions             ScheduleException[]                 @relation("ScheduleExceptionUser")
+  createdScheduleExceptions      ScheduleException[]                 @relation("ScheduleExceptionCreator")
+  workLogSnapshots               WorkLogWeekSnapshot[]
+  workWeekFlags                  WorkWeekFlag[]                      @relation("WorkWeekFlagUser")
+  approvedWorkWeekFlags          WorkWeekFlag[]                      @relation("WorkWeekFlagApprover")
+  notificationPrefs              UserNotificationPref[]
   accounts                       Account[]
   signupTokens                   SignupToken[]
 }
@@ -942,6 +949,9 @@ model File {
   subcontractorId String?
   partnershipId   String?
   bidOpportunityId String?
+  /// Vehicle attachments — maintenance receipts/photos and registration
+  /// docs, listed on the fleet vehicle page (category "receipt").
+  vehicleId       String?
   // Optional freeform tag used by the employee files UI (resume, id,
   // certification, training, other). Null for files attached to other
   // entities.
@@ -958,6 +968,7 @@ model File {
   subcontractor    Subcontractor?    @relation(fields: [subcontractorId], references: [id], onDelete: Cascade)
   partnership      Partnership?      @relation(fields: [partnershipId], references: [id], onDelete: Cascade)
   bidOpportunity   BidOpportunity?   @relation(fields: [bidOpportunityId], references: [id], onDelete: Cascade)
+  vehicle          Vehicle?          @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
 
   quotes            Quote[]            @relation("QuotePdf")
   workflowDocuments WorkflowDocument[]
@@ -968,6 +979,7 @@ model File {
   // Supplier receipts list on the supplier detail page filters by both.
   @@index([supplierId, category])
   @@index([bidOpportunityId])
+  @@index([vehicleId, category])
 }
 
 model ExternalLink {
@@ -1399,6 +1411,119 @@ model JobConfig {
   /// triggers from /admin/jobs).
   cadence   String?
   updatedAt DateTime @updatedAt
+}
+
+// ─── WORK LOGS ──────────────────────────────────────────
+//
+// Daily technician work logs (replaces the Google Form + reminder
+// sheet). One row per user per workday; duplicate submissions UPDATE
+// the day instead of double-counting. Reminder logic lives in the
+// work-log-reminders job and is exceptions-aware: PTO/sick/holiday
+// days (ScheduleException) count as satisfied, so nobody gets nagged
+// from a sick bed.
+
+model WorkLog {
+  id          String   @id @default(cuid())
+  userId      String
+  /// The calendar day being reported (UTC-midnight date, one per user).
+  workDate    DateTime
+  hours       Float
+  /// Tickets / sites worked — free text like "PHLF014 Service call".
+  sites       String?  @db.Text
+  notes       String?  @db.Text
+  submittedAt DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, workDate])
+  @@index([workDate])
+}
+
+enum ScheduleExceptionType {
+  PTO
+  SICK
+  HOLIDAY
+  UNPAID
+  OTHER
+}
+
+/// A day range on which work logs are NOT expected. userId null =
+/// org-wide (company holiday). The reminder job treats excepted days
+/// as satisfied; the team view shows them instead of "missing".
+model ScheduleException {
+  id          String                @id @default(cuid())
+  /// Null = applies to everyone (holiday).
+  userId      String?
+  startDate   DateTime
+  endDate     DateTime
+  type        ScheduleExceptionType
+  /// Unapproved exceptions still suppress reminders (the person is out
+  /// either way) but are flagged in the team view for follow-up.
+  approved    Boolean               @default(true)
+  notes       String?
+  createdById String
+  createdAt   DateTime              @default(now())
+
+  user      User? @relation("ScheduleExceptionUser", fields: [userId], references: [id], onDelete: Cascade)
+  createdBy User  @relation("ScheduleExceptionCreator", fields: [createdById], references: [id])
+
+  @@index([userId, startDate])
+  @@index([startDate])
+}
+
+/// Frozen Monday-morning snapshot of the prior week, per person — the
+/// "frozen vs live delta" audit trick from the spreadsheet this module
+/// replaces. Live edits after the snapshot remain visible as a delta.
+model WorkLogWeekSnapshot {
+  id            String   @id @default(cuid())
+  /// ISO week key, e.g. "2026-W28".
+  weekKey       String
+  userId        String
+  expectedDays  Int
+  submittedDays Int
+  totalHours    Float
+  snapshotAt    DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([weekKey, userId])
+  @@index([weekKey])
+}
+
+/// Live per-person-per-week flags — currently overtime approval, so
+/// approved OT stops looking like unapproved OT in the rollups.
+model WorkWeekFlag {
+  id                String   @id @default(cuid())
+  userId            String
+  /// ISO week key, e.g. "2026-W28".
+  weekKey           String
+  overtimeApproved  Boolean  @default(false)
+  approvedById      String?
+  note              String?
+  updatedAt         DateTime @updatedAt
+
+  user       User  @relation("WorkWeekFlagUser", fields: [userId], references: [id], onDelete: Cascade)
+  approvedBy User? @relation("WorkWeekFlagApprover", fields: [approvedById], references: [id], onDelete: SetNull)
+
+  @@unique([userId, weekKey])
+  @@index([weekKey])
+}
+
+/// Per-user notification mutes, honored by the engine per channel.
+/// Absence of a row = receive everything (stock behavior).
+model UserNotificationPref {
+  id        String   @id @default(cuid())
+  userId    String
+  /// Matches a NOTIFICATION_TYPE_REGISTRY key.
+  typeKey   String
+  muteInApp Boolean  @default(false)
+  muteEmail Boolean  @default(false)
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, typeKey])
 }
 
 /// Per-notification-type delivery rule — the admin-editable layer the
@@ -2513,6 +2638,7 @@ model Vehicle {
   assignedTo         User?                      @relation("VehicleAssignee", fields: [assignedToId], references: [id], onDelete: SetNull)
   maintenanceRecords VehicleMaintenanceRecord[]
   serviceSchedules   VehicleServiceSchedule[]
+  files              File[]
 
   @@index([status])
   @@index([assignedToId])

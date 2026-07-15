@@ -473,6 +473,10 @@ function ColorInput({
             const v = e.target.value;
             if (/^#[0-9a-fA-F]{0,6}$/.test(v)) {
               onChange(v);
+            } else if (/^[0-9a-fA-F]{1,6}$/.test(v)) {
+              // Pasted/typed without the leading "#" — accept it anyway
+              // instead of silently ignoring the keystroke.
+              onChange(`#${v}`);
             }
           }}
           className="flex h-10 flex-1 rounded border border-input bg-background px-3 py-2 text-sm font-mono

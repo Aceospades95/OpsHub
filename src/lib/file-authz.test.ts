@@ -34,6 +34,7 @@ vi.mock("@/lib/db", () => ({
     subcontractor: { findUnique: vi.fn() },
     partnership: { findUnique: vi.fn() },
     bidOpportunity: { findUnique: vi.fn() },
+    vehicle: { findUnique: vi.fn() },
     user: { findUnique: vi.fn() },
     quote: { findFirst: vi.fn() },
     workflowDocument: { findFirst: vi.fn() },
@@ -90,6 +91,7 @@ function emptyFile(overrides: Partial<FileAuthzInput> = {}): FileAuthzInput {
     subcontractorId: null,
     partnershipId: null,
     bidOpportunityId: null,
+    vehicleId: null,
     ...overrides,
   };
 }

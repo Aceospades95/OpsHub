@@ -336,14 +336,16 @@ describe("buildOrderBy", () => {
     expect(r).toBeUndefined();
   });
 
-  it("strips relation.field down to relation root and adds it to includes", () => {
+  it("builds the nested Prisma form for relation.field sorts and adds the include", () => {
     const includes = new Set<string>();
     const r = buildOrderBy(
       { columns: [], filters: [], sortBy: "-client.name" },
       FIXTURE,
       includes
     );
-    expect(r).toEqual({ client: "desc" });
+    // The flat `{ client: "desc" }` form is INVALID for to-one
+    // relations in Prisma — it must nest to the sub-field.
+    expect(r).toEqual({ client: { name: "desc" } });
     expect(includes.has("client")).toBe(true);
   });
 });

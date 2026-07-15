@@ -25,15 +25,23 @@ export function DisplayList({ config, data, fields }: DisplayProps) {
       {data.rows.map((row, i) => (
         <div key={i} className="flex items-center gap-3 px-3 py-2 rounded-md hover:bg-muted transition-colors">
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium truncate">{String(row[labelField] ?? "")}</p>
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <p className="text-sm font-medium truncate" title={String(row[labelField] ?? "")}>
+              {String(row[labelField] ?? "")}
+            </p>
+            <div className="flex items-center gap-2 text-xs text-muted-foreground min-w-0">
               {columns.filter((c) => c !== labelField).map((col) => {
                 const field = fieldMap.get(col);
                 const val = row[col];
                 if (field?.type === "enum" && val) {
-                  return <Badge key={col} variant="outline" className="text-[10px]">{String(val)}</Badge>;
+                  return <Badge key={col} variant="outline" className="text-[10px] shrink-0">{String(val)}</Badge>;
                 }
-                return <span key={col}>{formatValue(val, field?.type || "string")}</span>;
+                // truncate so a long secondary value (email, note) can't
+                // push the row wider than the widget.
+                return (
+                  <span key={col} className="truncate" title={formatValue(val, field?.type || "string")}>
+                    {formatValue(val, field?.type || "string")}
+                  </span>
+                );
               })}
             </div>
           </div>

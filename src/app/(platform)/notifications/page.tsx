@@ -1,20 +1,34 @@
 import { requireAuth } from "@/lib/permissions";
+import { db } from "@/lib/db";
 import { PageHeader } from "@/components/layout/page-header";
 import { EmptyState } from "@/components/ui/empty-state";
-import { getUserNotifications } from "@/lib/notifications";
+import { getUserNotifications, NOTIFICATION_TYPE_REGISTRY } from "@/lib/notifications";
 import { NotificationsList } from "./notifications-list";
+import { NotificationPreferences } from "./notification-preferences";
 import { Bell } from "lucide-react";
 
 export default async function NotificationsPage() {
   const user = await requireAuth();
 
-  const notifications = await getUserNotifications(user.id, { limit: 100 });
+  const [notifications, myPrefs] = await Promise.all([
+    getUserNotifications(user.id, { limit: 100 }),
+    db.userNotificationPref.findMany({ where: { userId: user.id } }),
+  ]);
 
   return (
     <div>
       <PageHeader
         title="Notifications"
         description="Everything happening across the projects and tasks you&rsquo;re involved in"
+      />
+
+      <NotificationPreferences
+        types={NOTIFICATION_TYPE_REGISTRY.filter((t) => t.key !== "test")}
+        prefs={myPrefs.map((p) => ({
+          typeKey: p.typeKey,
+          muteInApp: p.muteInApp,
+          muteEmail: p.muteEmail,
+        }))}
       />
 
       {notifications.length === 0 ? (

@@ -17,6 +17,9 @@ import { TaskRowActions } from "./row-actions";
 const TYPE_LABEL: Record<string, string> = {
   EMAIL_REPORT: "Email a report",
   EMAIL_MESSAGE: "Broadcast a message",
+  // Offered by the create/edit form — without this entry the table
+  // showed the raw enum value.
+  PURGE_SOFT_DELETED: "Purge recovery bin",
 };
 
 export const metadata = { title: "Scheduled Tasks · OpsHub" };
@@ -107,18 +110,23 @@ export default async function ScheduledTasksPage() {
                         key={t.id}
                         className="border-t border-border hover:bg-muted/40 transition-colors"
                       >
-                        <td className="px-4 py-3">
-                          <p className="font-medium">{t.name}</p>
+                        <td className="px-4 py-3 max-w-[20rem]">
+                          <p className="font-medium truncate" title={t.name}>
+                            {t.name}
+                          </p>
                           {t.description && (
-                            <p className="text-xs text-muted-foreground line-clamp-1">
+                            <p
+                              className="text-xs text-muted-foreground line-clamp-1"
+                              title={t.description}
+                            >
                               {t.description}
                             </p>
                           )}
                         </td>
-                        <td className="px-4 py-3 text-muted-foreground">
+                        <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">
                           {TYPE_LABEL[t.taskType] ?? t.taskType}
                         </td>
-                        <td className="px-4 py-3 text-muted-foreground text-xs">
+                        <td className="px-4 py-3 text-muted-foreground text-xs whitespace-nowrap">
                           {describeCadence({
                             frequency: t.frequency,
                             hourUtc: t.hourUtc,
@@ -126,17 +134,25 @@ export default async function ScheduledTasksPage() {
                             dayOfMonth: t.dayOfMonth,
                           })}
                         </td>
-                        <td className="px-4 py-3 text-xs text-muted-foreground">
-                          {t.lastRunAt
-                            ? `${formatDistanceToNowStrict(t.lastRunAt, { addSuffix: true })} (${format(t.lastRunAt, "MMM d, HH:mm")})`
-                            : "—"}
+                        <td className="px-4 py-3 text-xs text-muted-foreground max-w-[22rem]">
+                          <span className="whitespace-nowrap">
+                            {t.lastRunAt
+                              ? `${formatDistanceToNowStrict(t.lastRunAt, { addSuffix: true })} (${format(t.lastRunAt, "MMM d, HH:mm")})`
+                              : "—"}
+                          </span>
                           {t.lastRunOutput && (
-                            <p className="text-[10px] mt-0.5 line-clamp-1">
+                            <p
+                              className="text-[10px] mt-0.5 line-clamp-1"
+                              title={t.lastRunOutput}
+                            >
                               {t.lastRunOutput}
                             </p>
                           )}
                           {t.lastRunError && (
-                            <p className="text-[10px] mt-0.5 text-destructive line-clamp-2">
+                            <p
+                              className="text-[10px] mt-0.5 text-destructive line-clamp-2 break-words"
+                              title={t.lastRunError}
+                            >
                               {t.lastRunError}
                             </p>
                           )}

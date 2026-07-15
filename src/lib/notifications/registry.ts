@@ -119,6 +119,22 @@ export const NOTIFICATION_TYPE_REGISTRY: NotificationTypeInfo[] = [
     emailsByDefault: true,
   },
   {
+    key: "work-log-reminder",
+    label: NOTIFICATION_TYPE_LABELS["work-log-reminder"],
+    trigger:
+      "The daily work-log check: an active employee has missing, non-excepted workdays this week (PTO/sick/holiday days never remind)",
+    defaultRecipients: "The employee who is behind",
+    emailsByDefault: true,
+  },
+  {
+    key: "work-log-escalation",
+    label: NOTIFICATION_TYPE_LABELS["work-log-escalation"],
+    trigger:
+      "Monday morning: last week closed with people still missing work logs (also freezes the weekly snapshot)",
+    defaultRecipients: "Active admins + managers (add ownership here for the CC list)",
+    emailsByDefault: true,
+  },
+  {
     key: "job-failing",
     label: NOTIFICATION_TYPE_LABELS["job-failing"],
     trigger: "A scheduled job fails 3 runs in a row",
