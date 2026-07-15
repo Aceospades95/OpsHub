@@ -61,6 +61,7 @@ export async function GET(
         subcontractorId: true,
         partnershipId: true,
         bidOpportunityId: true,
+        vehicleId: true,
       },
     });
     if (!fkRow) {

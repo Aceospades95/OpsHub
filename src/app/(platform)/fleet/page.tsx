@@ -304,6 +304,11 @@ export default async function FleetPage({
                         {vehicle.currentMileage.toLocaleString()} mi
                       </p>
                     )}
+                    {vehicle.notes && (
+                      <p className="text-muted-foreground line-clamp-2" title={vehicle.notes}>
+                        {vehicle.notes}
+                      </p>
+                    )}
                   </div>
                 </CardContent>
               </Card>
@@ -335,6 +340,7 @@ export default async function FleetPage({
                 <th className="p-3 font-medium">Assigned to</th>
                 <th className="p-3 font-medium text-right">Mileage</th>
                 <th className="p-3 font-medium">Next service</th>
+                <th className="p-3 font-medium">Notes</th>
                 <th className="p-3 font-medium">Status</th>
                 {anyLoggable && <th className="p-3 font-medium" />}
               </tr>
@@ -371,6 +377,15 @@ export default async function FleetPage({
                       {serviceLine(vehicle)}
                       {registrationLine(vehicle)}
                     </div>
+                  </td>
+                  <td className="p-3 text-xs text-muted-foreground">
+                    {vehicle.notes ? (
+                      <span className="block max-w-[16rem] truncate" title={vehicle.notes}>
+                        {vehicle.notes}
+                      </span>
+                    ) : (
+                      "—"
+                    )}
                   </td>
                   <td className="p-3"><StatusBadge status={vehicle.status} /></td>
                   {anyLoggable && (

@@ -9,6 +9,10 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { nameField, rejectHtmlChars, HTML_CHARS_MESSAGE } from "@/lib/validation";
 import { vehicleLabel } from "@/lib/fleet";
+import { MAX_RECEIPT_UPLOAD_BYTES, describeMaxUpload } from "@/lib/upload-limits";
+import { asUploadedFile } from "@/lib/uploaded-file";
+import { blobToBuffer, deleteFile, uploadFile, StorageQuotaExceededError } from "@/lib/storage";
+import { sniffUploadType } from "@/lib/upload-validation";
 
 /**
  * Vehicle fleet actions. Fleet is a permissioned module (Manager+ by
@@ -680,5 +684,131 @@ export async function deleteServiceSchedule(_prev: unknown, formData: FormData) 
   await logActivity("deleted", "vehicle-service-schedule", schedule.vehicleId, user.id, schedule.serviceType);
   revalidatePath("/fleet");
   revalidatePath(`/fleet/${schedule.vehicleId}`);
+  return { success: true };
+}
+
+// ─── Vehicle receipts & documents ─────────────────────────────
+
+/**
+ * Upload a receipt/photo/registration doc onto a vehicle. Mirrors the
+ * supplier-receipt flow (private storage, category "receipt") with the
+ * same driver exception as logMaintenance: the assigned driver can
+ * attach receipts for their own vehicle without fleet upload perms —
+ * the receipt photo is part of the maintenance submission workflow.
+ */
+export async function uploadVehicleReceipt(_prev: unknown, formData: FormData) {
+  const user = await requireAuth();
+  const perms = await resolveModulePerms(user.id, user.role, "fleet");
+
+  const vehicleId = formData.get("vehicleId") as string;
+  const vehicle = await db.vehicle.findFirst({
+    where: { id: vehicleId, deletedAt: null },
+    select: { id: true, assignedToId: true },
+  });
+  if (!vehicle) return { error: "Not found" };
+
+  const isAssignedDriver = vehicle.assignedToId === user.id;
+  if (!perms.canUpload && !isAssignedDriver) {
+    return { error: "Permission denied" };
+  }
+
+  const blob = asUploadedFile(formData.get("file"));
+  if (!blob) return { error: "No file provided" };
+  if (blob.size === 0) return { error: "File is empty" };
+  if (blob.size > MAX_RECEIPT_UPLOAD_BYTES) {
+    return { error: `File exceeds the ${describeMaxUpload(MAX_RECEIPT_UPLOAD_BYTES)} limit` };
+  }
+
+  const buffer = await blobToBuffer(blob as unknown as Blob);
+  const sniff = sniffUploadType(buffer, blob.type, { blockSvg: true });
+  if (!sniff.ok) return { error: sniff.reason };
+
+  try {
+    await uploadFile({
+      content: buffer,
+      filename: blob.name,
+      contentType: blob.type,
+      uploadedById: user.id,
+      visibility: "private",
+      vehicleId,
+      category: "receipt",
+    });
+  } catch (err) {
+    if (err instanceof StorageQuotaExceededError) {
+      return { error: "Your account is at its storage quota. Delete older files first." };
+    }
+    log.error("fleet.receipt", "Storage driver failed", err);
+    return { error: "Upload failed — check storage configuration and server logs." };
+  }
+
+  await logActivity("uploaded", "vehicle-receipt", vehicleId, user.id, blob.name);
+  revalidatePath(`/fleet/${vehicleId}`);
+  return { success: true };
+}
+
+export async function deleteVehicleReceipt(_prev: unknown, formData: FormData) {
+  const user = await requireAuth();
+  const perms = await resolveModulePerms(user.id, user.role, "fleet");
+
+  const fileId = formData.get("fileId") as string;
+  const file = await db.file.findUnique({
+    where: { id: fileId },
+    select: { id: true, name: true, vehicleId: true, uploadedById: true, category: true },
+  });
+  if (!file || !file.vehicleId || file.category !== "receipt") return { error: "Not found" };
+
+  // Uploaders (incl. drivers) can remove their own; else fleet delete.
+  if (!(perms.canDelete || file.uploadedById === user.id)) {
+    return { error: "Permission denied" };
+  }
+
+  await deleteFile(fileId);
+  await logActivity("deleted", "vehicle-receipt", file.vehicleId, user.id, file.name);
+  revalidatePath(`/fleet/${file.vehicleId}`);
+  return { success: true };
+}
+
+/**
+ * Standalone odometer update — the "just fill in the mileage" flow the
+ * office asked for, without logging a full maintenance record. Fleet
+ * canEdit OR the assigned driver (same rationale as logMaintenance).
+ */
+export async function updateVehicleMileage(_prev: unknown, formData: FormData) {
+  const user = await requireAuth();
+  const perms = await resolveModulePerms(user.id, user.role, "fleet");
+
+  const vehicleId = formData.get("vehicleId") as string;
+  const vehicle = await db.vehicle.findFirst({
+    where: { id: vehicleId, deletedAt: null },
+    select: { id: true, assignedToId: true, currentMileage: true, make: true, model: true, year: true, nickname: true },
+  });
+  if (!vehicle) return { error: "Not found" };
+
+  const isAssignedDriver = vehicle.assignedToId === user.id;
+  if (!perms.canEdit && !isAssignedDriver) {
+    return { error: "Permission denied" };
+  }
+
+  const raw = String(formData.get("mileage") ?? "").replace(/[,\s]/g, "");
+  const mileage = Number(raw);
+  if (!Number.isInteger(mileage) || mileage < 0 || mileage > 2_000_000) {
+    return { error: "Enter the odometer reading as a whole number" };
+  }
+  // Corrections downward are allowed for editors (typo fixes); drivers
+  // can only roll forward — a lower driver-entered number is far more
+  // likely a typo than a genuine odometer replacement.
+  if (isAssignedDriver && !perms.canEdit && vehicle.currentMileage != null && mileage < vehicle.currentMileage) {
+    return {
+      error: `That's below the recorded ${vehicle.currentMileage.toLocaleString()} mi — ask a fleet manager to correct it downward`,
+    };
+  }
+
+  await db.vehicle.update({
+    where: { id: vehicleId },
+    data: { currentMileage: mileage, mileageUpdatedAt: new Date() },
+  });
+  await logActivity("updated", "vehicle", vehicleId, user.id, `odometer → ${mileage.toLocaleString()} mi`);
+  revalidatePath(`/fleet/${vehicleId}`);
+  revalidatePath("/fleet");
   return { success: true };
 }

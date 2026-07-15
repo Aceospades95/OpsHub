@@ -115,6 +115,8 @@ export async function uploadFile(params: {
   intranetResourceId?: string;
   certificationId?: string;
   bidOpportunityId?: string;
+  /** Vehicle attachments — fleet maintenance receipts/photos. */
+  vehicleId?: string;
   /** Target user id when attaching a file to an employee profile. */
   userId?: string;
   /** Freeform category tag, currently used by the employee files UI. */
@@ -169,6 +171,7 @@ export async function uploadFile(params: {
       intranetResourceId: params.intranetResourceId,
       certificationId: params.certificationId,
       bidOpportunityId: params.bidOpportunityId,
+      vehicleId: params.vehicleId,
       userId: params.userId,
       category: params.category,
     },

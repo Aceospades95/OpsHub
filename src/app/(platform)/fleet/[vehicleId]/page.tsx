@@ -22,6 +22,8 @@ import { VehicleActions } from "./vehicle-actions";
 import { MaintenanceSection } from "./maintenance-section";
 import { ServiceScheduleSection } from "./service-schedule-section";
 import { LogMaintenanceButton } from "../log-maintenance-button";
+import { UpdateMileageButton } from "../update-mileage-button";
+import { VehicleReceipts } from "./vehicle-receipts";
 
 interface Props {
   params: Promise<{ vehicleId: string }>;
@@ -44,7 +46,7 @@ export default async function VehicleDetailPage({ params }: Props) {
 
   // The vehicle fetch and the (perms-gated) editor dropdown are
   // independent — one round trip, not two.
-  const [vehicle, users] = await Promise.all([
+  const [vehicle, users, receipts] = await Promise.all([
     db.vehicle.findFirst({
       where: { id: vehicleId, deletedAt: null },
       include: {
@@ -60,6 +62,18 @@ export default async function VehicleDetailPage({ params }: Props) {
           orderBy: { name: "asc" },
         })
       : Promise.resolve([] as { id: string; name: string }[]),
+    db.file.findMany({
+      where: { vehicleId, category: "receipt" },
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        name: true,
+        size: true,
+        createdAt: true,
+        uploadedById: true,
+        uploadedBy: { select: { name: true } },
+      },
+    }),
   ]);
   if (!vehicle) notFound();
 
@@ -113,12 +127,15 @@ export default async function VehicleDetailPage({ params }: Props) {
         actions={
           <div className="flex items-center gap-2 flex-wrap">
             {canLog && (
-              <LogMaintenanceButton
-                vehicleId={vehicle.id}
-                vehicleName={vehicleLabel(vehicle)}
-                currentMileage={vehicle.currentMileage}
-                scheduleServiceTypes={vehicle.serviceSchedules.map((s) => s.serviceType)}
-              />
+              <>
+                <UpdateMileageButton vehicleId={vehicle.id} currentMileage={vehicle.currentMileage} />
+                <LogMaintenanceButton
+                  vehicleId={vehicle.id}
+                  vehicleName={vehicleLabel(vehicle)}
+                  currentMileage={vehicle.currentMileage}
+                  scheduleServiceTypes={vehicle.serviceSchedules.map((s) => s.serviceType)}
+                />
+              </>
             )}
             <VehicleActions
               vehicle={{
@@ -217,6 +234,25 @@ export default async function VehicleDetailPage({ params }: Props) {
               />
             </CardContent>
           </Card>
+
+          {/* Receipts / photos / registration docs. Drivers can attach
+           *  for their own vehicle (part of the maintenance-submission
+           *  workflow); the server action enforces the same rule. */}
+          <VehicleReceipts
+            vehicleId={vehicle.id}
+            receipts={receipts.map((f) => ({
+              id: f.id,
+              name: f.name,
+              url: `/api/files/${f.id}`,
+              size: f.size,
+              createdAt: f.createdAt.toISOString(),
+              uploadedByName: f.uploadedBy?.name ?? null,
+              uploadedById: f.uploadedById,
+            }))}
+            canUpload={perms.canUpload || vehicle.assignedToId === user.id}
+            canDelete={perms.canDelete}
+            currentUserId={user.id}
+          />
         </div>
 
         <div className="space-y-6">

@@ -30,6 +30,8 @@ export type NotificationType =
   | "vehicle-maintenance-logged"
   | "bid-due-soon"
   | "job-failing"
+  | "work-log-reminder"
+  | "work-log-escalation"
   | "system"
   | "test";
 
@@ -47,6 +49,8 @@ export const NOTIFICATION_TYPE_LABELS: Record<NotificationType, string> = {
   "vehicle-maintenance-logged": "Vehicle maintenance logged",
   "bid-due-soon": "Bid deadline approaching",
   "job-failing": "Scheduled job failing",
+  "work-log-reminder": "Work log reminder",
+  "work-log-escalation": "Work logs behind (weekly escalation)",
   system: "System",
   test: "Test",
 };
