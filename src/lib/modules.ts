@@ -26,6 +26,7 @@ export type ModuleKey =
   | "partnerships"
   | "tools"
   | "fleet"
+  | "work-logs"
   | "intranet"
   | "bids"
   | "quotes"
@@ -222,6 +223,15 @@ export const MODULES: ModuleDefinition[] = [
     icon: "Car",
     description: "Company vehicles, maintenance records, and service alerts",
     section: "resources",
+    permissioned: true,
+  },
+  {
+    key: "work-logs",
+    label: "Work Logs",
+    href: "/work-logs",
+    icon: "ClipboardList",
+    description: "Daily technician work logs, schedule exceptions, and weekly hour roll-ups",
+    section: "main",
     permissioned: true,
   },
   {

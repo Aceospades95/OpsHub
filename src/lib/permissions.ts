@@ -70,6 +70,11 @@ const FIELD_MODULE_DEFAULTS: Record<string, Partial<PermissionFlags>> = {
   tools: { canView: true },
   team: { canView: true },
   intranet: { canView: true },
+  // HR-sensitive: canView + canCreate here mean "their OWN logs" only.
+  // The /work-logs page renders just the viewer's data and the submit
+  // action always writes to the caller's own userId; the team matrix,
+  // exceptions, and OT approval sit behind canManage (Manager+).
+  "work-logs": { canView: true, canCreate: true },
 };
 
 export function getRoleDefaults(role: Role, module: string): PermissionFlags {

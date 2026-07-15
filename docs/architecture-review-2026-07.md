@@ -445,10 +445,32 @@ the import-framework commit):
   (see the findings table above — every row now ✅ except the Phase C
   items noted).
 
-**Phase C — new module + polish (after B, ~1–2 sessions)**
-Daily work logs + schedule exceptions + overtime rollups/snapshots +
-historical import · quote template variants (if wanted) · per-user
-notification preferences/digests · `task-due-soon` job.
+**Phase C — new module + polish — ✅ shipped 2026-07-12**
+- *Work Logs module* (`/work-logs` + `/work-logs/team`): one row per
+  person per day (duplicate submissions update, never double-count),
+  current + previous ISO week back-fill window, PTO/sick/holiday
+  `ScheduleException`s (org-wide when no user set) that reminders treat
+  as satisfied, roster windows (created/terminated dates) so new hires
+  and departed staff never pollute the list, weekly totals with >40h
+  flagged red until a manager marks the week's overtime approved,
+  frozen Monday snapshots with live deltas, `work-log-reminders` job
+  (dry-runnable, self-explaining ledger, graceDays param, Monday
+  escalation + snapshot catch-up), historical importer for the Google
+  Form responses, and a 4-week `work-logs-weekly` report.
+- *Per-user notification preferences* on /notifications — mute any type
+  per channel; the engine honors mutes after rule expansion.
+- *Vehicle receipts/photos* attach to vehicles (drivers can upload for
+  their own vehicle), "Update mileage" quick action, notes visible in
+  the fleet list.
+- *QA sweep of every custom-builder surface* — the report-preview
+  wrapping bug plus a set of genuinely broken builder controls fixed
+  (relation sorts that errored saved reports, untyped widget filter
+  values, blanked status boards, impossible enum multi-filters); one
+  consistent data-table treatment across all preview/result tables.
+
+Remaining backlog (small): quote template variants, notification
+digests, `task-due-soon` job, a user-picker for workflow
+assign-task/approval steps.
 
 Phase B before C is deliberate: the work-log module's entire value is its
 *rules-aware reminders*, which want the notification engine to exist

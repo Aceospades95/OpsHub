@@ -38,6 +38,7 @@ import { allowedDomainsImporter } from "./importers/allowed-domains";
 import { vehiclesImporter } from "./importers/vehicles";
 import { vehicleServiceSchedulesImporter } from "./importers/vehicle-service-schedules";
 import { vehicleMaintenanceImporter } from "./importers/vehicle-maintenance";
+import { workLogsImporter } from "./importers/work-logs";
 
 export const IMPORTERS: ImporterDefinition[] = [
   // Recommended import order top-to-bottom: top-level entities first,
@@ -69,6 +70,8 @@ export const IMPORTERS: ImporterDefinition[] = [
   vehiclesImporter,
   vehicleServiceSchedulesImporter,
   vehicleMaintenanceImporter,
+  // Work logs match users by email — import users first.
+  workLogsImporter,
 ];
 
 const IMPORTER_MAP = new Map<string, ImporterDefinition>(

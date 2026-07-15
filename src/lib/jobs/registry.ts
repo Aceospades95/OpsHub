@@ -30,6 +30,7 @@ import { customScheduledTasks } from "./jobs/custom-scheduled-tasks";
 import { googleTasksSync } from "./jobs/google-tasks-sync";
 import { vehicleMaintenanceCheck } from "./jobs/vehicle-maintenance-check";
 import { bidDueCheck } from "./jobs/bid-due-check";
+import { workLogReminders } from "./jobs/work-log-reminders";
 
 export const JOBS: JobDefinition[] = [
   contractExpiryCheck,
@@ -47,6 +48,7 @@ export const JOBS: JobDefinition[] = [
   googleTasksSync,
   vehicleMaintenanceCheck,
   bidDueCheck,
+  workLogReminders,
 ];
 
 const JOB_MAP = new Map<string, JobDefinition>(JOBS.map((j) => [j.key, j]));
