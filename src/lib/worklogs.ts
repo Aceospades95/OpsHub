@@ -164,6 +164,15 @@ export function missingDays(args: {
 export interface RosterWindowUser {
   isActive: boolean;
   hasLoginAccess: boolean;
+  /**
+   * OPT-IN enrollment (User.workLogRequired). Nobody owes logs — or
+   * hears about missing ones — unless deliberately enrolled. The
+   * launch default of "every active user" mass-reminded the whole
+   * company on the first cold-start run.
+   */
+  workLogRequired: boolean;
+  /** When enrollment flipped on — days before it are never expected. */
+  workLogRequiredSince?: Date | null;
   /** User.terminationDate — LAST day of employment (inclusive). */
   terminationDate?: Date | null;
   /** Earliest day the person counts (compared by UTC calendar day). */
@@ -172,13 +181,19 @@ export interface RosterWindowUser {
 
 /**
  * Does this user count toward the roster for `date`? Fixes the sheet's
- * roster pollution: inactive / no-login / terminated people never get
- * reminded, and a terminationDate mid-week keeps the earlier days
- * expected while releasing the later ones.
+ * roster pollution: only ENROLLED people count at all, inactive /
+ * no-login / terminated people never get reminded, enrollment mid-week
+ * only expects days from the enrollment date on, and a terminationDate
+ * mid-week keeps the earlier days expected while releasing the later
+ * ones.
  */
 export function rosterWindow(user: RosterWindowUser, date: Date): boolean {
+  if (!user.workLogRequired) return false;
   if (!user.isActive || !user.hasLoginAccess) return false;
   const day = startOfUtcDay(date).getTime();
+  if (user.workLogRequiredSince && startOfUtcDay(user.workLogRequiredSince).getTime() > day) {
+    return false;
+  }
   if (user.startDate && startOfUtcDay(user.startDate).getTime() > day) return false;
   if (user.terminationDate && startOfUtcDay(user.terminationDate).getTime() < day) return false;
   return true;

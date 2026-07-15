@@ -55,7 +55,11 @@ export default async function WorkLogsPage() {
   const stripKeys = [currentKey, lastKey, shiftWeekKey(currentKey, -2), shiftWeekKey(currentKey, -3)];
   const rangeStart = weekBounds(stripKeys[3]).start;
 
-  const [logs, exceptions, flags] = await Promise.all([
+  const [me, logs, exceptions, flags] = await Promise.all([
+    db.user.findUnique({
+      where: { id: user.id },
+      select: { workLogRequired: true },
+    }),
     db.workLog.findMany({
       where: { userId: user.id, workDate: { gte: rangeStart, lte: currentEnd } },
       orderBy: { workDate: "asc" },
@@ -194,6 +198,14 @@ export default async function WorkLogsPage() {
           ) : undefined
         }
       />
+
+      {!me?.workLogRequired && (
+        <div className="mb-6 rounded border border-border bg-muted/40 px-4 py-3 text-xs text-muted-foreground">
+          You&apos;re not enrolled in daily work logs, so nothing here is
+          required of you and no reminders will be sent — you can still log
+          days voluntarily. Managers enroll people from the Team view.
+        </div>
+      )}
 
       {/* 4-week totals strip */}
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4 mb-6">

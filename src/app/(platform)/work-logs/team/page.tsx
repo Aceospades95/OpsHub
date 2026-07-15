@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { formatCalendarDate, toCalendarDateString } from "@/lib/dates";
+import { EnrollmentManager } from "./enrollment-manager";
 import {
   OVERTIME_WEEK_HOURS,
   canManageWorkLogs,
@@ -57,7 +58,16 @@ export default async function TeamWorkLogsPage({
   const [users, logs, exceptions, flags, snapshots] = await Promise.all([
     db.user.findMany({
       where: { isActive: true, hasLoginAccess: true },
-      select: { id: true, name: true, createdAt: true, terminationDate: true, isActive: true, hasLoginAccess: true },
+      select: {
+        id: true,
+        name: true,
+        createdAt: true,
+        terminationDate: true,
+        isActive: true,
+        hasLoginAccess: true,
+        workLogRequired: true,
+        workLogRequiredSince: true,
+      },
       orderBy: { name: "asc" },
     }),
     db.workLog.findMany({ where: { workDate: { gte: start, lte: end } } }),
@@ -174,6 +184,18 @@ export default async function TeamWorkLogsPage({
             </Link>
           </div>
         }
+      />
+
+      {/* Opt-in roster — who owes daily logs at all */}
+      <EnrollmentManager
+        people={users.map((u) => ({
+          id: u.id,
+          name: u.name,
+          workLogRequired: u.workLogRequired,
+          workLogRequiredSince: u.workLogRequiredSince
+            ? u.workLogRequiredSince.toISOString()
+            : null,
+        }))}
       />
 
       {/* Week picker */}

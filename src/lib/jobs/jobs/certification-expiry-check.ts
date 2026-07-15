@@ -30,6 +30,7 @@ export const certificationExpiryCheck: JobDefinition = {
   description:
     "Fires multi-tier reminders (e.g. 90/30/7 days) when certifications approach their expiration date",
   schedule: "Daily",
+  notificationTypes: ["certification-expiring"],
   supportsDryRun: true,
 
   async handler(ctx) {

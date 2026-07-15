@@ -290,3 +290,42 @@ export async function setOvertimeApproved(_prev: unknown, formData: FormData) {
   revalidateWorkLogs();
   return { success: true };
 }
+
+// ─── Roster enrollment (canManage) ────────────────────────────────
+
+/**
+ * Enroll / un-enroll a person in daily work logs — the opt-in roster
+ * (the old sheet's Config tab). Only enrolled people are expected to
+ * submit, get reminders, or appear in the team matrix. Enrollment
+ * stamps workLogRequiredSince so days before it are never "missing";
+ * re-enrolling refreshes the stamp for the same reason.
+ */
+export async function setWorkLogEnrollment(userId: string, enrolled: boolean) {
+  const user = await requireAuth();
+  const perms = await resolveModulePerms(user.id, user.role, "work-logs");
+  if (!canManageWorkLogs(user.role, perms)) return { error: "Permission denied" } as const;
+
+  const target = await db.user.findFirst({
+    where: { id: userId, isActive: true },
+    select: { id: true, name: true },
+  });
+  if (!target) return { error: "User not found" } as const;
+
+  await db.user.update({
+    where: { id: userId },
+    data: {
+      workLogRequired: enrolled,
+      workLogRequiredSince: enrolled ? new Date() : null,
+    },
+  });
+  await logActivity(
+    "updated",
+    "work-log-roster",
+    userId,
+    user.id,
+    `${target.name} ${enrolled ? "enrolled in" : "removed from"} daily work logs`
+  );
+  revalidatePath("/work-logs");
+  revalidatePath("/work-logs/team");
+  return { success: true } as const;
+}

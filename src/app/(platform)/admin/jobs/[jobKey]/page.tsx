@@ -3,6 +3,7 @@ import { redirect, notFound } from "next/navigation";
 import Link from "next/link";
 import {
   ArrowLeft,
+  Bell,
   CheckCircle2,
   AlertCircle,
   PlayCircle,
@@ -12,6 +13,7 @@ import { format, formatDistanceToNow } from "date-fns";
 
 import { db } from "@/lib/db";
 import { getJob } from "@/lib/jobs";
+import { NOTIFICATION_TYPE_LABELS } from "@/lib/notifications/types";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -129,6 +131,35 @@ export default async function JobDetailPage({ params }: Props) {
               current={paramsForForm}
               defaults={paramDefaults}
             />
+          </CardContent>
+        </Card>
+      )}
+
+      {job.notificationTypes && job.notificationTypes.length > 0 && (
+        <Card className="mb-6">
+          <CardHeader>
+            <CardTitle>Who gets notified — and how to change it</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-xs text-muted-foreground mb-3">
+              This job decides <strong>when</strong> something fires and{" "}
+              <strong>what</strong> it says by default (Settings above tune
+              the timing). <strong>Who</strong> receives it, on which
+              channels, and with what wording is controlled by these
+              delivery rules:
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {job.notificationTypes.map((t) => (
+                <Link
+                  key={t}
+                  href="/admin/notifications"
+                  className="inline-flex items-center gap-1.5 rounded border border-border px-2.5 py-1.5 text-xs font-medium hover:border-primary hover:text-primary"
+                >
+                  <Bell className="h-3 w-3" />
+                  {NOTIFICATION_TYPE_LABELS[t]}
+                </Link>
+              ))}
+            </div>
           </CardContent>
         </Card>
       )}

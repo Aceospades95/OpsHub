@@ -85,6 +85,19 @@ export default async function AdminReportsPage() {
               </Link>
               .
             </p>
+            <p className="text-xs text-muted-foreground mt-1">
+              Looking for the emails that jobs send (work-log reminders,
+              expiry notices, maintenance alerts)? Those aren&apos;t reports —
+              recipients, channels, and wording live under{" "}
+              <Link href="/admin/notifications" className="text-primary hover:underline">
+                Delivery rules
+              </Link>{" "}
+              and their timing/thresholds under{" "}
+              <Link href="/admin/jobs" className="text-primary hover:underline">
+                Jobs → Settings
+              </Link>
+              .
+            </p>
           </div>
         </CardContent>
       </Card>

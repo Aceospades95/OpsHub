@@ -106,6 +106,7 @@ export const vehicleMaintenanceCheck: JobDefinition = {
   description:
     "Notifies admins/managers and the assigned driver when a vehicle's service schedule or registration is due soon or overdue, and escalates persistent overdue services to the driver's manager",
   schedule: "Daily",
+  notificationTypes: ["vehicle-maintenance-due", "vehicle-maintenance-overdue"],
   supportsDryRun: true,
   paramsSchema: [
     {

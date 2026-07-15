@@ -327,6 +327,16 @@ model User {
   /// SCHEDULED_DATE trigger evaluator to fire offboarding workflows
   /// at the right offset (e.g. 7 days before terminationDate).
   terminationDate  DateTime?
+  /// OPT-IN work-log roster (mirrors the old sheet's Config tab).
+  /// Only enrolled people are expected to submit daily logs, get
+  /// reminders, appear in the team matrix, or count in escalations /
+  /// snapshots. Default FALSE on purpose: launching the module must
+  /// never nag the whole company (which is exactly what happened when
+  /// the roster was "every active user").
+  workLogRequired      Boolean   @default(false)
+  /// When enrollment was switched on — days before this are never
+  /// "missing", so enrolling someone mid-week doesn't retro-nag them.
+  workLogRequiredSince DateTime?
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 

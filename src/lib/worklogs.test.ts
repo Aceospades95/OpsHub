@@ -201,11 +201,31 @@ describe("isExceptedDay / missingDays", () => {
 });
 
 describe("rosterWindow", () => {
-  const base = { isActive: true, hasLoginAccess: true, terminationDate: null, startDate: null };
+  const base = {
+    isActive: true,
+    hasLoginAccess: true,
+    workLogRequired: true,
+    workLogRequiredSince: null,
+    terminationDate: null,
+    startDate: null,
+  };
   const d = day("2026-07-15");
 
-  it("active users with login access count", () => {
+  it("enrolled, active users with login access count", () => {
     expect(rosterWindow(base, d)).toBe(true);
+  });
+
+  it("non-enrolled users NEVER count — the opt-in roster is the gate", () => {
+    // Regression: the launch default of "every active user owes logs"
+    // reminded the entire company on the first cold-start run.
+    expect(rosterWindow({ ...base, workLogRequired: false }, d)).toBe(false);
+  });
+
+  it("enrollment date is the FIRST counted day (no retro-nagging)", () => {
+    const user = { ...base, workLogRequiredSince: day("2026-07-15") };
+    expect(rosterWindow(user, day("2026-07-14"))).toBe(false);
+    expect(rosterWindow(user, day("2026-07-15"))).toBe(true);
+    expect(rosterWindow(user, day("2026-07-16"))).toBe(true);
   });
 
   it("inactive or no-login users never count", () => {
