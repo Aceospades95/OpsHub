@@ -1536,6 +1536,30 @@ model UserNotificationPref {
   @@unique([userId, typeKey])
 }
 
+/// Admin customization of a BUILT-IN report — the same override pattern
+/// as NotificationRule: the code keeps the query, the row owns the
+/// presentation. Absence of a row = stock report; deleting the row
+/// restores it. (Structural changes — different columns/filters/joins —
+/// are what CUSTOM reports are for.)
+model ReportOverride {
+  id          String   @id @default(cuid())
+  /// Matches a key in the reports registry ("certifications-expiring").
+  reportKey   String   @unique
+  displayName String?
+  description String?  @db.Text
+  /// Hidden reports drop out of the reports list, the scheduled-task
+  /// picker, and the daily digest; direct runs by an admin still work
+  /// (the list shows them in a "hidden" group so they're recoverable).
+  hidden      Boolean  @default(false)
+  /// Display cap applied AFTER the query — trims rendered/CSV rows.
+  maxRows     Int?
+  /// Per-column presentation keyed by column key:
+  /// { [key]: { label?: string, hidden?: boolean, order?: number } }
+  columnConfig Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
 /// Per-notification-type delivery rule — the admin-editable layer the
 /// notification engine (src/lib/notifications) consults on every
 /// notify() call. ABSENCE of a row = code defaults (enabled, both

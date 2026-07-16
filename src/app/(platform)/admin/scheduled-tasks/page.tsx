@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { CalendarClock } from "lucide-react";
 import { listReports } from "@/lib/reports/registry";
+import { getAllReportOverrides } from "@/lib/reports/overrides";
 import { describeCadence } from "@/lib/scheduled-tasks/scheduling";
 
 import { ScheduledTaskCreateButton } from "./create-button";
@@ -34,27 +35,38 @@ export default async function ScheduledTasksPage() {
   });
 
   // Reports the EMAIL_REPORT task type can target. Combines:
-  //   - System reports (code-defined in src/lib/reports/)
+  //   - System reports (code-defined in src/lib/reports/), with admin
+  //     overrides applied: renamed reports show their custom name, and
+  //     hidden ones are flagged so the form keeps them out of the picker
+  //     (except when an existing task already targets one — the form
+  //     shows it marked "(hidden)" instead of silently rewriting the
+  //     task's selection).
   //   - Active custom reports (admin-built in /admin/reports/custom)
   // Custom reports get a "custom:" prefix on their key so the
   // EMAIL_REPORT handler can dispatch correctly.
-  const [customReports] = await Promise.all([
+  const [customReports, overrides] = await Promise.all([
     db.customReport.findMany({
       where: { isActive: true },
       orderBy: { name: "asc" },
       select: { id: true, name: true, description: true },
     }),
+    getAllReportOverrides(),
   ]);
-  const systemReports = listReports().map((r) => ({
-    key: r.key,
-    name: r.name,
-    description: r.description,
-  }));
+  const systemReports = listReports().map((r) => {
+    const o = overrides.get(r.key);
+    return {
+      key: r.key,
+      name: o?.displayName || r.name,
+      description: o?.description || r.description,
+      hidden: o?.hidden ?? false,
+    };
+  });
   const reports = [
     ...customReports.map((r) => ({
       key: `custom:${r.id}`,
       name: `${r.name} (custom)`,
       description: r.description ?? "Custom report",
+      hidden: false,
     })),
     ...systemReports,
   ];

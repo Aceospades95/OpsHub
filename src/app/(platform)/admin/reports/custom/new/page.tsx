@@ -6,12 +6,22 @@ import { ENTITY_REGISTRY } from "@/lib/reports/custom/entities";
 import { ReportBuilder } from "../report-builder";
 import type { EntityCatalogEntry } from "../shared-types";
 
-export default async function NewCustomReportPage() {
+export default async function NewCustomReportPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ entity?: string }>;
+}) {
   const user = await requireAuth();
   if (user.role !== "ADMIN") redirect("/dashboard");
 
   const catalog = projectCatalog();
-  const first = catalog[0];
+
+  // "Duplicate as custom report" on system report pages deep-links here
+  // with ?entity=<CustomReportEntity> so the builder starts on the same
+  // table. Unknown/absent values fall back to the first catalog entry.
+  const { entity } = await searchParams;
+  const first =
+    (entity && catalog.find((c) => c.entity === entity)) || catalog[0];
 
   // Pull existing category labels so the autocomplete suggests them.
   // Distinct query feeds a <datalist> in the builder UI.

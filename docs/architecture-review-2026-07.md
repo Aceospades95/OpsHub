@@ -468,6 +468,54 @@ the import-framework commit):
   values, blanked status boards, impossible enum multi-filters); one
   consistent data-table treatment across all preview/result tables.
 
+**Phase D — full control over the built-ins — ✅ shipped 2026-07-16**
+
+- *Work-log enrollment roster* (follow-up to the launch incident where
+  the reminder job emailed everyone in the company): work-log reminders
+  are now **opt-in per person**. `User.workLogRequired` (default off) +
+  `workLogRequiredSince` gate the roster everywhere — the job, the team
+  matrix, and the weekly report; enrollment is managed on
+  /work-logs/team ("Who submits work logs"), enrollment date is the
+  first counted day, and the job ledger leads with the enrolled count
+  so an empty roster is visible, not silent.
+- *Discoverability cross-links*: every job page now shows "Who gets
+  notified — and how to change it" chips linking its notification types
+  to /admin/notifications, and the Reports page signposts that job
+  emails are configured under Delivery rules + Jobs → Settings — the
+  three config surfaces (what/when = Jobs, who/how = Delivery rules,
+  data = Reports) explain each other.
+- *Editable built-in reports* (`ReportOverride`): every system report
+  can now be customized from its page — rename, rewrite the
+  description, relabel / hide / reorder columns, cap displayed rows, or
+  hide the report entirely. Same override pattern as the rest of the
+  platform: the code keeps the query, a DB row owns the presentation,
+  absence of the row IS the stock state, and "Reset to defaults"
+  deletes it. Applied inside `runReport()` — the single choke point —
+  so the admin preview, CSV download, emailed reports, scheduled
+  sends, and the daily digest all see the same customized shape
+  (hidden columns are stripped from row data too, so a CSV can't leak
+  them). Hidden reports drop out of the reports list (collapsed
+  recoverable group), the scheduled-task picker (existing tasks keep
+  their selection, marked "(hidden)"), and the daily digest; existing
+  scheduled sends skip them with a logged warning, mirroring
+  deactivated custom reports. Guard rails: an override that would hide
+  every column is ignored for visibility, lookup failures degrade to
+  stock behavior, and unknown column keys are ignored — the overrides
+  layer can never take a report down. "Duplicate as custom report" on
+  system report pages deep-links the custom builder pre-set to the
+  same entity for admins who want full column/filter control beyond
+  presentation.
+- *Permutation test blitz*: table-driven suites over every
+  configurable system added in this cycle — the notification engine
+  (rules × channels × recipient expansion × mutes × throttle ×
+  templates), the report-override matrix (labels × hidden × order ×
+  caps × malformed config), the jobs framework (statuses × dry-run ×
+  disabled × concurrency × failure streaks × params merging × cadence
+  gates), importer modes (4 modes × existing/new/in-file dupes ×
+  fill-blanks field semantics), work-log rules (enrollment ×
+  exceptions × termination × ISO-week edges) and fleet schedule
+  boundary states.
+
 Remaining backlog (small): quote template variants, notification
 digests, `task-due-soon` job, a user-picker for workflow
 assign-task/approval steps.

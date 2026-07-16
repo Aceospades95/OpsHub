@@ -8,8 +8,8 @@ import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { BarChart3, ArrowRight, Plus } from "lucide-react";
-import { listReports } from "@/lib/reports";
+import { BarChart3, ArrowRight, Plus, EyeOff } from "lucide-react";
+import { listReports, getAllReportOverrides } from "@/lib/reports";
 import { ENTITY_REGISTRY } from "@/lib/reports/custom/entities";
 
 export const metadata = { title: "Reports · OpsHub" };
@@ -18,7 +18,25 @@ export default async function AdminReportsPage() {
   const user = await requireAuth();
   if (user.role !== "ADMIN") redirect("/dashboard");
 
-  const reports = listReports();
+  // Admin customizations: renamed reports show their custom name (with
+  // the stock name as a subtitle), hidden ones drop into a collapsed
+  // recoverable group at the bottom instead of vanishing.
+  const overrides = await getAllReportOverrides();
+  const decorated = listReports().map((r) => {
+    const o = overrides.get(r.key);
+    return {
+      key: r.key,
+      module: r.module,
+      schedulable: r.schedulable,
+      name: o?.displayName || r.name,
+      stockName: r.name,
+      description: o?.description || r.description,
+      customized: o != null,
+      hidden: o?.hidden ?? false,
+    };
+  });
+  const reports = decorated.filter((r) => !r.hidden);
+  const hiddenReports = decorated.filter((r) => r.hidden);
   const byModule = reports.reduce<Record<string, typeof reports>>((acc, r) => {
     (acc[r.module] = acc[r.module] || []).push(r);
     return acc;
@@ -69,14 +87,20 @@ export default async function AdminReportsPage() {
             <p className="text-sm">
               {reports.length} system report
               {reports.length === 1 ? "" : "s"} across {modules.length} module
-              {modules.length === 1 ? "" : "s"} ·{" "}
-              {customReports.length} custom report
+              {modules.length === 1 ? "" : "s"}
+              {hiddenReports.length > 0 && (
+                <> ({hiddenReports.length} hidden)</>
+              )}{" "}
+              · {customReports.length} custom report
               {customReports.length === 1 ? "" : "s"}.
             </p>
             <p className="text-xs text-muted-foreground mt-1">
-              System reports are code-defined and read-only. Custom reports
-              let you compose your own from the schema — pick an entity,
-              choose columns and filters, save, and email on a schedule via{" "}
+              System reports come with OpsHub, but you own their
+              presentation — open one and use <strong>Customize</strong> to
+              rename it, relabel/hide/reorder columns, cap rows, or hide it
+              entirely. Custom reports let you compose your own from the
+              schema — pick an entity, choose columns and filters, save, and
+              email on a schedule via{" "}
               <Link
                 href="/admin/scheduled-tasks"
                 className="text-primary hover:underline"
@@ -175,7 +199,7 @@ export default async function AdminReportsPage() {
                   className="flex items-center gap-3 rounded border border-border p-3 hover:border-primary hover:bg-muted/40 transition-colors"
                 >
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <p className="text-sm font-semibold">{r.name}</p>
                       <Badge variant="outline" className="text-[10px] font-mono">
                         {r.key}
@@ -185,10 +209,20 @@ export default async function AdminReportsPage() {
                           schedulable
                         </Badge>
                       )}
+                      {r.customized && (
+                        <Badge variant="secondary" className="text-[10px]">
+                          customized
+                        </Badge>
+                      )}
                     </div>
                     <p className="text-xs text-muted-foreground mt-0.5">
                       {r.description}
                     </p>
+                    {r.name !== r.stockName && (
+                      <p className="text-[10px] text-muted-foreground mt-0.5">
+                        Built-in name: {r.stockName}
+                      </p>
+                    )}
                   </div>
                   <ArrowRight className="h-4 w-4 text-muted-foreground" />
                 </Link>
@@ -197,6 +231,49 @@ export default async function AdminReportsPage() {
           </CardContent>
         </Card>
       ))}
+
+      {hiddenReports.length > 0 && (
+        <Card className="mb-4 border-dashed">
+          <CardContent className="py-4">
+            <details>
+              <summary className="cursor-pointer text-sm font-medium flex items-center gap-2">
+                <EyeOff className="h-4 w-4 text-muted-foreground" />
+                Hidden reports ({hiddenReports.length})
+              </summary>
+              <p className="text-xs text-muted-foreground mt-2 mb-3">
+                Hidden reports don&apos;t appear in pickers, the daily
+                digest, or scheduled sends. Open one and un-hide it under
+                Customize to bring it back.
+              </p>
+              <div className="space-y-2">
+                {hiddenReports.map((r) => (
+                  <Link
+                    key={r.key}
+                    href={`/admin/reports/${r.key}`}
+                    className="flex items-center gap-3 rounded border border-border p-3 opacity-70 hover:opacity-100 hover:border-primary transition-all"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <p className="text-sm font-semibold">{r.name}</p>
+                        <Badge variant="outline" className="text-[10px] font-mono">
+                          {r.key}
+                        </Badge>
+                        <Badge variant="secondary" className="text-[10px]">
+                          hidden
+                        </Badge>
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {r.description}
+                      </p>
+                    </div>
+                    <ArrowRight className="h-4 w-4 text-muted-foreground" />
+                  </Link>
+                ))}
+              </div>
+            </details>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
