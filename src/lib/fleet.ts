@@ -34,8 +34,12 @@ export function maintenanceDueState(
   // Retired/sold vehicles never nag.
   if (vehicle.status === "RETIRED" || vehicle.status === "SOLD") return "none";
   if (!vehicle.nextServiceDate) return "none";
+  // Instant comparison, matching scheduleDueState / registrationDueState —
+  // whole-day math here used to keep a vehicle due earlier today on
+  // "due-soon" until a full day had passed while the schedule paths
+  // already showed "overdue".
+  if (vehicle.nextServiceDate.getTime() < now.getTime()) return "overdue";
   const days = differenceInDays(vehicle.nextServiceDate, now);
-  if (days < 0) return "overdue";
   if (days <= MAINTENANCE_DUE_WINDOW_DAYS) return "due-soon";
   return "scheduled";
 }
