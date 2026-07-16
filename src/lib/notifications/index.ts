@@ -253,23 +253,39 @@ export async function notify<K extends TemplateKey = TemplateKey>(
         if (!user.hasLoginAccess) continue;
         // Per-user email mute (set on /notifications → Preferences).
         if (prefByUser.get(user.id)?.muteEmail) continue;
-        await sendFromTemplate(params.email.templateKey, renderFor(user.name), {
-          to: user.email,
-          entityType: params.entityType,
-          entityId: params.entityId,
-        });
+        // Per-recipient isolation: one rejected send (e.g. a template
+        // render throw, which escapes sendFromTemplate's driver-level
+        // catch) must not starve the remaining recipients.
+        try {
+          await sendFromTemplate(params.email.templateKey, renderFor(user.name), {
+            to: user.email,
+            entityType: params.entityType,
+            entityId: params.entityId,
+          });
+        } catch (err) {
+          log.error("notifications.email", "Email delivery failed", err, {
+            recipientId: user.id,
+          });
+        }
       }
 
       // Raw external addresses from the rule get their own copies.
       for (const address of expandRule?.extraEmails ?? []) {
         if (!address.includes("@")) continue;
-        await sendFromTemplate(params.email.templateKey, renderFor("team"), {
-          to: address,
-          entityType: params.entityType,
-          entityId: params.entityId,
-        });
+        try {
+          await sendFromTemplate(params.email.templateKey, renderFor("team"), {
+            to: address,
+            entityType: params.entityType,
+            entityId: params.entityId,
+          });
+        } catch (err) {
+          log.error("notifications.email", "Email delivery failed", err);
+        }
       }
     } catch (err) {
+      // Backstop for failures outside the per-send isolation (e.g.
+      // building renderFor inputs) — notify() itself must never throw
+      // over email problems once in-app rows are written.
       log.error("notifications.email", "Email delivery failed", err);
     }
   }
