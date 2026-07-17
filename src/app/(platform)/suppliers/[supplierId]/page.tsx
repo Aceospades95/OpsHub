@@ -160,12 +160,18 @@ export default async function SupplierDetailPage({ params }: Props) {
                 )}
                 {supplier.contactEmail && (
                   <p className="flex items-center gap-2 text-muted-foreground">
-                    <Mail className="h-4 w-4" /> {supplier.contactEmail}
+                    <Mail className="h-4 w-4" />{" "}
+                    <a href={`mailto:${supplier.contactEmail}`} className="text-primary hover:underline truncate">
+                      {supplier.contactEmail}
+                    </a>
                   </p>
                 )}
                 {supplier.contactPhone && (
                   <p className="flex items-center gap-2 text-muted-foreground">
-                    <Phone className="h-4 w-4" /> {supplier.contactPhone}
+                    <Phone className="h-4 w-4" />{" "}
+                    <a href={`tel:${supplier.contactPhone}`} className="text-primary hover:underline">
+                      {supplier.contactPhone}
+                    </a>
                   </p>
                 )}
                 {supplier.location && (

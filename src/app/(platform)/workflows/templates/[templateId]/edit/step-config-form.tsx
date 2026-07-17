@@ -13,11 +13,37 @@ interface EmailTemplateOption {
   subject: string;
 }
 
+interface UserOption {
+  id: string;
+  name: string;
+}
+
 interface Props {
   stepType: WorkflowStepType;
   config: unknown;
   onChange: (next: unknown) => void;
   emailTemplates: EmailTemplateOption[];
+  users: UserOption[];
+}
+
+/**
+ * Options for the "Specific user" pickers. A saved id that no longer
+ * resolves (departed / deactivated user) stays selectable as a marked
+ * entry so opening the editor never silently rewrites the step.
+ */
+function userOptions(
+  users: UserOption[],
+  current: unknown
+): { label: string; value: string }[] {
+  const opts = users.map((u) => ({ label: u.name, value: u.id }));
+  if (
+    typeof current === "string" &&
+    current.length > 0 &&
+    !users.some((u) => u.id === current)
+  ) {
+    opts.push({ label: `Unknown user (${current.slice(0, 8)}…) — pick a replacement`, value: current });
+  }
+  return opts;
 }
 
 /**
@@ -52,7 +78,7 @@ function withUnmappedOption(
  * Each branch reads/writes the same `config` object, but with the keys
  * matching that step type's config interface in step-types.ts.
  */
-export function StepConfigForm({ stepType, config, onChange, emailTemplates }: Props) {
+export function StepConfigForm({ stepType, config, onChange, emailTemplates, users }: Props) {
   // Pull keys off the typed-ish config blob with safe defaults so an
   // empty config never crashes the form on first render.
   const c = (config as Record<string, unknown>) ?? {};
@@ -155,11 +181,12 @@ export function StepConfigForm({ stepType, config, onChange, emailTemplates }: P
             )}
           />
           {(c.assignee as string) === "specific_user" && (
-            <Input
-              label="User id"
+            <Select
+              label="User"
               value={(c.assigneeUserId as string) ?? ""}
               onChange={(e) => patch({ assigneeUserId: e.target.value })}
-              placeholder="cuid of the target user"
+              placeholder="Select a user"
+              options={userOptions(users, c.assigneeUserId)}
             />
           )}
           <Input
@@ -275,10 +302,12 @@ export function StepConfigForm({ stepType, config, onChange, emailTemplates }: P
             )}
           />
           {(c.approver as string) === "specific_user" && (
-            <Input
-              label="Approver user id"
+            <Select
+              label="Approver"
               value={(c.approverUserId as string) ?? ""}
               onChange={(e) => patch({ approverUserId: e.target.value })}
+              placeholder="Select an approver"
+              options={userOptions(users, c.approverUserId)}
             />
           )}
           <Textarea

@@ -36,6 +36,7 @@ import {
   saveReportOverride,
   resetReportOverride,
 } from "@/actions/reports";
+import { useConfirm } from "@/components/shared/use-confirm";
 
 interface StockColumn {
   key: string;
@@ -106,6 +107,7 @@ export function ReportCustomizePanel({
   onSaved,
 }: Props) {
   const router = useRouter();
+  const { confirm, ConfirmDialog } = useConfirm();
   const [open, setOpen] = useState(false);
   const [isSaving, startSave] = useTransition();
 
@@ -213,14 +215,14 @@ export function ReportCustomizePanel({
     });
   };
 
-  const handleReset = () => {
-    if (
-      !window.confirm(
-        "Reset this report to its built-in name, description, and columns?"
-      )
-    ) {
-      return;
-    }
+  const handleReset = async () => {
+    const ok = await confirm({
+      title: "Reset to built-in defaults?",
+      message:
+        "This report goes back to its built-in name, description, and columns everywhere it appears.",
+      confirmLabel: "Reset",
+    });
+    if (!ok) return;
     setStatus(null);
     startSave(async () => {
       const result = await resetReportOverride(reportKey);
@@ -242,6 +244,7 @@ export function ReportCustomizePanel({
 
   return (
     <Card className="mt-6">
+      <ConfirmDialog />
       <CardHeader className="py-4">
         <button
           type="button"

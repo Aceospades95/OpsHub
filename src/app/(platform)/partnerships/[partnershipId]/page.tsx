@@ -243,12 +243,18 @@ export default async function PartnershipDetailPage({ params }: Props) {
                 {partnership.primaryContactName && <p className="font-medium">{partnership.primaryContactName}</p>}
                 {partnership.primaryContactEmail && (
                   <p className="flex items-center gap-2 text-muted-foreground">
-                    <Mail className="h-4 w-4" /> {partnership.primaryContactEmail}
+                    <Mail className="h-4 w-4" />{" "}
+                    <a href={`mailto:${partnership.primaryContactEmail}`} className="text-primary hover:underline truncate">
+                      {partnership.primaryContactEmail}
+                    </a>
                   </p>
                 )}
                 {partnership.primaryContactPhone && (
                   <p className="flex items-center gap-2 text-muted-foreground">
-                    <Phone className="h-4 w-4" /> {partnership.primaryContactPhone}
+                    <Phone className="h-4 w-4" />{" "}
+                    <a href={`tel:${partnership.primaryContactPhone}`} className="text-primary hover:underline">
+                      {partnership.primaryContactPhone}
+                    </a>
                   </p>
                 )}
                 {partnership.address && (

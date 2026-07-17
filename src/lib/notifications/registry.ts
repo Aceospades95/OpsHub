@@ -45,6 +45,14 @@ export const NOTIFICATION_TYPE_REGISTRY: NotificationTypeInfo[] = [
     emailsByDefault: true,
   },
   {
+    key: "task-due-soon",
+    label: NOTIFICATION_TYPE_LABELS["task-due-soon"],
+    trigger:
+      "The task-due-reminders job finds an open task due within its lead window (or overdue) — once per due date",
+    defaultRecipients: "The task's assignee (creator when unassigned)",
+    emailsByDefault: true,
+  },
+  {
     key: "mention",
     label: NOTIFICATION_TYPE_LABELS.mention,
     trigger: "Someone @mentions a user in a comment",

@@ -55,6 +55,7 @@ interface DirectoryUser {
   role: string;
   isActive: boolean;
   hasLoginAccess: boolean;
+  notificationEmailDigest: boolean;
 }
 
 function user(id: string, overrides: Partial<DirectoryUser> = {}): DirectoryUser {
@@ -65,6 +66,7 @@ function user(id: string, overrides: Partial<DirectoryUser> = {}): DirectoryUser
     role: "CONTRIBUTOR",
     isActive: true,
     hasLoginAccess: true,
+    notificationEmailDigest: false,
     ...overrides,
   };
 }
@@ -75,7 +77,8 @@ const ada = user("u-ada", { name: "Ada", email: "ada@example.com", role: "ADMIN"
 const idleAdmin = user("u-idle", { name: "Idle", role: "ADMIN", isActive: false });
 const max = user("u-max", { name: "Max", email: "max@example.com", role: "MANAGER" });
 const ned = user("u-ned", { name: "Ned", email: "ned@example.com", hasLoginAccess: false });
-const CAST = [alice, bob, ada, idleAdmin, max, ned];
+const dee = user("u-dee", { name: "Dee", email: "dee@example.com", notificationEmailDigest: true });
+const CAST = [alice, bob, ada, idleAdmin, max, ned, dee];
 
 function rule(overrides: Partial<NotificationRule> = {}): NotificationRule {
   return {
@@ -110,7 +113,13 @@ function seedUsers(users: DirectoryUser[]) {
       if (idFilter) {
         return users
           .filter((u) => idFilter.includes(u.id) && u.isActive)
-          .map(({ id, name, email, hasLoginAccess }) => ({ id, name, email, hasLoginAccess }));
+          .map(({ id, name, email, hasLoginAccess, notificationEmailDigest }) => ({
+            id,
+            name,
+            email,
+            hasLoginAccess,
+            notificationEmailDigest,
+          }));
       }
       return users.filter((u) => u.isActive).map(({ id, role }) => ({ id, role }));
     }
@@ -544,16 +553,33 @@ describe("recipient expansion", () => {
     expect(prefFindMany).not.toHaveBeenCalled();
   });
 
-  it("a no-login user still gets the in-app row but never an email", async () => {
+  it("a no-login user gets neither an in-app row nor an email (dead-weight rows skipped)", async () => {
     const created = await notify({
       ...base,
       recipientId: "u-ned",
       email: genericEmail(),
     });
 
-    expect(createdRecipients()).toEqual(["u-ned"]);
-    expect(created).toHaveLength(1);
+    // Ned can never open /notifications, so no row is written for him.
+    expect(createManyAndReturn).not.toHaveBeenCalled();
+    expect(created).toHaveLength(0);
     expect(mockedSend).not.toHaveBeenCalled();
+  });
+
+  it("a digest-mode user keeps the in-app row but skips the immediate email", async () => {
+    const created = await notify({
+      ...base,
+      recipientId: ["u-dee", "u-alice"],
+      email: genericEmail(),
+    });
+
+    // Both rows exist — digest mode only affects the email channel.
+    expect(createdRecipients().sort()).toEqual(["u-alice", "u-dee"]);
+    expect(created).toHaveLength(2);
+    // Only Alice gets a real-time email; Dee's batches into the daily
+    // digest job instead.
+    expect(mockedSend).toHaveBeenCalledTimes(1);
+    expect(mockedSend.mock.calls[0][2]?.to).toBe("alice@example.com");
   });
 
   it("empty recipient list with no rule sends nothing and skips all user queries", async () => {

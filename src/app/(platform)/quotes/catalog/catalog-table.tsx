@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { toast } from "sonner";
 import { useFormState } from "react-dom";
 import { useRouter } from "next/navigation";
 import { Plus, Pencil, Archive } from "lucide-react";
@@ -163,7 +164,7 @@ function ArchiveButton({ id }: { id: string }) {
       const fd = new FormData();
       fd.set("id", id);
       const res = await deleteCatalogItem(undefined, fd);
-      if (res && "error" in res && res.error) alert(res.error);
+      if (res && "error" in res && res.error) toast.error(res.error);
       else router.refresh();
     });
   }

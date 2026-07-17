@@ -93,7 +93,7 @@ export default async function AdminReportDetailPage({
             This report is <strong>hidden</strong> — it&apos;s excluded from
             the reports list, the scheduled-task picker, and the daily
             digest, and existing scheduled sends skip it with a warning.
-            Un-hide it under <strong>Customize this report</strong> below.
+            Un-hide it in the customization panel below.
           </span>
         </div>
       )}

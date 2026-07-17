@@ -25,7 +25,7 @@ export default async function WorkflowTemplateEditPage({ params }: Props) {
     );
   }
 
-  const [template, emailTemplates, projects] = await Promise.all([
+  const [template, emailTemplates, projects, users] = await Promise.all([
     db.workflowTemplate.findUnique({
       where: { id: templateId },
       include: {
@@ -43,6 +43,13 @@ export default async function WorkflowTemplateEditPage({ params }: Props) {
     // serializable prop.
     db.project.findMany({
       where: { status: { in: ["PLANNING", "ACTIVE"] }, deletedAt: null },
+      select: { id: true, name: true },
+      orderBy: { name: "asc" },
+    }),
+    // Login-capable users for the "Specific user" assignee/approver
+    // pickers — a dropdown of names instead of a raw cuid input.
+    db.user.findMany({
+      where: { isActive: true, hasLoginAccess: true },
       select: { id: true, name: true },
       orderBy: { name: "asc" },
     }),
@@ -74,6 +81,7 @@ export default async function WorkflowTemplateEditPage({ params }: Props) {
           isRequired: s.isRequired,
         }))}
         emailTemplates={emailTemplates}
+        users={users}
         canDelete={perms.canDelete}
       />
       <div className="mt-6">

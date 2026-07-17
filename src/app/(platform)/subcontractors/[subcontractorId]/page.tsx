@@ -255,12 +255,18 @@ export default async function SubcontractorDetailPage({ params }: Props) {
                 {sub.primaryContactName && <p className="font-medium">{sub.primaryContactName}</p>}
                 {sub.primaryContactEmail && (
                   <p className="flex items-center gap-2 text-muted-foreground">
-                    <Mail className="h-4 w-4" /> {sub.primaryContactEmail}
+                    <Mail className="h-4 w-4" />{" "}
+                    <a href={`mailto:${sub.primaryContactEmail}`} className="text-primary hover:underline truncate">
+                      {sub.primaryContactEmail}
+                    </a>
                   </p>
                 )}
                 {sub.primaryContactPhone && (
                   <p className="flex items-center gap-2 text-muted-foreground">
-                    <Phone className="h-4 w-4" /> {sub.primaryContactPhone}
+                    <Phone className="h-4 w-4" />{" "}
+                    <a href={`tel:${sub.primaryContactPhone}`} className="text-primary hover:underline">
+                      {sub.primaryContactPhone}
+                    </a>
                   </p>
                 )}
                 {sub.address && (

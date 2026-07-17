@@ -337,6 +337,10 @@ model User {
   /// When enrollment was switched on — days before this are never
   /// "missing", so enrolling someone mid-week doesn't retro-nag them.
   workLogRequiredSince DateTime?
+  /// When true, notification emails batch into one daily digest
+  /// (the notification-email-digest job) instead of sending
+  /// immediately. In-app notifications are unaffected.
+  notificationEmailDigest Boolean @default(false)
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 
@@ -529,6 +533,10 @@ model Task {
   /// "assigned tasks" from Chat/Docs, and Gmail-linked tasks, 403 on
   /// PATCH). We still pull these, but never push — see google-tasks/sync.
   sourceReadOnly Boolean @default(false)
+  /// The dueDate the task-due-reminders job last notified about.
+  /// Re-arms automatically when dueDate changes (mirrors
+  /// BidOpportunity.dueNotifiedFor).
+  dueNotifiedFor DateTime?
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
   /// Soft-delete tombstone — see Project.deletedAt comment.
@@ -1623,6 +1631,10 @@ model Notification {
    * Read timestamp — null means unread
    */
   readAt      DateTime?
+  /// Set when the notification-email-digest job included this row in
+  /// a digest email (only stamped for digest-mode recipients). Null =
+  /// not yet digested.
+  digestedAt  DateTime?
   createdAt   DateTime  @default(now())
 
   recipient User  @relation("NotificationRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
@@ -1630,6 +1642,7 @@ model Notification {
 
   @@index([recipientId, readAt])
   @@index([recipientId, createdAt])
+  @@index([digestedAt])
   @@index([entityType, entityId])
   @@index([type])
 }

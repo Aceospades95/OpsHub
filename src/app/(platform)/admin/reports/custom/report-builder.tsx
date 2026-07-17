@@ -190,7 +190,10 @@ export function ReportBuilder({
           return;
         }
         if (!reportId && "id" in res) {
-          router.push(`/admin/reports/custom/${res.id}/edit`);
+          // Land on the report VIEW (it runs immediately) rather than
+          // the edit form — after saving, people want to see results;
+          // Edit is one click away from there.
+          router.push(`/admin/reports/custom/${res.id}`);
           return;
         }
         router.refresh();

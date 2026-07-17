@@ -169,7 +169,13 @@ export async function notify<K extends TemplateKey = TemplateKey>(
 
   const users = await db.user.findMany({
     where: { id: { in: Array.from(candidateIds) }, isActive: true },
-    select: { id: true, name: true, email: true, hasLoginAccess: true },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      hasLoginAccess: true,
+      notificationEmailDigest: true,
+    },
   });
 
   // Per-user mutes (set on /notifications → Preferences) apply after
@@ -183,8 +189,10 @@ export async function notify<K extends TemplateKey = TemplateKey>(
       : [];
   const prefByUser = new Map(prefs.map((p) => [p.userId, p]));
 
+  // No-login placeholder users can never open /notifications — writing
+  // rows for them is dead weight (they're already skipped for email).
   const inAppRecipients = users
-    .filter((u) => !prefByUser.get(u.id)?.muteInApp)
+    .filter((u) => u.hasLoginAccess && !prefByUser.get(u.id)?.muteInApp)
     .map((u) => u.id);
 
   // Write one row per recipient. createManyAndReturn gives us the
@@ -253,6 +261,10 @@ export async function notify<K extends TemplateKey = TemplateKey>(
         if (!user.hasLoginAccess) continue;
         // Per-user email mute (set on /notifications → Preferences).
         if (prefByUser.get(user.id)?.muteEmail) continue;
+        // Digest mode: the in-app row above is the record; the
+        // notification-email-digest job batches it into one daily
+        // email instead of an immediate send.
+        if (user.notificationEmailDigest) continue;
         // Per-recipient isolation: one rejected send (e.g. a template
         // render throw, which escapes sendFromTemplate's driver-level
         // catch) must not starve the remaining recipients.

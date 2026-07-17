@@ -516,9 +516,40 @@ the import-framework commit):
   exceptions × termination × ISO-week edges) and fleet schedule
   boundary states.
 
-Remaining backlog (small): quote template variants, notification
-digests, `task-due-soon` job, a user-picker for workflow
-assign-task/approval steps.
+**Phase E — polish batch — ✅ shipped 2026-07-17**
+- *task-due-reminders job*: open tasks due within a tunable lead window
+  (or overdue) remind the assignee — creator when unassigned — once per
+  due date (`Task.dueNotifiedFor` re-arms on reschedule, mirroring
+  bids); wired through the `task-due-soon` delivery rule.
+- *Daily email digest*: per-user opt-in on /notifications → Preferences.
+  While on, `notify()` writes the in-app row but skips the immediate
+  email; the `notification-email-digest` job sends one daily email
+  listing the new items (`Notification.digestedAt` keeps it idempotent;
+  enabling stamps the backlog so day one doesn't replay history).
+- *Workflow "Specific user" pickers are real dropdowns* — the
+  assign-task and approval steps had a raw "cuid of the target user"
+  text input; they now list login-capable users by name (departed
+  users' saved ids stay selectable, marked, so opening the editor never
+  silently rewrites a step).
+- *Custom-report builder Save lands on the report view* (it runs
+  immediately) instead of the edit form.
+- *Engine hygiene*: no-login placeholder users no longer accumulate
+  in-app rows they can never read.
+- *Paper-cut sweep* (agent-assisted, whole-app): the one remaining
+  native `window.confirm` (report Reset) moved to the styled confirm
+  dialog; two `alert()` error paths became toasts (quote templates +
+  catalog); mixed date formats on the team profile unified to
+  `MMM d, yyyy`; supplier/subcontractor/partnership contact email +
+  phone are now `mailto:`/`tel:` links (matching certifications); fleet
+  maintenance + disciplinary delete/acknowledge buttons disable while
+  their mutation is in flight; the orphaned `convertQuoteToInvoice`
+  stub (a menu item that never existed) was deleted. The sweep's other
+  ten categories — dead buttons, placeholder text, empty states,
+  cross-links, confirm coverage, loading states, console leftovers,
+  unreachable registry entries, copy consistency, icon aria-labels —
+  came back clean.
+
+Remaining backlog (small): quote template variants.
 
 Phase B before C is deliberate: the work-log module's entire value is its
 *rules-aware reminders*, which want the notification engine to exist

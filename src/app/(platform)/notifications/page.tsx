@@ -10,9 +10,13 @@ import { Bell } from "lucide-react";
 export default async function NotificationsPage() {
   const user = await requireAuth();
 
-  const [notifications, myPrefs] = await Promise.all([
+  const [notifications, myPrefs, me] = await Promise.all([
     getUserNotifications(user.id, { limit: 100 }),
     db.userNotificationPref.findMany({ where: { userId: user.id } }),
+    db.user.findUnique({
+      where: { id: user.id },
+      select: { notificationEmailDigest: true },
+    }),
   ]);
 
   return (
@@ -29,6 +33,7 @@ export default async function NotificationsPage() {
           muteInApp: p.muteInApp,
           muteEmail: p.muteEmail,
         }))}
+        emailDigest={me?.notificationEmailDigest ?? false}
       />
 
       {notifications.length === 0 ? (
