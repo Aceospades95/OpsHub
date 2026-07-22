@@ -149,9 +149,29 @@ export default async function TasksPage({
     }),
   ]);
 
+  // Google list names for the small list chips (ids → titles across
+  // all owners; Google list ids are globally unique).
+  const googleListIds = Array.from(
+    new Set(tasks.map((t) => t.googleListId).filter((v): v is string => Boolean(v)))
+  );
+  const googleLists = googleListIds.length
+    ? await db.googleTaskList.findMany({
+        where: { listId: { in: googleListIds } },
+        select: { listId: true, title: true },
+      })
+    : [];
+  const listTitleById = new Map(googleLists.map((l) => [l.listId, l.title]));
+
   // isGoogle drives the "synced with Google" mark on rows; sourceLink
   // (the Gmail/Docs link Google carries) rides along from the model.
-  const taskRows = tasks.map((t) => ({ ...t, isGoogle: t.sourceType === "google_tasks" }));
+  const taskRows = tasks.map((t) => ({
+    ...t,
+    isGoogle: t.sourceType === "google_tasks",
+    googleListTitle:
+      t.sourceType === "google_tasks" && t.googleListId
+        ? (listTitleById.get(t.googleListId) ?? null)
+        : null,
+  }));
 
   const activeTasks = taskRows.filter((t) => t.status !== "DONE" && t.status !== "CANCELLED");
   const completedTasks = taskRows.filter((t) => t.status === "DONE" || t.status === "CANCELLED");
@@ -287,6 +307,7 @@ type TaskRow = {
   assignee: { id: string; name: string } | null;
   /** True when the task is synced with someone's Google Tasks. */
   isGoogle: boolean;
+  googleListTitle?: string | null;
   /** Gmail/Docs link Google carries on the task, if any. */
   sourceLink: string | null;
 };
@@ -375,6 +396,14 @@ function ProjectGroupedTasks({ tasks }: { tasks: TaskRow[] }) {
                               className="h-3 w-3 text-muted-foreground shrink-0"
                               aria-label="Synced with Google Tasks"
                             />
+                          )}
+                          {task.googleListTitle && (
+                            <span
+                              className="text-[10px] text-muted-foreground bg-background/60 border border-border/50 rounded px-1 shrink-0"
+                              title={`Google list: ${task.googleListTitle}`}
+                            >
+                              {task.googleListTitle}
+                            </span>
                           )}
                           {!isDone && (
                             <StatusBadge status={task.priority} className="text-[10px]" />

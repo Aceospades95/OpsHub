@@ -383,6 +383,7 @@ model User {
   createdCustomReports           CustomReport[]                      @relation("CustomReportCreator")
   ownedProjects                  Project[]                           @relation("ProjectOwner")
   googleTasksIntegration         GoogleTasksIntegration?
+  googleTaskLists                GoogleTaskList[]
   assignedVehicles               Vehicle[]                           @relation("VehicleAssignee")
   disciplinaryReports            DisciplinaryReport[]                @relation("DisciplinaryEmployee")
   issuedDisciplinaryReports      DisciplinaryReport[]                @relation("DisciplinaryIssuer")
@@ -533,6 +534,10 @@ model Task {
   /// "assigned tasks" from Chat/Docs, and Gmail-linked tasks, 403 on
   /// PATCH). We still pull these, but never push — see google-tasks/sync.
   sourceReadOnly Boolean @default(false)
+  /// Google tasklist id this task lives in (denormalized from the
+  /// "<tasklistId>:<taskId>" sourceId so the UI can show/group by the
+  /// list without string surgery). Null for OpsHub-native tasks.
+  googleListId String?
   /// The dueDate the task-due-reminders job last notified about.
   /// Re-arms automatically when dueDate changes (mirrors
   /// BidOpportunity.dueNotifiedFor).
@@ -1769,6 +1774,29 @@ model GoogleTasksIntegration {
   updatedAt            DateTime  @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+/// Per-user mirror of the Google Tasks lists on the connected account.
+/// Refreshed on every sync from the tasklists fetch the pull already
+/// makes (no extra API calls). Powers list grouping/badges in the UI
+/// and the destination picker for send-to-Google. A list missing from
+/// the account is deleted in Google — the sync soft-deletes its tasks
+/// and removes the mirror row.
+model GoogleTaskList {
+  id         String   @id @default(cuid())
+  userId     String
+  /// Google's tasklist id.
+  listId     String
+  title      String
+  isDefault  Boolean  @default(false)
+  /// Stamped by every sync that saw this list on the account.
+  lastSeenAt DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, listId])
 }
 
 // ─── QUOTES ─────────────────────────────────────────────

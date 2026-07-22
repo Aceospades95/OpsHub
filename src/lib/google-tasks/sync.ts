@@ -138,6 +138,50 @@ export async function syncGoogleTasksForUser(userId: string): Promise<SyncResult
       /* alias fallback below */
     }
 
+    // ── Mirror the account's lists (names power grouping/badges and
+    // the send-to-Google picker; the fetch above is already paid for).
+    // A mirror row whose list vanished from the account means the list
+    // was deleted in Google — mirror that: soft-delete its tasks
+    // (recoverable from the bin) and drop the mirror row.
+    const liveListIds = new Set(lists.map((l) => l.id));
+    for (const list of lists) {
+      await db.googleTaskList.upsert({
+        where: { userId_listId: { userId, listId: list.id } },
+        create: {
+          userId,
+          listId: list.id,
+          title: list.title?.trim() || "Untitled list",
+          isDefault: defaultListId != null && list.id === defaultListId,
+          lastSeenAt: syncStartedAt,
+        },
+        update: {
+          title: list.title?.trim() || "Untitled list",
+          ...(defaultListId != null ? { isDefault: list.id === defaultListId } : {}),
+          lastSeenAt: syncStartedAt,
+        },
+      });
+    }
+    const goneLists = await db.googleTaskList.findMany({
+      where: { userId, listId: { notIn: Array.from(liveListIds) } },
+    });
+    for (const gone of goneLists) {
+      const orphaned = await db.task.updateMany({
+        where: {
+          sourceType: SOURCE_TYPE,
+          sourceId: { startsWith: `${gone.listId}:` },
+          deletedAt: null,
+        },
+        data: { deletedAt: new Date() },
+      });
+      if (orphaned.count > 0) result.pulledUpdated += orphaned.count;
+      await db.googleTaskList.delete({ where: { id: gone.id } });
+      log.info("google-tasks", "List deleted in Google — mirrored", {
+        userId,
+        listId: gone.listId,
+        tasksSoftDeleted: orphaned.count,
+      });
+    }
+
     // Tasks whose OpsHub row was written by THIS pull — the push phase
     // skips them so a pull-write doesn't echo straight back to Google.
     const pulledIds = new Set<string>();
@@ -180,6 +224,7 @@ export async function syncGoogleTasksForUser(userId: string): Promise<SyncResult
                 createdById: userId,
                 sourceType: SOURCE_TYPE,
                 sourceId: key,
+                googleListId: list.id,
                 sourceLink: sourceLinkOf(g),
                 sourceReadOnly: isReadOnly(g),
               },
@@ -219,10 +264,18 @@ export async function syncGoogleTasksForUser(userId: string): Promise<SyncResult
             //     pull walks them exactly once to fix that.
             // Deliberately NOT added to pulledIds — an OpsHub-newer row
             // should still push.
-            const metaPatch: { sourceId?: string; sourceReadOnly?: boolean; sourceLink?: string | null } = {};
+            const metaPatch: {
+              sourceId?: string;
+              sourceReadOnly?: boolean;
+              sourceLink?: string | null;
+              googleListId?: string;
+            } = {};
             if (existing.sourceId !== key) {
               metaPatch.sourceId = key;
               metaPatch.sourceReadOnly = isReadOnly(g);
+            }
+            if (existing.googleListId !== list.id) {
+              metaPatch.googleListId = list.id;
             }
             if (existing.sourceLink !== sourceLinkOf(g)) {
               metaPatch.sourceLink = sourceLinkOf(g);
@@ -258,6 +311,7 @@ export async function syncGoogleTasksForUser(userId: string): Promise<SyncResult
               description: g.notes?.trim() || null,
               dueDate: g.due ? new Date(g.due) : null,
               sourceId: key,
+              googleListId: list.id,
               sourceLink: nextLink,
               sourceReadOnly: nextReadOnly,
               ...(nextStatus === "DONE"
@@ -334,7 +388,7 @@ export async function syncGoogleTasksForUser(userId: string): Promise<SyncResult
         if (aliased && targetList !== "@default") {
           await db.task.update({
             where: { id: task.id },
-            data: { sourceId: sourceKey(targetList, taskId) },
+            data: { sourceId: sourceKey(targetList, taskId), googleListId: targetList },
           });
         }
       } catch (err) {
@@ -394,12 +448,19 @@ export async function syncGoogleTasksForUser(userId: string): Promise<SyncResult
 }
 
 /**
- * Push a brand-new OpsHub task INTO Google (the account's default
- * list). Not part of the periodic sync (OpsHub-native tasks stay
- * native) — this is for explicit flows that want a task on the owner's
- * phone, e.g. a future "send to my Google Tasks" row action.
+ * Push a brand-new OpsHub task INTO Google. Not part of the periodic
+ * sync (OpsHub-native tasks stay native) — this is for explicit flows
+ * that want a task on the owner's phone.
+ *
+ * `targetListId` picks the destination list (from the GoogleTaskList
+ * mirror); omitted, it goes to the account's default "My Tasks" —
+ * matching where Google's own quick-add puts things.
  */
-export async function pushNewTaskToGoogle(userId: string, taskId: string): Promise<{ error?: string }> {
+export async function pushNewTaskToGoogle(
+  userId: string,
+  taskId: string,
+  targetListId?: string
+): Promise<{ error?: string }> {
   const integration = await db.googleTasksIntegration.findUnique({ where: { userId } });
   if (!integration) return { error: "Google Tasks is not connected" };
 
@@ -407,16 +468,29 @@ export async function pushNewTaskToGoogle(userId: string, taskId: string): Promi
   if (!task) return { error: "Task not found" };
   if (task.sourceType === SOURCE_TYPE) return {}; // already mirrored
 
+  // Only accept destinations the mirror knows belong to this account —
+  // a stale/foreign id degrades to the default list instead of erroring.
+  let listId: string | null = null;
+  if (targetListId) {
+    const known = await db.googleTaskList.findUnique({
+      where: { userId_listId: { userId, listId: targetListId } },
+      select: { listId: true },
+    });
+    listId = known?.listId ?? null;
+  }
+
   const accessToken = await getValidAccessToken(integration);
-  // Resolve the default list's REAL id before inserting. Storing the
-  // "@default" alias key was a duplicate-task bug: the next pull keys
-  // tasks by real list id, never matches the alias row, and re-imports
-  // the freshly pushed task as a second OpsHub row.
-  let listId = "@default";
-  try {
-    listId = (await getDefaultTasklist(accessToken)).id;
-  } catch {
-    /* alias still works for the insert; sync's alias handling covers the rest */
+  if (!listId) {
+    // Resolve the default list's REAL id before inserting. Storing the
+    // "@default" alias key was a duplicate-task bug: the next pull keys
+    // tasks by real list id, never matches the alias row, and re-imports
+    // the freshly pushed task as a second OpsHub row.
+    listId = "@default";
+    try {
+      listId = (await getDefaultTasklist(accessToken)).id;
+    } catch {
+      /* alias still works for the insert; sync's alias handling covers the rest */
+    }
   }
   const created: GoogleTask = await insertTask(accessToken, listId, {
     title: task.title,
@@ -425,7 +499,11 @@ export async function pushNewTaskToGoogle(userId: string, taskId: string): Promi
   });
   await db.task.update({
     where: { id: task.id },
-    data: { sourceType: SOURCE_TYPE, sourceId: sourceKey(listId, created.id) },
+    data: {
+      sourceType: SOURCE_TYPE,
+      sourceId: sourceKey(listId, created.id),
+      ...(listId !== "@default" ? { googleListId: listId } : {}),
+    },
   });
   return {};
 }

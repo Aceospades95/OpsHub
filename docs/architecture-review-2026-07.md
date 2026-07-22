@@ -549,7 +549,34 @@ the import-framework commit):
   unreachable registry entries, copy consistency, icon aria-labels —
   came back clean.
 
-Remaining backlog (small): quote template variants.
+**Phase F — Google Tasks list fidelity — ✅ shipped 2026-07-18**
+Models Google's own structure (lists own tasks) natively instead of
+flattening it:
+- `GoogleTaskList` mirror (per user: list id, title, default flag),
+  refreshed free on every sync from the tasklists fetch the pull
+  already makes; `Task.googleListId` stamps each synced task with its
+  list on create/update/key-migration/push-pin.
+- *My View inbox*: a "Due date | By list" toggle (sticky per browser) —
+  By list renders Google-app-style sections (default list first, then
+  custom lists; OpsHub-native tasks as their own section); flat mode
+  shows a small list chip on synced rows. /tasks rows carry the same
+  chip.
+- *Send-to-Google destination picker*: the "also add to Google Tasks"
+  option in both task dialogs offers YOUR lists (from the mirror);
+  assigning to someone else always targets their default list so
+  their personal list names stay private (server-enforced).
+- *Deleted-list cleanup*: a list removed in Google now mirror-deletes —
+  its tasks move to the recovery bin and the mirror row drops —
+  instead of leaving orphaned open to-dos.
+- Mocked-API sync suite covers the multi-list pull, mirror upsert,
+  orphan cleanup, legacy-key stamping, and destination fallback.
+Deliberate boundaries: Google Tasks has no webhooks (polling cadence
+stays user-tunable); Chat/Docs-assigned tasks remain read-only
+(Google 403s writes); OpsHub-native tasks still don't auto-copy into
+personal Google accounts — the explicit push is the bridge.
+
+Remaining backlog (small): quote template variants; Google subtask
+hierarchy + manual "My order" (phase two of list fidelity, if wanted).
 
 Phase B before C is deliberate: the work-log module's entire value is its
 *rules-aware reminders*, which want the notification engine to exist

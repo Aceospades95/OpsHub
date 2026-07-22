@@ -34,7 +34,7 @@ export default async function MyViewPage({
   ]);
   const projectWhere = scope.all ? {} : { id: { in: Array.from(scope.projectIds) } };
 
-  const [myProjects, myTasks, overviewProjects, owners, googleIntegration, myBids] =
+  const [myProjects, myTasks, overviewProjects, owners, googleIntegration, myBids, myGoogleLists] =
     await Promise.all([
       // Projects on my plate: owned, member of, or actively assigned.
       db.project.findMany({
@@ -104,6 +104,13 @@ export default async function MyViewPage({
             take: 6,
           })
         : Promise.resolve([]),
+      // List names for grouping/badges on the inbox (mirror refreshed
+      // by every sync). Last element — matches the destructure order.
+      db.googleTaskList.findMany({
+        where: { userId: user.id },
+        orderBy: [{ isDefault: "desc" }, { title: "asc" }],
+        select: { listId: true, title: true, isDefault: true },
+      }),
     ]);
 
   const overviewRows: OverviewRow[] = overviewProjects.map((p) => ({
@@ -123,6 +130,10 @@ export default async function MyViewPage({
   const projectOptions = overviewProjects
     .filter((p) => p.status === "PLANNING" || p.status === "ACTIVE")
     .map((p) => ({ id: p.id, name: p.name }));
+
+  const listTitleById = new Map(
+    myGoogleLists.map((l) => [l.listId, { title: l.title, isDefault: l.isDefault }])
+  );
 
   return (
     <div>
@@ -178,6 +189,14 @@ export default async function MyViewPage({
             project: task.project ? { id: task.project.id, name: task.project.name } : null,
             isGoogle: task.sourceType === "google_tasks",
             sourceLink: task.sourceLink ?? null,
+            listTitle:
+              task.sourceType === "google_tasks"
+                ? (listTitleById.get(task.googleListId ?? "")?.title ?? "Google Tasks")
+                : null,
+            listIsDefault:
+              task.sourceType === "google_tasks"
+                ? (listTitleById.get(task.googleListId ?? "")?.isDefault ?? false)
+                : false,
           }))}
           projects={projectOptions}
           google={{

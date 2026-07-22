@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useFormState } from "react-dom";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { GoogleListPicker } from "@/components/shared/google-list-picker";
 import { Dialog } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -78,6 +79,7 @@ export function AddTaskButton({
             <input type="checkbox" name="pushToGoogle" value="true" className="rounded" />
             Also add to the assignee&apos;s Google Tasks (needs them connected; a due date shows on their Google Calendar)
           </label>
+          <GoogleListPicker />
           <div className="flex justify-end gap-2">
             <Button type="button" variant="outline" onClick={() => setOpen(false)}>
               Cancel

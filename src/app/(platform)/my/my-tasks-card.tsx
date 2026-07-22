@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
@@ -26,6 +26,10 @@ export interface MyTaskRow {
   isGoogle: boolean;
   /** Gmail/Docs link Google carries on the task, if any. */
   sourceLink: string | null;
+  /** Google list name (null for OpsHub-native tasks). */
+  listTitle: string | null;
+  /** True when the task's list is the account default ("My Tasks"). */
+  listIsDefault: boolean;
 }
 
 const FLASH_MESSAGES: Record<string, { tone: "success" | "error"; text: string }> = {
@@ -66,6 +70,18 @@ export function MyTasksCard({
   const router = useRouter();
   const [, startTransition] = useTransition();
   const [filed, setFiled] = useState<Map<string, string>>(new Map());
+  // Google-style grouping: one section per Google list (default list
+  // first), OpsHub-native tasks as their own section. Sticky per
+  // browser, mirroring how the Google Tasks app organizes things.
+  const [groupByList, setGroupByList] = useState(false);
+  useEffect(() => {
+    setGroupByList(localStorage.getItem("ohview.my-tasks-group") === "list");
+  }, []);
+  const hasGoogleTasks = tasks.some((t) => t.isGoogle);
+  function setGrouping(byList: boolean) {
+    setGroupByList(byList);
+    localStorage.setItem("ohview.my-tasks-group", byList ? "list" : "due");
+  }
   const renderedAt = new Date(now);
 
   async function fileUnder(taskId: string, projectId: string) {
@@ -82,36 +98,7 @@ export function MyTasksCard({
 
   const flashMessage = flash ? FLASH_MESSAGES[flash] ?? null : null;
 
-  return (
-    <Card>
-      <CardHeader>
-        <div className="flex items-center justify-between flex-wrap gap-2">
-          <CardTitle className="flex items-center gap-2">
-            <CheckSquare className="h-4 w-4" />
-            My tasks ({tasks.length})
-          </CardTitle>
-          <GoogleSyncControls google={google} />
-        </div>
-      </CardHeader>
-      <CardContent>
-        {flashMessage && (
-          <p
-            className={`text-xs mb-3 ${flashMessage.tone === "success" ? "text-success" : "text-destructive"}`}
-            role="status"
-          >
-            {flashMessage.text}
-          </p>
-        )}
-
-        <MyQuickAddTask projects={projects} assigneeId={assigneeId} />
-
-        {tasks.length === 0 ? (
-          <p className="text-sm text-muted-foreground mt-3">
-            No open tasks{google.connected ? " — quick-adds in Google land here after a sync" : ""}.
-          </p>
-        ) : (
-          <div className="space-y-2 mt-3">
-            {tasks.map((task) => {
+  const renderTask = (task: MyTaskRow) => {
               const overdue = task.dueDate ? new Date(task.dueDate) < renderedAt : false;
               const filedName = filed.get(task.id);
               return (
@@ -131,6 +118,14 @@ export function MyTasksCard({
                           className="h-3 w-3 text-muted-foreground shrink-0"
                           aria-label="Synced with Google Tasks"
                         />
+                      )}
+                      {task.isGoogle && task.listTitle && !groupByList && (
+                        <span
+                          className="text-[10px] text-muted-foreground bg-muted rounded px-1 py-px shrink-0"
+                          title={`Google list: ${task.listTitle}`}
+                        >
+                          {task.listTitle}
+                        </span>
                       )}
                     </p>
                     <div className="flex items-center gap-2 text-xs text-muted-foreground flex-wrap">
@@ -182,8 +177,100 @@ export function MyTasksCard({
                   </div>
                 </div>
               );
-            })}
+  };
+
+  const groups = groupByList
+    ? (() => {
+        const out: { title: string; tasks: MyTaskRow[] }[] = [];
+        const ops = tasks.filter((t) => !t.isGoogle);
+        if (ops.length > 0) out.push({ title: "OpsHub", tasks: ops });
+        const byList = new Map<string, { isDefault: boolean; tasks: MyTaskRow[] }>();
+        for (const t of tasks) {
+          if (!t.isGoogle) continue;
+          const key = t.listTitle ?? "Google Tasks";
+          const g = byList.get(key) ?? { isDefault: t.listIsDefault, tasks: [] };
+          g.isDefault = g.isDefault || t.listIsDefault;
+          g.tasks.push(t);
+          byList.set(key, g);
+        }
+        const google = Array.from(byList.entries())
+          .sort(
+            (a, b) =>
+              Number(b[1].isDefault) - Number(a[1].isDefault) || a[0].localeCompare(b[0])
+          )
+          .map(([title, g]) => ({ title, tasks: g.tasks }));
+        return [...out, ...google];
+      })()
+    : [];
+
+
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <CardTitle className="flex items-center gap-2">
+            <CheckSquare className="h-4 w-4" />
+            My tasks ({tasks.length})
+          </CardTitle>
+          <div className="flex items-center gap-2 flex-wrap">
+            {hasGoogleTasks && (
+              <div
+                className="flex rounded border border-border overflow-hidden text-[11px]"
+                role="group"
+                aria-label="Task grouping"
+              >
+                <button
+                  type="button"
+                  onClick={() => setGrouping(false)}
+                  className={`px-2 py-1 ${!groupByList ? "bg-muted font-medium" : "text-muted-foreground hover:bg-muted/50"}`}
+                >
+                  Due date
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setGrouping(true)}
+                  className={`px-2 py-1 ${groupByList ? "bg-muted font-medium" : "text-muted-foreground hover:bg-muted/50"}`}
+                >
+                  By list
+                </button>
+              </div>
+            )}
+            <GoogleSyncControls google={google} />
           </div>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {flashMessage && (
+          <p
+            className={`text-xs mb-3 ${flashMessage.tone === "success" ? "text-success" : "text-destructive"}`}
+            role="status"
+          >
+            {flashMessage.text}
+          </p>
+        )}
+
+        <MyQuickAddTask projects={projects} assigneeId={assigneeId} />
+
+        {tasks.length === 0 ? (
+          <p className="text-sm text-muted-foreground mt-3">
+            No open tasks{google.connected ? " — quick-adds in Google land here after a sync" : ""}.
+          </p>
+        ) : (
+          groupByList ? (
+            <div className="space-y-4 mt-3">
+              {groups.map((g) => (
+                <div key={g.title}>
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-1.5">
+                    {g.title} ({g.tasks.length})
+                  </p>
+                  <div className="space-y-2">{g.tasks.map(renderTask)}</div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="space-y-2 mt-3">{tasks.map(renderTask)}</div>
+          )
         )}
       </CardContent>
     </Card>

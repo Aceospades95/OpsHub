@@ -52,3 +52,19 @@ export async function setGoogleAutoSync(minutes: number) {
   revalidatePath("/tasks");
   return { success: true };
 }
+
+/**
+ * The current user's Google task lists (from the sync's mirror), for
+ * the send-to-Google destination picker. Own lists only — assigning
+ * to someone else always targets their default list, so their personal
+ * list names stay private.
+ */
+export async function getMyGoogleTaskLists() {
+  const user = await requireAuth();
+  const lists = await db.googleTaskList.findMany({
+    where: { userId: user.id },
+    orderBy: [{ isDefault: "desc" }, { title: "asc" }],
+    select: { listId: true, title: true, isDefault: true },
+  });
+  return { lists } as const;
+}
