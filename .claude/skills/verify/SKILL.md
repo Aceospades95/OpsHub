@@ -67,6 +67,17 @@ Chromium binary: `/opt/pw-browsers/chromium-1194/chrome-linux/chrome`
   clicks (`.last()`, `getByRole`) or the click hits page copy behind it.
 - The custom-report builder's Save redirects to the EDIT page, not the
   view page.
+- `waitForLoadState("networkidle")` returns while RSC pages still show
+  their loading.tsx skeleton, and admin report pages fetch results
+  client-side after mount — reading `body` text then yields false
+  negatives. Wait for a CONCRETE element (`h1` with the record name, a
+  data row) before asserting page text; when a check fails, look at the
+  screenshot before assuming an app bug.
+- The styled `useConfirm` dialog is `div[role=alertdialog]` — click its
+  confirm button inside that scope (`.last()` picks the destructive one).
+- Seeding: enum values must match schema exactly (`CertificationType`
+  has no DIVERSITY/REGISTRATION — use COMPLIANCE/VENDOR); start the
+  seed with dependency-ordered `deleteMany` calls so re-runs are clean.
 
 ## 5. Flows worth re-driving after report/notification changes
 
