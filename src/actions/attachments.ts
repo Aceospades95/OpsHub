@@ -24,6 +24,8 @@ const LINK_ENTITY_TYPES = [
   "subcontractor",
   "partnership",
   "certification",
+  "client",
+  "bid",
 ] as const;
 
 const EMBED_ENTITY_TYPES = [
@@ -49,6 +51,8 @@ const entityModuleMap: Record<AttachmentEntityType, string> = {
   subcontractor: "subcontractors",
   partnership: "partnerships",
   certification: "certifications",
+  client: "clients",
+  bid: "bids",
 };
 
 /** Entity types whose writes are additionally bounded by the actor's
@@ -58,10 +62,14 @@ const SCOPED_ENTITY_TYPES: Partial<Record<AttachmentEntityType, ScopeEntityType>
   contract: "contract",
   tool: "tool",
   certification: "certification",
+  client: "client",
 };
 
 function getFkField(entityType: AttachmentEntityType): string {
   if (entityType === "intranet") return "intranetResourceId";
+  // Bid links hang off ExternalLink.bidOpportunityId (the model is
+  // BidOpportunity), not a nonexistent "bidId" column.
+  if (entityType === "bid") return "bidOpportunityId";
   return `${entityType}Id`;
 }
 
@@ -126,6 +134,10 @@ function findHost(
       return db.partnership.findFirst({ where, select: { id: true } });
     case "certification":
       return db.certification.findFirst({ where, select: { id: true } });
+    case "client":
+      return db.client.findFirst({ where, select: { id: true } });
+    case "bid":
+      return db.bidOpportunity.findFirst({ where, select: { id: true } });
   }
 }
 
@@ -162,6 +174,12 @@ async function revalidateHost(
       break;
     case "certification":
       revalidatePath(`/certifications/${entityId}`);
+      break;
+    case "client":
+      revalidatePath(`/clients/${entityId}`);
+      break;
+    case "bid":
+      revalidatePath(`/bids/${entityId}`);
       break;
     case "document": {
       const doc = await db.document.findUnique({
@@ -249,7 +267,11 @@ export async function deleteExternalLink(
             ? (["partnership", link.partnershipId] as const)
             : link.certificationId
               ? (["certification", link.certificationId] as const)
-              : (["intranet", link.intranetResourceId ?? ""] as const);
+              : link.clientId
+                ? (["client", link.clientId] as const)
+                : link.bidOpportunityId
+                  ? (["bid", link.bidOpportunityId] as const)
+                  : (["intranet", link.intranetResourceId ?? ""] as const);
   const denied = await authorizeAttachmentWrite(user, entityType, entityId, "canDelete");
   if (denied) return denied;
 

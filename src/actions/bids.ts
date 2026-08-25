@@ -146,7 +146,15 @@ const bidSchema = z.object({
   clientId: z.string().optional(),
   ownerId: z.string().optional(),
   lossReason: z.string().max(1000).optional(),
+  /** Who currently holds the work being bid. */
+  incumbent: z.string().max(300).optional(),
+  /** End client behind a prime/channel deal (clientId stays the contracting party). */
+  endClientId: z.string().optional(),
+  /** The contract a WON bid became. */
+  contractId: z.string().optional(),
   notes: z.string().max(10000).optional(),
+  sourceNotes: z.string().max(10000).optional(),
+  openQuestions: z.string().max(10000).optional(),
 });
 
 function parseBidForm(formData: FormData) {
@@ -163,8 +171,46 @@ function parseBidForm(formData: FormData) {
     clientId: optField(formData, "clientId"),
     ownerId: optField(formData, "ownerId"),
     lossReason: optField(formData, "lossReason"),
+    incumbent: optField(formData, "incumbent"),
+    endClientId: optField(formData, "endClientId"),
+    contractId: optField(formData, "contractId"),
     notes: optField(formData, "notes"),
+    sourceNotes: optField(formData, "sourceNotes"),
+    openQuestions: optField(formData, "openQuestions"),
   });
+}
+
+/**
+ * Existence + coherence checks for the outcome-linkage FKs. Both are
+ * SetNull relations so a bad id would only fail at the DB layer with an
+ * opaque FK error — validate up front instead. A contract must belong
+ * to the bid's (contracting) client when one is set; the END client is
+ * deliberately unconstrained (that's the point of the field).
+ * Returns an error string or null.
+ */
+async function validateBidRefs(data: {
+  endClientId?: string;
+  contractId?: string;
+  clientId?: string;
+}): Promise<string | null> {
+  if (data.endClientId) {
+    const endClient = await db.client.findFirst({
+      where: { id: data.endClientId, deletedAt: null },
+      select: { id: true },
+    });
+    if (!endClient) return "End client not found";
+  }
+  if (data.contractId) {
+    const contract = await db.contract.findFirst({
+      where: { id: data.contractId, deletedAt: null },
+      select: { id: true, clientId: true },
+    });
+    if (!contract) return "Contract not found";
+    if (data.clientId && contract.clientId !== data.clientId) {
+      return "That contract belongs to a different client";
+    }
+  }
+  return null;
 }
 
 const OUTCOME_STATUSES: BidStatus[] = ["WON", "LOST", "NO_BID", "STALE"];
@@ -201,6 +247,9 @@ export async function createBid(_prev: unknown, formData: FormData) {
   }
   const data = parsed.data;
 
+  const refError = await validateBidRefs(data);
+  if (refError) return { error: refError };
+
   const bid = await db.bidOpportunity.create({
     data: {
       title: data.title,
@@ -216,7 +265,12 @@ export async function createBid(_prev: unknown, formData: FormData) {
       clientId: data.clientId || null,
       ownerId: data.ownerId || user.id,
       lossReason: data.lossReason?.trim() || null,
+      incumbent: data.incumbent?.trim() || null,
+      endClientId: data.endClientId || null,
+      contractId: data.contractId || null,
       notes: data.notes?.trim() || null,
+      sourceNotes: data.sourceNotes?.trim() || null,
+      openQuestions: data.openQuestions?.trim() || null,
     },
   });
 
@@ -244,6 +298,9 @@ export async function updateBid(_prev: unknown, formData: FormData) {
   });
   if (!existing) return { error: "Not found" };
 
+  const refError = await validateBidRefs(data);
+  if (refError) return { error: refError };
+
   const nextStatus = data.status ?? existing.status;
   const nextDueDate = data.dueDate ? new Date(data.dueDate) : null;
   const dueDateChanged =
@@ -264,7 +321,12 @@ export async function updateBid(_prev: unknown, formData: FormData) {
       clientId: data.clientId || null,
       ownerId: data.ownerId || null,
       lossReason: data.lossReason?.trim() || null,
+      incumbent: data.incumbent?.trim() || null,
+      endClientId: data.endClientId || null,
+      contractId: data.contractId || null,
       notes: data.notes?.trim() || null,
+      sourceNotes: data.sourceNotes?.trim() || null,
+      openQuestions: data.openQuestions?.trim() || null,
       ...stageStamps(existing.status, nextStatus, existing),
       // A new deadline re-arms the due-soon notification.
       ...(dueDateChanged ? { dueNotifiedFor: null } : {}),
@@ -304,6 +366,43 @@ export async function updateBidStatusInline(_prev: unknown, formData: FormData) 
     user.id,
     `${existing.title} → ${status.toLowerCase().replace("_", " ")}`
   );
+  revalidateBid(id);
+  return { success: true };
+}
+
+/**
+ * Quick contract link from the "Won — link the contract it became"
+ * nudge on the detail page — everything else untouched. Same shape as
+ * updateBidStatusInline so the nudge doesn't have to round-trip the
+ * whole edit form.
+ */
+export async function linkBidContract(_prev: unknown, formData: FormData) {
+  const user = await requireAuth();
+  const perms = await resolveModulePerms(user.id, user.role, "bids");
+  if (!perms.canEdit) return { error: "Permission denied" };
+
+  const id = formData.get("id") as string;
+  const contractId = ((formData.get("contractId") as string) || "").trim();
+  if (!id) return { error: "ID required" };
+  if (!contractId) return { error: "Pick the contract this bid became" };
+
+  const bid = await db.bidOpportunity.findFirst({
+    where: { id, deletedAt: null },
+    select: { id: true, title: true, clientId: true },
+  });
+  if (!bid) return { error: "Not found" };
+
+  const contract = await db.contract.findFirst({
+    where: { id: contractId, deletedAt: null },
+    select: { id: true, title: true, clientId: true },
+  });
+  if (!contract) return { error: "Contract not found" };
+  if (bid.clientId && contract.clientId !== bid.clientId) {
+    return { error: "That contract belongs to a different client" };
+  }
+
+  await db.bidOpportunity.update({ where: { id }, data: { contractId } });
+  await logActivity("updated", "bid", id, user.id, `${bid.title} → linked contract "${contract.title}"`);
   revalidateBid(id);
   return { success: true };
 }

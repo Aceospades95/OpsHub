@@ -4,6 +4,13 @@
  * Required: name, clientName
  * Optional: status, description, startDate, endDate, serviceOfferingName,
  *           parentProjectName
+ *
+ * Fuzzy-duplicate guardrail: rows about to CREATE are checked against
+ * live projects on the same client by NORMALIZED name (lowercase,
+ * collapsed whitespace, trailing punctuation stripped). Create mode
+ * skips those as possible duplicates; update/upsert/fill-blanks keep
+ * their exact-key semantics and warn instead. In-file normalized
+ * duplicates are caught the same way.
  */
 
 import type { ProjectStatus } from "@prisma/client";
@@ -18,6 +25,7 @@ import {
   skipNoMatchMessage,
   warnList,
 } from "../helpers";
+import { normalizeImportName } from "./clients";
 
 const VALID_STATUSES: ProjectStatus[] = [
   "PLANNING", "ACTIVE", "ON_HOLD", "COMPLETED", "ARCHIVED",
@@ -94,7 +102,7 @@ export const projectsImporter: ImporterDefinition = {
     // round-trip per row. Disambiguate by client when the same name exists
     // under multiple clients; if it exists under only one client, accept it.
     const existingProjects = await db.project.findMany({
-      select: { id: true, name: true, clientId: true },
+      select: { id: true, name: true, clientId: true, deletedAt: true },
     });
     const projectsByNameAndClient = new Map<string, string>(); // `${nameLower}|${clientId}` -> projectId
     const projectsByNameUnique = new Map<string, string | null>(); // nameLower -> projectId, or null if ambiguous
@@ -105,6 +113,21 @@ export const projectsImporter: ImporterDefinition = {
         projectsByNameUnique.set(key, p.id);
       } else {
         projectsByNameUnique.set(key, null); // ambiguous
+      }
+    }
+    // Fuzzy-dupe guardrail: LIVE projects by (normalized name + client).
+    // Separate from the exact-key maps above — normalization only flags
+    // possible duplicates, it never drives update matching. Updated
+    // after every create so in-file variants are caught too;
+    // soft-deleted projects never flag.
+    const projectsByNormAndClient = new Map<string, { id: string; name: string }>();
+    for (const p of existingProjects) {
+      if (p.deletedAt) continue;
+      const norm = normalizeImportName(p.name);
+      if (!norm) continue;
+      const key = `${norm}|${p.clientId}`;
+      if (!projectsByNormAndClient.has(key)) {
+        projectsByNormAndClient.set(key, { id: p.id, name: p.name });
       }
     }
 
@@ -159,6 +182,29 @@ export const projectsImporter: ImporterDefinition = {
       const existingId = projectsByNameAndClient.get(matchKey) || null;
       const action = applyMode(existingId, ctx.mode);
 
+      // About to CREATE with no exact-key match — check for a live
+      // project on the SAME client whose normalized name collides
+      // ("Site 12 Build-out." vs "site 12  build-out"). Create mode
+      // skips the row as a possible duplicate; update/upsert/
+      // fill-blanks keep their exact-match semantics and just warn on
+      // the created row. Also catches normalized dupes within the file
+      // (created rows register below).
+      const norm = normalizeImportName(name);
+      const normKey = norm ? `${norm}|${clientId}` : null;
+      const normMatch =
+        action === "create" && normKey ? projectsByNormAndClient.get(normKey) : undefined;
+      if (normMatch) {
+        if ((ctx.mode ?? "create") === "create") {
+          results.push({
+            row: rowNumber,
+            status: "skipped",
+            message: `Possible duplicate of "${normMatch.name}" (same client) — skipped in "Create new only" mode. Rename the row if it really is a different project, or re-run in "Create + update" mode.`,
+          });
+          continue;
+        }
+        warnings.push(`Possible duplicate of existing project "${normMatch.name}" (same client) — created anyway`);
+      }
+
       const data = {
         name,
         clientId,
@@ -201,6 +247,9 @@ export const projectsImporter: ImporterDefinition = {
             projectsByNameUnique.set(ukey, project.id);
           } else {
             projectsByNameUnique.set(ukey, null);
+          }
+          if (normKey && !projectsByNormAndClient.has(normKey)) {
+            projectsByNormAndClient.set(normKey, { id: project.id, name });
           }
         }
       } catch (err) {

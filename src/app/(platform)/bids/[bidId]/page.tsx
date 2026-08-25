@@ -10,9 +10,12 @@ import {
   AlertTriangle,
   CalendarClock,
   ExternalLink as ExternalLinkIcon,
+  FileSignature,
   FolderOpen,
   Globe,
   Building2,
+  HelpCircle,
+  Moon,
   User,
   Trophy,
 } from "lucide-react";
@@ -20,10 +23,18 @@ import Link from "next/link";
 import { formatCalendarDate } from "@/lib/dates";
 import { formatCurrency } from "@/lib/quotes/totals";
 import { format } from "date-fns";
-import { bidDueState, bidWaitingDays, BID_STALE_HINT_DAYS } from "@/lib/bids";
+import {
+  bidDueState,
+  bidStaleness,
+  bidWaitingDays,
+  BID_STALE_HINT_DAYS,
+  BID_STATUS_LABELS,
+} from "@/lib/bids";
 import { BidActions } from "./bid-actions";
 import { StageControls } from "./stage-controls";
 import { BidAttachments } from "./bid-attachments";
+import { BidLinks } from "./bid-links";
+import { LinkContractNudge } from "./link-contract-nudge";
 import { CommentSection } from "@/components/shared/comment-section";
 
 interface Props {
@@ -48,25 +59,31 @@ export default async function BidDetailPage({ params }: Props) {
     );
   }
 
-  const [bid, portals, clients, users] = await Promise.all([
-    db.bidOpportunity.findFirst({
-      where: { id: bidId, deletedAt: null },
-      include: {
-        portal: { select: { id: true, name: true, url: true } },
-        owner: { select: { id: true, name: true } },
-        client: { select: { id: true, name: true } },
-        project: { select: { id: true, name: true, status: true } },
-        comments: {
-          include: { author: { select: { id: true, name: true } } },
-          orderBy: { createdAt: "desc" },
-        },
-        files: {
-          where: { category: "attachment" },
-          include: { uploadedBy: { select: { name: true } } },
-          orderBy: { createdAt: "desc" },
-        },
+  // Bid first — the contract picker below is filtered to its client.
+  const bid = await db.bidOpportunity.findFirst({
+    where: { id: bidId, deletedAt: null },
+    include: {
+      portal: { select: { id: true, name: true, url: true } },
+      owner: { select: { id: true, name: true } },
+      client: { select: { id: true, name: true } },
+      endClient: { select: { id: true, name: true } },
+      contract: { select: { id: true, title: true, status: true } },
+      project: { select: { id: true, name: true, status: true } },
+      links: { orderBy: { createdAt: "desc" } },
+      comments: {
+        include: { author: { select: { id: true, name: true } } },
+        orderBy: { createdAt: "desc" },
       },
-    }),
+      files: {
+        where: { category: "attachment" },
+        include: { uploadedBy: { select: { name: true } } },
+        orderBy: { createdAt: "desc" },
+      },
+    },
+  });
+  if (!bid) notFound();
+
+  const [portals, clients, users, contracts] = await Promise.all([
     perms.canEdit
       ? db.bidPortal.findMany({
           where: { isActive: true },
@@ -88,12 +105,40 @@ export default async function BidDetailPage({ params }: Props) {
           orderBy: { name: "asc" },
         })
       : Promise.resolve([] as { id: string; name: string }[]),
+    // Contract picker options — the bid's client when set, else all.
+    perms.canEdit
+      ? db.contract.findMany({
+          where: { deletedAt: null, ...(bid.clientId ? { clientId: bid.clientId } : {}) },
+          select: { id: true, title: true, projectId: true },
+          orderBy: { title: "asc" },
+        })
+      : Promise.resolve([] as { id: string; title: string; projectId: string | null }[]),
   ]);
-  if (!bid) notFound();
+
+  // Contracts already on the bid's converted project are the likeliest
+  // match — surface them first in both the nudge and the edit picker.
+  const fromBidProject = (c: { projectId: string | null }) =>
+    bid.projectId != null && c.projectId === bid.projectId;
+  const contractOptions = [...contracts]
+    .sort((a, b) => Number(fromBidProject(b)) - Number(fromBidProject(a)))
+    .map((c) => ({
+      id: c.id,
+      name: fromBidProject(c) ? `${c.title} (this bid's project)` : c.title,
+    }));
 
   const now = new Date();
   const dueState = bidDueState(bid, now);
+  const staleness = bidStaleness(bid, now);
   const waitingDays = bidWaitingDays(bid, now);
+
+  const hasOutcomeFacts =
+    bid.submittedAt != null ||
+    bid.decidedAt != null ||
+    bid.lossReason != null ||
+    bid.incumbent != null ||
+    bid.endClient != null ||
+    bid.contract != null ||
+    bid.project != null;
 
   return (
     <div>
@@ -116,11 +161,17 @@ export default async function BidDetailPage({ params }: Props) {
               clientId: bid.clientId,
               ownerId: bid.ownerId,
               lossReason: bid.lossReason,
+              incumbent: bid.incumbent,
+              endClientId: bid.endClientId,
+              contractId: bid.contractId,
               notes: bid.notes,
+              sourceNotes: bid.sourceNotes,
+              openQuestions: bid.openQuestions,
             }}
             portals={portals}
             clients={clients}
             users={users}
+            contracts={contractOptions}
             canEdit={perms.canEdit}
             canDelete={perms.canDelete}
           />
@@ -129,10 +180,18 @@ export default async function BidDetailPage({ params }: Props) {
 
       <div className="flex items-center gap-3 mb-6 flex-wrap">
         <StatusBadge status={bid.status} />
-        {dueState === "overdue" && (
-          <Badge variant="destructive" className="gap-1">
-            <AlertTriangle className="h-3 w-3" /> Response overdue
+        {staleness === "stale" ? (
+          // Long-past due date on a bid that never moved: not a to-do
+          // any more — nudge toward marking it stale (or reviving it).
+          <Badge variant="outline" className="gap-1 text-muted-foreground">
+            <Moon className="h-3 w-3" /> Gone stale — mark it or revive it
           </Badge>
+        ) : (
+          dueState === "overdue" && (
+            <Badge variant="destructive" className="gap-1">
+              <AlertTriangle className="h-3 w-3" /> Response overdue
+            </Badge>
+          )
         )}
         {dueState === "due-soon" && (
           <Badge variant="warning" className="gap-1">
@@ -176,19 +235,31 @@ export default async function BidDetailPage({ params }: Props) {
               </CardContent>
             </Card>
           )}
-          {bid.lossReason && (
-            <Card>
-              <CardHeader><CardTitle>Loss reason</CardTitle></CardHeader>
-              <CardContent>
-                <p className="text-sm whitespace-pre-wrap">{bid.lossReason}</p>
-              </CardContent>
-            </Card>
-          )}
           {bid.notes && (
             <Card>
               <CardHeader><CardTitle>Notes</CardTitle></CardHeader>
               <CardContent>
                 <p className="text-sm whitespace-pre-wrap">{bid.notes}</p>
+              </CardContent>
+            </Card>
+          )}
+          {bid.openQuestions && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <HelpCircle className="h-4 w-4 text-warning" /> Open questions
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm whitespace-pre-wrap">{bid.openQuestions}</p>
+              </CardContent>
+            </Card>
+          )}
+          {bid.sourceNotes && (
+            <Card>
+              <CardHeader><CardTitle>Source notes</CardTitle></CardHeader>
+              <CardContent>
+                <p className="text-sm whitespace-pre-wrap text-muted-foreground">{bid.sourceNotes}</p>
               </CardContent>
             </Card>
           )}
@@ -210,6 +281,86 @@ export default async function BidDetailPage({ params }: Props) {
 
         <div className="space-y-6">
           <Card>
+            <CardHeader><CardTitle>Outcome</CardTitle></CardHeader>
+            <CardContent>
+              <div className="space-y-3 text-sm">
+                {!hasOutcomeFacts && (
+                  <p className="text-muted-foreground">
+                    Still in play — nothing submitted or decided yet.
+                  </p>
+                )}
+                {bid.submittedAt && (
+                  <p className="text-muted-foreground">
+                    Submitted{" "}
+                    <span className="text-foreground font-medium">
+                      {format(bid.submittedAt, "MMM d, yyyy")}
+                    </span>
+                  </p>
+                )}
+                {bid.decidedAt && (
+                  <p className="text-muted-foreground">
+                    Decided{" "}
+                    <span className="text-foreground font-medium">
+                      {format(bid.decidedAt, "MMM d, yyyy")}
+                    </span>{" "}
+                    · {BID_STATUS_LABELS[bid.status]}
+                  </p>
+                )}
+                {bid.lossReason && (
+                  <div>
+                    <p className="text-muted-foreground">Loss reason</p>
+                    <p className="whitespace-pre-wrap">{bid.lossReason}</p>
+                  </div>
+                )}
+                {bid.incumbent && (
+                  <p className="text-muted-foreground">
+                    Incumbent: <span className="text-foreground">{bid.incumbent}</span>
+                  </p>
+                )}
+                {bid.endClient && (
+                  <p className="flex items-center gap-2 text-muted-foreground">
+                    <Building2 className="h-4 w-4" />
+                    End client:{" "}
+                    <Link
+                      href={`/clients/${bid.endClient.id}`}
+                      className="text-foreground hover:text-primary hover:underline"
+                    >
+                      {bid.endClient.name}
+                    </Link>
+                  </p>
+                )}
+                {bid.contract && (
+                  <p className="flex items-center gap-2 text-muted-foreground">
+                    <FileSignature className="h-4 w-4" />
+                    Contract:{" "}
+                    <Link
+                      href={`/contracts/${bid.contract.id}`}
+                      className="text-foreground hover:text-primary hover:underline"
+                    >
+                      {bid.contract.title}
+                    </Link>
+                  </p>
+                )}
+                {bid.project && (
+                  <p className="flex items-center gap-2 text-muted-foreground">
+                    <FolderOpen className="h-4 w-4" />
+                    Project:{" "}
+                    <Link
+                      href={`/projects/${bid.project.id}`}
+                      className="text-foreground hover:text-primary hover:underline"
+                    >
+                      {bid.project.name}
+                    </Link>
+                  </p>
+                )}
+                {bid.status === "WON" && !bid.contract && perms.canEdit && (
+                  <LinkContractNudge bidId={bid.id} contracts={contractOptions} />
+                )}
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
             <CardHeader><CardTitle>Details</CardTitle></CardHeader>
             <CardContent>
               <div className="space-y-3 text-sm">
@@ -225,16 +376,6 @@ export default async function BidDetailPage({ params }: Props) {
                   <p className="flex items-center gap-2 text-muted-foreground">
                     <CalendarClock className="h-4 w-4" />
                     Response due {formatCalendarDate(bid.dueDate, "MMM d, yyyy")}
-                  </p>
-                )}
-                {bid.submittedAt && (
-                  <p className="text-muted-foreground">
-                    Submitted {format(bid.submittedAt, "MMM d, yyyy")}
-                  </p>
-                )}
-                {bid.decidedAt && (
-                  <p className="text-muted-foreground">
-                    Decided {format(bid.decidedAt, "MMM d, yyyy")}
                   </p>
                 )}
                 {bid.portal && (
@@ -283,15 +424,25 @@ export default async function BidDetailPage({ params }: Props) {
                     </Link>
                   </p>
                 )}
-                {bid.project && (
-                  <p className="flex items-center gap-2 text-muted-foreground">
-                    <FolderOpen className="h-4 w-4" />
-                    <Link href={`/projects/${bid.project.id}`} className="hover:text-primary hover:underline">
-                      {bid.project.name}
-                    </Link>
-                  </p>
-                )}
               </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader><CardTitle>Evidence & links ({bid.links.length})</CardTitle></CardHeader>
+            <CardContent>
+              <BidLinks
+                bidId={bid.id}
+                links={bid.links.map((link) => ({
+                  id: link.id,
+                  title: link.title,
+                  url: link.url,
+                  description: link.description,
+                  source: link.source,
+                }))}
+                canEdit={perms.canEdit}
+                canDelete={perms.canDelete}
+              />
             </CardContent>
           </Card>
 

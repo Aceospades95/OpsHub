@@ -5,8 +5,9 @@ import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent } from "@/components/ui/card";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Target, CalendarClock, AlertTriangle, Hourglass, Trophy, Globe, User } from "lucide-react";
+import { Target, CalendarClock, AlertTriangle, Hourglass, Moon, Trophy, Globe, User } from "lucide-react";
 import Link from "next/link";
+import { Badge } from "@/components/ui/badge";
 import { formatCalendarDate } from "@/lib/dates";
 import { formatCurrency } from "@/lib/quotes/totals";
 import { resolveViewPreference } from "@/lib/view-preference";
@@ -18,11 +19,14 @@ import {
   BID_STATUS_LABELS,
   OPEN_BID_STATUSES,
   bidDueState,
+  bidStaleness,
   bidWaitingDays,
   BID_STALE_HINT_DAYS,
   type BidDueState,
+  type BidStaleness,
 } from "@/lib/bids";
 import { BidCreateButton } from "./bid-create-button";
+import { BidStaleAction } from "./bid-stale-action";
 import type { Prisma } from "@prisma/client";
 
 type BidRow = Prisma.BidOpportunityGetPayload<{
@@ -41,7 +45,7 @@ const GROUP_OPTIONS = [
 ] as const;
 type GroupKey = (typeof GROUP_OPTIONS)[number]["value"];
 
-const DUE_FILTERS = ["overdue", "due-soon"] as const;
+const DUE_FILTERS = ["overdue", "due-soon", "stale"] as const;
 type DueFilter = (typeof DUE_FILTERS)[number];
 
 export const metadata = { title: "Bids · OpsHub" };
@@ -109,16 +113,28 @@ export default async function BidsPage({
   const dueStates = new Map<string, BidDueState>(
     bids.map((bid) => [bid.id, bidDueState(bid, now)])
   );
+  // Splits "past due" into a real to-do ("overdue", ≤30 days past) vs
+  // rows that died quietly ("stale", >30 days past and never left
+  // IDENTIFIED/PREPARING) — so last year's bids stop reading as
+  // overdue forever.
+  const stalenessById = new Map<string, BidStaleness>(
+    bids.map((bid) => [bid.id, bidStaleness(bid, now)])
+  );
 
   const openBids = bids.filter((b) => OPEN_BID_STATUSES.includes(b.status));
   const pipelineValue = openBids.reduce((sum, b) => sum + (b.estimatedValue ?? 0), 0);
   const dueSoon = bids.filter((b) => dueStates.get(b.id) === "due-soon");
-  const overdue = bids.filter((b) => dueStates.get(b.id) === "overdue");
+  const overdue = bids.filter((b) => stalenessById.get(b.id) === "overdue");
+  const goneStale = bids.filter((b) => stalenessById.get(b.id) === "stale");
   const awaiting = bids.filter((b) => b.status === "SUBMITTED");
   const won = bids.filter((b) => b.status === "WON");
 
   const visibleBids = dueFilter
-    ? bids.filter((b) => dueStates.get(b.id) === dueFilter)
+    ? bids.filter((b) =>
+        dueFilter === "due-soon"
+          ? dueStates.get(b.id) === "due-soon"
+          : stalenessById.get(b.id) === dueFilter
+      )
     : bids;
 
   const groupKeyOf = (bid: BidRow, key: GroupKey): string | null => {
@@ -138,13 +154,35 @@ export default async function BidsPage({
     const state = dueStates.get(bid.id);
     if (!bid.dueDate) return null;
     const text = `Due ${formatCalendarDate(bid.dueDate, "MMM d, yyyy")}`;
+    // Stale rows keep the date but drop the red — it's history, not a
+    // deadline anyone is chasing.
     const cls =
-      state === "overdue"
-        ? "text-destructive font-medium"
-        : state === "due-soon"
-          ? "text-warning font-medium"
-          : "text-muted-foreground";
+      stalenessById.get(bid.id) === "stale"
+        ? "text-muted-foreground"
+        : state === "overdue"
+          ? "text-destructive font-medium"
+          : state === "due-soon"
+            ? "text-warning font-medium"
+            : "text-muted-foreground";
     return <span className={cls}>{text}</span>;
+  };
+
+  /** Stale badge + housekeeping affordance for one row. */
+  const staleControls = (bid: BidRow) => {
+    const isStale = stalenessById.get(bid.id) === "stale";
+    return (
+      <>
+        {isStale && (
+          <Badge variant="outline" className="gap-1 text-muted-foreground">
+            <Moon className="h-3 w-3" /> Stale
+          </Badge>
+        )}
+        {perms.canEdit && isStale && <BidStaleAction bidId={bid.id} action="mark-stale" />}
+        {perms.canEdit && bid.status === "STALE" && (
+          <BidStaleAction bidId={bid.id} action="revive" />
+        )}
+      </>
+    );
   };
 
   const waitingHint = (bid: BidRow) => {
@@ -174,6 +212,7 @@ export default async function BidsPage({
             )}
             {dueLine(bid)}
             {waitingHint(bid)}
+            {staleControls(bid)}
           </div>
           <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
             {bid.portal && (
@@ -230,7 +269,12 @@ export default async function BidsPage({
                 {bid.estimatedValue != null ? formatCurrency(bid.estimatedValue, bid.currency ?? "USD") : "—"}
               </td>
               <td className="px-3 py-2.5 whitespace-nowrap">{dueLine(bid) ?? "—"}</td>
-              <td className="px-3 py-2.5"><StatusBadge status={bid.status} /></td>
+              <td className="px-3 py-2.5">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <StatusBadge status={bid.status} />
+                  {staleControls(bid)}
+                </div>
+              </td>
               <td className="px-3 py-2.5 text-muted-foreground">{bid.owner?.name || "—"}</td>
             </tr>
           ))}
@@ -244,7 +288,8 @@ export default async function BidsPage({
     value: string,
     href: string,
     icon: React.ReactNode,
-    active: boolean
+    active: boolean,
+    opts?: { muted?: boolean }
   ) => (
     <Link
       href={href}
@@ -253,7 +298,9 @@ export default async function BidsPage({
       }`}
     >
       <div className="flex items-center gap-2 text-xs text-muted-foreground">{icon}{label}</div>
-      <p className="mt-1 text-xl font-semibold">{value}</p>
+      <p className={`mt-1 text-xl font-semibold ${opts?.muted ? "text-muted-foreground" : ""}`}>
+        {value}
+      </p>
     </Link>
   );
 
@@ -275,7 +322,7 @@ export default async function BidsPage({
         }
       />
 
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5 mb-6">
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6 mb-6">
         {statChip(
           "Open pipeline",
           `${openBids.length}${pipelineValue > 0 ? ` · ${formatCurrency(pipelineValue, "USD")}` : ""}`,
@@ -285,6 +332,9 @@ export default async function BidsPage({
         )}
         {statChip("Due ≤ 7 days", String(dueSoon.length), "/bids?due=due-soon", <CalendarClock className="h-3.5 w-3.5" />, dueFilter === "due-soon")}
         {statChip("Overdue", String(overdue.length), "/bids?due=overdue", <AlertTriangle className="h-3.5 w-3.5" />, dueFilter === "overdue")}
+        {/* Long-past pre-submission rows — housekeeping, not urgency,
+            so the count renders muted and stays out of Overdue. */}
+        {statChip("Gone stale", String(goneStale.length), "/bids?due=stale", <Moon className="h-3.5 w-3.5" />, dueFilter === "stale", { muted: true })}
         {statChip("Awaiting decision", String(awaiting.length), "/bids?view=table", <Hourglass className="h-3.5 w-3.5" />, false)}
         {statChip("Won", String(won.length), "/bids?view=table", <Trophy className="h-3.5 w-3.5" />, false)}
       </div>
@@ -305,9 +355,11 @@ export default async function BidsPage({
           icon={Target}
           title={dueFilter ? "Nothing in this window" : "No bids tracked yet"}
           description={
-            dueFilter
-              ? "No open bids match this due-date filter."
-              : "Add the opportunities you're evaluating and track them through award."
+            dueFilter === "stale"
+              ? "No bids have gone stale — everything past due is recent enough to still chase."
+              : dueFilter
+                ? "No open bids match this due-date filter."
+                : "Add the opportunities you're evaluating and track them through award."
           }
         />
       ) : view === "pipeline" ? (
