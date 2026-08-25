@@ -10,23 +10,30 @@ import { addExternalLink } from "@/actions/attachments";
 import { Plus } from "lucide-react";
 
 /**
- * "Evidence & links" card body for the bid detail page: the ExternalLink
- * rows that back up the record (award notices, incumbent contract pages,
- * Q&A threads, …). Reuses the shared FileList for render + delete; the
- * add dialog is bid-local rather than AddContentDialog because bids take
- * links only — the Embed tab would post to an entity type Embed rows
- * can't host.
+ * "Evidence & links" card body for entities that take ExternalLink rows
+ * but not Embeds (bids, clients): award notices, the Gmail thread or
+ * Drive folder a record's facts came from, incumbent contract pages.
+ * Reuses the shared FileList for render + delete; the add dialog is
+ * local rather than AddContentDialog because the Embed tab would post
+ * to an entity type Embed rows can't host.
+ *
+ * Grew out of the bid-detail card (bid-links.tsx) — generalized when
+ * clients gained ExternalLink support so both pages share one dialog.
  */
-export function BidLinks({
-  bidId,
+export function EvidenceLinks({
+  entityType,
+  entityId,
   links,
   canEdit,
   canDelete,
+  addDescriptionPlaceholder = "Why this link matters for this record",
 }: {
-  bidId: string;
+  entityType: "bid" | "client";
+  entityId: string;
   links: { id: string; title: string; url: string; description: string | null; source: string }[];
   canEdit: boolean;
   canDelete: boolean;
+  addDescriptionPlaceholder?: string;
 }) {
   const [open, setOpen] = useState(false);
   return (
@@ -46,8 +53,8 @@ export function BidLinks({
           >
             {() => (
               <>
-                <input type="hidden" name="entityType" value="bid" />
-                <input type="hidden" name="entityId" value={bidId} />
+                <input type="hidden" name="entityType" value={entityType} />
+                <input type="hidden" name="entityId" value={entityId} />
                 <input type="hidden" name="source" value="manual" />
                 <Input name="title" label="Title" required />
                 <Input name="url" label="URL" type="url" required placeholder="https://…" />
@@ -55,7 +62,7 @@ export function BidLinks({
                   name="description"
                   label="What this shows"
                   rows={2}
-                  placeholder="Why this link matters for the bid record"
+                  placeholder={addDescriptionPlaceholder}
                 />
               </>
             )}

@@ -524,23 +524,14 @@ export default async function DashboardPage() {
         </CardContent>
       </Card>
     ),
-  };
-
-  return (
-    <div>
-      <PageHeader
-        title="Dashboard"
-        description={`Welcome back, ${user.name}`}
-      />
-
-      {/* Renewal radar — compact 30-day roll-up across contracts,
-          certifications, insurance, agreements, fleet, and bids.
-          Rendered above the customizable grid (not as a grid card)
-          because new grid card ids must be registered in
-          lib/page-layout.ts, which belongs to another workstream. */}
-      {radarSummary && (
-        <Card className="mb-4 border-border/60 shadow-sm">
-          <CardContent className="p-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
+    // Renewal radar — compact 30-day roll-up across contracts,
+    // certifications, insurance, agreements, fleet, and bids. A real
+    // grid card (registered in lib/page-layout.ts) so admins can move
+    // or hide it like everything else; null (absent) for viewers with
+    // no radar-fed module.
+    "renewal-radar": radarSummary ? (
+      <Card className="h-full border-border/60 shadow-sm">
+        <CardContent className="h-full p-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
             <div className="flex items-center gap-2 shrink-0">
               <CalendarClock className="h-5 w-5 text-primary" />
               <p className="text-sm">
@@ -587,9 +578,17 @@ export default async function DashboardPage() {
             >
               Open radar →
             </Link>
-          </CardContent>
-        </Card>
-      )}
+        </CardContent>
+      </Card>
+    ) : null,
+  };
+
+  return (
+    <div>
+      <PageHeader
+        title="Dashboard"
+        description={`Welcome back, ${user.name}`}
+      />
 
       <PageLayout pageType="dashboard" cards={cardMap} canEdit={canEditLayout} />
     </div>

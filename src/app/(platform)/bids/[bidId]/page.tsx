@@ -33,8 +33,9 @@ import {
 import { BidActions } from "./bid-actions";
 import { StageControls } from "./stage-controls";
 import { BidAttachments } from "./bid-attachments";
-import { BidLinks } from "./bid-links";
+import { EvidenceLinks } from "@/components/shared/evidence-links";
 import { LinkContractNudge } from "./link-contract-nudge";
+import { ContactLinksCard } from "@/components/shared/contact-links-card";
 import { CommentSection } from "@/components/shared/comment-section";
 
 interface Props {
@@ -431,8 +432,10 @@ export default async function BidDetailPage({ params }: Props) {
           <Card>
             <CardHeader><CardTitle>Evidence & links ({bid.links.length})</CardTitle></CardHeader>
             <CardContent>
-              <BidLinks
-                bidId={bid.id}
+              <EvidenceLinks
+                entityType="bid"
+                entityId={bid.id}
+                addDescriptionPlaceholder="Why this link matters for the bid record"
                 links={bid.links.map((link) => ({
                   id: link.id,
                   title: link.title,
@@ -445,6 +448,11 @@ export default async function BidDetailPage({ params }: Props) {
               />
             </CardContent>
           </Card>
+
+          {/* Who we're dealing with on this pursuit — procurement
+              officer, buyer, prime's capture lead. Same rolodex card as
+              every other entity page. */}
+          <ContactLinksCard entityType="bid" entityId={bid.id} title="People" />
 
           <Card>
             <CardHeader><CardTitle>Attachments ({bid.files.length})</CardTitle></CardHeader>

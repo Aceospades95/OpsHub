@@ -48,7 +48,8 @@ export const PAGE_CARDS: Record<string, CardDefinition[]> = {
   dashboard: [
     { id: "stats", label: "Stats Cards", defaultGrid: { x: 0, y: 0, w: 12, h: 5, minW: 6, minH: 3 } },
     { id: "alerts", label: "Alerts", defaultGrid: { x: 0, y: 5, w: 12, h: 2, minW: 4, minH: 1 } },
-    { id: "my-tasks", label: "My Tasks", defaultGrid: { x: 0, y: 7, w: 4, h: 14, minW: 3, minH: 6 } },
+    { id: "renewal-radar", label: "Renewal Radar", defaultGrid: { x: 0, y: 7, w: 12, h: 2, minW: 4, minH: 1 } },
+    { id: "my-tasks", label: "My Tasks", defaultGrid: { x: 0, y: 9, w: 4, h: 14, minW: 3, minH: 6 } },
     { id: "projects-overview", label: "Active Projects", defaultGrid: { x: 4, y: 7, w: 4, h: 14, minW: 3, minH: 4 } },
     { id: "team-summary", label: "Team Overview", defaultGrid: { x: 8, y: 7, w: 4, h: 14, minW: 3, minH: 4 } },
     { id: "activity", label: "Recent Activity", defaultGrid: { x: 0, y: 21, w: 12, h: 10, minW: 6, minH: 4 } },
@@ -62,6 +63,7 @@ export const PAGE_CARDS: Record<string, CardDefinition[]> = {
     { id: "comments", label: "Comments", defaultGrid: { x: 8, y: 18, w: 4, h: 10, minW: 3, minH: 4 } },
     { id: "quotes", label: "Quotes", defaultGrid: { x: 0, y: 28, w: 12, h: 10, minW: 4, minH: 4 } },
     { id: "bids", label: "Bids", defaultGrid: { x: 0, y: 38, w: 6, h: 9, minW: 3, minH: 4 } },
+    { id: "links", label: "Evidence & Links", defaultGrid: { x: 6, y: 38, w: 6, h: 9, minW: 3, minH: 4 } },
   ],
   "project-detail": [
     { id: "team", label: "Staffing", defaultGrid: { x: 0, y: 0, w: 8, h: 9, minW: 4, minH: 4 } },

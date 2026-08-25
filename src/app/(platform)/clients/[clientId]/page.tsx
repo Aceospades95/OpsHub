@@ -13,7 +13,8 @@ import { Globe, Mail, Phone, Star, CheckSquare, Clock, UserCircle, Target } from
 import { formatCalendarDate } from "@/lib/dates";
 import Link from "next/link";
 import { ClientActions } from "./client-actions";
-import { ContactSection } from "./contact-section";
+import { ContactLinksCard } from "@/components/shared/contact-links-card";
+import { EvidenceLinks } from "@/components/shared/evidence-links";
 import { PageLayout } from "@/components/shared/page-layout";
 import { TaskCheckbox } from "@/app/(platform)/tasks/task-checkbox";
 import { AddTaskButton } from "@/components/shared/add-task-button";
@@ -54,7 +55,10 @@ export default async function ClientDetailPage({ params }: Props) {
     },
     include: {
       accountManager: { select: { id: true, name: true } },
-      contacts: { orderBy: [{ isPrimary: "desc" }, { name: "asc" }] },
+      // Evidence links (the Gmail thread / Drive folder / award page a
+      // record's facts came from). People now come from the unified
+      // Contact rolodex — the legacy ClientContact include is gone.
+      links: { orderBy: { createdAt: "desc" } },
       projects: {
         where: { deletedAt: null },
         include: {
@@ -278,19 +282,34 @@ export default async function ClientDetailPage({ params }: Props) {
             )}
           </CardContent>
         </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>Contacts</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ContactSection
-              contacts={client.contacts}
-              clientId={client.id}
-              canEdit={perms.canEdit}
-            />
-          </CardContent>
-        </Card>
+        {/* Unified rolodex (Contact/ContactLink) — the legacy
+            ClientContact card is retired; those rows were backfilled
+            into the rolodex by the crm_contacts migration. */}
+        <ContactLinksCard entityType="client" entityId={client.id} />
       </div>
+    ),
+    links: (
+      <Card className="h-full">
+        <CardHeader>
+          <CardTitle>Evidence &amp; links ({client.links.length})</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <EvidenceLinks
+            entityType="client"
+            entityId={client.id}
+            addDescriptionPlaceholder="Where these facts came from — thread, folder, award page"
+            links={client.links.map((link) => ({
+              id: link.id,
+              title: link.title,
+              url: link.url,
+              description: link.description,
+              source: link.source,
+            }))}
+            canEdit={perms.canEdit}
+            canDelete={perms.canDelete}
+          />
+        </CardContent>
+      </Card>
     ),
     quotes: quotePerms.canView ? (
       <QuotesCard

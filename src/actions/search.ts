@@ -181,7 +181,10 @@ export async function quickSearch(query: string): Promise<SearchResults> {
       ? db.supplier.findMany({
           where: {
             deletedAt: null,
-            OR: [{ name: ci }, { contactName: ci }, { category: ci }, { contacts: { some: { name: ci } } }],
+            // Person-name matches are served by the contacts bucket —
+            // the frozen SupplierContact table would only ever match
+            // pre-migration names and drift as the rolodex is edited.
+            OR: [{ name: ci }, { contactName: ci }, { category: ci }],
           },
           select: { id: true, name: true, category: true },
           take: PER_BUCKET_LIMIT,

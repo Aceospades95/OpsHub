@@ -26,7 +26,7 @@ export default async function SearchPage({ searchParams }: Props) {
         <PageHeader title="Search" description="Search across all modules" />
         <div className="flex flex-col items-center py-12 text-muted-foreground">
           <Search className="h-12 w-12 mb-4" />
-          <p>Search clients, projects, contracts, suppliers, subcontractors, partnerships, vehicles, bids, tasks, team members, and intranet resources</p>
+          <p>Search clients, people, projects, contracts, suppliers, subcontractors, partnerships, vehicles, bids, tasks, team members, and intranet resources</p>
         </div>
       </div>
     );
@@ -99,7 +99,7 @@ export default async function SearchPage({ searchParams }: Props) {
 
   const contains = { contains: query, mode: "insensitive" as const };
 
-  const [clients, projects, contracts, suppliers, subcontractors, partnerships, tasks, intranetResources, users, vehicles, bids] = await Promise.all([
+  const [clients, projects, contracts, suppliers, subcontractors, partnerships, tasks, intranetResources, users, vehicles, bids, contactRows] = await Promise.all([
     clientPerms.canView
       ? db.client.findMany({
           where: {
@@ -137,8 +137,9 @@ export default async function SearchPage({ searchParams }: Props) {
               { name: contains },
               { notes: contains },
               { contactName: contains },
-              // New multi-contact rolodex rows.
-              { contacts: { some: { name: contains } } },
+              // Person-name matches are served by the People section —
+              // the frozen SupplierContact table would only match
+              // pre-migration names.
             ],
           },
           take: 10,
@@ -252,6 +253,27 @@ export default async function SearchPage({ searchParams }: Props) {
           take: 10,
         })
       : [],
+    // People — the unified Contact rolodex. Same clients-module gate as
+    // the quick-search bucket (contacts are part of the CRM surface).
+    // APPENDED LAST: destructure order above must match query order.
+    clientPerms.canView
+      ? db.contact.findMany({
+          where: {
+            deletedAt: null,
+            OR: [{ name: contains }, { email: contains }, { organization: contains }],
+          },
+          select: {
+            id: true,
+            name: true,
+            title: true,
+            email: true,
+            organization: true,
+            isFormer: true,
+          },
+          take: 10,
+          orderBy: { name: "asc" },
+        })
+      : [],
   ]);
 
   const totalResults =
@@ -265,7 +287,8 @@ export default async function SearchPage({ searchParams }: Props) {
     intranetResources.length +
     users.length +
     vehicles.length +
-    bids.length;
+    bids.length +
+    contactRows.length;
 
   return (
     <div>
@@ -288,6 +311,33 @@ export default async function SearchPage({ searchParams }: Props) {
                         {client.industry && <p className="text-sm text-muted-foreground">{client.industry}</p>}
                       </div>
                       <StatusBadge status={client.status} />
+                    </CardContent>
+                  </Card>
+                </Link>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {contactRows.length > 0 && (
+          <div>
+            <h2 className="text-lg font-semibold mb-3">People ({contactRows.length})</h2>
+            <div className="space-y-2">
+              {contactRows.map((contact) => (
+                <Link key={contact.id} href={`/contacts/${contact.id}`}>
+                  <Card className="hover:shadow-md transition-shadow">
+                    <CardContent className="p-4 flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className={`font-medium ${contact.isFormer ? "line-through opacity-60" : ""}`}>
+                          {contact.name}
+                        </p>
+                        <p className="text-sm text-muted-foreground truncate">
+                          {[contact.title, contact.organization, contact.email]
+                            .filter(Boolean)
+                            .join(" · ") || "No details"}
+                        </p>
+                      </div>
+                      {contact.isFormer && <Badge variant="outline">No longer there</Badge>}
                     </CardContent>
                   </Card>
                 </Link>
