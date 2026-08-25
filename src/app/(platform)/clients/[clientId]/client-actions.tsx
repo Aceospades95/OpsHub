@@ -11,6 +11,8 @@ import { updateClient, deleteClient } from "@/actions/clients";
 import { Pencil, Trash2 } from "lucide-react";
 
 interface Client {
+  sourceNotes?: string | null;
+  openQuestions?: string | null;
   id: string;
   name: string;
   description: string | null;
@@ -60,6 +62,20 @@ export function ClientActions({ client, users, canEdit, canDelete }: Props) {
                 <Input name="website" label="Website" defaultValue={client.website || ""} />
                 <Textarea name="description" label="Description" defaultValue={client.description || ""} />
                 <Textarea name="summary" label="Summary" defaultValue={client.summary || ""} />
+                <Textarea
+                  name="sourceNotes"
+                  label="Source (where these facts came from)"
+                  defaultValue={client.sourceNotes || ""}
+                  rows={2}
+                  placeholder="Threads, files, people — so the next reader can audit this record"
+                />
+                <Textarea
+                  name="openQuestions"
+                  label="Open questions / risks"
+                  defaultValue={client.openQuestions || ""}
+                  rows={2}
+                  placeholder="Unknowns worth flagging, kept out of the narrative notes"
+                />
                 <Select
                   name="status"
                   label="Status"

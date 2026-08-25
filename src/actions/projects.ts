@@ -24,6 +24,8 @@ const projectSchema = z
     clientId: z.string().min(1, "Client is required"),
     parentProjectId: z.string().optional(),
     serviceOfferingId: z.string().optional(),
+    sourceNotes: z.string().optional(),
+    openQuestions: z.string().optional(),
   })
   .refine((d) => isValidCalendarRange(d.startDate, d.endDate), {
     message: "End date must be on or after start date",
@@ -78,6 +80,8 @@ export async function createProject(_prev: unknown, formData: FormData) {
   const parsed = projectSchema.safeParse({
     name: formData.get("name"),
     description: formData.get("description") || undefined,
+    sourceNotes: formData.get("sourceNotes") || undefined,
+    openQuestions: formData.get("openQuestions") || undefined,
     status: formData.get("status") || "PLANNING",
     startDate: formData.get("startDate") || undefined,
     endDate: formData.get("endDate") || undefined,
@@ -191,6 +195,8 @@ export async function updateProject(_prev: unknown, formData: FormData) {
   const parsed = projectSchema.safeParse({
     name: formData.get("name"),
     description: formData.get("description") || undefined,
+    sourceNotes: formData.get("sourceNotes") || undefined,
+    openQuestions: formData.get("openQuestions") || undefined,
     status: formData.get("status") || undefined,
     startDate: formData.get("startDate") || undefined,
     endDate: formData.get("endDate") || undefined,

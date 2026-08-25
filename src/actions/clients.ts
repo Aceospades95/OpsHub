@@ -18,6 +18,8 @@ const clientSchema = z.object({
   website: z.string().optional(),
   status: z.enum(["ACTIVE", "INACTIVE", "PROSPECT", "ARCHIVED"]).optional(),
   accountManagerId: z.string().optional(),
+  sourceNotes: z.string().optional(),
+  openQuestions: z.string().optional(),
 });
 
 export async function createClient(_prev: unknown, formData: FormData) {
@@ -29,6 +31,8 @@ export async function createClient(_prev: unknown, formData: FormData) {
     name: formData.get("name"),
     description: formData.get("description") || undefined,
     summary: formData.get("summary") || undefined,
+    sourceNotes: formData.get("sourceNotes") || undefined,
+    openQuestions: formData.get("openQuestions") || undefined,
     industry: formData.get("industry") || undefined,
     website: formData.get("website") || undefined,
     status: formData.get("status") || "ACTIVE",
@@ -61,6 +65,8 @@ export async function updateClient(_prev: unknown, formData: FormData) {
     name: formData.get("name"),
     description: formData.get("description") || undefined,
     summary: formData.get("summary") || undefined,
+    sourceNotes: formData.get("sourceNotes") || undefined,
+    openQuestions: formData.get("openQuestions") || undefined,
     industry: formData.get("industry") || undefined,
     website: formData.get("website") || undefined,
     status: formData.get("status") || undefined,

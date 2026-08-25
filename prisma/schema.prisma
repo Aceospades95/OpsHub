@@ -575,6 +575,10 @@ model Client {
   website          String?
   status           ClientStatus @default(ACTIVE)
   accountManagerId String?
+  /// Where this record's facts came from (threads, files, people).
+  sourceNotes   String? @db.Text
+  /// Flagged unknowns / risks, kept out of the narrative notes.
+  openQuestions String? @db.Text
   createdAt        DateTime     @default(now())
   updatedAt        DateTime     @updatedAt
   /// Soft-delete tombstone — see Project.deletedAt comment.
@@ -585,6 +589,8 @@ model Client {
   contracts      Contract[]
   certifications Certification[]
   contacts       ClientContact[]
+  links            ExternalLink[]
+  endClientBids    BidOpportunity[] @relation("BidEndClient")
   comments       Comment[]
   tasks          Task[]
   sandboxPages   SandboxPage[]
@@ -609,6 +615,57 @@ model ClientContact {
   client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
 }
 
+/// A PERSON, independent of any one organization. Replaces the four
+/// siloed per-org contact tables (ClientContact, SupplierContact,
+/// SubcontractorContact, PartnershipContact — kept read-only for
+/// rollback; backfilled into this table by the crm_contacts
+/// migration, deduped by email). One person links to any number of
+/// clients / suppliers / subcontractors / partnerships / bids /
+/// projects / contracts through ContactLink, each link carrying its
+/// own role. isFormer keeps departed people for history without
+/// offering them in pickers.
+model Contact {
+  id           String    @id @default(cuid())
+  name         String
+  title        String?
+  email        String?
+  phone        String?
+  /// Free-form org name for people whose organization OpsHub doesn't
+  /// track as a record (agency staff, vendor reps).
+  organization String?
+  notes        String?   @db.Text
+  isFormer     Boolean   @default(false)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  deletedAt    DateTime?
+
+  contactLinks ContactLink[]
+
+  @@index([email])
+  @@index([name])
+}
+
+/// Polymorphic membership: this contact plays `role` on that entity.
+/// entityType ∈ client | supplier | subcontractor | partnership |
+/// bid | project | contract (same convention as ActivityLog). No FK
+/// to the target — targets are soft-deleted; pages resolve names at
+/// read time and skip dangling links.
+model ContactLink {
+  id         String   @id @default(cuid())
+  contactId  String
+  entityType String
+  entityId   String
+  /// Role on THIS relationship ("Decision maker", "PM", "Billing"…).
+  role       String?
+  isPrimary  Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@unique([contactId, entityType, entityId])
+  @@index([entityType, entityId])
+}
+
 // ─── PROJECTS ────────────────────────────────────────────
 
 model Project {
@@ -625,6 +682,10 @@ model Project {
   /// owner's spreadsheet. Distinct from `description` (what the project
   /// IS); notes are what's happening right now.
   notes             String?       @db.Text
+  /// Where this record's facts came from (threads, files, people).
+  sourceNotes   String? @db.Text
+  /// Flagged unknowns / risks, kept out of the narrative notes.
+  openQuestions String? @db.Text
   startDate         DateTime?
   endDate           DateTime?
   clientId          String
@@ -764,6 +825,7 @@ model Contract {
   files    File[]
   comments Comment[]
   links    ExternalLink[]
+  wonBids  BidOpportunity[] @relation("BidContract")
   embeds   Embed[]
 }
 
@@ -1017,6 +1079,8 @@ model ExternalLink {
   intranetResourceId String?
   subcontractorId    String?
   partnershipId      String?
+  clientId           String?
+  bidOpportunityId   String?
   createdAt          DateTime @default(now())
 
   certificationId String?
@@ -1028,6 +1092,8 @@ model ExternalLink {
   certification    Certification?    @relation(fields: [certificationId], references: [id])
   subcontractor    Subcontractor?    @relation(fields: [subcontractorId], references: [id], onDelete: Cascade)
   partnership      Partnership?      @relation(fields: [partnershipId], references: [id], onDelete: Cascade)
+  client           Client?           @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  bidOpportunity   BidOpportunity?   @relation(fields: [bidOpportunityId], references: [id], onDelete: Cascade)
 }
 
 model Embed {
@@ -1797,6 +1863,16 @@ model GoogleTaskList {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, listId])
+}
+
+/// Org-wide sidebar visibility per module. Absence of a row = shown.
+/// Lets admins hide modules that aren't in use yet (empty modules in
+/// the sidebar train people to ignore the sidebar) — reversible any
+/// time from Settings → Modules.
+model ModuleSetting {
+  module          String   @id
+  hiddenInSidebar Boolean  @default(false)
+  updatedAt       DateTime @updatedAt
 }
 
 // ─── QUOTES ─────────────────────────────────────────────
@@ -2833,7 +2909,13 @@ model BidOpportunity {
   /// When the outcome (WON/LOST/NO_BID/STALE) was recorded.
   decidedAt          DateTime?
   lossReason         String?
+  /// Who currently holds the work being bid (context for win odds).
+  incumbent          String?
   notes              String?   @db.Text
+  /// Where this record's facts came from (threads, files, people).
+  sourceNotes        String?   @db.Text
+  /// Flagged unknowns / risks, kept out of the narrative notes.
+  openQuestions      String?   @db.Text
   /// Dedupe stamp for the bid-due-check job — one notification per
   /// dueDate value; changing the date re-arms it (mirrors
   /// Vehicle.maintenanceNotifiedFor).
@@ -2843,6 +2925,11 @@ model BidOpportunity {
   ownerId            String?
   /// Set when a WON bid is converted into a delivery project.
   projectId          String?
+  /// The contract a WON bid became — closes the bid → contract loop.
+  contractId         String?
+  /// The END client behind a prime/channel deal (e.g. Ericsson behind
+  /// LTTS); `clientId` stays the contracting party.
+  endClientId        String?
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
   /// Soft-delete tombstone — see Project.deletedAt comment.
@@ -2852,6 +2939,9 @@ model BidOpportunity {
   client   Client?    @relation(fields: [clientId], references: [id], onDelete: SetNull)
   owner    User?      @relation("BidOwner", fields: [ownerId], references: [id], onDelete: SetNull)
   project  Project?   @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  contract  Contract? @relation("BidContract", fields: [contractId], references: [id], onDelete: SetNull)
+  endClient Client?   @relation("BidEndClient", fields: [endClientId], references: [id], onDelete: SetNull)
+  links     ExternalLink[]
   comments Comment[]
   files    File[]
 

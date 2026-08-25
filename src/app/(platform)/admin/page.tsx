@@ -41,6 +41,7 @@ const SETTINGS_SECTIONS = [
     items: [
       { label: "Theme", href: "/admin/theme", icon: Palette, description: "Branding, color palette, and theme configuration" },
       { label: "Sidebar", href: "/admin/sidebar", icon: PanelLeft, description: "Sidebar layout and section ordering" },
+      { label: "Modules", href: "/admin/modules", icon: Blocks, description: "Show or hide whole modules in the sidebar until they're in use" },
     ],
   },
   {

@@ -45,7 +45,7 @@ export async function PlatformShell({ children }: { children: React.ReactNode })
 
   const role = (freshUser?.role ?? session.user.role) as Role;
 
-  const [sidebarConfig, customPages, unreadCount, recentNotifications, branding, visibleModules] = await Promise.all([
+  const [sidebarConfig, customPages, unreadCount, recentNotifications, branding, visibleModules, hiddenModuleRows] = await Promise.all([
     getSidebarConfig(),
     // Sandbox custom pages: ADMIN / DEVELOPER get every published page;
     // other roles only get the published pages they hold an explicit
@@ -72,6 +72,11 @@ export async function PlatformShell({ children }: { children: React.ReactNode })
     // Permission-aware module list — the sidebar only renders permissioned
     // modules whose key is in here.
     getVisibleModules(session.user.id, role),
+    // Org-wide "hide until in use" toggles (Settings → Modules).
+    db.moduleSetting.findMany({
+      where: { hiddenInSidebar: true },
+      select: { module: true },
+    }),
   ]);
 
   const serializedNotifications = recentNotifications.map((n) => ({
@@ -89,6 +94,7 @@ export async function PlatformShell({ children }: { children: React.ReactNode })
       <Sidebar
         userRole={session.user.role}
         visibleModules={visibleModules}
+        hiddenModules={hiddenModuleRows.map((m) => m.module)}
         customPages={customPages}
         sidebarConfig={sidebarConfig}
         companyName={branding.companyName}

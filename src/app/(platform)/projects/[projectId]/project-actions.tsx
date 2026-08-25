@@ -21,6 +21,8 @@ interface Props {
     clientId: string;
     serviceOfferingId: string | null;
     parentProjectId: string | null;
+    sourceNotes?: string | null;
+    openQuestions?: string | null;
     /** Currently-linked related projects (id only, used to seed checkboxes). */
     relatedProjectIds: string[];
   };
@@ -83,6 +85,20 @@ export function ProjectActions({ project, clients, serviceOfferings, allProjects
                   options={clients.map((c) => ({ label: c.name, value: c.id }))}
                 />
                 <Textarea name="description" label="Description" defaultValue={project.description || ""} />
+                <Textarea
+                  name="sourceNotes"
+                  label="Source (where these facts came from)"
+                  defaultValue={project.sourceNotes || ""}
+                  rows={2}
+                  placeholder="Threads, files, people — so the next reader can audit this record"
+                />
+                <Textarea
+                  name="openQuestions"
+                  label="Open questions / risks"
+                  defaultValue={project.openQuestions || ""}
+                  rows={2}
+                  placeholder="Unknowns worth flagging, kept out of the narrative notes"
+                />
                 <div className="grid grid-cols-2 gap-4">
                   <Select
                     name="status"

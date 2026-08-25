@@ -112,6 +112,36 @@ export default async function ClientDetailPage({ params }: Props) {
             </CardContent>
           </Card>
         )}
+
+        {(client.sourceNotes || client.openQuestions) && (
+          <Card className="mb-6">
+            <CardHeader>
+              <CardTitle>Provenance &amp; open questions</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {client.sourceNotes && (
+                <div>
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">
+                    Source
+                  </p>
+                  <p className="text-sm text-muted-foreground whitespace-pre-wrap">
+                    {client.sourceNotes}
+                  </p>
+                </div>
+              )}
+              {client.openQuestions && (
+                <div>
+                  <p className="text-xs font-semibold text-warning uppercase tracking-wide mb-1">
+                    Open questions / risks
+                  </p>
+                  <p className="text-sm text-muted-foreground whitespace-pre-wrap">
+                    {client.openQuestions}
+                  </p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
         <Card>
           <CardContent className="p-6">
             <div className="flex items-center gap-3 mb-4">
