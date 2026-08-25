@@ -27,12 +27,22 @@ type ContactAction = (
 ) => Promise<{ success?: boolean; error?: string; fieldErrors?: Record<string, string[]> }>;
 
 /**
- * The contact rolodex shared by every entity that has contacts (clients,
- * suppliers — subcontractors/partnerships can adopt it later): primary
- * badge, edit/delete per row, create/edit dialogs with one shared field
- * set. Callers stay one-liner wrappers that bind their own server
- * actions and parent-id field name, so the layout and behavior can't
- * drift between modules again.
+ * LEGACY per-org contact rolodex — superseded by the unified Contacts
+ * module (Contact / ContactLink; see src/lib/contacts.ts and
+ * src/components/shared/contact-links-card.tsx). The supplier /
+ * subcontractor / partnership detail pages now mount ContactLinksCard,
+ * which reads and writes the unified backend; the legacy per-org
+ * tables (ClientContact, SupplierContact, SubcontractorContact,
+ * PartnershipContact) were backfilled into it and are deprecated
+ * read-only.
+ *
+ * This component remains ONLY for the clients detail page, whose
+ * workstream owns swapping it for ContactLinksCard — its `actions`
+ * prop still binds the legacy ClientContact server actions, so a
+ * repoint here without changing that page's data fetch would render
+ * one table and write another. Do not add new mount sites; use
+ * ContactLinksCard instead. Delete this file (and the client binding)
+ * once /clients adopts the new card.
  */
 export function EntityContactSection({
   contacts,

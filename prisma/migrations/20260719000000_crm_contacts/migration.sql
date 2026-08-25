@@ -26,7 +26,7 @@ CREATE TABLE "ContactLink" (
     "contactId" TEXT NOT NULL,
     "entityType" TEXT NOT NULL,
     "entityId" TEXT NOT NULL,
-    "role" TEXT,
+    "roles" TEXT[] NOT NULL DEFAULT '{}',
     "isPrimary" BOOLEAN NOT NULL DEFAULT false,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT "ContactLink_pkey" PRIMARY KEY ("id")

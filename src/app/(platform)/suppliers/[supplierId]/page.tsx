@@ -11,8 +11,8 @@ import { Star, Mail, Phone, MapPin, Globe } from "lucide-react";
 import { SupplierActions } from "./supplier-actions";
 import { SupplierProjects } from "./supplier-projects";
 import { SupplierAttachments } from "./supplier-attachments";
-import { SupplierContactSection } from "./supplier-contact-section";
 import { SupplierReceipts } from "./supplier-receipts";
+import { ContactLinksCard } from "@/components/shared/contact-links-card";
 
 interface Props {
   params: Promise<{ supplierId: string }>;
@@ -30,7 +30,6 @@ export default async function SupplierDetailPage({ params }: Props) {
     include: {
       projects: true,
       links: true,
-      contacts: { orderBy: [{ isPrimary: "desc" }, { name: "asc" }] },
       comments: {
         include: { author: { select: { id: true, name: true } } },
         orderBy: { createdAt: "desc" },
@@ -193,16 +192,7 @@ export default async function SupplierDetailPage({ params }: Props) {
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader><CardTitle>Contacts ({supplier.contacts.length})</CardTitle></CardHeader>
-            <CardContent>
-              <SupplierContactSection
-                contacts={supplier.contacts}
-                supplierId={supplier.id}
-                canEdit={perms.canEdit}
-              />
-            </CardContent>
-          </Card>
+          <ContactLinksCard entityType="supplier" entityId={supplier.id} />
 
           <Card>
             <CardHeader><CardTitle>Attachments</CardTitle></CardHeader>

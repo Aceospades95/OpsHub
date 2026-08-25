@@ -11,9 +11,9 @@ import { Star, Mail, Phone, MapPin, Globe, AlertTriangle, CheckCircle2, FileBadg
 import Link from "next/link";
 import { format } from "date-fns";
 import { SubcontractorActions } from "./subcontractor-actions";
-import { SubcontractorContacts } from "./subcontractor-contacts";
 import { SubcontractorProjects } from "./subcontractor-projects";
 import { SubcontractorAttachments } from "./subcontractor-attachments";
+import { ContactLinksCard } from "@/components/shared/contact-links-card";
 import { Avatar } from "@/components/ui/avatar";
 
 interface Props {
@@ -42,7 +42,6 @@ export default async function SubcontractorDetailPage({ params }: Props) {
     where: { id: subcontractorId, deletedAt: null },
     include: {
       accountManager: { select: { id: true, name: true } },
-      contacts: { orderBy: [{ isPrimary: "desc" }, { name: "asc" }] },
       projects: {
         where: { project: { deletedAt: null } },
         include: {
@@ -196,18 +195,7 @@ export default async function SubcontractorDetailPage({ params }: Props) {
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Contacts</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <SubcontractorContacts
-                contacts={sub.contacts}
-                subcontractorId={sub.id}
-                canEdit={perms.canEdit}
-              />
-            </CardContent>
-          </Card>
+          <ContactLinksCard entityType="subcontractor" entityId={sub.id} />
 
           <Card>
             <CardHeader>

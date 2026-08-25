@@ -655,8 +655,10 @@ model ContactLink {
   contactId  String
   entityType String
   entityId   String
-  /// Role on THIS relationship ("Decision maker", "PM", "Billing"…).
-  role       String?
+  /// Role tags on THIS relationship — multi-select ("Executive
+  /// Sponsor", "Procurement", "Billing/AP", "Field Ops"…). Free
+  /// strings; the UI suggests a standard vocabulary.
+  roles      String[] @default([])
   isPrimary  Boolean  @default(false)
   createdAt  DateTime @default(now())
 

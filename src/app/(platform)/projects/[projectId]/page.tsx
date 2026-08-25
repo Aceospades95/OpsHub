@@ -30,6 +30,7 @@ import { ProjectContractsCard } from "./project-contracts-card";
 import { ProjectRelationsCard } from "./project-relations-card";
 import { ProjectPartnershipsCard } from "./project-partnerships-card";
 import { RecentlyViewedTracker } from "@/components/shared/recently-viewed-tracker";
+import { ContactLinksCard } from "@/components/shared/contact-links-card";
 
 interface Props {
   params: Promise<{ projectId: string }>;
@@ -605,6 +606,14 @@ export default async function ProjectDetailPage({ params }: Props) {
         </CardContent>
       </Card>
     ) : null,
+    people: (
+      <ContactLinksCard
+        entityType="project"
+        entityId={project.id}
+        title="People involved"
+        className="h-full"
+      />
+    ),
     partnerships: partnerPerms.canView ? (
       <Card className="h-full">
         <CardHeader>
@@ -656,6 +665,7 @@ export default async function ProjectDetailPage({ params }: Props) {
             allProjects={allProjects}
             canEdit={perms.canEdit}
             canDelete={perms.canDelete}
+            isAdmin={user.role === "ADMIN"}
           />
         }
       />

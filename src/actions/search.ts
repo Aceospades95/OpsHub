@@ -33,6 +33,7 @@ export interface SearchHit {
   type:
     | "employee"
     | "client"
+    | "contact"
     | "project"
     | "supplier"
     | "contract"
@@ -110,6 +111,7 @@ export async function quickSearch(query: string): Promise<SearchResults> {
   const [
     employees,
     clients,
+    contacts,
     projects,
     suppliers,
     contracts,
@@ -142,6 +144,19 @@ export async function quickSearch(query: string): Promise<SearchResults> {
           select: { id: true, name: true, industry: true },
           take: PER_BUCKET_LIMIT,
           orderBy: { name: "asc" },
+        })
+      : [],
+    // Unified contacts ride on the clients-module gate — same gate the
+    // /contacts pages use (contacts span modules; see actions/contacts).
+    clientsPerms.canView
+      ? db.contact.findMany({
+          where: {
+            deletedAt: null,
+            OR: [{ name: ci }, { email: ci }, { organization: ci }],
+          },
+          select: { id: true, name: true, title: true, organization: true, email: true },
+          take: PER_BUCKET_LIMIT,
+          orderBy: [{ isFormer: "asc" }, { name: "asc" }],
         })
       : [],
     projectsPerms.canView
@@ -308,6 +323,14 @@ export async function quickSearch(query: string): Promise<SearchResults> {
       sublabel: c.industry || undefined,
       href: `/clients/${c.id}`,
     })),
+    ...contacts.map((c) => ({
+      id: `contact-${c.id}`,
+      type: "contact" as const,
+      label: c.name,
+      sublabel:
+        [c.title, c.organization].filter(Boolean).join(" · ") || c.email || undefined,
+      href: `/contacts/${c.id}`,
+    })),
     ...projects.map((p) => ({
       id: `project-${p.id}`,
       type: "project" as const,
@@ -369,6 +392,7 @@ export async function quickSearch(query: string): Promise<SearchResults> {
   const truncated =
     employees.length === PER_BUCKET_LIMIT ||
     clients.length === PER_BUCKET_LIMIT ||
+    contacts.length === PER_BUCKET_LIMIT ||
     projects.length === PER_BUCKET_LIMIT ||
     suppliers.length === PER_BUCKET_LIMIT ||
     contracts.length === PER_BUCKET_LIMIT ||
