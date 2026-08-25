@@ -13,11 +13,18 @@ import {
   Users,
   AlertTriangle,
   Activity,
+  CalendarClock,
   CheckSquare,
   Clock,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { formatCalendarDate } from "@/lib/dates";
+import {
+  getRadarData,
+  summarizeRadar,
+  daysRemainingLabel,
+  type RadarModuleAccess,
+} from "@/lib/radar";
 import Link from "next/link";
 import { DashboardTaskCheckbox } from "./dashboard-task-checkbox";
 import { PageLayout } from "@/components/shared/page-layout";
@@ -38,12 +45,42 @@ export default async function DashboardPage() {
 
   const canEditLayout = user.role === "ADMIN" || user.role === "DEVELOPER";
 
-  const [clientPerms, projectPerms, contractPerms, scope] = await Promise.all([
+  const [
+    clientPerms,
+    projectPerms,
+    contractPerms,
+    certPerms,
+    subPerms,
+    partnershipPerms,
+    fleetPerms,
+    bidPerms,
+    scope,
+  ] = await Promise.all([
     resolveModulePerms(userId, role, "clients"),
     resolveModulePerms(userId, role, "projects"),
     resolveModulePerms(userId, role, "contracts"),
+    // The remaining radar modules — only their canView bit is used, to
+    // gate which sections feed the "Renewal radar" summary card below.
+    resolveModulePerms(userId, role, "certifications"),
+    resolveModulePerms(userId, role, "subcontractors"),
+    resolveModulePerms(userId, role, "partnerships"),
+    resolveModulePerms(userId, role, "fleet"),
+    resolveModulePerms(userId, role, "bids"),
     getUserScope(userId, role),
   ]);
+
+  // Which radar sections this viewer can see — mirrors /radar exactly.
+  const radarAccess: RadarModuleAccess = {
+    contracts: contractPerms.canView,
+    certifications: certPerms.canView,
+    subcontractors: subPerms.canView,
+    partnerships: partnershipPerms.canView,
+    fleet: fleetPerms.canView,
+    bids: bidPerms.canView,
+    clients: clientPerms.canView,
+    projects: projectPerms.canView,
+  };
+  const hasAnyRadarModule = Object.values(radarAccess).some(Boolean);
 
   // Scoped roles (CONTRIBUTOR / VIEWER / GUEST) only see counts, project
   // lists, and activity within their assigned entities — same filters the
@@ -72,6 +109,7 @@ export default async function DashboardPage() {
     openTaskCount,
     activeProjects,
     teamMembers,
+    radarData,
   ] = await Promise.all([
     clientPerms.canView ? db.client.count({ where: { deletedAt: null, ...clientWhere } }) : Promise.resolve(0),
     // Round-7 QA: the previous "{n} active" sub read as "the
@@ -170,7 +208,21 @@ export default async function DashboardPage() {
         _count: { select: { assignments: { where: { status: "ACTIVE" } } } },
       },
     }),
+    // Renewal radar summary — fixed 30-day look-ahead for the strip
+    // below the header (the /radar page itself has the window toggle).
+    // Skipped entirely when no radar-fed module is visible (guests).
+    hasAnyRadarModule
+      ? getRadarData({
+          now: renderedAt,
+          windowDays: 30,
+          scope,
+          access: radarAccess,
+          includeGaps: false,
+        })
+      : Promise.resolve(null),
   ]);
+
+  const radarSummary = radarData ? summarizeRadar(radarData) : null;
 
   // Build a non-zero-only sub-line from the status breakdown so the
   // dashboard reads "3 active · 2 prospect" instead of "3 active"
@@ -480,6 +532,64 @@ export default async function DashboardPage() {
         title="Dashboard"
         description={`Welcome back, ${user.name}`}
       />
+
+      {/* Renewal radar — compact 30-day roll-up across contracts,
+          certifications, insurance, agreements, fleet, and bids.
+          Rendered above the customizable grid (not as a grid card)
+          because new grid card ids must be registered in
+          lib/page-layout.ts, which belongs to another workstream. */}
+      {radarSummary && (
+        <Card className="mb-4 border-border/60 shadow-sm">
+          <CardContent className="p-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
+            <div className="flex items-center gap-2 shrink-0">
+              <CalendarClock className="h-5 w-5 text-primary" />
+              <p className="text-sm">
+                {radarSummary.total > 0 ? (
+                  <>
+                    <strong>{radarSummary.total}</strong> item
+                    {radarSummary.total !== 1 ? "s" : ""} due in the next 30 days
+                  </>
+                ) : (
+                  <span className="text-muted-foreground">
+                    Nothing due in the next 30 days
+                  </span>
+                )}
+              </p>
+            </div>
+            {radarSummary.soonest.length > 0 && (
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground min-w-0">
+                {radarSummary.soonest.map((item) => (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className="hover:text-primary hover:underline truncate max-w-[16rem]"
+                    title={item.title}
+                  >
+                    {item.title}{" "}
+                    <span
+                      className={
+                        item.daysRemaining == null || item.daysRemaining < 0
+                          ? "text-destructive font-medium"
+                          : ""
+                      }
+                    >
+                      ({item.daysRemaining == null
+                        ? "overdue"
+                        : daysRemainingLabel(item.daysRemaining)})
+                    </span>
+                  </Link>
+                ))}
+              </div>
+            )}
+            <Link
+              href="/radar"
+              className="text-sm text-primary hover:underline shrink-0 sm:ml-auto"
+            >
+              Open radar →
+            </Link>
+          </CardContent>
+        </Card>
+      )}
 
       <PageLayout pageType="dashboard" cards={cardMap} canEdit={canEditLayout} />
     </div>
