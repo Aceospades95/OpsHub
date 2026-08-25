@@ -582,3 +582,48 @@ Phase B before C is deliberate: the work-log module's entire value is its
 *rules-aware reminders*, which want the notification engine to exist
 first — building it on today's hardcoded pattern would recreate the
 Google Sheet's problems inside OpsHub.
+
+## Phase G — CRM layer & data hygiene (Aug 2026) ✅ shipped
+
+Driven by the field-usage notes ("what would actually make this usable"):
+the system's records now describe *relationships and deadlines*, not just
+rows.
+
+- **Unified Contacts** (`/contacts`): one rolodex (`Contact` +
+  polymorphic `ContactLink`) replacing four per-org contact tables.
+  Links attach people to clients, suppliers, subcontractors,
+  partnerships, **bids, projects, and contracts**, each carrying
+  multi-select role tags (Executive Sponsor / Procurement / Technical /
+  Billing/AP / Field Ops / Scheduling + free text) and a departed flag
+  that strikes the person through, surfaces their notes (mailbox
+  redirects), and drops them from pickers. Migration backfilled and
+  email-deduped the legacy tables; those are now frozen read-only.
+  Contacts joined global search, quick-search, soft-delete recovery,
+  and the admin merge tool.
+- **Renewal Radar** (`/radar` + dashboard card): one screen answering
+  "what lapses in N days" across contracts, certifications,
+  subcontractor insurance, partnership agreements, fleet
+  service/registration, and bid deadlines, plus a data-gaps strip
+  (clients with no account manager, WON bids never linked to a
+  project/contract, projects missing dates or offering).
+- **Bid outcomes**: submitted/decided dates, loss reason, incumbent,
+  delivery-project and won-bid→contract links (with a nudge when a WON
+  bid has neither), evidence links, and a 30-day staleness flag with
+  one-click Mark stale / Revive.
+- **Duplicate defense in depth**: importer guardrails (normalized-name
+  skip in create mode), the same guard on the project create/edit
+  forms, an admin **merge tool** on the project page (dry-run preview →
+  one-transaction FK walk over every child table → keeper fill-blanks →
+  source to recovery bin), and a `possible-duplicates` admin report
+  sweeping projects, clients, certifications, and contacts. The DB
+  unique index on (client, normalized name) is deferred until the
+  existing duplicates are merged.
+- **Derived status everywhere**: certification/contract status is
+  date-derived at render on every surface (detail pages, reports,
+  widgets — not just the list), the day-math truncation that mislabeled
+  "expires tomorrow" as expired is fixed, and the daily cert job now
+  writes the stored enum back to EXPIRED once the date passes, with
+  ledger lines.
+- **Module visibility** (`/admin/modules`): any sidebar module can be
+  hidden until it's populated — the empty-nav problem is now a setting,
+  not a code change.
