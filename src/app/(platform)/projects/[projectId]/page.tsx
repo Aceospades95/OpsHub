@@ -31,6 +31,7 @@ import { ProjectRelationsCard } from "./project-relations-card";
 import { ProjectPartnershipsCard } from "./project-partnerships-card";
 import { RecentlyViewedTracker } from "@/components/shared/recently-viewed-tracker";
 import { ContactLinksCard } from "@/components/shared/contact-links-card";
+import { effectiveContractStatus } from "@/lib/effective-status";
 
 interface Props {
   params: Promise<{ projectId: string }>;
@@ -394,7 +395,9 @@ export default async function ProjectDetailPage({ params }: Props) {
             contracts={project.contracts.map((c) => ({
               id: c.id,
               title: c.title,
-              status: c.status,
+              // Date-derived — stored EXPIRING_SOON/EXPIRED lags the
+              // calendar between expiry-job runs.
+              status: effectiveContractStatus(c, new Date()),
             }))}
             availableContracts={availableContracts.map((c) => ({
               id: c.id,

@@ -15,6 +15,7 @@ import Link from "next/link";
 import { ClientActions } from "./client-actions";
 import { ContactLinksCard } from "@/components/shared/contact-links-card";
 import { EvidenceLinks } from "@/components/shared/evidence-links";
+import { effectiveContractStatus } from "@/lib/effective-status";
 import { PageLayout } from "@/components/shared/page-layout";
 import { TaskCheckbox } from "@/app/(platform)/tasks/task-checkbox";
 import { AddTaskButton } from "@/components/shared/add-task-button";
@@ -237,7 +238,8 @@ export default async function ClientDetailPage({ params }: Props) {
                         : "No value set"}
                     </p>
                   </div>
-                  <StatusBadge status={contract.status} />
+                  {/* Date-derived — the stored enum lags the calendar. */}
+                  <StatusBadge status={effectiveContractStatus(contract, new Date())} />
                 </Link>
               ))}
             </div>

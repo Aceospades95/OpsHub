@@ -5,6 +5,7 @@ import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent } from "@/components/ui/card";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { vehicleLabel } from "@/lib/fleet";
+import { effectiveContractStatus } from "@/lib/effective-status";
 import { Badge } from "@/components/ui/badge";
 import { Search, BookOpen, Users, HardHat, Handshake, Car, Target } from "lucide-react";
 import Link from "next/link";
@@ -379,7 +380,7 @@ export default async function SearchPage({ searchParams }: Props) {
                         <p className="font-medium">{contract.title}</p>
                         <p className="text-sm text-muted-foreground">{contract.client.name}</p>
                       </div>
-                      <StatusBadge status={contract.status} />
+                      <StatusBadge status={effectiveContractStatus(contract, new Date())} />
                     </CardContent>
                   </Card>
                 </Link>
