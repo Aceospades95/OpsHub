@@ -25,8 +25,9 @@ import {
   CheckCircle2,
   History,
 } from "lucide-react";
-import { format, differenceInDays } from "date-fns";
+import { format } from "date-fns";
 import { formatCalendarDate } from "@/lib/dates";
+import { calendarDaysUntil, certDisplayStatus } from "@/lib/effective-status";
 import Link from "next/link";
 import { PageLayout } from "@/components/shared/page-layout";
 import { CertActions } from "./cert-actions";
@@ -101,7 +102,10 @@ export default async function CertificationDetailPage({ params }: Props) {
     : [[], []];
 
   const now = new Date();
-  const daysUntilExpiry = cert.expirationDate ? differenceInDays(cert.expirationDate, now) : null;
+  // Calendar-day math (UTC boundaries) — date-fns differenceInDays
+  // truncates, which read "expires tomorrow" as already expired
+  // whenever less than 24h of clock time remained.
+  const daysUntilExpiry = cert.expirationDate ? calendarDaysUntil(cert.expirationDate, now) : null;
   const isExpiring =
     daysUntilExpiry !== null &&
     daysUntilExpiry > 0 &&
@@ -143,7 +147,9 @@ export default async function CertificationDetailPage({ params }: Props) {
             <div>
               <span className="text-muted-foreground">Status</span>
               <div className="mt-1">
-                <StatusBadge status={cert.status} />
+                {/* Date-derived — a stored ACTIVE past its expiration
+                    date must never display as active. */}
+                <StatusBadge status={certDisplayStatus(cert, now)} />
               </div>
             </div>
             <div>
@@ -687,7 +693,7 @@ export default async function CertificationDetailPage({ params }: Props) {
       />
 
       <div className="flex items-center gap-3 mb-6 flex-wrap">
-        <StatusBadge status={cert.status} />
+        <StatusBadge status={certDisplayStatus(cert, now)} />
         <Badge variant="outline">{cert.type.replace(/_/g, " ")}</Badge>
         <Badge variant="secondary" className="gap-1">
           <MapPin className="h-3 w-3" />

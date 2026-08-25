@@ -8,7 +8,21 @@
  * carries the manual lifecycle states (DRAFT, TERMINATED, …).
  */
 
-import { differenceInDays } from "date-fns";
+const MS_PER_DAY = 86_400_000;
+
+/**
+ * Whole calendar days from `now` to `date`, on UTC day boundaries —
+ * the same framing as formatCalendarDate, where dates are stored at
+ * UTC midnight. Replaces date-fns differenceInDays, whose truncation
+ * toward zero made an item expiring TOMORROW read as expired whenever
+ * less than 24h of clock time remained (e.g. at 2pm against a
+ * midnight-stored date).
+ */
+export function calendarDaysUntil(date: Date, now: Date): number {
+  const target = Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
+  const today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  return Math.round((target - today) / MS_PER_DAY);
+}
 
 // ─── Certifications ──────────────────────────────────────────────
 
@@ -40,7 +54,7 @@ export function certBucket(
   now: Date
 ): CertBucket {
   if (cert.status === "PENDING") return "pending";
-  const days = cert.expirationDate ? differenceInDays(cert.expirationDate, now) : null;
+  const days = cert.expirationDate ? calendarDaysUntil(cert.expirationDate, now) : null;
   // Once the expiration date has actually passed, "expired" wins even
   // with a renewal submitted — the org is operating without a valid
   // cert, and a filed renewal that stalled must not hide that forever.
@@ -52,6 +66,34 @@ export function certBucket(
   if (cert.renewalSubmittedAt) return "renewing";
   if (days != null && days <= (cert.renewalLeadDays || 90)) return "expiring";
   return "active";
+}
+
+/** StatusBadge-compatible value per effective bucket. */
+export const BUCKET_TO_STATUS: Record<CertBucket, string> = {
+  active: "ACTIVE",
+  expiring: "EXPIRING_SOON",
+  expired: "EXPIRED",
+  pending: "PENDING",
+  renewing: "RENEWAL_SUBMITTED",
+};
+
+/** Stored statuses that describe a manual lifecycle judgment, not a
+ * date-derived one — these pass through untouched. */
+const MANUAL_CERT_STATUSES = new Set(["SUSPENDED", "REVOKED"]);
+
+/**
+ * StatusBadge-ready certification status: SUSPENDED/REVOKED pass
+ * through; everything else renders the date-derived bucket. Every
+ * surface that shows a certification status (list, detail, reports)
+ * routes through this so a stored ACTIVE sitting past its expiration
+ * date can never display as active anywhere.
+ */
+export function certDisplayStatus(
+  cert: Parameters<typeof certBucket>[0],
+  now: Date
+): string {
+  if (MANUAL_CERT_STATUSES.has(cert.status)) return cert.status;
+  return BUCKET_TO_STATUS[certBucket(cert, now)];
 }
 
 // ─── Contracts ────────────────────────────────────────────────────
@@ -80,7 +122,7 @@ export function effectiveContractStatus(
 ): string {
   if (MANUAL_CONTRACT_STATUSES.has(contract.status)) return contract.status;
   if (contract.endDate) {
-    const days = differenceInDays(contract.endDate, now);
+    const days = calendarDaysUntil(contract.endDate, now);
     if (days <= 0) return "EXPIRED";
     if (days <= CONTRACT_EXPIRING_WINDOW_DAYS) return "EXPIRING_SOON";
     return "ACTIVE";

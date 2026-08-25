@@ -9,6 +9,7 @@
 import { db } from "@/lib/db";
 import { format } from "date-fns";
 import { formatCalendarDate } from "@/lib/dates";
+import { certBucket, CERT_BUCKET_LABELS } from "@/lib/effective-status";
 import type { ReportDefinition } from "../types";
 
 function daysBetween(a: Date, b: Date): number {
@@ -51,7 +52,10 @@ export const certificationsExpiring: ReportDefinition = {
       jurisdictionLevel: c.jurisdictionLevel,
       jurisdictionName: c.jurisdictionName || "—",
       type: c.type,
-      status: c.status,
+      // Date-derived — the stored enum can lag behind the calendar
+      // (audit §3.2-5), and an emailed CSV is exactly where a stale
+      // "ACTIVE" does the most damage.
+      status: CERT_BUCKET_LABELS[certBucket(c, now)],
       expirationDate: c.expirationDate,
       daysUntil: c.expirationDate ? daysBetween(c.expirationDate, now) : null,
       renewalCost: c.renewalCost,

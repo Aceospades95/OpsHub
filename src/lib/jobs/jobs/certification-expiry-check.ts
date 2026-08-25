@@ -84,6 +84,46 @@ export const certificationExpiryCheck: JobDefinition = {
     let notifiedCount = 0;
     const detail: string[] = [];
 
+    // Stored-status normalization. Views derive display status from the
+    // dates (lib/effective-status), but the stored enum still leaks into
+    // CSV exports, custom reports, and DB-direct reads — and real rows
+    // sat ACTIVE months past their date because nothing wrote the enum
+    // back. This keeps storage honest once a day. PENDING / SUSPENDED /
+    // REVOKED are manual judgments and are left alone.
+    const staleStatusRows = await db.certification.findMany({
+      where: {
+        deletedAt: null,
+        expirationDate: { lt: now },
+        status: { in: ["ACTIVE", "EXPIRING_SOON"] },
+      },
+      select: { id: true, name: true, status: true, expirationDate: true },
+    });
+    let normalizedCount = 0;
+    for (const cert of staleStatusRows) {
+      const daysPast = Math.max(
+        0,
+        Math.floor(
+          (now.getTime() - (cert.expirationDate?.getTime() ?? now.getTime())) /
+            (1000 * 60 * 60 * 24)
+        )
+      );
+      if (ctx.dryRun) {
+        detail.push(
+          `→ ${cert.name}: stored status ${cert.status} but the date passed ${daysPast}d ago — WOULD normalize to EXPIRED`
+        );
+        normalizedCount++;
+        continue;
+      }
+      await db.certification.update({
+        where: { id: cert.id },
+        data: { status: "EXPIRED" },
+      });
+      normalizedCount++;
+      detail.push(
+        `→ ${cert.name}: stored status ${cert.status} but the date passed ${daysPast}d ago — normalized to EXPIRED`
+      );
+    }
+
     for (const cert of certs) {
       if (!cert.expirationDate) continue;
 
@@ -190,10 +230,15 @@ export const certificationExpiryCheck: JobDefinition = {
 
     const summary = [
       `Checked ${certs.length} certification${certs.length === 1 ? "" : "s"} with an upcoming expiration date, ${ctx.dryRun ? "would fire" : "fired"} ${notifiedCount} reminder${notifiedCount === 1 ? "" : "s"}.`,
+      ...(normalizedCount > 0
+        ? [
+            `${ctx.dryRun ? "Would normalize" : "Normalized"} ${normalizedCount} stored status${normalizedCount === 1 ? "" : "es"} to EXPIRED (expiration date already passed).`,
+          ]
+        : []),
       `Not checked: ${noDate} with no expiration date, ${alreadyPast} already expired (reminders are pre-expiry; the cert page shows these as Expired), ${renewalPending} with a renewal already submitted (muted until sign-off).`,
       ...(detail.length > 0 ? ["", ...detail] : []),
     ].join("\n");
 
-    return { output: summary, processed: notifiedCount };
+    return { output: summary, processed: notifiedCount + normalizedCount };
   },
 };

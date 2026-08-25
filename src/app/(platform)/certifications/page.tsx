@@ -28,7 +28,7 @@ import { resolveViewPreference } from "@/lib/view-preference";
 import { ViewOptionsBar } from "@/components/shared/view-options-bar";
 import { GroupSection } from "@/components/shared/group-section";
 import { groupRows } from "@/lib/group-rows";
-import { certBucket, CERT_BUCKETS, CERT_BUCKET_LABELS, type CertBucket } from "@/lib/effective-status";
+import { certBucket, certDisplayStatus, CERT_BUCKETS, CERT_BUCKET_LABELS, type CertBucket } from "@/lib/effective-status";
 
 const JURISDICTION_LEVELS: JurisdictionLevel[] = [
   "FEDERAL",
@@ -41,15 +41,6 @@ const JURISDICTION_LEVELS: JurisdictionLevel[] = [
 ];
 
 const ENGAGEMENT_TYPES: CertEngagementType[] = ["CERTIFICATION", "SUBSCRIPTION"];
-
-/** StatusBadge-compatible value per effective bucket. */
-const BUCKET_TO_STATUS: Record<CertBucket, string> = {
-  active: "ACTIVE",
-  expiring: "EXPIRING_SOON",
-  expired: "EXPIRED",
-  pending: "PENDING",
-  renewing: "RENEWAL_SUBMITTED",
-};
 
 type CertRow = Prisma.CertificationGetPayload<{
   include: {
@@ -176,11 +167,9 @@ export default async function CertificationsPage({ searchParams }: PageProps) {
   const expiringSoon = buckets.expiring;
   const visibleCerts = statusFilter ? buckets[statusFilter] : certifications;
 
-  /** Manual statuses pass through; everything else shows the date-derived bucket. */
-  const displayStatus = (cert: CertRow): string =>
-    cert.status === "SUSPENDED" || cert.status === "REVOKED"
-      ? cert.status
-      : BUCKET_TO_STATUS[certBucket(cert, now)];
+  /** Manual statuses pass through; everything else shows the date-derived
+   *  bucket (shared with the detail page and reports via effective-status). */
+  const displayStatus = (cert: CertRow): string => certDisplayStatus(cert, now);
 
   const groupKeyOf = (cert: CertRow, key: GroupKey): string | null => {
     switch (key) {
