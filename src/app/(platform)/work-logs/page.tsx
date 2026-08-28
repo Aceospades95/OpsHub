@@ -20,7 +20,7 @@ import {
   weekBounds,
   weekTotals,
 } from "@/lib/worklogs";
-import { QuickLogForm } from "./quick-log-form";
+import { LogDayButton } from "./log-day-button";
 import { SubmitLogButton } from "./submit-log-button";
 
 export const metadata = { title: "Work Logs · OpsHub" };
@@ -183,18 +183,35 @@ export default async function WorkLogsPage() {
     );
   };
 
+  const stripTotals = stripKeys.map((key) => ({ key, totals: weekTotals(weekLogsFor(key)) }));
+  // Four cards of "0h · 0 days logged" carry no information — collapse
+  // the strip to one muted line until there's at least one logged day.
+  const stripAllZero = stripTotals.every(
+    ({ totals }) => totals.totalHours === 0 && totals.days === 0
+  );
+
   return (
     <div>
       <PageHeader
         title="Work Logs"
         description="Your daily log — hours, tickets/sites, and notes. Back-fill missing days before the week closes."
         actions={
-          canManage ? (
-            <Link href="/work-logs/team">
-              <Button variant="outline">
-                <Users className="h-4 w-4 mr-2" /> Team view
-              </Button>
-            </Link>
+          canManage || perms.canCreate ? (
+            <>
+              {canManage && (
+                <Link href="/work-logs/team">
+                  <Button variant="outline">
+                    <Users className="h-4 w-4 mr-2" /> Team view
+                  </Button>
+                </Link>
+              )}
+              {perms.canCreate && (
+                <LogDayButton
+                  today={todayStr}
+                  minDate={canManage ? undefined : toCalendarDateString(lastStart)}
+                />
+              )}
+            </>
           ) : undefined
         }
       />
@@ -207,90 +224,75 @@ export default async function WorkLogsPage() {
         </div>
       )}
 
-      {/* 4-week totals strip */}
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4 mb-6">
-        {stripKeys.map((key) => {
-          const totals = weekTotals(weekLogsFor(key));
-          const isOvertime = totals.totalHours > OVERTIME_WEEK_HOURS;
-          const flag = flagByWeek.get(key);
-          return (
-            <Card key={key}>
-              <CardContent className="p-4">
-                <p className="text-xs text-muted-foreground">
-                  {key}
-                  {key === currentKey && " · this week"}
-                </p>
-                <p className="text-2xl font-bold tabular-nums">{totals.totalHours}h</p>
-                <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <span>
-                    {totals.days} day{totals.days === 1 ? "" : "s"} logged
-                  </span>
-                  {isOvertime &&
-                    (flag?.overtimeApproved ? (
-                      <Badge variant="success">OT approved</Badge>
-                    ) : (
-                      <Badge variant="destructive">
-                        +{Math.round((totals.totalHours - OVERTIME_WEEK_HOURS) * 100) / 100}h OT
-                      </Badge>
-                    ))}
-                </div>
-              </CardContent>
-            </Card>
-          );
-        })}
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 space-y-6">
-          {/* Current week */}
-          <Card>
-            <CardContent className="p-0">
-              <div className="p-4 border-b border-border">
-                <h2 className="font-semibold">This week</h2>
-                <p className="text-xs text-muted-foreground">
-                  {currentKey} · {weekLabel(currentStart, currentEnd)}
-                </p>
-              </div>
-              {weekGrid(currentStart)}
-            </CardContent>
-          </Card>
-
-          {/* Last week — still back-fillable while this week is in progress */}
-          <Card>
-            <CardContent className="p-0">
-              <div className="p-4 border-b border-border">
-                <h2 className="font-semibold">Last week</h2>
-                <p className="text-xs text-muted-foreground">
-                  {lastKey} · {weekLabel(lastStart, lastEnd)} · back-fill stays open until this
-                  week ends ({formatCalendarDate(currentEnd, "MMM d")})
-                </p>
-              </div>
-              {weekGrid(lastStart)}
-            </CardContent>
-          </Card>
+      {/* 4-week totals strip — one muted line while everything is zero */}
+      {stripAllZero ? (
+        <p className="mb-6 text-xs text-muted-foreground">
+          No hours logged in the last four weeks ({stripKeys[3]} – {currentKey}).
+          Weekly totals will appear here once you log a day.
+        </p>
+      ) : (
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4 mb-6">
+          {stripTotals.map(({ key, totals }) => {
+            const isOvertime = totals.totalHours > OVERTIME_WEEK_HOURS;
+            const flag = flagByWeek.get(key);
+            return (
+              <Card key={key}>
+                <CardContent className="p-4">
+                  <p className="text-xs text-muted-foreground">
+                    {key}
+                    {key === currentKey && " · this week"}
+                  </p>
+                  <p className="text-2xl font-bold tabular-nums">{totals.totalHours}h</p>
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <span>
+                      {totals.days} day{totals.days === 1 ? "" : "s"} logged
+                    </span>
+                    {isOvertime &&
+                      (flag?.overtimeApproved ? (
+                        <Badge variant="success">OT approved</Badge>
+                      ) : (
+                        <Badge variant="destructive">
+                          +{Math.round((totals.totalHours - OVERTIME_WEEK_HOURS) * 100) / 100}h OT
+                        </Badge>
+                      ))}
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
         </div>
+      )}
 
-        {/* Quick submit */}
-        <div>
-          <Card>
-            <CardContent className="p-4">
-              <h2 className="font-semibold mb-1">Log a day</h2>
-              <p className="text-xs text-muted-foreground mb-4">
-                Defaults to today. Submitting a day you already logged updates it.
+      {/* Week grids own the full content width — five 9rem day columns
+          need ~720px, which the old 2/3 column clipped at Friday. The
+          "Log a day" form now lives in the header button's dialog. */}
+      <div className="space-y-6">
+        {/* Current week */}
+        <Card>
+          <CardContent className="p-0">
+            <div className="p-4 border-b border-border">
+              <h2 className="font-semibold">This week</h2>
+              <p className="text-xs text-muted-foreground">
+                {currentKey} · {weekLabel(currentStart, currentEnd)}
               </p>
-              {perms.canCreate ? (
-                <QuickLogForm
-                  today={todayStr}
-                  minDate={canManage ? undefined : toCalendarDateString(lastStart)}
-                />
-              ) : (
-                <p className="text-sm text-muted-foreground">
-                  You don&apos;t have permission to submit logs.
-                </p>
-              )}
-            </CardContent>
-          </Card>
-        </div>
+            </div>
+            {weekGrid(currentStart)}
+          </CardContent>
+        </Card>
+
+        {/* Last week — still back-fillable while this week is in progress */}
+        <Card>
+          <CardContent className="p-0">
+            <div className="p-4 border-b border-border">
+              <h2 className="font-semibold">Last week</h2>
+              <p className="text-xs text-muted-foreground">
+                {lastKey} · {weekLabel(lastStart, lastEnd)} · back-fill stays open until this
+                week ends ({formatCalendarDate(currentEnd, "MMM d")})
+              </p>
+            </div>
+            {weekGrid(lastStart)}
+          </CardContent>
+        </Card>
       </div>
     </div>
   );

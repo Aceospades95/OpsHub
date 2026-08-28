@@ -1,7 +1,10 @@
 import { describe, it, expect } from "vitest";
 import {
+  MIN_FIT_SCALE,
   ORG_CHART_CSS,
+  ORG_CHART_DEFAULT_COMPACT,
   ORG_CHART_LAYOUT,
+  clampedFitBounds,
   flattenForOrgChart,
   VIRTUAL_ROOT_ID,
 } from "./org-chart-canvas";
@@ -57,21 +60,21 @@ describe("ORG_CHART_CSS", () => {
  * Round-10 P0 regression: with `compact: true` and 8 leaf siblings
  * under one parent, d3-org-chart's compact-flex algorithm collapses
  * the leaves to overlapping (x, y) coordinates — at /team this
- * produced a ~120x70 px cluster with 28 pairwise card overlaps. The
- * fix has two parts:
+ * produced a ~120x70 px cluster with 28 pairwise card overlaps.
+ * compactMarginPair was bumped from 64 to 290 — that's nodeWidth
+ * (240) + 50, the cross-axis gap d3 inserts between the left/right
+ * column of compact-flex pairs — so sibling bounding boxes can no
+ * longer overlap in compact mode.
  *
- *   1. The component defaults `compact = false` so a fresh load is
- *      always legible. The toggle still works for trees where
- *      compact actually helps.
- *   2. compactMarginPair was bumped from 64 to 290 — that's
- *      nodeWidth (240) + 50, the cross-axis gap d3 inserts between
- *      the left/right column of compact-flex pairs. Even when the
- *      user toggles compact ON for a leaf-heavy tree, sibling
- *      bounding boxes can no longer overlap.
+ * (R10 also flipped the default to compact OFF as a belt-and-braces
+ * measure. The UX audit later measured non-compact as the unusable
+ * mode — ~3,450px natural width auto-fit down to ~0.11 scale — so
+ * the default is compact ON again, which the margin fix here makes
+ * safe. See ORG_CHART_DEFAULT_COMPACT.)
  *
- * These tests pin both invariants. If a future edit lowers
- * compactMarginPair below nodeWidth or sets the default compact
- * back to true, the test fails before the regression ships.
+ * These tests pin the margin invariants. If a future edit lowers
+ * compactMarginPair below nodeWidth, the test fails before the
+ * overlap regression ships.
  */
 describe("ORG_CHART_LAYOUT", () => {
   it("compactMarginPair leaves at least nodeWidth + 50 px between sibling pair columns", () => {
@@ -100,6 +103,79 @@ describe("ORG_CHART_LAYOUT", () => {
   it("nodeWidth and nodeHeight are positive", () => {
     expect(ORG_CHART_LAYOUT.nodeWidth).toBeGreaterThan(0);
     expect(ORG_CHART_LAYOUT.nodeHeight).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * UX-audit defect: the default org-chart view was an empty box with a
+ * smudge — the non-compact tree lays out ~3,447px wide in an ~822px
+ * container, so d3-org-chart's unbounded fit() scaled it to ≈0.107
+ * (names at ~1.2px). Two invariants pin the fix:
+ *
+ *   1. Compact layout defaults ON (readable natural width).
+ *   2. Fit-to-view never zooms below MIN_FIT_SCALE — when the clamped
+ *      scale can't show everything, the tree is top-aligned and
+ *      horizontally centered so pan/scroll reaches the rest.
+ */
+describe("fit-to-view clamp", () => {
+  it("defaults compact layout ON and floors fit at scale 0.5", () => {
+    expect(ORG_CHART_DEFAULT_COMPACT).toBe(true);
+    expect(MIN_FIT_SCALE).toBe(0.5);
+  });
+
+  it("defers to the library fit (null) when the tree fits at or above the floor", () => {
+    // 800-unit-wide tree in an 822px viewport → natural scale ≈ 0.9,
+    // comfortably above the floor.
+    const bounds = clampedFitBounds({
+      viewWidth: 822,
+      viewHeight: 616,
+      minX: -400,
+      maxX: 400,
+      minY: -50,
+      maxY: 450,
+    });
+    expect(bounds).toBeNull();
+  });
+
+  it("clamps the audited 3,447px tree to exactly MIN_FIT_SCALE, top-aligned", () => {
+    const view = { viewWidth: 822, viewHeight: 616 };
+    const tree = { minX: -1723.5, maxX: 1723.5, minY: -50, maxY: 450 };
+    // Sanity: the library's own formula on this tree is the audited smudge.
+    const naturalScale = Math.min(
+      8,
+      0.9 /
+        Math.max(
+          (tree.maxX - tree.minX) / view.viewWidth,
+          (tree.maxY - tree.minY) / view.viewHeight
+        )
+    );
+    expect(naturalScale).toBeLessThan(0.25);
+
+    const bounds = clampedFitBounds({ ...view, ...tree });
+    expect(bounds).not.toBeNull();
+    const { x0, x1, y0, y1 } = bounds!;
+
+    // zoomTreeBounds applies scale = min(8, 0.9 / max(bw/w, bh/h)) to
+    // whatever box it's given — the synthetic box must land it exactly
+    // on the floor.
+    const appliedScale = Math.min(
+      8,
+      0.9 /
+        Math.max((x1 - x0) / view.viewWidth, (y1 - y0) / view.viewHeight)
+    );
+    expect(appliedScale).toBeCloseTo(MIN_FIT_SCALE, 6);
+
+    // zoomTreeBounds centers the box midpoint: a chart point p maps to
+    // screen h/2 + scale * (p - cy). The tree's top edge (minY) must
+    // map to screen y = 0 (top-aligned, no dead band above)…
+    const cy = (y0 + y1) / 2;
+    const screenYofTreeTop =
+      view.viewHeight / 2 + MIN_FIT_SCALE * (tree.minY - cy);
+    expect(screenYofTreeTop).toBeCloseTo(0, 6);
+
+    // …and the box midpoint must sit on the tree's horizontal center
+    // so the overflow hangs evenly left and right.
+    expect((x0 + x1) / 2).toBeCloseTo((tree.minX + tree.maxX) / 2, 6);
   });
 });
 

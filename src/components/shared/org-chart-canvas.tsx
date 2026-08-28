@@ -17,7 +17,7 @@
  * `.default` from the imported module by convention.
  */
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { OrgChart } from "d3-org-chart";
 
 import type { OrgChartNode, OrgChartTreeProps } from "./org-chart-tree";
@@ -97,6 +97,71 @@ export const ORG_CHART_LAYOUT = {
   compactMarginPair: 290,
 } as const;
 
+/**
+ * Compact layout starts ON. The UX audit measured the non-compact
+ * default on the real org (8 reports under one root): the tree lays
+ * out ~3,450px wide, so auto-fit shrank it to ~0.11 scale — names at
+ * ~1.2px, an empty box with a smudge. Compact keeps the natural width
+ * near the viewport so a fresh load is readable. Safe to default ON
+ * because compactMarginPair=290 (R10 part 2) already prevents the
+ * sibling-overlap that originally forced the default OFF. Exported so
+ * the regression test pins the default.
+ */
+export const ORG_CHART_DEFAULT_COMPACT = true;
+
+/**
+ * Floor for the fit-to-view zoom. d3-org-chart's fit() picks
+ * scale = min(8, 0.9 / max(treeW/viewW, treeH/viewH)) with NO lower
+ * bound — the audited failure mode above. Below this floor cards are
+ * unreadable, so fitting stops here and pan/scroll covers the rest.
+ */
+export const MIN_FIT_SCALE = 0.5;
+
+/**
+ * Clamped-fit math, mirrored from d3-org-chart's fit()/zoomTreeBounds.
+ * Takes the viewport size and the tree's bounding box (already padded
+ * ±50 chart units, exactly like fit() pads) and returns:
+ *
+ *   - `null` when the natural fit scale is already ≥ MIN_FIT_SCALE —
+ *     caller should use the library's own fit(), which centers.
+ *   - otherwise, synthetic bounds to feed zoomTreeBounds. Its internal
+ *     math (scale to fill 90% of the viewport, center the bounds'
+ *     midpoint) then lands exactly on MIN_FIT_SCALE with the tree
+ *     top edge flush with the viewport top (root visible, overflow
+ *     below/right reachable by pan) and centered horizontally.
+ *
+ * Pure — exported for the regression test.
+ */
+export function clampedFitBounds(input: {
+  viewWidth: number;
+  viewHeight: number;
+  minX: number;
+  maxX: number;
+  minY: number;
+  maxY: number;
+}): { x0: number; x1: number; y0: number; y1: number } | null {
+  const { viewWidth: w, viewHeight: h, minX, maxX, minY, maxY } = input;
+  if (w <= 0 || h <= 0) return null;
+  const naturalScale = Math.min(
+    8,
+    0.9 / Math.max((maxX - minX) / w, (maxY - minY) / h)
+  );
+  if (naturalScale >= MIN_FIT_SCALE) return null;
+  // A box of 0.9·view/scale forces zoomTreeBounds to that exact scale;
+  // a midpoint of treeTop + half the visible height (in chart units)
+  // maps the tree's top edge to screen y=0.
+  const boxW = (0.9 * w) / MIN_FIT_SCALE;
+  const boxH = (0.9 * h) / MIN_FIT_SCALE;
+  const cx = (minX + maxX) / 2;
+  const cy = minY + h / (2 * MIN_FIT_SCALE);
+  return {
+    x0: cx - boxW / 2,
+    x1: cx + boxW / 2,
+    y0: cy - boxH / 2,
+    y1: cy + boxH / 2,
+  };
+}
+
 export default function OrgChartCanvas({
   nodes,
   highlight,
@@ -106,16 +171,12 @@ export default function OrgChartCanvas({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<OrgChart<FlatNode> | null>(null);
   const onCardClickRef = useRef(onCardClick);
-  // Round-10 P0: d3-org-chart's compact-flex layout collapses siblings
-  // to identical (x, y) coordinates when a single parent has many
-  // leaf children — the exact shape the /team page produces with all
-  // 8 employees under the virtual root. Result: 8 cards stack into a
-  // ~120x70 px cluster with 28 pairwise overlaps. Non-compact mode
-  // renders correctly. Default compact OFF so a fresh load is always
-  // legible; the toggle still works for trees where compact actually
-  // helps (deep + many sub-trees, where the "stacks deep branches
-  // vertically with a side connector" tooltip applies).
-  const [compact, setCompact] = useState(false);
+  // Default ON (see ORG_CHART_DEFAULT_COMPACT) — the non-compact
+  // layout is ~3,450px wide on the real org and auto-fit rendered it
+  // as an unreadable smudge. R10's compact-siblings overlap is long
+  // fixed by compactMarginPair=290, so compact is safe as the default.
+  // No persisted preference exists; the toggle is per-visit state.
+  const [compact, setCompact] = useState(ORG_CHART_DEFAULT_COMPACT);
 
   // Keep the latest onCardClick reachable from the chart's own click
   // handler without re-instantiating the chart. d3-org-chart isn't a
@@ -127,6 +188,63 @@ export default function OrgChartCanvas({
   const flat = useMemo<FlatNode[]>(() => {
     return flattenForOrgChart(nodes, hideTopHeaderForSingleRoot);
   }, [nodes, hideTopHeaderForSingleRoot]);
+
+  // Fit-to-view with the MIN_FIT_SCALE floor. Every fit in this
+  // component routes through here (initial render, the re-fit
+  // raf/timeout, and the toolbar buttons) so no path can zoom the
+  // tree down to an unreadable scale.
+  const fitToView = useCallback(() => {
+    const chart = chartRef.current;
+    if (!chart) return;
+    const state = chart.getChartState();
+    // Sync the SVG viewport to the real container first. d3-org-chart
+    // defaults svgHeight to window.innerHeight - 100 and its render()
+    // re-measures only WIDTH, so fit() used to center the tree on a
+    // canvas taller than the visible 75vh box — the "~250px of dead
+    // space above the chart" defect. getChartState() returns the live
+    // attrs object, so the setters below feed the math right after.
+    const container = containerRef.current;
+    if (container && container.clientWidth > 0 && container.clientHeight > 0) {
+      const w = container.clientWidth;
+      const h = container.clientHeight;
+      chart.svgWidth(w).svgHeight(h);
+      if (state.svg) {
+        state.svg.attr("width", w).attr("height", h);
+      }
+    }
+    const root = state.root as typeof state.root | undefined;
+    if (!root) return; // nothing rendered yet (empty data)
+    const layoutBinding = state.layoutBindings[state.layout];
+    const descendants = root.descendants();
+    if (descendants.length === 0) return;
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minY = Infinity;
+    let maxY = -Infinity;
+    for (const d of descendants) {
+      // d3-org-chart assigns x/y at layout time; the hierarchy typings
+      // don't carry them.
+      const p = d as unknown as { x: number; y: number };
+      minX = Math.min(minX, p.x + layoutBinding.nodeLeftX(d));
+      maxX = Math.max(maxX, p.x + layoutBinding.nodeRightX(d));
+      minY = Math.min(minY, p.y + layoutBinding.nodeTopY(d));
+      maxY = Math.max(maxY, p.y + layoutBinding.nodeBottomY(d));
+    }
+    const bounds = clampedFitBounds({
+      viewWidth: state.svgWidth,
+      viewHeight: state.svgHeight,
+      // Same ±50 chart-unit padding fit() applies to the tree box.
+      minX: minX - 50,
+      maxX: maxX + 50,
+      minY: minY - 50,
+      maxY: maxY + 50,
+    });
+    if (!bounds) {
+      chart.fit();
+      return;
+    }
+    chart.zoomTreeBounds({ ...bounds, params: { animate: true, scale: true } });
+  }, []);
 
   // Re-derive the highlight on every render — d3-org-chart re-runs
   // the node template, which reads the closure value.
@@ -141,6 +259,13 @@ export default function OrgChartCanvas({
       chartRef.current = new OrgChart<FlatNode>();
     }
     const chart = chartRef.current;
+    // d3-org-chart's render() syncs svgWidth from the container but
+    // leaves svgHeight at its window-derived default — size the canvas
+    // to the real 75vh box up front so the very first fit centers in
+    // the visible viewport (fitToView keeps it synced afterwards).
+    if (containerRef.current.clientHeight > 0) {
+      chart.svgHeight(containerRef.current.clientHeight);
+    }
     chart
       .container(containerRef.current as unknown as string)
       // Tag every node as initially expanded so d3-org-chart doesn't
@@ -193,20 +318,20 @@ export default function OrgChartCanvas({
       // so any node d3-org-chart auto-collapsed (compact-mode pager,
       // depth limit, etc.) becomes visible. Re-fits to compute
       // coordinates with the full tree expanded.
-      .expandAll()
-      .fit();
+      .expandAll();
+    fitToView();
     // Round-6 QA: project detail clipped the leftmost card because the
-    // initial .fit() ran while the wrapping Card was still being laid
+    // initial fit ran while the wrapping Card was still being laid
     // out — the SVG measured its container width before flex/grid had
     // settled, then fit to a too-narrow viewport. Re-fit on the next
     // animation frame and again 200ms later to catch any second-pass
-    // layout (font load, image hydration, etc.). Idempotent — calling
-    // .fit() repeatedly just re-centers, no transition pile-up.
+    // layout (font load, image hydration, etc.). Idempotent — fitting
+    // repeatedly just re-centers, no transition pile-up.
     const reFitOnceLaidOut = requestAnimationFrame(() => {
-      chartRef.current?.fit();
+      fitToView();
     });
     const reFitAfterSettle = window.setTimeout(() => {
-      chartRef.current?.fit();
+      fitToView();
     }, 200);
     // Capture the current container element for the cleanup closure —
     // by the time React runs cleanup, containerRef.current has already
@@ -406,7 +531,10 @@ export default function OrgChartCanvas({
         </button>
         <button
           type="button"
-          onClick={() => chartRef.current?.expandAll().fit()}
+          onClick={() => {
+            chartRef.current?.expandAll();
+            fitToView();
+          }}
           className="rounded border border-border px-2 py-1 hover:bg-muted/40 transition-colors"
           title="Expand every node and re-fit to the viewport. If everything is already expanded the tree just re-centers."
         >
@@ -414,7 +542,10 @@ export default function OrgChartCanvas({
         </button>
         <button
           type="button"
-          onClick={() => chartRef.current?.collapseAll().fit()}
+          onClick={() => {
+            chartRef.current?.collapseAll();
+            fitToView();
+          }}
           className="rounded border border-border px-2 py-1 hover:bg-muted/40 transition-colors"
           title="Collapse every node down to the roots."
         >
@@ -422,9 +553,9 @@ export default function OrgChartCanvas({
         </button>
         <button
           type="button"
-          onClick={() => chartRef.current?.fit()}
+          onClick={() => fitToView()}
           className="rounded border border-border px-2 py-1 hover:bg-muted/40 transition-colors"
-          title="Re-center and zoom so the whole tree fits in view."
+          title="Re-center and zoom so the tree fits in view — never below 50% zoom; pan to reach the rest of a very wide tree."
         >
           Fit to view
         </button>
