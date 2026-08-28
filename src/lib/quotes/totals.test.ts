@@ -185,4 +185,14 @@ describe("formatCurrency", () => {
   it("falls back gracefully for unknown currency codes", () => {
     expect(formatCurrency(50, "ZZZ")).toContain("50.00");
   });
+
+  it("formats compact KPI amounts as $48.8M-style", () => {
+    expect(formatCurrency(48795000, "USD", { compact: true })).toBe("$48.8M");
+    expect(formatCurrency(1250, "USD", { compact: true })).toBe("$1.3K");
+    expect(formatCurrency(950, "USD", { compact: true })).toBe("$950");
+  });
+
+  it("keeps full precision when compact is not requested", () => {
+    expect(formatCurrency(48795000, "USD")).toBe("$48,795,000.00");
+  });
 });

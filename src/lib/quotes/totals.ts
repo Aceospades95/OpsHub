@@ -116,15 +116,29 @@ export function computeQuoteTotals(input: QuoteTotalsInput): QuoteTotalsOutput {
   return { lineSubtotals, subtotal, discountAmount, taxAmount, total };
 }
 
-/** Format a Float currency amount with the project's `Intl.NumberFormat` style. */
-export function formatCurrency(amount: number, currency: string = "USD"): string {
+/** Format a Float currency amount with the project's `Intl.NumberFormat` style.
+ *  `compact` renders KPI-tile style ("$48.8M") — for stat chips too narrow
+ *  for a full "$48,795,000.00". */
+export function formatCurrency(
+  amount: number,
+  currency: string = "USD",
+  opts?: { compact?: boolean }
+): string {
   try {
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency,
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    }).format(amount);
+    return new Intl.NumberFormat(
+      "en-US",
+      opts?.compact
+        ? // minimumFractionDigits: 0 — without it the currency default (2)
+          // clamps to 1 and sub-1K values render "$950.0".
+          {
+            style: "currency",
+            currency,
+            notation: "compact",
+            minimumFractionDigits: 0,
+            maximumFractionDigits: 1,
+          }
+        : { style: "currency", currency, minimumFractionDigits: 2, maximumFractionDigits: 2 }
+    ).format(amount);
   } catch {
     // Unknown ISO currency — fall back to the code prefix so the UI
     // still renders something sensible instead of throwing.

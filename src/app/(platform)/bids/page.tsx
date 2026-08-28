@@ -325,7 +325,8 @@ export default async function BidsPage({
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6 mb-6">
         {statChip(
           "Open pipeline",
-          `${openBids.length}${pipelineValue > 0 ? ` · ${formatCurrency(pipelineValue, "USD")}` : ""}`,
+          // Compact ("$48.8M") — the full form wraps a ~126px chip to 3 lines.
+          `${openBids.length}${pipelineValue > 0 ? ` · ${formatCurrency(pipelineValue, "USD", { compact: true })}` : ""}`,
           "/bids",
           <Target className="h-3.5 w-3.5" />,
           !dueFilter

@@ -7,6 +7,7 @@ import { ReceiptText } from "lucide-react";
 import { requireAuth, resolveModulePerms } from "@/lib/permissions";
 import { AccessDenied } from "@/components/shared/access-denied";
 import { PageHeader } from "@/components/layout/page-header";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Badge } from "@/components/ui/badge";
@@ -113,17 +114,11 @@ export default async function QuotesPage({
         description="Build and store sales quotes — sort, search, and download as PDF or Word."
         actions={
           <div className="flex items-center gap-2">
-            <Link
-              href="/quotes/templates"
-              className="text-sm text-muted-foreground hover:text-foreground hover:underline"
-            >
-              Templates
+            <Link href="/quotes/templates">
+              <Button variant="outline">Templates</Button>
             </Link>
-            <Link
-              href="/quotes/catalog"
-              className="text-sm text-muted-foreground hover:text-foreground hover:underline"
-            >
-              Catalog
+            <Link href="/quotes/catalog">
+              <Button variant="outline">Catalog</Button>
             </Link>
             {perms.canCreate && <QuoteCreateButton clients={clients} />}
           </div>

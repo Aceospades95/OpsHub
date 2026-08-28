@@ -169,25 +169,34 @@ export default async function ToolsPage({
         description="Company tools, forms, and calculators"
         actions={
           <div className="flex items-center gap-2">
-            {user.role === "ADMIN" && <DownloadCsvButton importerKey="tools" />}
+            {/* Nothing to export when the list is empty. */}
+            {user.role === "ADMIN" && tools.length > 0 && <DownloadCsvButton importerKey="tools" />}
             {perms.canCreate && <ToolCreateButton />}
           </div>
         }
       />
 
-      <ViewOptionsBar
-        view={view}
-        viewOptions={[
-          { value: "table", label: "Table" },
-          { value: "cards", label: "Cards" },
-        ]}
-        storageKey="tools"
-        groupBy={groupBy}
-        groupByOptions={[...GROUP_OPTIONS]}
-      />
+      {/* View/group-by controls act on rows — pointless with zero records. */}
+      {tools.length > 0 && (
+        <ViewOptionsBar
+          view={view}
+          viewOptions={[
+            { value: "table", label: "Table" },
+            { value: "cards", label: "Cards" },
+          ]}
+          storageKey="tools"
+          groupBy={groupBy}
+          groupByOptions={[...GROUP_OPTIONS]}
+        />
+      )}
 
       {tools.length === 0 ? (
-        <EmptyState icon={Wrench} title="No tools yet" description="Create your first tool" />
+        <EmptyState
+          icon={Wrench}
+          title="No tools yet"
+          description="Create your first tool"
+          action={perms.canCreate ? <ToolCreateButton /> : undefined}
+        />
       ) : groups ? (
         groups.map((group) => (
           <GroupSection key={group.label} label={group.label} count={group.rows.length}>
