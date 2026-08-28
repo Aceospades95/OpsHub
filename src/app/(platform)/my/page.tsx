@@ -189,6 +189,12 @@ export default async function MyViewPage({
             project: task.project ? { id: task.project.id, name: task.project.name } : null,
             isGoogle: task.sourceType === "google_tasks",
             sourceLink: task.sourceLink ?? null,
+            // Subtask nesting + "My order" for the By-list view: the
+            // "<tasklistId>:<taskId>" key (parents are matched by its
+            // bare task-id half) plus Google's parent/position mirror.
+            sourceId: task.sourceId ?? null,
+            googleParentId: task.googleParentId ?? null,
+            googlePosition: task.googlePosition ?? null,
             listTitle:
               task.sourceType === "google_tasks"
                 ? (listTitleById.get(task.googleListId ?? "")?.title ?? "Google Tasks")

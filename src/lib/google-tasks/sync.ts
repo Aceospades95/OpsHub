@@ -29,7 +29,10 @@
  * to the stored integration.tasklistId for any stragglers.
  *
  * Conflicts resolve last-write-wins per task using Google's `updated`
- * stamp vs the OpsHub row's updatedAt.
+ * stamp vs the OpsHub row's updatedAt. Subtask structure (`parent`)
+ * and manual "My order" (`position`) are exempt from that contest:
+ * they're pull-only display metadata OpsHub never edits, mirrored
+ * into googleParentId / googlePosition whichever side is newer.
  *
  * Google Tasks has no webhooks, so this runs from the `google-tasks-sync`
  * job (cron) and on demand from the /my "Sync now" button. Both paths are
@@ -48,6 +51,7 @@ import {
   patchTask,
   type GoogleTask,
 } from "./api";
+import { parseSourceId } from "./task-tree";
 
 const SOURCE_TYPE = "google_tasks";
 /** Overlap window so clock skew between us and Google can't drop updates. */
@@ -63,13 +67,6 @@ export interface SyncResult {
 /** Composite source key — Google task ids are only unique per list. */
 function sourceKey(tasklistId: string, taskId: string): string {
   return `${tasklistId}:${taskId}`;
-}
-
-/** Split a sourceId back into list + task. Legacy bare ids have no list. */
-function parseSourceId(sourceId: string): { tasklistId: string | null; taskId: string } {
-  const i = sourceId.indexOf(":");
-  if (i === -1) return { tasklistId: null, taskId: sourceId };
-  return { tasklistId: sourceId.slice(0, i), taskId: sourceId.slice(i + 1) };
 }
 
 /** Google `due` is date-only; normalize both sides to a YYYY-MM-DD string. */
@@ -225,6 +222,8 @@ export async function syncGoogleTasksForUser(userId: string): Promise<SyncResult
                 sourceType: SOURCE_TYPE,
                 sourceId: key,
                 googleListId: list.id,
+                googleParentId: g.parent ?? null,
+                googlePosition: g.position ?? null,
                 sourceLink: sourceLinkOf(g),
                 sourceReadOnly: isReadOnly(g),
               },
@@ -261,7 +260,12 @@ export async function syncGoogleTasksForUser(userId: string): Promise<SyncResult
             //     403-frozen task must NOT be retried every sync);
             //   - backfill sourceLink (the Gmail/Docs link) — rows pulled
             //     before the field existed have null here, and the full
-            //     pull walks them exactly once to fix that.
+            //     pull walks them exactly once to fix that;
+            //   - refresh parent/position (subtask nesting + "My order").
+            //     Pull-only mirror fields OpsHub never edits — Google is
+            //     the authority even when the OpsHub row's CONTENT is
+            //     newer, so a task moved in Google while its OpsHub copy
+            //     was being edited still lands in the right spot.
             // Deliberately NOT added to pulledIds — an OpsHub-newer row
             // should still push.
             const metaPatch: {
@@ -269,6 +273,8 @@ export async function syncGoogleTasksForUser(userId: string): Promise<SyncResult
               sourceReadOnly?: boolean;
               sourceLink?: string | null;
               googleListId?: string;
+              googleParentId?: string | null;
+              googlePosition?: string | null;
             } = {};
             if (existing.sourceId !== key) {
               metaPatch.sourceId = key;
@@ -279,6 +285,12 @@ export async function syncGoogleTasksForUser(userId: string): Promise<SyncResult
             }
             if (existing.sourceLink !== sourceLinkOf(g)) {
               metaPatch.sourceLink = sourceLinkOf(g);
+            }
+            if (existing.googleParentId !== (g.parent ?? null)) {
+              metaPatch.googleParentId = g.parent ?? null;
+            }
+            if (existing.googlePosition !== (g.position ?? null)) {
+              metaPatch.googlePosition = g.position ?? null;
             }
             if (Object.keys(metaPatch).length > 0) {
               await db.task.update({ where: { id: existing.id }, data: metaPatch });
@@ -300,7 +312,11 @@ export async function syncGoogleTasksForUser(userId: string): Promise<SyncResult
             existing.deletedAt !== null ||
             existing.sourceId !== key ||
             existing.sourceLink !== nextLink ||
-            existing.sourceReadOnly !== nextReadOnly;
+            existing.sourceReadOnly !== nextReadOnly ||
+            // A pure move (indent/outdent/drag in Google) bumps `updated`
+            // without touching content — it must still mirror here.
+            existing.googleParentId !== (g.parent ?? null) ||
+            existing.googlePosition !== (g.position ?? null);
 
           if (!changed) continue;
 
@@ -312,6 +328,10 @@ export async function syncGoogleTasksForUser(userId: string): Promise<SyncResult
               dueDate: g.due ? new Date(g.due) : null,
               sourceId: key,
               googleListId: list.id,
+              // Nulls matter: a subtask promoted to top level in Google
+              // must shed its stale parent (and ditto position).
+              googleParentId: g.parent ?? null,
+              googlePosition: g.position ?? null,
               sourceLink: nextLink,
               sourceReadOnly: nextReadOnly,
               ...(nextStatus === "DONE"
@@ -372,7 +392,7 @@ export async function syncGoogleTasksForUser(userId: string): Promise<SyncResult
           ? defaultListId ?? "@default"
           : integration.tasklistId ?? defaultListId ?? "@default";
       try {
-        await patchTask(accessToken, targetList, taskId, {
+        const patched = await patchTask(accessToken, targetList, taskId, {
           title: task.title,
           notes: task.description ?? "",
           due: task.dueDate ? task.dueDate.toISOString() : undefined,
@@ -384,11 +404,17 @@ export async function syncGoogleTasksForUser(userId: string): Promise<SyncResult
         // The successful patch proves the task lives in targetList —
         // pin the real composite key so this row stops depending on
         // alias resolution (and other accounts can recognize it as
-        // not-theirs).
+        // not-theirs). The patch response is the full task resource,
+        // so mirror parent/position off it too.
         if (aliased && targetList !== "@default") {
           await db.task.update({
             where: { id: task.id },
-            data: { sourceId: sourceKey(targetList, taskId), googleListId: targetList },
+            data: {
+              sourceId: sourceKey(targetList, taskId),
+              googleListId: targetList,
+              googleParentId: patched.parent ?? null,
+              googlePosition: patched.position ?? null,
+            },
           });
         }
       } catch (err) {
@@ -503,6 +529,10 @@ export async function pushNewTaskToGoogle(
       sourceType: SOURCE_TYPE,
       sourceId: sourceKey(listId, created.id),
       ...(listId !== "@default" ? { googleListId: listId } : {}),
+      // Google assigns the new task a slot in "My order" — mirror it
+      // now instead of waiting a pull cycle. Inserts are top-level.
+      googleParentId: created.parent ?? null,
+      googlePosition: created.position ?? null,
     },
   });
   return {};

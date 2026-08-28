@@ -12,6 +12,7 @@ import {
   type GoogleSyncState,
 } from "@/components/shared/google-sync-controls";
 import { formatCalendarDate } from "@/lib/dates";
+import { buildGoogleTaskTree } from "@/lib/google-tasks/task-tree";
 import { MyQuickAddTask } from "./my-quick-add-task";
 import { CheckSquare, Clock, CalendarCheck, Mail } from "lucide-react";
 
@@ -26,6 +27,12 @@ export interface MyTaskRow {
   isGoogle: boolean;
   /** Gmail/Docs link Google carries on the task, if any. */
   sourceLink: string | null;
+  /** "<tasklistId>:<taskId>" sync key (null for OpsHub-native tasks). */
+  sourceId: string | null;
+  /** Bare Google id of the parent task when this is a Google subtask. */
+  googleParentId: string | null;
+  /** Google's lexicographic "My order" sort key. */
+  googlePosition: string | null;
   /** Google list name (null for OpsHub-native tasks). */
   listTitle: string | null;
   /** True when the task's list is the account default ("My Tasks"). */
@@ -181,9 +188,9 @@ export function MyTasksCard({
 
   const groups = groupByList
     ? (() => {
-        const out: { title: string; tasks: MyTaskRow[] }[] = [];
+        const out: { title: string; tasks: MyTaskRow[]; google: boolean }[] = [];
         const ops = tasks.filter((t) => !t.isGoogle);
-        if (ops.length > 0) out.push({ title: "OpsHub", tasks: ops });
+        if (ops.length > 0) out.push({ title: "OpsHub", tasks: ops, google: false });
         const byList = new Map<string, { isDefault: boolean; tasks: MyTaskRow[] }>();
         for (const t of tasks) {
           if (!t.isGoogle) continue;
@@ -198,10 +205,30 @@ export function MyTasksCard({
             (a, b) =>
               Number(b[1].isDefault) - Number(a[1].isDefault) || a[0].localeCompare(b[0])
           )
-          .map(([title, g]) => ({ title, tasks: g.tasks }));
+          .map(([title, g]) => ({ title, tasks: g.tasks, google: true }));
         return [...out, ...google];
       })()
     : [];
+
+  /**
+   * A Google-list section rendered the way the Google Tasks app shows
+   * it: top-level tasks in "My order" (position), subtasks indented
+   * under their parent behind a hairline connector, in position order
+   * too. Orphaned subtasks (parent completed/deleted) surface at top
+   * level — see buildGoogleTaskTree. The OpsHub section and the flat
+   * "Due date" mode keep the due-date ordering.
+   */
+  const renderGoogleList = (rows: MyTaskRow[]) =>
+    buildGoogleTaskTree(rows).map((node) => (
+      <div key={node.id}>
+        {renderTask(node)}
+        {node.children.length > 0 && (
+          <div className="mt-2 ml-2.5 pl-4 border-l border-border space-y-2">
+            {node.children.map(renderTask)}
+          </div>
+        )}
+      </div>
+    ));
 
 
 
@@ -264,7 +291,9 @@ export function MyTasksCard({
                   <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-1.5">
                     {g.title} ({g.tasks.length})
                   </p>
-                  <div className="space-y-2">{g.tasks.map(renderTask)}</div>
+                  <div className="space-y-2">
+                    {g.google ? renderGoogleList(g.tasks) : g.tasks.map(renderTask)}
+                  </div>
                 </div>
               ))}
             </div>
