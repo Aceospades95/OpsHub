@@ -627,3 +627,46 @@ rows.
 - **Module visibility** (`/admin/modules`): any sidebar module can be
   hidden until it's populated — the empty-nav problem is now a setting,
   not a code change.
+
+## Phase H — measured UX pass (Aug 2026) ✅ shipped
+
+A pixel-measured audit of the running app traced ~30 rendering defects
+across eight pages to one stylesheet line and a handful of local
+causes. All fixed and re-measured live:
+
+- **Root cause**: `word-break: break-word` on body let any squeezed
+  flex child break inside words ("Tasks" → "Task/s", VINs and dates
+  shattered) and — worse — let tables collapse below their content
+  width so their own `overflow-x` scrollbars never engaged. Now
+  `word-break: normal` + `overflow-wrap: break-word` (long tokens
+  still break only when they alone overflow), with an opt-in
+  `.break-anywhere` utility.
+- Pinch-zoom restored on mobile (`maximum-scale=1` removed — WCAG
+  1.4.4); page headers wrap instead of crushing the title under heavy
+  toolbars; the fixed Edit-Layout pill gets scroll clearance; flow
+  pages render their wide/narrow split 7/5 so the narrow column
+  clears the ~320px card-header threshold.
+- **Org chart legible by default**: compact layout ON, fit-to-view
+  clamped at 0.5 scale (d3-org-chart has no lower zoom bound — the
+  old default fitted a 3,447px tree into 822px at scale 0.107), SVG
+  height synced to the container (was window-sized, pushing the tree
+  ~250px down).
+- **Work Logs**: the week grid owns the full content width (Friday was
+  clipped behind a horizontal scroll); "Log a day" moved to a header
+  button + dialog; the KPI strip collapses to one line when all zero.
+- **Tables**: enum acronyms render correctly (MSA, not "Msa");
+  columns empty across every visible row auto-hide (contracts,
+  subcontractors, partnerships, projects "Access"); single-project
+  client groups flatten to plain rows and per-group New Project
+  buttons are gone; the preferred-subcontractor star has a tooltip.
+- **Controls**: Create Task defaults to MEDIUM priority (was silently
+  HIGH); the Google-Tasks checkbox is a real touch target; Intranet/
+  Tools empty states carry the create button and zero-state controls
+  hide; Quotes header links are buttons; the bid-pipeline KPI renders
+  compact currency ($48.8M) via a tested `formatCurrency` option.
+- ContactLinksCard: >8 people → inline filter + bounded scroll (a
+  39-person client rendered a ~3,900px card).
+
+Deliberately not done: an `xl:` breakpoint tier / raising the 1600px
+content cap (revisit with real wide-screen usage), and per-row
+density inside the shared TreeView (touches every tree in the app).
