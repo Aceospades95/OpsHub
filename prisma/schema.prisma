@@ -351,6 +351,7 @@ model User {
   milestoneAssignments           MilestoneAssignee[]
   comments                       Comment[]
   activityLogs                   ActivityLog[]
+  contactInteractions            ContactInteraction[]                @relation("InteractionAuthor")
   uploadedFiles                  File[]                              @relation("FileUploader")
   profileFiles                   File[]                              @relation("FileOwner")
   modulePermissions              ModulePermission[]
@@ -538,6 +539,14 @@ model Task {
   /// "<tasklistId>:<taskId>" sourceId so the UI can show/group by the
   /// list without string surgery). Null for OpsHub-native tasks.
   googleListId String?
+  /// Google subtask hierarchy + manual ordering (list-fidelity phase
+  /// two): the PARENT Google task id (bare task id, no list prefix)
+  /// and Google's lexicographic `position` string within the parent /
+  /// list. Pulled on sync so My View can mirror Google's own nesting
+  /// and "My order"; never pushed. Null for OpsHub-native tasks and
+  /// top-level Google tasks (parent only).
+  googleParentId String?
+  googlePosition String?
   /// The dueDate the task-due-reminders job last notified about.
   /// Re-arms automatically when dueDate changes (mirrors
   /// BidOpportunity.dueNotifiedFor).
@@ -640,9 +649,36 @@ model Contact {
   deletedAt    DateTime?
 
   contactLinks ContactLink[]
+  interactions ContactInteraction[]
 
   @@index([email])
   @@index([name])
+}
+
+/// CRM phase 2: dated touch-log per person — calls, emails, meetings,
+/// notes. Hard rows (no soft delete): interactions are annotations,
+/// and the CONTACT carries the recoverable lifecycle — cascading with
+/// it on purge.
+model ContactInteraction {
+  id          String   @id @default(cuid())
+  contactId   String
+  /// CALL | EMAIL | MEETING | NOTE | OTHER — closed set enforced in
+  /// the action layer (a string column keeps enum churn out of the
+  /// DB, same convention as ContactLink.entityType).
+  kind        String
+  /// When the touch happened (user-editable, defaults to now) —
+  /// distinct from createdAt, which is when it was logged.
+  occurredAt  DateTime @default(now())
+  summary     String
+  notes       String?  @db.Text
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  contact   Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  createdBy User?   @relation("InteractionAuthor", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([contactId, occurredAt])
 }
 
 /// Polymorphic membership: this contact plays `role` on that entity.
@@ -2029,13 +2065,24 @@ model QuoteTemplate {
   introText       String?  @db.Text
   assumptionsText String?  @db.Text
   termsText       String?  @db.Text
+  /// Variant support: a template can be a named variant of a BASE
+  /// template ("Gold", "Silver", "Public sector"). Variants group
+  /// under their base in the template picker. SetNull on the base's
+  /// deletion promotes variants to standalone templates instead of
+  /// cascading away content.
+  variantOfId  String?
+  variantLabel String?
   createdById     String
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
   createdBy User @relation("QuoteTemplateCreator", fields: [createdById], references: [id])
+  variantOf QuoteTemplate?  @relation("TemplateVariants", fields: [variantOfId], references: [id], onDelete: SetNull)
+  variants  QuoteTemplate[] @relation("TemplateVariants")
 
   lineItems QuoteTemplateLineItem[]
+
+  @@index([variantOfId])
 }
 
 model QuoteTemplateLineItem {
