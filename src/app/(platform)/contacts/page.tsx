@@ -9,6 +9,7 @@ import { Contact as ContactIcon, Mail, Phone } from "lucide-react";
 import Link from "next/link";
 import { Prisma } from "@prisma/client";
 import { pluralize } from "@/lib/pluralize";
+import { formatCalendarDate } from "@/lib/dates";
 import {
   CONTACT_ENTITY_TYPES,
   CONTACT_ENTITY_TYPE_LABELS,
@@ -56,6 +57,19 @@ export default async function ContactsPage({ searchParams }: Props) {
     take: 500,
   });
 
+  // "Last touch" column: one grouped query for the visible page of
+  // contacts (max occurredAt per contact) instead of a per-row N+1.
+  const lastTouchRows = contacts.length
+    ? await db.contactInteraction.groupBy({
+        by: ["contactId"],
+        where: { contactId: { in: contacts.map((c) => c.id) } },
+        _max: { occurredAt: true },
+      })
+    : [];
+  const lastTouchByContactId = new Map(
+    lastTouchRows.map((row) => [row.contactId, row._max.occurredAt])
+  );
+
   return (
     <div>
       <PageHeader
@@ -91,11 +105,13 @@ export default async function ContactsPage({ searchParams }: Props) {
                   <th className="p-3 font-medium">Email</th>
                   <th className="p-3 font-medium">Phone</th>
                   <th className="p-3 font-medium">Linked to</th>
+                  <th className="p-3 font-medium">Last touch</th>
                 </tr>
               </thead>
               <tbody>
                 {contacts.map((contact) => {
                   const counts = countLinksByType(contact.contactLinks);
+                  const lastTouch = lastTouchByContactId.get(contact.id);
                   return (
                     <tr
                       key={contact.id}
@@ -156,6 +172,9 @@ export default async function ContactsPage({ searchParams }: Props) {
                             ))}
                           </div>
                         )}
+                      </td>
+                      <td className="p-3 text-muted-foreground whitespace-nowrap">
+                        {lastTouch ? formatCalendarDate(lastTouch, "MMM d, yyyy") : "—"}
                       </td>
                     </tr>
                   );
