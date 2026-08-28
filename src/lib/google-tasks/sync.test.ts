@@ -2,7 +2,9 @@
  * Google Tasks sync — list-fidelity behavior with the Google API and
  * Prisma fully mocked. Covers the multi-list pull (mirror upsert +
  * per-list task stamping), deleted-list cleanup, legacy-key migration
- * stamping, and the destination-list handling of pushNewTaskToGoogle.
+ * stamping, subtask parent/position stamping (create, update, metadata
+ * patch, alias-pin — including clearing on promotion to top level),
+ * and the destination-list handling of pushNewTaskToGoogle.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
