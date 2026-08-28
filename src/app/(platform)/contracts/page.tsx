@@ -26,6 +26,13 @@ const GROUP_OPTIONS = [
 type GroupKey = (typeof GROUP_OPTIONS)[number]["value"];
 
 function humanizeEnum(value: string): string {
+  // Short all-caps values are acronyms (ContractType MSA/SOW/NDA) and stay
+  // uppercase — title-casing renders them as "Msa". Checked against the whole
+  // value rather than per word so EXPIRING_SOON still becomes "Expiring Soon"
+  // ("SOON" would otherwise pass the acronym test).
+  if (!value.includes("_") && value === value.toUpperCase() && value.length <= 4) {
+    return value;
+  }
   return value
     .split("_")
     .map((w) => w.charAt(0) + w.slice(1).toLowerCase())
@@ -47,7 +54,8 @@ function buildContractTreeNodes(contracts: ContractWithRelations[]): TreeNode[] 
     label: contract.title,
     href: `/contracts/${contract.id}`,
     status: contract.status,
-    meta: contract.contractType || undefined,
+    // Same transform as the table's Type column so both views agree.
+    meta: contract.contractType ? humanizeEnum(contract.contractType) : undefined,
     children: contract.childContracts.length > 0
       ? buildContractTreeNodes(contract.childContracts)
       : undefined,
@@ -195,6 +203,10 @@ export default async function ContractsPage({
           (() => {
             const now = new Date();
             type FlatContract = (typeof flatContracts)[number];
+            // A column that is empty for every visible row costs width and
+            // shows nothing — hide it until data exists.
+            const showValue = flatContracts.some((c) => c.value);
+            const showEndDate = flatContracts.some((c) => c.endDate);
             const groupKeyOf = (contract: FlatContract, key: GroupKey): string | null => {
               switch (key) {
                 case "client":
@@ -215,8 +227,8 @@ export default async function ContractsPage({
                         <th className="p-3 font-medium">Client</th>
                         <th className="p-3 font-medium">Project</th>
                         <th className="p-3 font-medium">Type</th>
-                        <th className="p-3 font-medium text-right">Value</th>
-                        <th className="p-3 font-medium">Ends</th>
+                        {showValue && <th className="p-3 font-medium text-right">Value</th>}
+                        {showEndDate && <th className="p-3 font-medium">Ends</th>}
                         <th className="p-3 font-medium">Status</th>
                       </tr>
                     </thead>
@@ -248,14 +260,18 @@ export default async function ContractsPage({
                           <td className="p-3 text-muted-foreground">
                             {contract.contractType ? humanizeEnum(contract.contractType) : "—"}
                           </td>
-                          <td className="p-3 text-right tabular-nums text-muted-foreground">
-                            {contract.value
-                              ? `${contract.currency || "USD"} ${contract.value.toLocaleString()}`
-                              : "—"}
-                          </td>
-                          <td className="p-3 text-muted-foreground">
-                            {contract.endDate ? formatCalendarDate(contract.endDate, "MMM d, yyyy") : "—"}
-                          </td>
+                          {showValue && (
+                            <td className="p-3 text-right tabular-nums text-muted-foreground">
+                              {contract.value
+                                ? `${contract.currency || "USD"} ${contract.value.toLocaleString()}`
+                                : "—"}
+                            </td>
+                          )}
+                          {showEndDate && (
+                            <td className="p-3 text-muted-foreground">
+                              {contract.endDate ? formatCalendarDate(contract.endDate, "MMM d, yyyy") : "—"}
+                            </td>
+                          )}
                           <td className="p-3">
                             {/* Date-derived — the stored EXPIRING_SOON/EXPIRED
                              *  enum values are only as fresh as the daily job. */}

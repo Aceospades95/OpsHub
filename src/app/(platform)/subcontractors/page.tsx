@@ -95,6 +95,11 @@ export default async function SubcontractorsPage({ searchParams }: Props) {
     }
   };
 
+  // A column that is empty for every visible row costs width and shows
+  // nothing — hide it until data exists.
+  const showInsurance = subcontractors.some((s) => s.insuranceExpiresAt);
+  const showActiveProjects = subcontractors.some((s) => s._count.projects > 0);
+
   const renderCards = (rows: SubRow[]) => (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
       {rows.map((sub) => {
@@ -107,7 +112,13 @@ export default async function SubcontractorsPage({ searchParams }: Props) {
                   <div className="flex items-center gap-2 min-w-0">
                     <h3 className="font-semibold text-foreground truncate">{sub.name}</h3>
                     {sub.isPreferred && (
-                      <Star className="h-4 w-4 text-warning fill-warning shrink-0" />
+                      <span className="inline-flex shrink-0" title="Preferred subcontractor">
+                        <Star
+                          className="h-4 w-4 text-warning fill-warning"
+                          role="img"
+                          aria-label="Preferred subcontractor"
+                        />
+                      </span>
                     )}
                   </div>
                   <StatusBadge status={sub.status} />
@@ -156,9 +167,9 @@ export default async function SubcontractorsPage({ searchParams }: Props) {
               <th className="p-3 font-medium">Name</th>
               <th className="p-3 font-medium">Type</th>
               <th className="p-3 font-medium">Compliance</th>
-              <th className="p-3 font-medium">Insurance expires</th>
+              {showInsurance && <th className="p-3 font-medium">Insurance expires</th>}
               <th className="p-3 font-medium">Contact</th>
-              <th className="p-3 font-medium text-right">Active projects</th>
+              {showActiveProjects && <th className="p-3 font-medium text-right">Active projects</th>}
               <th className="p-3 font-medium">Status</th>
             </tr>
           </thead>
@@ -173,7 +184,17 @@ export default async function SubcontractorsPage({ searchParams }: Props) {
                       className="font-medium hover:text-primary hover:underline inline-flex items-center gap-1.5"
                     >
                       {sub.name}
-                      {sub.isPreferred && <Star className="h-3.5 w-3.5 text-warning fill-warning" />}
+                      {sub.isPreferred && (
+                        // The tooltip's title attribute lives on a span — a
+                        // title attribute on a bare <svg> doesn't render one.
+                        <span className="inline-flex" title="Preferred subcontractor">
+                          <Star
+                            className="h-3.5 w-3.5 text-warning fill-warning"
+                            role="img"
+                            aria-label="Preferred subcontractor"
+                          />
+                        </span>
+                      )}
                     </Link>
                   </td>
                   <td className="p-3 text-muted-foreground">{humanizeEnum(sub.type)}</td>
@@ -190,15 +211,19 @@ export default async function SubcontractorsPage({ searchParams }: Props) {
                       {humanizeEnum(sub.complianceStatus)}
                     </Badge>
                   </td>
-                  <td className={`p-3 ${insuranceFlag ? "text-warning font-medium" : "text-muted-foreground"}`}>
-                    {sub.insuranceExpiresAt
-                      ? formatCalendarDate(sub.insuranceExpiresAt, "MMM d, yyyy")
-                      : "—"}
-                  </td>
+                  {showInsurance && (
+                    <td className={`p-3 ${insuranceFlag ? "text-warning font-medium" : "text-muted-foreground"}`}>
+                      {sub.insuranceExpiresAt
+                        ? formatCalendarDate(sub.insuranceExpiresAt, "MMM d, yyyy")
+                        : "—"}
+                    </td>
+                  )}
                   <td className="p-3 text-muted-foreground">
                     {sub.primaryContactName || sub.primaryContactEmail || "—"}
                   </td>
-                  <td className="p-3 text-right tabular-nums">{sub._count.projects}</td>
+                  {showActiveProjects && (
+                    <td className="p-3 text-right tabular-nums">{sub._count.projects}</td>
+                  )}
                   <td className="p-3"><StatusBadge status={sub.status} /></td>
                 </tr>
               );

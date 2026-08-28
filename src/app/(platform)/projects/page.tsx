@@ -273,12 +273,9 @@ export default async function ProjectsPage({
           description="Create your first project to get started"
         />
       ) : (
-        <ProjectsPageClient
-          clientGroups={clientGroups}
-          clients={clients}
-          allProjects={allProjects}
-          canCreate={perms.canCreate}
-        />
+        // Per-group "New Project" buttons were removed — the page-header
+        // button is the single create entry point.
+        <ProjectsPageClient clientGroups={clientGroups} />
       )}
     </div>
   );

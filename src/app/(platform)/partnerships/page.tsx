@@ -95,6 +95,12 @@ export default async function PartnershipsPage({ searchParams }: Props) {
     }
   };
 
+  // A column that is empty for every visible row costs width and shows
+  // nothing — hide it until data exists.
+  const showTier = partnerships.some((p) => p.tier);
+  const showAgreementExpiry = partnerships.some((p) => p.agreementExpiresAt);
+  const showProjects = partnerships.some((p) => p._count.projects > 0);
+
   const renderCards = (rows: PartnershipRow[]) => (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
       {rows.map((p) => {
@@ -156,10 +162,10 @@ export default async function PartnershipsPage({ searchParams }: Props) {
             <tr className="border-b border-border text-left text-xs text-muted-foreground">
               <th className="p-3 font-medium">Name</th>
               <th className="p-3 font-medium">Type</th>
-              <th className="p-3 font-medium">Tier</th>
-              <th className="p-3 font-medium">Agreement expires</th>
+              {showTier && <th className="p-3 font-medium">Tier</th>}
+              {showAgreementExpiry && <th className="p-3 font-medium">Agreement expires</th>}
               <th className="p-3 font-medium">Contact</th>
-              <th className="p-3 font-medium text-right">Projects</th>
+              {showProjects && <th className="p-3 font-medium text-right">Projects</th>}
               <th className="p-3 font-medium">Status</th>
             </tr>
           </thead>
@@ -178,28 +184,34 @@ export default async function PartnershipsPage({ searchParams }: Props) {
                     </Link>
                   </td>
                   <td className="p-3 text-muted-foreground">{humanizeEnum(p.type)}</td>
-                  <td className="p-3">
-                    {p.tier ? (
-                      <Badge variant={TIER_VARIANTS[p.tier] || "outline"}>{p.tier}</Badge>
-                    ) : (
-                      <span className="text-muted-foreground">—</span>
-                    )}
-                  </td>
-                  <td
-                    className={`p-3 ${
-                      agreementExpired
-                        ? "text-destructive font-medium"
-                        : agreementLapsing
-                          ? "text-warning font-medium"
-                          : "text-muted-foreground"
-                    }`}
-                  >
-                    {p.agreementExpiresAt ? formatCalendarDate(p.agreementExpiresAt, "MMM d, yyyy") : "—"}
-                  </td>
+                  {showTier && (
+                    <td className="p-3">
+                      {p.tier ? (
+                        <Badge variant={TIER_VARIANTS[p.tier] || "outline"}>{p.tier}</Badge>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                    </td>
+                  )}
+                  {showAgreementExpiry && (
+                    <td
+                      className={`p-3 ${
+                        agreementExpired
+                          ? "text-destructive font-medium"
+                          : agreementLapsing
+                            ? "text-warning font-medium"
+                            : "text-muted-foreground"
+                      }`}
+                    >
+                      {p.agreementExpiresAt ? formatCalendarDate(p.agreementExpiresAt, "MMM d, yyyy") : "—"}
+                    </td>
+                  )}
                   <td className="p-3 text-muted-foreground">
                     {p.primaryContactName || p.primaryContactEmail || "—"}
                   </td>
-                  <td className="p-3 text-right tabular-nums">{p._count.projects}</td>
+                  {showProjects && (
+                    <td className="p-3 text-right tabular-nums">{p._count.projects}</td>
+                  )}
                   <td className="p-3"><StatusBadge status={p.status} /></td>
                 </tr>
               );
