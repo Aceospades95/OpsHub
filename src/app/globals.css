@@ -62,9 +62,20 @@ body {
   color: var(--foreground);
   background: var(--background);
   font-family: system-ui, -apple-system, sans-serif;
+  /* Long tokens (emails, URLs, VINs) may break ONLY when they alone
+     overflow their line box. The old `word-break: break-word` allowed
+     breaking inside ANY word under flex/table pressure, which
+     shattered short labels ("Tasks" → "Task/s") and — worse — let
+     tables collapse below their content width so their overflow-x
+     scrollbars never engaged. Do not reintroduce it. */
   overflow-wrap: break-word;
-  word-break: break-word;
+  word-break: normal;
   -webkit-text-size-adjust: 100%;
+}
+
+/* Opt-in for cells that must break anywhere (dense email/URL columns). */
+.break-anywhere {
+  overflow-wrap: anywhere;
 }
 
 a {

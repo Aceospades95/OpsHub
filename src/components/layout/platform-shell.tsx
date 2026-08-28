@@ -109,7 +109,10 @@ export async function PlatformShell({ children }: { children: React.ReactNode })
           unreadNotifications={unreadCount}
           recentNotifications={serializedNotifications}
         />
-        <main className="flex-1 overflow-auto page-bg p-4 sm:p-6 lg:p-8">
+        {/* pb-24: the fixed "Edit Layout" pill (bottom-6, ~56px tall)
+            needs ~92px of scroll clearance or it permanently covers the
+            last card's rows at max scroll. */}
+        <main className="flex-1 overflow-auto page-bg p-4 sm:p-6 lg:p-8 pb-24 sm:pb-24 lg:pb-24">
           <div className="mx-auto max-w-[1600px]">{children}</div>
         </main>
       </div>

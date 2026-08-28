@@ -52,11 +52,26 @@ export function ContactLinksCardClient({
   canEdit: boolean;
 }) {
   const [addOpen, setAddOpen] = useState(false);
+  const [filter, setFilter] = useState("");
   const [isPending, startTransition] = useTransition();
   const { confirm, ConfirmDialog } = useConfirm();
   const router = useRouter();
 
   const entityLabel = CONTACT_ENTITY_TYPE_LABELS[entityType].toLowerCase();
+
+  // A 39-person client renders a ~3,900px card without this: big lists
+  // get an inline filter and an internal scroll region so the card
+  // stays one screen tall. Small lists render exactly as before.
+  const isLargeList = people.length > 8;
+  const q = filter.trim().toLowerCase();
+  const visiblePeople =
+    isLargeList && q
+      ? people.filter((p) =>
+          [p.name, p.title, p.email, ...p.roles]
+            .filter(Boolean)
+            .some((v) => String(v).toLowerCase().includes(q))
+        )
+      : people;
 
   async function handleUnlink(person: LinkedPerson) {
     const ok = await confirm({
@@ -82,7 +97,20 @@ export function ContactLinksCardClient({
         <p className="text-sm text-muted-foreground">No people linked yet</p>
       )}
 
-      {people.map((person) => (
+      {isLargeList && (
+        <Input
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+          placeholder={`Filter ${people.length} people by name, role, or email…`}
+          aria-label="Filter linked people"
+        />
+      )}
+      {isLargeList && q && visiblePeople.length === 0 && (
+        <p className="text-sm text-muted-foreground">No people match the filter.</p>
+      )}
+
+      <div className={isLargeList ? "max-h-[28rem] space-y-3 overflow-y-auto pr-1" : "space-y-3"}>
+      {visiblePeople.map((person) => (
         <div
           key={person.linkId}
           className={`rounded border border-border bg-muted p-3 ${person.isFormer ? "opacity-60" : ""}`}
@@ -161,6 +189,7 @@ export function ContactLinksCardClient({
           </div>
         </div>
       ))}
+      </div>
 
       {canEdit && (
         <>

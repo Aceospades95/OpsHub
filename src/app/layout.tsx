@@ -10,10 +10,11 @@ export const metadata: Metadata = {
   description: "Internal operations platform",
 };
 
+// No maximumScale: pinning it to 1 disables pinch-zoom on mobile
+// (WCAG 1.4.4) — field techs need to zoom VINs and serials.
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
-  maximumScale: 1,
 };
 
 export default async function RootLayout({
