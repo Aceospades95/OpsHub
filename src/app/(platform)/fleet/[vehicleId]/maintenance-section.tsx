@@ -42,7 +42,7 @@ export function MaintenanceSection({
   canDelete: boolean;
 }) {
   const [addOpen, setAddOpen] = useState(false);
-  const [, startTransition] = useTransition();
+  const [isPending, startTransition] = useTransition();
   const { confirm, ConfirmDialog } = useConfirm();
   const router = useRouter();
 
@@ -53,15 +53,19 @@ export function MaintenanceSection({
       confirmLabel: "Delete",
     });
     if (!ok) return;
-    const fd = new FormData();
-    fd.set("id", record.id);
-    const result = await deleteMaintenanceRecord(null, fd);
-    if (result && "error" in result && result.error) {
-      toast.error(result.error);
-      return;
-    }
-    toast.success("Record deleted");
-    startTransition(() => router.refresh());
+    // Run the mutation inside the transition so isPending covers the
+    // whole delete — the trash button disables and can't double-fire.
+    startTransition(async () => {
+      const fd = new FormData();
+      fd.set("id", record.id);
+      const result = await deleteMaintenanceRecord(null, fd);
+      if (result && "error" in result && result.error) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success("Record deleted");
+      router.refresh();
+    });
   }
 
   return (
@@ -108,8 +112,9 @@ export function MaintenanceSection({
                     <td className="py-2.5 text-right">
                       <button
                         onClick={() => handleDelete(record)}
+                        disabled={isPending}
                         aria-label={`Delete ${record.serviceType} record`}
-                        className="rounded p-1 text-muted-foreground hover:text-destructive"
+                        className="rounded p-1 text-muted-foreground hover:text-destructive disabled:opacity-40 disabled:pointer-events-none"
                       >
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>

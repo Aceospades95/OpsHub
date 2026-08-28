@@ -11,9 +11,9 @@ import { Star, Mail, Phone, MapPin, Globe, AlertTriangle, CheckCircle2, FileBadg
 import Link from "next/link";
 import { format } from "date-fns";
 import { SubcontractorActions } from "./subcontractor-actions";
-import { SubcontractorContacts } from "./subcontractor-contacts";
 import { SubcontractorProjects } from "./subcontractor-projects";
 import { SubcontractorAttachments } from "./subcontractor-attachments";
+import { ContactLinksCard } from "@/components/shared/contact-links-card";
 import { Avatar } from "@/components/ui/avatar";
 
 interface Props {
@@ -42,7 +42,6 @@ export default async function SubcontractorDetailPage({ params }: Props) {
     where: { id: subcontractorId, deletedAt: null },
     include: {
       accountManager: { select: { id: true, name: true } },
-      contacts: { orderBy: [{ isPrimary: "desc" }, { name: "asc" }] },
       projects: {
         where: { project: { deletedAt: null } },
         include: {
@@ -196,18 +195,7 @@ export default async function SubcontractorDetailPage({ params }: Props) {
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Contacts</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <SubcontractorContacts
-                contacts={sub.contacts}
-                subcontractorId={sub.id}
-                canEdit={perms.canEdit}
-              />
-            </CardContent>
-          </Card>
+          <ContactLinksCard entityType="subcontractor" entityId={sub.id} />
 
           <Card>
             <CardHeader>
@@ -255,12 +243,18 @@ export default async function SubcontractorDetailPage({ params }: Props) {
                 {sub.primaryContactName && <p className="font-medium">{sub.primaryContactName}</p>}
                 {sub.primaryContactEmail && (
                   <p className="flex items-center gap-2 text-muted-foreground">
-                    <Mail className="h-4 w-4" /> {sub.primaryContactEmail}
+                    <Mail className="h-4 w-4" />{" "}
+                    <a href={`mailto:${sub.primaryContactEmail}`} className="text-primary hover:underline truncate">
+                      {sub.primaryContactEmail}
+                    </a>
                   </p>
                 )}
                 {sub.primaryContactPhone && (
                   <p className="flex items-center gap-2 text-muted-foreground">
-                    <Phone className="h-4 w-4" /> {sub.primaryContactPhone}
+                    <Phone className="h-4 w-4" />{" "}
+                    <a href={`tel:${sub.primaryContactPhone}`} className="text-primary hover:underline">
+                      {sub.primaryContactPhone}
+                    </a>
                   </p>
                 )}
                 {sub.address && (

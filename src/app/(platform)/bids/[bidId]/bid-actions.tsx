@@ -13,6 +13,7 @@ export function BidActions({
   portals,
   clients,
   users,
+  contracts,
   canEdit,
   canDelete,
 }: {
@@ -30,11 +31,18 @@ export function BidActions({
     clientId: string | null;
     ownerId: string | null;
     lossReason: string | null;
+    incumbent: string | null;
+    endClientId: string | null;
+    contractId: string | null;
     notes: string | null;
+    sourceNotes: string | null;
+    openQuestions: string | null;
   };
   portals: BidOption[];
   clients: BidOption[];
   users: BidOption[];
+  /** Contract picker options, pre-filtered to the bid's client. */
+  contracts: BidOption[];
   canEdit: boolean;
   canDelete: boolean;
 }) {
@@ -73,7 +81,14 @@ export function BidActions({
           {({ fieldErrors }) => (
             <>
               <input type="hidden" name="id" value={bid.id} />
-              <BidFields bid={bid} portals={portals} clients={clients} users={users} fieldErrors={fieldErrors} />
+              <BidFields
+                bid={bid}
+                portals={portals}
+                clients={clients}
+                users={users}
+                contracts={contracts}
+                fieldErrors={fieldErrors}
+              />
             </>
           )}
         </FormDialog>

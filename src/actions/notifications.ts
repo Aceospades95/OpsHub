@@ -132,6 +132,31 @@ export async function setNotificationPref(
   return { success: true } as const;
 }
 
+/**
+ * Toggle daily email digest mode for the current user. While enabled,
+ * notify() skips their immediate emails and the notification-email-
+ * digest job batches new in-app notifications into one daily email.
+ *
+ * Enabling stamps the existing backlog as digested — those items were
+ * already emailed in real time, and replaying them in the first
+ * digest would read as duplicates.
+ */
+export async function setEmailDigestPref(enabled: boolean) {
+  const user = await requireAuth();
+  await db.user.update({
+    where: { id: user.id },
+    data: { notificationEmailDigest: enabled === true },
+  });
+  if (enabled === true) {
+    await db.notification.updateMany({
+      where: { recipientId: user.id, digestedAt: null },
+      data: { digestedAt: new Date() },
+    });
+  }
+  revalidatePath("/notifications");
+  return { success: true } as const;
+}
+
 // ─── Notification rules (the engine's admin-editable layer) ─────────
 
 export interface NotificationRuleInput {

@@ -6,6 +6,8 @@
  * page surfaces history.
  */
 
+import type { NotificationType } from "@/lib/notifications/types";
+
 /** Context passed into every job handler. */
 export interface JobContext {
   /** When this run started */
@@ -92,6 +94,14 @@ export interface JobDefinition {
    * with nothing to tune.
    */
   paramsSchema?: JobParamField[];
+  /**
+   * Notification types this job emits. Rendered on the job's admin page
+   * as links into /admin/notifications — the split between "the job
+   * decides WHEN and WHAT" and "the delivery rule decides WHO, on which
+   * CHANNELS, with what WORDING" is invisible without the cross-link
+   * (admins went hunting in Reports for the knob that lives in Rules).
+   */
+  notificationTypes?: NotificationType[];
   /** The job implementation. Should not throw — return a result instead. */
   handler: (ctx: JobContext) => Promise<JobResult>;
 }

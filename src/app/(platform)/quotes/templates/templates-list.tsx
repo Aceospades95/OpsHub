@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { toast } from "sonner";
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { format } from "date-fns";
@@ -129,7 +130,7 @@ function DeleteButton({ id }: { id: string }) {
       const fd = new FormData();
       fd.set("id", id);
       const res = await deleteQuoteTemplate(undefined, fd);
-      if (res && "error" in res && res.error) alert(res.error);
+      if (res && "error" in res && res.error) toast.error(res.error);
       else router.refresh();
     });
   }

@@ -468,11 +468,205 @@ the import-framework commit):
   values, blanked status boards, impossible enum multi-filters); one
   consistent data-table treatment across all preview/result tables.
 
-Remaining backlog (small): quote template variants, notification
-digests, `task-due-soon` job, a user-picker for workflow
-assign-task/approval steps.
+**Phase D — full control over the built-ins — ✅ shipped 2026-07-16**
+
+- *Work-log enrollment roster* (follow-up to the launch incident where
+  the reminder job emailed everyone in the company): work-log reminders
+  are now **opt-in per person**. `User.workLogRequired` (default off) +
+  `workLogRequiredSince` gate the roster everywhere — the job, the team
+  matrix, and the weekly report; enrollment is managed on
+  /work-logs/team ("Who submits work logs"), enrollment date is the
+  first counted day, and the job ledger leads with the enrolled count
+  so an empty roster is visible, not silent.
+- *Discoverability cross-links*: every job page now shows "Who gets
+  notified — and how to change it" chips linking its notification types
+  to /admin/notifications, and the Reports page signposts that job
+  emails are configured under Delivery rules + Jobs → Settings — the
+  three config surfaces (what/when = Jobs, who/how = Delivery rules,
+  data = Reports) explain each other.
+- *Editable built-in reports* (`ReportOverride`): every system report
+  can now be customized from its page — rename, rewrite the
+  description, relabel / hide / reorder columns, cap displayed rows, or
+  hide the report entirely. Same override pattern as the rest of the
+  platform: the code keeps the query, a DB row owns the presentation,
+  absence of the row IS the stock state, and "Reset to defaults"
+  deletes it. Applied inside `runReport()` — the single choke point —
+  so the admin preview, CSV download, emailed reports, scheduled
+  sends, and the daily digest all see the same customized shape
+  (hidden columns are stripped from row data too, so a CSV can't leak
+  them). Hidden reports drop out of the reports list (collapsed
+  recoverable group), the scheduled-task picker (existing tasks keep
+  their selection, marked "(hidden)"), and the daily digest; existing
+  scheduled sends skip them with a logged warning, mirroring
+  deactivated custom reports. Guard rails: an override that would hide
+  every column is ignored for visibility, lookup failures degrade to
+  stock behavior, and unknown column keys are ignored — the overrides
+  layer can never take a report down. "Duplicate as custom report" on
+  system report pages deep-links the custom builder pre-set to the
+  same entity for admins who want full column/filter control beyond
+  presentation.
+- *Permutation test blitz*: table-driven suites over every
+  configurable system added in this cycle — the notification engine
+  (rules × channels × recipient expansion × mutes × throttle ×
+  templates), the report-override matrix (labels × hidden × order ×
+  caps × malformed config), the jobs framework (statuses × dry-run ×
+  disabled × concurrency × failure streaks × params merging × cadence
+  gates), importer modes (4 modes × existing/new/in-file dupes ×
+  fill-blanks field semantics), work-log rules (enrollment ×
+  exceptions × termination × ISO-week edges) and fleet schedule
+  boundary states.
+
+**Phase E — polish batch — ✅ shipped 2026-07-17**
+- *task-due-reminders job*: open tasks due within a tunable lead window
+  (or overdue) remind the assignee — creator when unassigned — once per
+  due date (`Task.dueNotifiedFor` re-arms on reschedule, mirroring
+  bids); wired through the `task-due-soon` delivery rule.
+- *Daily email digest*: per-user opt-in on /notifications → Preferences.
+  While on, `notify()` writes the in-app row but skips the immediate
+  email; the `notification-email-digest` job sends one daily email
+  listing the new items (`Notification.digestedAt` keeps it idempotent;
+  enabling stamps the backlog so day one doesn't replay history).
+- *Workflow "Specific user" pickers are real dropdowns* — the
+  assign-task and approval steps had a raw "cuid of the target user"
+  text input; they now list login-capable users by name (departed
+  users' saved ids stay selectable, marked, so opening the editor never
+  silently rewrites a step).
+- *Custom-report builder Save lands on the report view* (it runs
+  immediately) instead of the edit form.
+- *Engine hygiene*: no-login placeholder users no longer accumulate
+  in-app rows they can never read.
+- *Paper-cut sweep* (agent-assisted, whole-app): the one remaining
+  native `window.confirm` (report Reset) moved to the styled confirm
+  dialog; two `alert()` error paths became toasts (quote templates +
+  catalog); mixed date formats on the team profile unified to
+  `MMM d, yyyy`; supplier/subcontractor/partnership contact email +
+  phone are now `mailto:`/`tel:` links (matching certifications); fleet
+  maintenance + disciplinary delete/acknowledge buttons disable while
+  their mutation is in flight; the orphaned `convertQuoteToInvoice`
+  stub (a menu item that never existed) was deleted. The sweep's other
+  ten categories — dead buttons, placeholder text, empty states,
+  cross-links, confirm coverage, loading states, console leftovers,
+  unreachable registry entries, copy consistency, icon aria-labels —
+  came back clean.
+
+**Phase F — Google Tasks list fidelity — ✅ shipped 2026-07-18**
+Models Google's own structure (lists own tasks) natively instead of
+flattening it:
+- `GoogleTaskList` mirror (per user: list id, title, default flag),
+  refreshed free on every sync from the tasklists fetch the pull
+  already makes; `Task.googleListId` stamps each synced task with its
+  list on create/update/key-migration/push-pin.
+- *My View inbox*: a "Due date | By list" toggle (sticky per browser) —
+  By list renders Google-app-style sections (default list first, then
+  custom lists; OpsHub-native tasks as their own section); flat mode
+  shows a small list chip on synced rows. /tasks rows carry the same
+  chip.
+- *Send-to-Google destination picker*: the "also add to Google Tasks"
+  option in both task dialogs offers YOUR lists (from the mirror);
+  assigning to someone else always targets their default list so
+  their personal list names stay private (server-enforced).
+- *Deleted-list cleanup*: a list removed in Google now mirror-deletes —
+  its tasks move to the recovery bin and the mirror row drops —
+  instead of leaving orphaned open to-dos.
+- Mocked-API sync suite covers the multi-list pull, mirror upsert,
+  orphan cleanup, legacy-key stamping, and destination fallback.
+Deliberate boundaries: Google Tasks has no webhooks (polling cadence
+stays user-tunable); Chat/Docs-assigned tasks remain read-only
+(Google 403s writes); OpsHub-native tasks still don't auto-copy into
+personal Google accounts — the explicit push is the bridge.
+
+Remaining backlog (small): quote template variants; Google subtask
+hierarchy + manual "My order" (phase two of list fidelity, if wanted).
 
 Phase B before C is deliberate: the work-log module's entire value is its
 *rules-aware reminders*, which want the notification engine to exist
 first — building it on today's hardcoded pattern would recreate the
 Google Sheet's problems inside OpsHub.
+
+## Phase G — CRM layer & data hygiene (Aug 2026) ✅ shipped
+
+Driven by the field-usage notes ("what would actually make this usable"):
+the system's records now describe *relationships and deadlines*, not just
+rows.
+
+- **Unified Contacts** (`/contacts`): one rolodex (`Contact` +
+  polymorphic `ContactLink`) replacing four per-org contact tables.
+  Links attach people to clients, suppliers, subcontractors,
+  partnerships, **bids, projects, and contracts**, each carrying
+  multi-select role tags (Executive Sponsor / Procurement / Technical /
+  Billing/AP / Field Ops / Scheduling + free text) and a departed flag
+  that strikes the person through, surfaces their notes (mailbox
+  redirects), and drops them from pickers. Migration backfilled and
+  email-deduped the legacy tables; those are now frozen read-only.
+  Contacts joined global search, quick-search, soft-delete recovery,
+  and the admin merge tool.
+- **Renewal Radar** (`/radar` + dashboard card): one screen answering
+  "what lapses in N days" across contracts, certifications,
+  subcontractor insurance, partnership agreements, fleet
+  service/registration, and bid deadlines, plus a data-gaps strip
+  (clients with no account manager, WON bids never linked to a
+  project/contract, projects missing dates or offering).
+- **Bid outcomes**: submitted/decided dates, loss reason, incumbent,
+  delivery-project and won-bid→contract links (with a nudge when a WON
+  bid has neither), evidence links, and a 30-day staleness flag with
+  one-click Mark stale / Revive.
+- **Duplicate defense in depth**: importer guardrails (normalized-name
+  skip in create mode), the same guard on the project create/edit
+  forms, an admin **merge tool** on the project page (dry-run preview →
+  one-transaction FK walk over every child table → keeper fill-blanks →
+  source to recovery bin), and a `possible-duplicates` admin report
+  sweeping projects, clients, certifications, and contacts. The DB
+  unique index on (client, normalized name) is deferred until the
+  existing duplicates are merged.
+- **Derived status everywhere**: certification/contract status is
+  date-derived at render on every surface (detail pages, reports,
+  widgets — not just the list), the day-math truncation that mislabeled
+  "expires tomorrow" as expired is fixed, and the daily cert job now
+  writes the stored enum back to EXPIRED once the date passes, with
+  ledger lines.
+- **Module visibility** (`/admin/modules`): any sidebar module can be
+  hidden until it's populated — the empty-nav problem is now a setting,
+  not a code change.
+
+## Phase H — measured UX pass (Aug 2026) ✅ shipped
+
+A pixel-measured audit of the running app traced ~30 rendering defects
+across eight pages to one stylesheet line and a handful of local
+causes. All fixed and re-measured live:
+
+- **Root cause**: `word-break: break-word` on body let any squeezed
+  flex child break inside words ("Tasks" → "Task/s", VINs and dates
+  shattered) and — worse — let tables collapse below their content
+  width so their own `overflow-x` scrollbars never engaged. Now
+  `word-break: normal` + `overflow-wrap: break-word` (long tokens
+  still break only when they alone overflow), with an opt-in
+  `.break-anywhere` utility.
+- Pinch-zoom restored on mobile (`maximum-scale=1` removed — WCAG
+  1.4.4); page headers wrap instead of crushing the title under heavy
+  toolbars; the fixed Edit-Layout pill gets scroll clearance; flow
+  pages render their wide/narrow split 7/5 so the narrow column
+  clears the ~320px card-header threshold.
+- **Org chart legible by default**: compact layout ON, fit-to-view
+  clamped at 0.5 scale (d3-org-chart has no lower zoom bound — the
+  old default fitted a 3,447px tree into 822px at scale 0.107), SVG
+  height synced to the container (was window-sized, pushing the tree
+  ~250px down).
+- **Work Logs**: the week grid owns the full content width (Friday was
+  clipped behind a horizontal scroll); "Log a day" moved to a header
+  button + dialog; the KPI strip collapses to one line when all zero.
+- **Tables**: enum acronyms render correctly (MSA, not "Msa");
+  columns empty across every visible row auto-hide (contracts,
+  subcontractors, partnerships, projects "Access"); single-project
+  client groups flatten to plain rows and per-group New Project
+  buttons are gone; the preferred-subcontractor star has a tooltip.
+- **Controls**: Create Task defaults to MEDIUM priority (was silently
+  HIGH); the Google-Tasks checkbox is a real touch target; Intranet/
+  Tools empty states carry the create button and zero-state controls
+  hide; Quotes header links are buttons; the bid-pipeline KPI renders
+  compact currency ($48.8M) via a tested `formatCurrency` option.
+- ContactLinksCard: >8 people → inline filter + bounded scroll (a
+  39-person client rendered a ~3,900px card).
+
+Deliberately not done: an `xl:` breakpoint tier / raising the 1600px
+content cap (revisit with real wide-screen usage), and per-row
+density inside the shared TreeView (touches every tree in the app).

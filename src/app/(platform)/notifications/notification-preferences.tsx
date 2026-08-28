@@ -1,11 +1,11 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ChevronDown, ChevronUp } from "lucide-react";
-import { setNotificationPref } from "@/actions/notifications";
+import { setNotificationPref, setEmailDigestPref } from "@/actions/notifications";
 import type { NotificationTypeInfo } from "@/lib/notifications/registry";
 
 export interface MyPref {
@@ -23,13 +23,21 @@ export interface MyPref {
 export function NotificationPreferences({
   types,
   prefs,
+  emailDigest,
 }: {
   types: NotificationTypeInfo[];
   prefs: MyPref[];
+  /** Daily email digest mode (User.notificationEmailDigest). */
+  emailDigest: boolean;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
+  // Optimistic mirror of the digest flag — the checkbox flips
+  // immediately and rolls back if the save fails; the server prop
+  // re-syncs it after router.refresh().
+  const [digest, setDigest] = useState(emailDigest);
+  useEffect(() => setDigest(emailDigest), [emailDigest]);
   const prefByType = new Map(prefs.map((p) => [p.typeKey, p]));
   const mutedCount = prefs.filter((p) => p.muteInApp || p.muteEmail).length;
 
@@ -74,6 +82,32 @@ export function NotificationPreferences({
       </CardHeader>
       {open && (
         <CardContent>
+          <label className="mb-4 flex items-start gap-2 rounded border border-border p-3 text-sm cursor-pointer hover:bg-muted/30">
+            <input
+              type="checkbox"
+              checked={digest}
+              disabled={pending}
+              onChange={(e) => {
+                const enabled = e.target.checked;
+                setDigest(enabled);
+                startTransition(async () => {
+                  const res = await setEmailDigestPref(enabled);
+                  if (!res.success) setDigest(!enabled);
+                  router.refresh();
+                });
+              }}
+              className="mt-0.5"
+            />
+            <span>
+              <span className="font-medium">Daily email digest</span>
+              <span className="block text-xs text-muted-foreground">
+                Instead of one email per event, get a single daily email
+                listing your new notifications. The bell updates in real
+                time either way, and the per-type checkboxes below still
+                decide what reaches you at all.
+              </span>
+            </span>
+          </label>
           <div className="grid grid-cols-[1fr_auto_auto] gap-x-6 gap-y-1.5 items-center">
             <span />
             <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">

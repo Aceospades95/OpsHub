@@ -327,6 +327,20 @@ model User {
   /// SCHEDULED_DATE trigger evaluator to fire offboarding workflows
   /// at the right offset (e.g. 7 days before terminationDate).
   terminationDate  DateTime?
+  /// OPT-IN work-log roster (mirrors the old sheet's Config tab).
+  /// Only enrolled people are expected to submit daily logs, get
+  /// reminders, appear in the team matrix, or count in escalations /
+  /// snapshots. Default FALSE on purpose: launching the module must
+  /// never nag the whole company (which is exactly what happened when
+  /// the roster was "every active user").
+  workLogRequired      Boolean   @default(false)
+  /// When enrollment was switched on — days before this are never
+  /// "missing", so enrolling someone mid-week doesn't retro-nag them.
+  workLogRequiredSince DateTime?
+  /// When true, notification emails batch into one daily digest
+  /// (the notification-email-digest job) instead of sending
+  /// immediately. In-app notifications are unaffected.
+  notificationEmailDigest Boolean @default(false)
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 
@@ -337,6 +351,7 @@ model User {
   milestoneAssignments           MilestoneAssignee[]
   comments                       Comment[]
   activityLogs                   ActivityLog[]
+  contactInteractions            ContactInteraction[]                @relation("InteractionAuthor")
   uploadedFiles                  File[]                              @relation("FileUploader")
   profileFiles                   File[]                              @relation("FileOwner")
   modulePermissions              ModulePermission[]
@@ -369,6 +384,7 @@ model User {
   createdCustomReports           CustomReport[]                      @relation("CustomReportCreator")
   ownedProjects                  Project[]                           @relation("ProjectOwner")
   googleTasksIntegration         GoogleTasksIntegration?
+  googleTaskLists                GoogleTaskList[]
   assignedVehicles               Vehicle[]                           @relation("VehicleAssignee")
   disciplinaryReports            DisciplinaryReport[]                @relation("DisciplinaryEmployee")
   issuedDisciplinaryReports      DisciplinaryReport[]                @relation("DisciplinaryIssuer")
@@ -519,6 +535,22 @@ model Task {
   /// "assigned tasks" from Chat/Docs, and Gmail-linked tasks, 403 on
   /// PATCH). We still pull these, but never push — see google-tasks/sync.
   sourceReadOnly Boolean @default(false)
+  /// Google tasklist id this task lives in (denormalized from the
+  /// "<tasklistId>:<taskId>" sourceId so the UI can show/group by the
+  /// list without string surgery). Null for OpsHub-native tasks.
+  googleListId String?
+  /// Google subtask hierarchy + manual ordering (list-fidelity phase
+  /// two): the PARENT Google task id (bare task id, no list prefix)
+  /// and Google's lexicographic `position` string within the parent /
+  /// list. Pulled on sync so My View can mirror Google's own nesting
+  /// and "My order"; never pushed. Null for OpsHub-native tasks and
+  /// top-level Google tasks (parent only).
+  googleParentId String?
+  googlePosition String?
+  /// The dueDate the task-due-reminders job last notified about.
+  /// Re-arms automatically when dueDate changes (mirrors
+  /// BidOpportunity.dueNotifiedFor).
+  dueNotifiedFor DateTime?
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
   /// Soft-delete tombstone — see Project.deletedAt comment.
@@ -552,6 +584,10 @@ model Client {
   website          String?
   status           ClientStatus @default(ACTIVE)
   accountManagerId String?
+  /// Where this record's facts came from (threads, files, people).
+  sourceNotes   String? @db.Text
+  /// Flagged unknowns / risks, kept out of the narrative notes.
+  openQuestions String? @db.Text
   createdAt        DateTime     @default(now())
   updatedAt        DateTime     @updatedAt
   /// Soft-delete tombstone — see Project.deletedAt comment.
@@ -562,6 +598,8 @@ model Client {
   contracts      Contract[]
   certifications Certification[]
   contacts       ClientContact[]
+  links            ExternalLink[]
+  endClientBids    BidOpportunity[] @relation("BidEndClient")
   comments       Comment[]
   tasks          Task[]
   sandboxPages   SandboxPage[]
@@ -586,6 +624,86 @@ model ClientContact {
   client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
 }
 
+/// A PERSON, independent of any one organization. Replaces the four
+/// siloed per-org contact tables (ClientContact, SupplierContact,
+/// SubcontractorContact, PartnershipContact — kept read-only for
+/// rollback; backfilled into this table by the crm_contacts
+/// migration, deduped by email). One person links to any number of
+/// clients / suppliers / subcontractors / partnerships / bids /
+/// projects / contracts through ContactLink, each link carrying its
+/// own role. isFormer keeps departed people for history without
+/// offering them in pickers.
+model Contact {
+  id           String    @id @default(cuid())
+  name         String
+  title        String?
+  email        String?
+  phone        String?
+  /// Free-form org name for people whose organization OpsHub doesn't
+  /// track as a record (agency staff, vendor reps).
+  organization String?
+  notes        String?   @db.Text
+  isFormer     Boolean   @default(false)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  deletedAt    DateTime?
+
+  contactLinks ContactLink[]
+  interactions ContactInteraction[]
+
+  @@index([email])
+  @@index([name])
+}
+
+/// CRM phase 2: dated touch-log per person — calls, emails, meetings,
+/// notes. Hard rows (no soft delete): interactions are annotations,
+/// and the CONTACT carries the recoverable lifecycle — cascading with
+/// it on purge.
+model ContactInteraction {
+  id          String   @id @default(cuid())
+  contactId   String
+  /// CALL | EMAIL | MEETING | NOTE | OTHER — closed set enforced in
+  /// the action layer (a string column keeps enum churn out of the
+  /// DB, same convention as ContactLink.entityType).
+  kind        String
+  /// When the touch happened (user-editable, defaults to now) —
+  /// distinct from createdAt, which is when it was logged.
+  occurredAt  DateTime @default(now())
+  summary     String
+  notes       String?  @db.Text
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  contact   Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  createdBy User?   @relation("InteractionAuthor", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([contactId, occurredAt])
+}
+
+/// Polymorphic membership: this contact plays `role` on that entity.
+/// entityType ∈ client | supplier | subcontractor | partnership |
+/// bid | project | contract (same convention as ActivityLog). No FK
+/// to the target — targets are soft-deleted; pages resolve names at
+/// read time and skip dangling links.
+model ContactLink {
+  id         String   @id @default(cuid())
+  contactId  String
+  entityType String
+  entityId   String
+  /// Role tags on THIS relationship — multi-select ("Executive
+  /// Sponsor", "Procurement", "Billing/AP", "Field Ops"…). Free
+  /// strings; the UI suggests a standard vocabulary.
+  roles      String[] @default([])
+  isPrimary  Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@unique([contactId, entityType, entityId])
+  @@index([entityType, entityId])
+}
+
 // ─── PROJECTS ────────────────────────────────────────────
 
 model Project {
@@ -602,6 +720,10 @@ model Project {
   /// owner's spreadsheet. Distinct from `description` (what the project
   /// IS); notes are what's happening right now.
   notes             String?       @db.Text
+  /// Where this record's facts came from (threads, files, people).
+  sourceNotes   String? @db.Text
+  /// Flagged unknowns / risks, kept out of the narrative notes.
+  openQuestions String? @db.Text
   startDate         DateTime?
   endDate           DateTime?
   clientId          String
@@ -741,6 +863,7 @@ model Contract {
   files    File[]
   comments Comment[]
   links    ExternalLink[]
+  wonBids  BidOpportunity[] @relation("BidContract")
   embeds   Embed[]
 }
 
@@ -994,6 +1117,8 @@ model ExternalLink {
   intranetResourceId String?
   subcontractorId    String?
   partnershipId      String?
+  clientId           String?
+  bidOpportunityId   String?
   createdAt          DateTime @default(now())
 
   certificationId String?
@@ -1005,6 +1130,8 @@ model ExternalLink {
   certification    Certification?    @relation(fields: [certificationId], references: [id])
   subcontractor    Subcontractor?    @relation(fields: [subcontractorId], references: [id], onDelete: Cascade)
   partnership      Partnership?      @relation(fields: [partnershipId], references: [id], onDelete: Cascade)
+  client           Client?           @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  bidOpportunity   BidOpportunity?   @relation(fields: [bidOpportunityId], references: [id], onDelete: Cascade)
 }
 
 model Embed {
@@ -1526,6 +1653,30 @@ model UserNotificationPref {
   @@unique([userId, typeKey])
 }
 
+/// Admin customization of a BUILT-IN report — the same override pattern
+/// as NotificationRule: the code keeps the query, the row owns the
+/// presentation. Absence of a row = stock report; deleting the row
+/// restores it. (Structural changes — different columns/filters/joins —
+/// are what CUSTOM reports are for.)
+model ReportOverride {
+  id          String   @id @default(cuid())
+  /// Matches a key in the reports registry ("certifications-expiring").
+  reportKey   String   @unique
+  displayName String?
+  description String?  @db.Text
+  /// Hidden reports drop out of the reports list, the scheduled-task
+  /// picker, and the daily digest; direct runs by an admin still work
+  /// (the list shows them in a "hidden" group so they're recoverable).
+  hidden      Boolean  @default(false)
+  /// Display cap applied AFTER the query — trims rendered/CSV rows.
+  maxRows     Int?
+  /// Per-column presentation keyed by column key:
+  /// { [key]: { label?: string, hidden?: boolean, order?: number } }
+  columnConfig Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
 /// Per-notification-type delivery rule — the admin-editable layer the
 /// notification engine (src/lib/notifications) consults on every
 /// notify() call. ABSENCE of a row = code defaults (enabled, both
@@ -1589,6 +1740,10 @@ model Notification {
    * Read timestamp — null means unread
    */
   readAt      DateTime?
+  /// Set when the notification-email-digest job included this row in
+  /// a digest email (only stamped for digest-mode recipients). Null =
+  /// not yet digested.
+  digestedAt  DateTime?
   createdAt   DateTime  @default(now())
 
   recipient User  @relation("NotificationRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
@@ -1596,6 +1751,7 @@ model Notification {
 
   @@index([recipientId, readAt])
   @@index([recipientId, createdAt])
+  @@index([digestedAt])
   @@index([entityType, entityId])
   @@index([type])
 }
@@ -1722,6 +1878,39 @@ model GoogleTasksIntegration {
   updatedAt            DateTime  @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+/// Per-user mirror of the Google Tasks lists on the connected account.
+/// Refreshed on every sync from the tasklists fetch the pull already
+/// makes (no extra API calls). Powers list grouping/badges in the UI
+/// and the destination picker for send-to-Google. A list missing from
+/// the account is deleted in Google — the sync soft-deletes its tasks
+/// and removes the mirror row.
+model GoogleTaskList {
+  id         String   @id @default(cuid())
+  userId     String
+  /// Google's tasklist id.
+  listId     String
+  title      String
+  isDefault  Boolean  @default(false)
+  /// Stamped by every sync that saw this list on the account.
+  lastSeenAt DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, listId])
+}
+
+/// Org-wide sidebar visibility per module. Absence of a row = shown.
+/// Lets admins hide modules that aren't in use yet (empty modules in
+/// the sidebar train people to ignore the sidebar) — reversible any
+/// time from Settings → Modules.
+model ModuleSetting {
+  module          String   @id
+  hiddenInSidebar Boolean  @default(false)
+  updatedAt       DateTime @updatedAt
 }
 
 // ─── QUOTES ─────────────────────────────────────────────
@@ -1876,13 +2065,24 @@ model QuoteTemplate {
   introText       String?  @db.Text
   assumptionsText String?  @db.Text
   termsText       String?  @db.Text
+  /// Variant support: a template can be a named variant of a BASE
+  /// template ("Gold", "Silver", "Public sector"). Variants group
+  /// under their base in the template picker. SetNull on the base's
+  /// deletion promotes variants to standalone templates instead of
+  /// cascading away content.
+  variantOfId  String?
+  variantLabel String?
   createdById     String
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
   createdBy User @relation("QuoteTemplateCreator", fields: [createdById], references: [id])
+  variantOf QuoteTemplate?  @relation("TemplateVariants", fields: [variantOfId], references: [id], onDelete: SetNull)
+  variants  QuoteTemplate[] @relation("TemplateVariants")
 
   lineItems QuoteTemplateLineItem[]
+
+  @@index([variantOfId])
 }
 
 model QuoteTemplateLineItem {
@@ -2758,7 +2958,13 @@ model BidOpportunity {
   /// When the outcome (WON/LOST/NO_BID/STALE) was recorded.
   decidedAt          DateTime?
   lossReason         String?
+  /// Who currently holds the work being bid (context for win odds).
+  incumbent          String?
   notes              String?   @db.Text
+  /// Where this record's facts came from (threads, files, people).
+  sourceNotes        String?   @db.Text
+  /// Flagged unknowns / risks, kept out of the narrative notes.
+  openQuestions      String?   @db.Text
   /// Dedupe stamp for the bid-due-check job — one notification per
   /// dueDate value; changing the date re-arms it (mirrors
   /// Vehicle.maintenanceNotifiedFor).
@@ -2768,6 +2974,11 @@ model BidOpportunity {
   ownerId            String?
   /// Set when a WON bid is converted into a delivery project.
   projectId          String?
+  /// The contract a WON bid became — closes the bid → contract loop.
+  contractId         String?
+  /// The END client behind a prime/channel deal (e.g. Ericsson behind
+  /// LTTS); `clientId` stays the contracting party.
+  endClientId        String?
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
   /// Soft-delete tombstone — see Project.deletedAt comment.
@@ -2777,6 +2988,9 @@ model BidOpportunity {
   client   Client?    @relation(fields: [clientId], references: [id], onDelete: SetNull)
   owner    User?      @relation("BidOwner", fields: [ownerId], references: [id], onDelete: SetNull)
   project  Project?   @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  contract  Contract? @relation("BidContract", fields: [contractId], references: [id], onDelete: SetNull)
+  endClient Client?   @relation("BidEndClient", fields: [endClientId], references: [id], onDelete: SetNull)
+  links     ExternalLink[]
   comments Comment[]
   files    File[]
 

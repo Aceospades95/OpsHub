@@ -6,6 +6,8 @@ import { usePathname } from "next/navigation";
 import {
   Home,
   Car,
+  CalendarClock,
+  Contact,
   Target,
   LayoutDashboard,
   Building2,
@@ -52,11 +54,18 @@ interface SidebarProps {
   companyName?: string | null;
   /** Public URL of the uploaded company logo, or null to use the text fallback */
   companyLogoUrl?: string | null;
+  /**
+   * Module keys an admin hid org-wide (Settings → Modules). Applied on
+   * top of permission gating; my/dashboard/settings can never be hidden.
+   */
+  hiddenModules?: string[];
 }
 
 const ICON_MAP: Record<string, LucideIcon> = {
   Home,
   Car,
+  CalendarClock,
+  Contact,
   Target,
   LayoutDashboard,
   Building2,
@@ -93,6 +102,7 @@ const PERMISSIONED_KEYS = new Set(getPermissionedModuleKeys());
 export function Sidebar({
   userRole = "",
   visibleModules,
+  hiddenModules = [],
   customPages = [],
   sidebarConfig,
   companyName,
@@ -110,10 +120,16 @@ export function Sidebar({
   const customPageMap = new Map(customPages.map((p) => [`custom-${p.id}`, p]));
   const visibleModuleSet = visibleModules ? new Set(visibleModules) : null;
 
+  const hiddenModuleSet = new Set(hiddenModules);
+  const NEVER_HIDDEN = new Set(["my", "dashboard", "settings"]);
+
   function shouldShowItem(item: SidebarItemConfig): boolean {
     if (!item.visible) return false;
 
     const key = item.key;
+
+    // Org-wide "hide until in use" toggle (Settings → Modules).
+    if (hiddenModuleSet.has(key) && !NEVER_HIDDEN.has(key)) return false;
 
     // Custom page items
     if (key.startsWith("custom-")) {

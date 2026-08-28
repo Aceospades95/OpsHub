@@ -58,14 +58,20 @@ export default async function IntranetPage() {
         description="Company resources and announcements"
         actions={
           <div className="flex items-center gap-2">
-            {user.role === "ADMIN" && <DownloadCsvButton importerKey="intranet" />}
+            {/* Nothing to export when the list is empty. */}
+            {user.role === "ADMIN" && resources.length > 0 && <DownloadCsvButton importerKey="intranet" />}
             {perms.canCreate && <IntranetCreateButton />}
           </div>
         }
       />
 
       {resources.length === 0 ? (
-        <EmptyState icon={Globe} title="No resources yet" description="Create your first intranet resource" />
+        <EmptyState
+          icon={Globe}
+          title="No resources yet"
+          description="Create your first intranet resource"
+          action={perms.canCreate ? <IntranetCreateButton /> : undefined}
+        />
       ) : (
         <div className="space-y-8">
           {Array.from(grouped.entries()).map(([category, items]) => (

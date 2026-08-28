@@ -78,6 +78,7 @@ export const workLogReminders: JobDefinition = {
   description:
     "Reminds technicians about missing daily work logs (PTO/sick/holiday and roster changes honored); Mondays it freezes last week's snapshots and escalates anyone still behind to admins + managers",
   schedule: "Daily",
+  notificationTypes: ["work-log-reminder", "work-log-escalation"],
   supportsDryRun: true,
   paramsSchema: [
     {
@@ -111,11 +112,17 @@ export const workLogReminders: JobDefinition = {
 
     const [allUsers, logs, exceptions, existingSnapshots, office] = await Promise.all([
       db.user.findMany({
+        // Only ENROLLED people are evaluated at all (workLogRequired is
+        // the opt-in roster — the launch default of "everyone" mass
+        // reminded the whole company on the first cold-start run).
+        where: { workLogRequired: true },
         select: {
           id: true,
           name: true,
           isActive: true,
           hasLoginAccess: true,
+          workLogRequired: true,
+          workLogRequiredSince: true,
           terminationDate: true,
           createdAt: true,
         },
@@ -174,6 +181,9 @@ export const workLogReminders: JobDefinition = {
       }
 
       const windowUser = { ...user, startDate: user.createdAt };
+      // (workLogRequired is guaranteed true by the query; the window
+      // still honors workLogRequiredSince so mid-week enrollment never
+      // retro-nags earlier days.)
       const currentExpected = expectedWorkdays(currentBounds.start, { upTo: cutoff }).filter((d) =>
         rosterWindow(windowUser, d)
       );
@@ -383,6 +393,10 @@ export const workLogReminders: JobDefinition = {
 
     const verb = ctx.dryRun ? "would send" : "sent";
     const summary = [
+      `Roster: ${allUsers.length} enrolled (only people with "Submits work logs" turned on at /work-logs/team are ever evaluated or reminded).`,
+      ...(allUsers.length === 0
+        ? [`Nobody is enrolled yet — enroll your technicians on /work-logs/team and this job starts watching them.`]
+        : []),
       `Evaluated ${currentKey} (up to ${formatCalendarDate(cutoff, "MMM d")}, grace ${graceDays}d) + still-open ${lastKey}: ${verb} ${remindersSent} reminder${remindersSent === 1 ? "" : "s"}, ${cleanCount} clean, ${excludedLines.length} excluded from the roster; ${ctx.dryRun ? "would freeze" : "froze"} ${snapshotsWritten} snapshot${snapshotsWritten === 1 ? "" : "s"}, ${verb} ${escalationsSent} escalation${escalationsSent === 1 ? "" : "s"}.`,
       `Reminders key on entityId "<userId>:<weekKey>" — set a ~20h throttle on the work-log-reminder notification rule to make them at-most-daily per person even across manual re-runs.`,
       ...(detail.length > 0 ? ["", ...detail] : []),

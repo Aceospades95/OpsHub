@@ -33,6 +33,7 @@ export interface SearchHit {
   type:
     | "employee"
     | "client"
+    | "contact"
     | "project"
     | "supplier"
     | "contract"
@@ -110,6 +111,7 @@ export async function quickSearch(query: string): Promise<SearchResults> {
   const [
     employees,
     clients,
+    contacts,
     projects,
     suppliers,
     contracts,
@@ -144,6 +146,19 @@ export async function quickSearch(query: string): Promise<SearchResults> {
           orderBy: { name: "asc" },
         })
       : [],
+    // Unified contacts ride on the clients-module gate — same gate the
+    // /contacts pages use (contacts span modules; see actions/contacts).
+    clientsPerms.canView
+      ? db.contact.findMany({
+          where: {
+            deletedAt: null,
+            OR: [{ name: ci }, { email: ci }, { organization: ci }],
+          },
+          select: { id: true, name: true, title: true, organization: true, email: true },
+          take: PER_BUCKET_LIMIT,
+          orderBy: [{ isFormer: "asc" }, { name: "asc" }],
+        })
+      : [],
     projectsPerms.canView
       ? db.project.findMany({
           where: {
@@ -166,7 +181,10 @@ export async function quickSearch(query: string): Promise<SearchResults> {
       ? db.supplier.findMany({
           where: {
             deletedAt: null,
-            OR: [{ name: ci }, { contactName: ci }, { category: ci }, { contacts: { some: { name: ci } } }],
+            // Person-name matches are served by the contacts bucket —
+            // the frozen SupplierContact table would only ever match
+            // pre-migration names and drift as the rolodex is edited.
+            OR: [{ name: ci }, { contactName: ci }, { category: ci }],
           },
           select: { id: true, name: true, category: true },
           take: PER_BUCKET_LIMIT,
@@ -308,6 +326,14 @@ export async function quickSearch(query: string): Promise<SearchResults> {
       sublabel: c.industry || undefined,
       href: `/clients/${c.id}`,
     })),
+    ...contacts.map((c) => ({
+      id: `contact-${c.id}`,
+      type: "contact" as const,
+      label: c.name,
+      sublabel:
+        [c.title, c.organization].filter(Boolean).join(" · ") || c.email || undefined,
+      href: `/contacts/${c.id}`,
+    })),
     ...projects.map((p) => ({
       id: `project-${p.id}`,
       type: "project" as const,
@@ -369,6 +395,7 @@ export async function quickSearch(query: string): Promise<SearchResults> {
   const truncated =
     employees.length === PER_BUCKET_LIMIT ||
     clients.length === PER_BUCKET_LIMIT ||
+    contacts.length === PER_BUCKET_LIMIT ||
     projects.length === PER_BUCKET_LIMIT ||
     suppliers.length === PER_BUCKET_LIMIT ||
     contracts.length === PER_BUCKET_LIMIT ||

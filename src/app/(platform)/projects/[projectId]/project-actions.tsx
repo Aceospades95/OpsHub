@@ -8,6 +8,7 @@ import { Select } from "@/components/ui/select";
 import { FormDialog } from "@/components/shared/form-dialog";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { updateProject, deleteProject } from "@/actions/projects";
+import { MergeProjectDialog } from "./merge-project-dialog";
 import { Pencil, Trash2 } from "lucide-react";
 
 interface Props {
@@ -21,6 +22,8 @@ interface Props {
     clientId: string;
     serviceOfferingId: string | null;
     parentProjectId: string | null;
+    sourceNotes?: string | null;
+    openQuestions?: string | null;
     /** Currently-linked related projects (id only, used to seed checkboxes). */
     relatedProjectIds: string[];
   };
@@ -31,9 +34,11 @@ interface Props {
   allProjects: { id: string; name: string }[];
   canEdit: boolean;
   canDelete: boolean;
+  /** Admin-only extras (the duplicate-merge tool). */
+  isAdmin: boolean;
 }
 
-export function ProjectActions({ project, clients, serviceOfferings, allProjects, canEdit, canDelete }: Props) {
+export function ProjectActions({ project, clients, serviceOfferings, allProjects, canEdit, canDelete, isAdmin }: Props) {
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [creatingNewOffering, setCreatingNewOffering] = useState(false);
@@ -66,6 +71,9 @@ export function ProjectActions({ project, clients, serviceOfferings, allProjects
 
   return (
     <div className="flex gap-2">
+      {isAdmin && (
+        <MergeProjectDialog projectId={project.id} projectName={project.name} />
+      )}
       {canEdit && (
         <>
           <Button variant="outline" size="sm" onClick={() => setEditOpen(true)}>
@@ -83,6 +91,20 @@ export function ProjectActions({ project, clients, serviceOfferings, allProjects
                   options={clients.map((c) => ({ label: c.name, value: c.id }))}
                 />
                 <Textarea name="description" label="Description" defaultValue={project.description || ""} />
+                <Textarea
+                  name="sourceNotes"
+                  label="Source (where these facts came from)"
+                  defaultValue={project.sourceNotes || ""}
+                  rows={2}
+                  placeholder="Threads, files, people — so the next reader can audit this record"
+                />
+                <Textarea
+                  name="openQuestions"
+                  label="Open questions / risks"
+                  defaultValue={project.openQuestions || ""}
+                  rows={2}
+                  placeholder="Unknowns worth flagging, kept out of the narrative notes"
+                />
                 <div className="grid grid-cols-2 gap-4">
                   <Select
                     name="status"

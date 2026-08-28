@@ -13,6 +13,8 @@ import { sendEmail } from "@/lib/email";
 import { log } from "@/lib/log";
 import { absoluteUrl } from "@/lib/url";
 import { getReport } from "@/lib/reports/registry";
+import { getReportOverride } from "@/lib/reports/overrides";
+import { runReport } from "@/lib/reports";
 import { renderHtml, renderText } from "@/lib/reports/format";
 import { runCustomReportFromRow } from "@/lib/reports/custom/runtime";
 import type { ScheduledTaskType } from "@prisma/client";
@@ -79,12 +81,26 @@ const emailReportHandler: Handler = async ({ taskName, config }) => {
     if (!report) {
       throw new Error(`EMAIL_REPORT: unknown report '${reportKey}'`);
     }
-    reportName = report.name;
-    reportDescription = report.description;
-    output = await report.run({
+    // Hiding a report via its admin override must stop its scheduled
+    // emails too (mirrors the custom-report isActive skip above). The
+    // pre-check avoids running a potentially heavy query just to
+    // discard the result.
+    const override = await getReportOverride(reportKey);
+    if (override?.hidden) {
+      const name = override.displayName || report.name;
+      return {
+        output: `${name} — skipped: hidden by admin customization`,
+        warning:
+          "skipped: report hidden (un-hide it under Reports → open it → Customize)",
+      };
+    }
+    const result = await runReport(reportKey, {
       triggeredAt: new Date(),
       triggeredBy: "scheduled-task",
     });
+    reportName = result.name;
+    reportDescription = result.description;
+    output = result.output;
   }
 
   const htmlBody = renderHtml(output);

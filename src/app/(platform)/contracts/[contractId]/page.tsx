@@ -11,6 +11,7 @@ import { FileList } from "@/components/shared/file-list";
 import { TreeView, type TreeNode } from "@/components/shared/tree-view";
 import { Badge } from "@/components/ui/badge";
 import { formatCalendarDate } from "@/lib/dates";
+import { effectiveContractStatus } from "@/lib/effective-status";
 import Link from "next/link";
 import { ContractActions } from "./contract-actions";
 import { TermSection } from "./term-section";
@@ -248,7 +249,9 @@ export default async function ContractDetailPage({ params }: Props) {
       )}
 
       <div className="flex items-center gap-3 mb-6 flex-wrap">
-        <StatusBadge status={contract.status} />
+        {/* Date-derived — a stored ACTIVE past its end date must never
+            display as active (the list page already derives). */}
+        <StatusBadge status={effectiveContractStatus(contract, new Date())} />
         {contract.contractType && <Badge variant="outline">{contract.contractType}</Badge>}
         {contract.contractNumber && (
           <span className="text-sm text-muted-foreground">#{contract.contractNumber}</span>

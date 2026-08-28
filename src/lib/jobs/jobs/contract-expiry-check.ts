@@ -24,6 +24,7 @@ export const contractExpiryCheck: JobDefinition = {
   description:
     "Notifies account managers when their clients' contracts are within 30 days of expiring or renewal",
   schedule: "Daily",
+  notificationTypes: ["system"],
 
   async handler() {
     if (!(await shouldRunDaily("contract-expiry-check"))) {

@@ -26,6 +26,7 @@ export const bidDueCheck: JobDefinition = {
   description:
     "Notifies the bid owner and admins/managers when an open bid's response is due soon (window configurable below) or overdue",
   schedule: "Daily",
+  notificationTypes: ["bid-due-soon"],
   paramsSchema: [
     {
       key: "dueSoonDays",

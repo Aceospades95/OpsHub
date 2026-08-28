@@ -296,20 +296,24 @@ export function PageLayoutClient({
           <div className="grid grid-cols-12 gap-4">
             {sortedCards.map((card) => {
               // Responsive: cards that are less than full-width on desktop
-              // become full-width on mobile
+              // become full-width on mobile.
+              // The wide/narrow pair renders 7/5 rather than its stored
+              // 8/4: measured with the sidebar open, the 4-column was
+              // 261px — ~60px short of the ~320px where card headers
+              // stop wrapping — while the 8-column had width to spare.
               const span = card.grid.w;
               const colClass =
                 span >= 12
                   ? "col-span-12"
                   : span >= 8
-                    ? "col-span-12 lg:col-span-8"
+                    ? "col-span-12 lg:col-span-7"
                     : span >= 6
                       ? "col-span-12 md:col-span-6"
                       : span >= 4
-                        ? "col-span-12 sm:col-span-6 lg:col-span-4"
+                        ? "col-span-12 sm:col-span-6 lg:col-span-5"
                         : "col-span-12 sm:col-span-6 lg:col-span-3";
               return (
-                <div key={card.id} className={colClass}>
+                <div key={card.id} className={`min-w-0 ${colClass}`}>
                   {cardContentMap[card.id]}
                 </div>
               );

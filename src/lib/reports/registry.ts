@@ -22,6 +22,7 @@ import { subcontractorCompliance } from "./reports/subcontractor-compliance";
 import { partnershipPipeline } from "./reports/partnership-pipeline";
 import { bidsWinRate } from "./reports/bids-win-rate";
 import { workLogsWeekly } from "./reports/work-logs-weekly";
+import { possibleDuplicates } from "./reports/possible-duplicates";
 
 export const REPORTS: ReportDefinition[] = [
   contractsExpiring,
@@ -34,6 +35,7 @@ export const REPORTS: ReportDefinition[] = [
   partnershipPipeline,
   bidsWinRate,
   workLogsWeekly,
+  possibleDuplicates,
   activityAudit,
   activityAuditFull,
 ];

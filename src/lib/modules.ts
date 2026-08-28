@@ -30,6 +30,8 @@ export type ModuleKey =
   | "intranet"
   | "bids"
   | "quotes"
+  | "contacts"
+  | "radar"
   | "workflows"
   | "settings";
 
@@ -126,6 +128,15 @@ export const MODULES: ModuleDefinition[] = [
     permissioned: false,
   },
   {
+    key: "radar",
+    label: "Renewal Radar",
+    href: "/radar",
+    icon: "CalendarClock",
+    description: "Everything expiring or due across contracts, certifications, insurance, fleet, and bids",
+    section: "main",
+    permissioned: false,
+  },
+  {
     key: "clients",
     label: "Clients",
     href: "/clients",
@@ -133,6 +144,15 @@ export const MODULES: ModuleDefinition[] = [
     description: "Client accounts, contacts, and relationships",
     section: "delivery",
     permissioned: true,
+  },
+  {
+    key: "contacts",
+    label: "Contacts",
+    href: "/contacts",
+    icon: "Contact",
+    description: "People across clients, partners, subcontractors, suppliers, bids, and projects",
+    section: "delivery",
+    permissioned: false,
   },
   {
     key: "projects",

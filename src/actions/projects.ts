@@ -13,6 +13,7 @@ import { z } from "zod";
 import { isValidCalendarRange } from "@/lib/dates";
 import { nameField } from "@/lib/validation";
 import { slugify, ensureUniqueSlug } from "@/lib/slug";
+import { normalizeProjectName } from "@/lib/merge-projects";
 
 const projectSchema = z
   .object({
@@ -24,11 +25,39 @@ const projectSchema = z
     clientId: z.string().min(1, "Client is required"),
     parentProjectId: z.string().optional(),
     serviceOfferingId: z.string().optional(),
+    sourceNotes: z.string().optional(),
+    openQuestions: z.string().optional(),
   })
   .refine((d) => isValidCalendarRange(d.startDate, d.endDate), {
     message: "End date must be on or after start date",
     path: ["endDate"],
   });
+
+/**
+ * Same-client duplicate check by NORMALIZED name (the importers'
+ * guardrail rule — lowercase, collapsed whitespace, trailing
+ * punctuation stripped). Imports created 22 exact-twin projects before
+ * this guard existed; the UI forms now refuse instead of minting
+ * "Acme rollout." next to "Acme Rollout". Fetching all siblings is
+ * fine — a client has dozens of projects at most.
+ */
+async function findSameClientDuplicate(
+  clientId: string,
+  name: string,
+  excludeId?: string
+): Promise<{ id: string; name: string } | null> {
+  const norm = normalizeProjectName(name);
+  if (!norm) return null;
+  const siblings = await db.project.findMany({
+    where: {
+      clientId,
+      deletedAt: null,
+      ...(excludeId ? { id: { not: excludeId } } : {}),
+    },
+    select: { id: true, name: true },
+  });
+  return siblings.find((s) => normalizeProjectName(s.name) === norm) ?? null;
+}
 
 export async function createProject(_prev: unknown, formData: FormData) {
   const user = await requireAuth();
@@ -78,6 +107,8 @@ export async function createProject(_prev: unknown, formData: FormData) {
   const parsed = projectSchema.safeParse({
     name: formData.get("name"),
     description: formData.get("description") || undefined,
+    sourceNotes: formData.get("sourceNotes") || undefined,
+    openQuestions: formData.get("openQuestions") || undefined,
     status: formData.get("status") || "PLANNING",
     startDate: formData.get("startDate") || undefined,
     endDate: formData.get("endDate") || undefined,
@@ -89,6 +120,18 @@ export async function createProject(_prev: unknown, formData: FormData) {
   });
 
   if (!parsed.success) return { error: "Invalid input", fieldErrors: parsed.error.flatten().fieldErrors };
+
+  // Duplicate guard — skipped for inline clients (a brand-new client
+  // has no projects to collide with).
+  if (!wantsInlineClient && clientIdRaw) {
+    const dupe = await findSameClientDuplicate(clientIdRaw, parsed.data.name);
+    if (dupe) {
+      return {
+        error: `Possible duplicate: this client already has a project named "${dupe.name}". Open that project instead — or rename this one if it's genuinely different.`,
+        fieldErrors: { name: ["Duplicate of an existing project for this client"] },
+      };
+    }
+  }
 
   // Round-8 QA: generate a URL-friendly slug at create time so the
   // detail page renders /projects/<slug> instead of /projects/<cuid>.
@@ -191,6 +234,8 @@ export async function updateProject(_prev: unknown, formData: FormData) {
   const parsed = projectSchema.safeParse({
     name: formData.get("name"),
     description: formData.get("description") || undefined,
+    sourceNotes: formData.get("sourceNotes") || undefined,
+    openQuestions: formData.get("openQuestions") || undefined,
     status: formData.get("status") || undefined,
     startDate: formData.get("startDate") || undefined,
     endDate: formData.get("endDate") || undefined,
@@ -213,6 +258,16 @@ export async function updateProject(_prev: unknown, formData: FormData) {
   // projects in their assigned scope (lib/entity-authz.ts).
   const scopeGate = await assertManageEntity(user.id, user.role, "project", id);
   if (scopeGate) return scopeGate;
+
+  // Duplicate guard on rename/re-client too — otherwise editing is a
+  // side door around the create-time check.
+  const dupe = await findSameClientDuplicate(parsed.data.clientId, parsed.data.name, id);
+  if (dupe) {
+    return {
+      error: `Possible duplicate: this client already has a project named "${dupe.name}". Merge the two from that project's page (admin), or pick a distinct name.`,
+      fieldErrors: { name: ["Duplicate of an existing project for this client"] },
+    };
+  }
 
   await db.project.update({
     where: { id },

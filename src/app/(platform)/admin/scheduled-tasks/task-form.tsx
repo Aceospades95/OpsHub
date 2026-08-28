@@ -11,6 +11,10 @@ export interface ReportOption {
   key: string;
   name: string;
   description: string;
+  /** Hidden by an admin report override — kept out of the picker for
+   *  new tasks, but still shown (marked) when an existing task already
+   *  targets it, so editing never silently rewrites the selection. */
+  hidden?: boolean;
 }
 
 export interface TaskFormState {
@@ -70,6 +74,13 @@ export function TaskForm({ state, onChange, reports }: Props) {
     onChange({ ...state, ...p });
   }
 
+  // Hidden reports stay out of the picker for new tasks; a report the
+  // task ALREADY targets stays listed (marked) so opening the edit form
+  // never silently rewrites the selection to the first option.
+  const pickableReports = reports.filter(
+    (r) => !r.hidden || r.key === state.reportKey
+  );
+
   // Pre-select the first report when the type flips to EMAIL_REPORT
   // and nothing's been picked yet — avoids a "nothing selected" state
   // that would silently fail validation later.
@@ -77,9 +88,9 @@ export function TaskForm({ state, onChange, reports }: Props) {
     if (
       state.taskType === "EMAIL_REPORT" &&
       !state.reportKey &&
-      reports.length > 0
+      pickableReports.length > 0
     ) {
-      onChange({ ...state, reportKey: reports[0].key });
+      onChange({ ...state, reportKey: pickableReports[0].key });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.taskType, reports.length]);
@@ -173,16 +184,25 @@ export function TaskForm({ state, onChange, reports }: Props) {
             value={state.reportKey}
             onChange={(e) => patch({ reportKey: e.target.value })}
             placeholder={
-              reports.length === 0 ? "No reports registered" : "Select a report"
+              pickableReports.length === 0
+                ? "No reports registered"
+                : "Select a report"
             }
-            options={reports.map((r) => ({
-              label: r.name,
+            options={pickableReports.map((r) => ({
+              label: r.hidden ? `${r.name} (hidden)` : r.name,
               value: r.key,
             }))}
           />
           {state.reportKey && (
             <p className="text-[11px] text-muted-foreground -mt-2">
               {reports.find((r) => r.key === state.reportKey)?.description}
+            </p>
+          )}
+          {reports.find((r) => r.key === state.reportKey)?.hidden && (
+            <p className="text-[11px] text-warning -mt-2">
+              This report is hidden by an admin customization — scheduled
+              sends will skip it with a warning until it&apos;s un-hidden
+              (Reports → open it → Customize).
             </p>
           )}
         </>

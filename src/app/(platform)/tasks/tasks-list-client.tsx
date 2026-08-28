@@ -157,6 +157,14 @@ function TaskRow({
                   aria-label="Synced with Google Tasks"
                 />
               )}
+              {task.googleListTitle && (
+                <span
+                  className="text-[10px] text-muted-foreground bg-muted border border-border/50 rounded px-1 shrink-0"
+                  title={`Google list: ${task.googleListTitle}`}
+                >
+                  {task.googleListTitle}
+                </span>
+              )}
               {!completed && <StatusBadge status={task.priority} />}
               {task.status === "IN_PROGRESS" && (
                 <Badge variant="default" className="text-xs">

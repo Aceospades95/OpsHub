@@ -768,17 +768,6 @@ export async function convertQuoteToProject(id: string) {
   return { success: true, projectId: project.id } as const;
 }
 
-export async function convertQuoteToInvoice(id: string) {
-  // Stub — the invoices module doesn't exist yet. Reserved so the editor
-  // can show the menu item disabled with a tooltip rather than hiding it
-  // entirely. Pre-flight checks here so wiring is one PR away.
-  void id;
-  return {
-    error: "Invoices aren't enabled yet — contact your admin to turn them on.",
-    notImplemented: true as const,
-  };
-}
-
 // ─── Quote queries ──────────────────────────────────────────────────────
 
 export interface QuoteListFilters {

@@ -12,9 +12,9 @@ import { Mail, Phone, MapPin, Globe, AlertTriangle } from "lucide-react";
 import Link from "next/link";
 import { formatCalendarDate } from "@/lib/dates";
 import { PartnershipActions } from "./partnership-actions";
-import { PartnershipContacts } from "./partnership-contacts";
 import { PartnershipProjects } from "./partnership-projects";
 import { PartnershipAttachments } from "./partnership-attachments";
+import { ContactLinksCard } from "@/components/shared/contact-links-card";
 
 interface Props {
   params: Promise<{ partnershipId: string }>;
@@ -50,7 +50,6 @@ export default async function PartnershipDetailPage({ params }: Props) {
     where: { id: partnershipId, deletedAt: null },
     include: {
       relationshipOwner: { select: { id: true, name: true } },
-      contacts: { orderBy: [{ isPrimary: "desc" }, { name: "asc" }] },
       projects: {
         where: { project: { deletedAt: null } },
         include: {
@@ -184,18 +183,7 @@ export default async function PartnershipDetailPage({ params }: Props) {
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Contacts</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <PartnershipContacts
-                contacts={partnership.contacts}
-                partnershipId={partnership.id}
-                canEdit={perms.canEdit}
-              />
-            </CardContent>
-          </Card>
+          <ContactLinksCard entityType="partnership" entityId={partnership.id} />
 
           <Card>
             <CardHeader>
@@ -243,12 +231,18 @@ export default async function PartnershipDetailPage({ params }: Props) {
                 {partnership.primaryContactName && <p className="font-medium">{partnership.primaryContactName}</p>}
                 {partnership.primaryContactEmail && (
                   <p className="flex items-center gap-2 text-muted-foreground">
-                    <Mail className="h-4 w-4" /> {partnership.primaryContactEmail}
+                    <Mail className="h-4 w-4" />{" "}
+                    <a href={`mailto:${partnership.primaryContactEmail}`} className="text-primary hover:underline truncate">
+                      {partnership.primaryContactEmail}
+                    </a>
                   </p>
                 )}
                 {partnership.primaryContactPhone && (
                   <p className="flex items-center gap-2 text-muted-foreground">
-                    <Phone className="h-4 w-4" /> {partnership.primaryContactPhone}
+                    <Phone className="h-4 w-4" />{" "}
+                    <a href={`tel:${partnership.primaryContactPhone}`} className="text-primary hover:underline">
+                      {partnership.primaryContactPhone}
+                    </a>
                   </p>
                 )}
                 {partnership.address && (

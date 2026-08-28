@@ -7,22 +7,30 @@
  *   for display in the admin UI
  * - emailReportAction — run a report and email it to one or more
  *   recipients using the "report" template
+ * - saveReportOverride / resetReportOverride — persist or clear an
+ *   admin's customization of a built-in report (rename, relabel, hide,
+ *   reorder, row cap). Applied inside runReport so every consumer sees
+ *   the customized shape.
  *
  * CSV download is handled by the dedicated API route at
  * `/api/reports/[key]/csv` (binary body + content-disposition headers).
  *
- * Admin-only. Reports are read-only so these actions don't mutate data,
- * but they can be expensive so we gate them the same way as other admin
- * tools.
+ * Admin-only. Report runs are read-only but can be expensive; override
+ * writes mutate config so they also log to the activity feed.
  */
 
+import { revalidatePath } from "next/cache";
+
 import { requireAuth } from "@/lib/permissions";
-import { runReport, renderHtml, renderText } from "@/lib/reports";
+import { runReport, getReport, parseColumnConfig } from "@/lib/reports";
+import { renderHtml, renderText } from "@/lib/reports";
 import { runCustomReportFromRow } from "@/lib/reports/custom/runtime";
 import { sendFromTemplate } from "@/lib/email";
 import { absoluteUrl } from "@/lib/url";
+import { logActivity } from "@/lib/activity";
 import { db } from "@/lib/db";
 import { log } from "@/lib/log";
+import { Prisma } from "@prisma/client";
 
 function requireAdmin(role: string): { error: string } | null {
   if (role !== "ADMIN") {
@@ -42,14 +50,29 @@ export async function runReportAction(key: string) {
   if (gate) return { success: false as const, error: gate.error };
 
   try {
-    const { output, name, description } = await resolveAndRun(key, user.id);
+    const result = await resolveAndRun(key, user.id);
+    const { output, name, description } = result;
     // Strip non-serializable `format` callbacks from columns before
     // returning to the client — the client has its own formatCell.
     const safeOutput = {
       ...output,
       columns: output.columns.map(({ format: _f, ...rest }) => rest),
     };
-    return { success: true as const, name, description, output: safeOutput };
+    return {
+      success: true as const,
+      name,
+      description,
+      output: safeOutput,
+      // Customize-panel metadata: the stock (code-defined) shape plus
+      // the current override, so the panel can render placeholders and
+      // pre-fill the form without a second query.
+      stockName: result.stockName,
+      stockDescription: result.stockDescription,
+      stockColumns: result.stockColumns,
+      hidden: result.hidden,
+      overridden: result.overridden,
+      override: result.override,
+    };
   } catch (err) {
     // Log the raw cause server-side; return a generic message so we
     // don't leak Prisma table names / SQL fragments to the client.
@@ -69,20 +92,26 @@ export async function runReportAction(key: string) {
 async function resolveAndRun(
   key: string,
   triggeredBy: string
-): Promise<{
-  output: Awaited<ReturnType<typeof runReport>>["output"];
-  name: string;
-  description: string;
-}> {
+): Promise<Awaited<ReturnType<typeof runReport>>> {
   if (key.startsWith("custom:")) {
     const id = key.slice("custom:".length);
     const row = await db.customReport.findUnique({ where: { id } });
     if (!row) throw new Error(`Custom report ${id} not found`);
     const output = await runCustomReportFromRow(row);
+    const name = row.name;
+    const description = row.description ?? "Custom report";
+    // Custom reports are edited through their own builder, not the
+    // override layer — stock === current and there's never an override.
     return {
       output,
-      name: row.name,
-      description: row.description ?? "Custom report",
+      name,
+      description,
+      stockName: name,
+      stockDescription: description,
+      stockColumns: output.columns.map((c) => ({ key: c.key, label: c.label })),
+      hidden: false,
+      overridden: false,
+      override: null,
     };
   }
   return runReport(key, {
@@ -211,6 +240,156 @@ export async function emailReportAction(
     return {
       success: false as const,
       error: "Failed to email report. Check server logs for details.",
+    };
+  }
+}
+
+// ─── Report overrides (customize built-in reports) ─────────────────────
+
+export interface SaveReportOverrideInput {
+  /** Empty string clears the rename (falls back to the stock name). */
+  displayName: string;
+  /** Empty string clears the custom description. */
+  description: string;
+  /** Hide from pickers, the daily digest, and scheduled sends. */
+  hidden: boolean;
+  /** Display row cap; null = no cap. */
+  maxRows: number | null;
+  /** Per-column {label, hidden, order} keyed by column key; null = stock. */
+  columnConfig: Record<
+    string,
+    { label?: string; hidden?: boolean; order?: number }
+  > | null;
+}
+
+const MAX_DISPLAY_NAME = 120;
+const MAX_DESCRIPTION = 1000;
+const MAX_ROWS_CAP = 50_000;
+const MAX_COLUMN_ENTRIES = 200;
+
+/**
+ * Persist an admin's customization of a built-in report. If every field
+ * is stock (no rename, no description, visible, no cap, no column
+ * config) the row is deleted instead — absence of a row IS the reset
+ * state, so "save with everything blank" and "reset" converge.
+ */
+export async function saveReportOverride(
+  key: string,
+  input: SaveReportOverrideInput
+) {
+  const user = await requireAuth();
+  const gate = requireAdmin(user.role);
+  if (gate) return { success: false as const, error: gate.error };
+
+  const report = getReport(key);
+  if (!report) {
+    return { success: false as const, error: "Unknown report" };
+  }
+
+  const displayName = String(input.displayName ?? "").trim();
+  if (displayName.length > MAX_DISPLAY_NAME) {
+    return {
+      success: false as const,
+      error: `Display name is too long (max ${MAX_DISPLAY_NAME} characters)`,
+    };
+  }
+  const description = String(input.description ?? "").trim();
+  if (description.length > MAX_DESCRIPTION) {
+    return {
+      success: false as const,
+      error: `Description is too long (max ${MAX_DESCRIPTION} characters)`,
+    };
+  }
+
+  let maxRows: number | null = null;
+  if (input.maxRows !== null && input.maxRows !== undefined) {
+    if (
+      typeof input.maxRows !== "number" ||
+      !Number.isInteger(input.maxRows) ||
+      input.maxRows < 1 ||
+      input.maxRows > MAX_ROWS_CAP
+    ) {
+      return {
+        success: false as const,
+        error: `Row cap must be a whole number between 1 and ${MAX_ROWS_CAP.toLocaleString()}`,
+      };
+    }
+    maxRows = input.maxRows;
+  }
+
+  if (
+    input.columnConfig &&
+    Object.keys(input.columnConfig).length > MAX_COLUMN_ENTRIES
+  ) {
+    return { success: false as const, error: "Too many column entries" };
+  }
+  // Same defensive parse the read path uses — anything malformed
+  // degrades to "no config" instead of persisting junk.
+  const columnConfig = parseColumnConfig(input.columnConfig ?? null);
+
+  const hidden = input.hidden === true;
+  const isStock =
+    !displayName && !description && !hidden && maxRows === null && !columnConfig;
+
+  try {
+    if (isStock) {
+      await db.reportOverride.deleteMany({ where: { reportKey: key } });
+      await logActivity("updated", "report-override", key, user.id, `${report.name} (reset to stock)`);
+    } else {
+      const data = {
+        displayName: displayName || null,
+        description: description || null,
+        hidden,
+        maxRows,
+        // Interface types don't satisfy Prisma's InputJsonValue index
+        // signature — the shape is already sanitized by parseColumnConfig.
+        columnConfig: columnConfig
+          ? (columnConfig as Prisma.InputJsonValue)
+          : Prisma.DbNull,
+      };
+      await db.reportOverride.upsert({
+        where: { reportKey: key },
+        create: { reportKey: key, ...data },
+        update: data,
+      });
+      await logActivity("updated", "report-override", key, user.id, displayName || report.name);
+    }
+    revalidatePath("/admin/reports");
+    revalidatePath(`/admin/reports/${key}`);
+    revalidatePath("/admin/scheduled-tasks");
+    return { success: true as const, cleared: isStock };
+  } catch (err) {
+    log.error("reports.saveOverride", "Failed to save report override", err, { key });
+    return {
+      success: false as const,
+      error: "Failed to save customization. Check server logs for details.",
+    };
+  }
+}
+
+/** Delete the override row — the report reverts to its code-defined self. */
+export async function resetReportOverride(key: string) {
+  const user = await requireAuth();
+  const gate = requireAdmin(user.role);
+  if (gate) return { success: false as const, error: gate.error };
+
+  const report = getReport(key);
+  if (!report) {
+    return { success: false as const, error: "Unknown report" };
+  }
+
+  try {
+    await db.reportOverride.deleteMany({ where: { reportKey: key } });
+    await logActivity("updated", "report-override", key, user.id, `${report.name} (reset to stock)`);
+    revalidatePath("/admin/reports");
+    revalidatePath(`/admin/reports/${key}`);
+    revalidatePath("/admin/scheduled-tasks");
+    return { success: true as const };
+  } catch (err) {
+    log.error("reports.resetOverride", "Failed to reset report override", err, { key });
+    return {
+      success: false as const,
+      error: "Failed to reset customization. Check server logs for details.",
     };
   }
 }

@@ -466,7 +466,7 @@ function OverviewTab({ employee, totalFte, activeAssignments, canManage, onAddAs
                   <Link href={`/team/${employee.manager.id}`} className="text-primary hover:underline font-medium">{employee.manager.name}</Link>
                 </div>
               )}
-              <InfoField label="Member Since" value={new Date(employee.createdAt).toLocaleDateString()} />
+              <InfoField label="Member Since" value={formatCalendarDate(employee.createdAt, "MMM d, yyyy")} />
             </div>
           </CardContent>
         </Card>
@@ -620,8 +620,8 @@ function AssignmentsTab({ employee, totalFte, canManage, onAddAssignment }: {
                       <div className="h-full bg-primary/70 rounded-full" style={{ width: `${pct}%` }} />
                     </div>
                     <div className="flex gap-3 text-[10px] text-muted-foreground">
-                      {a.startDate && <span>Start: {new Date(a.startDate).toLocaleDateString()}</span>}
-                      {a.endDate && <span>End: {new Date(a.endDate).toLocaleDateString()}</span>}
+                      {a.startDate && <span>Start: {formatCalendarDate(a.startDate, "MMM d, yyyy")}</span>}
+                      {a.endDate && <span>End: {formatCalendarDate(a.endDate, "MMM d, yyyy")}</span>}
                       {a.notes && <span className="truncate">{a.notes}</span>}
                     </div>
                   </div>

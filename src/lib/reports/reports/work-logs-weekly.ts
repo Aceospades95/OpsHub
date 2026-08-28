@@ -43,7 +43,9 @@ export const workLogsWeekly: ReportDefinition = {
 
     const [users, logs, exceptions, flags] = await Promise.all([
       db.user.findMany({
-        where: { isActive: true, hasLoginAccess: true },
+        // Enrolled people only — the report mirrors the reminder job's
+        // opt-in roster.
+        where: { isActive: true, hasLoginAccess: true, workLogRequired: true },
         select: {
           id: true,
           name: true,
@@ -51,6 +53,8 @@ export const workLogsWeekly: ReportDefinition = {
           terminationDate: true,
           isActive: true,
           hasLoginAccess: true,
+          workLogRequired: true,
+          workLogRequiredSince: true,
         },
         orderBy: { name: "asc" },
       }),

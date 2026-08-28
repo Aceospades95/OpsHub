@@ -18,6 +18,8 @@ const clientSchema = z.object({
   website: z.string().optional(),
   status: z.enum(["ACTIVE", "INACTIVE", "PROSPECT", "ARCHIVED"]).optional(),
   accountManagerId: z.string().optional(),
+  sourceNotes: z.string().optional(),
+  openQuestions: z.string().optional(),
 });
 
 export async function createClient(_prev: unknown, formData: FormData) {
@@ -29,6 +31,8 @@ export async function createClient(_prev: unknown, formData: FormData) {
     name: formData.get("name"),
     description: formData.get("description") || undefined,
     summary: formData.get("summary") || undefined,
+    sourceNotes: formData.get("sourceNotes") || undefined,
+    openQuestions: formData.get("openQuestions") || undefined,
     industry: formData.get("industry") || undefined,
     website: formData.get("website") || undefined,
     status: formData.get("status") || "ACTIVE",
@@ -61,6 +65,8 @@ export async function updateClient(_prev: unknown, formData: FormData) {
     name: formData.get("name"),
     description: formData.get("description") || undefined,
     summary: formData.get("summary") || undefined,
+    sourceNotes: formData.get("sourceNotes") || undefined,
+    openQuestions: formData.get("openQuestions") || undefined,
     industry: formData.get("industry") || undefined,
     website: formData.get("website") || undefined,
     status: formData.get("status") || undefined,
@@ -116,116 +122,9 @@ export async function deleteClient(_prev: unknown, formData: FormData) {
 }
 
 // Client Contacts
-const contactSchema = z.object({
-  name: nameField({ label: "Name" }),
-  title: z.string().optional(),
-  email: z.string().email().optional().or(z.literal("")),
-  phone: z.string().optional(),
-  isPrimary: z.boolean().optional(),
-  notes: z.string().optional(),
-  clientId: z.string(),
-});
-
-export async function createContact(_prev: unknown, formData: FormData) {
-  const user = await requireAuth();
-  const perms = await resolveModulePerms(user.id, user.role, "clients");
-  if (!perms.canEdit) return { error: "Permission denied" };
-
-  const parsed = contactSchema.safeParse({
-    name: formData.get("name"),
-    title: formData.get("title") || undefined,
-    email: formData.get("email") || undefined,
-    phone: formData.get("phone") || undefined,
-    isPrimary: formData.get("isPrimary") === "true",
-    notes: formData.get("notes") || undefined,
-    clientId: formData.get("clientId"),
-  });
-
-  if (!parsed.success) return { error: "Invalid input", fieldErrors: parsed.error.flatten().fieldErrors };
-
-  // Contacts hang off a client — verify the parent exists (and isn't
-  // soft-deleted), then gate on it.
-  const parentClient = await db.client.findFirst({
-    where: { id: parsed.data.clientId, deletedAt: null },
-    select: { id: true },
-  });
-  if (!parentClient) return { error: "Not found" };
-
-  const denied = await assertManageEntity(user.id, user.role, "client", parsed.data.clientId);
-  if (denied) return { error: denied.error };
-
-  // Unset other primaries if this one is primary
-  if (parsed.data.isPrimary) {
-    await db.clientContact.updateMany({
-      where: { clientId: parsed.data.clientId, isPrimary: true },
-      data: { isPrimary: false },
-    });
-  }
-
-  await db.clientContact.create({ data: parsed.data });
-  revalidatePath(`/clients/${parsed.data.clientId}`);
-  return { success: true };
-}
-
-export async function updateContact(_prev: unknown, formData: FormData) {
-  const user = await requireAuth();
-  const perms = await resolveModulePerms(user.id, user.role, "clients");
-  if (!perms.canEdit) return { error: "Permission denied" };
-
-  const id = formData.get("id") as string;
-  const clientId = formData.get("clientId") as string;
-  const parsed = contactSchema.safeParse({
-    name: formData.get("name"),
-    title: formData.get("title") || undefined,
-    email: formData.get("email") || undefined,
-    phone: formData.get("phone") || undefined,
-    isPrimary: formData.get("isPrimary") === "true",
-    notes: formData.get("notes") || undefined,
-    clientId,
-  });
-
-  if (!parsed.success) return { error: "Invalid input", fieldErrors: parsed.error.flatten().fieldErrors };
-
-  // Look up the contact to resolve its real parent client, then gate on
-  // it. If the form re-parents the contact, gate on the new client too.
-  const contact = await db.clientContact.findUnique({
-    where: { id },
-    select: { clientId: true },
-  });
-  if (!contact) return { error: "Not found" };
-
-  const denied = await assertManageEntity(user.id, user.role, "client", contact.clientId);
-  if (denied) return { error: denied.error };
-  if (parsed.data.clientId !== contact.clientId) {
-    const deniedNew = await assertManageEntity(user.id, user.role, "client", parsed.data.clientId);
-    if (deniedNew) return { error: deniedNew.error };
-  }
-
-  if (parsed.data.isPrimary) {
-    await db.clientContact.updateMany({
-      where: { clientId, isPrimary: true, NOT: { id } },
-      data: { isPrimary: false },
-    });
-  }
-
-  await db.clientContact.update({ where: { id }, data: parsed.data });
-  revalidatePath(`/clients/${clientId}`);
-  return { success: true };
-}
-
-export async function deleteContact(_prev: unknown, formData: FormData) {
-  const user = await requireAuth();
-  const perms = await resolveModulePerms(user.id, user.role, "clients");
-  if (!perms.canEdit) return { error: "Permission denied" };
-
-  const id = formData.get("id") as string;
-  const contact = await db.clientContact.findUnique({ where: { id } });
-  if (!contact) return { error: "Contact not found" };
-
-  const denied = await assertManageEntity(user.id, user.role, "client", contact.clientId);
-  if (denied) return { error: denied.error };
-
-  await db.clientContact.delete({ where: { id } });
-  revalidatePath(`/clients/${contact.clientId}`);
-  return { success: true };
-}
+// The legacy ClientContact write actions (createContact / updateContact /
+// deleteContact) were removed when the client page adopted the unified
+// Contact rolodex (src/actions/contacts.ts). The ClientContact table is
+// frozen read-only: its rows were backfilled into Contact/ContactLink by
+// the crm_contacts migration, and keeping write endpoints against it
+// would let the two stores drift apart.

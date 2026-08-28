@@ -62,20 +62,22 @@ export function DisciplinaryTab({
 }) {
   const [createOpen, setCreateOpen] = useState(false);
   const [editReport, setEditReport] = useState<DisciplinaryReportRow | null>(null);
-  const [, startTransition] = useTransition();
+  const [isPending, startTransition] = useTransition();
   const { confirm, ConfirmDialog } = useConfirm();
   const router = useRouter();
 
   async function toggleAcknowledged(report: DisciplinaryReportRow) {
-    const fd = new FormData();
-    fd.set("id", report.id);
-    fd.set("acknowledged", report.acknowledgedAt ? "false" : "true");
-    const result = await setDisciplinaryAcknowledged(null, fd);
-    if (result && "error" in result && result.error) {
-      toast.error(result.error);
-      return;
-    }
-    startTransition(() => router.refresh());
+    startTransition(async () => {
+      const fd = new FormData();
+      fd.set("id", report.id);
+      fd.set("acknowledged", report.acknowledgedAt ? "false" : "true");
+      const result = await setDisciplinaryAcknowledged(null, fd);
+      if (result && "error" in result && result.error) {
+        toast.error(result.error);
+        return;
+      }
+      router.refresh();
+    });
   }
 
   async function handleDelete(report: DisciplinaryReportRow) {
@@ -85,15 +87,17 @@ export function DisciplinaryTab({
       confirmLabel: "Delete",
     });
     if (!ok) return;
-    const fd = new FormData();
-    fd.set("id", report.id);
-    const result = await deleteDisciplinaryReport(null, fd);
-    if (result && "error" in result && result.error) {
-      toast.error(result.error);
-      return;
-    }
-    toast.success("Report deleted");
-    startTransition(() => router.refresh());
+    startTransition(async () => {
+      const fd = new FormData();
+      fd.set("id", report.id);
+      const result = await deleteDisciplinaryReport(null, fd);
+      if (result && "error" in result && result.error) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success("Report deleted");
+      router.refresh();
+    });
   }
 
   const formFields = (report: DisciplinaryReportRow | null, fieldErrors?: Record<string, string[] | undefined>) => (
@@ -211,7 +215,8 @@ export function DisciplinaryTab({
                     {isAdmin && (
                       <button
                         onClick={() => handleDelete(report)}
-                        className="rounded p-1.5 text-muted-foreground hover:text-destructive"
+                        disabled={isPending}
+                        className="rounded p-1.5 text-muted-foreground hover:text-destructive disabled:opacity-40 disabled:pointer-events-none"
                         aria-label="Delete report"
                       >
                         <Trash2 className="h-4 w-4" />
@@ -222,7 +227,8 @@ export function DisciplinaryTab({
                 <p className="text-sm mt-2 whitespace-pre-wrap line-clamp-3">{report.description}</p>
                 <button
                   onClick={() => toggleAcknowledged(report)}
-                  className="mt-2 text-xs text-primary hover:underline"
+                  disabled={isPending}
+                  className="mt-2 text-xs text-primary hover:underline disabled:opacity-40 disabled:pointer-events-none"
                 >
                   {report.acknowledgedAt ? "Clear acknowledgement" : "Mark acknowledged (signed copy received)"}
                 </button>

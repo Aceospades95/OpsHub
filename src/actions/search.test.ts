@@ -24,6 +24,7 @@ vi.mock("@/lib/db", () => ({
   db: {
     user: { findMany: vi.fn() },
     client: { findMany: vi.fn() },
+    contact: { findMany: vi.fn() },
     project: { findMany: vi.fn() },
     supplier: { findMany: vi.fn() },
     contract: { findMany: vi.fn() },
@@ -51,6 +52,7 @@ import { quickSearch } from "./search";
 const dbMock = db as unknown as {
   user: { findMany: ReturnType<typeof vi.fn> };
   client: { findMany: ReturnType<typeof vi.fn> };
+  contact: { findMany: ReturnType<typeof vi.fn> };
   project: { findMany: ReturnType<typeof vi.fn> };
   supplier: { findMany: ReturnType<typeof vi.fn> };
   contract: { findMany: ReturnType<typeof vi.fn> };
@@ -208,5 +210,43 @@ describe("quickSearch authz", () => {
     expect(hits).toEqual([]);
     expect(truncated).toBe(false);
     expect(requireAuthMock).not.toHaveBeenCalled();
+  });
+
+  it("user without clients canView gets no contact results, even if rows would match", async () => {
+    // Contacts ride on the clients-module gate; only intranet is on here.
+    resolveModulePermsMock.mockImplementation(async (_u, _r, m: string) => {
+      if (m === "intranet") return ALL_PERMS;
+      return NO_PERMS;
+    });
+    dbMock.contact.findMany.mockResolvedValue([
+      { id: "c1", name: "Ann Chovey", title: null, organization: null, email: "ann@acme.com" },
+    ]);
+
+    const { hits } = await quickSearch("ann");
+
+    expect(hits.find((h) => h.type === "contact")).toBeUndefined();
+    // Gated buckets shouldn't even touch the DB.
+    expect(dbMock.contact.findMany).not.toHaveBeenCalled();
+  });
+
+  it("clients canView surfaces contact hits with /contacts hrefs", async () => {
+    resolveModulePermsMock.mockImplementation(async (_u, _r, m: string) => {
+      if (m === "clients") return ALL_PERMS;
+      return NO_PERMS;
+    });
+    dbMock.contact.findMany.mockResolvedValue([
+      { id: "c1", name: "Ann Chovey", title: "CFO", organization: "Acme", email: "ann@acme.com" },
+    ]);
+
+    const { hits } = await quickSearch("ann");
+
+    const hit = hits.find((h) => h.type === "contact");
+    expect(hit?.id).toBe("contact-c1");
+    expect(hit?.href).toBe("/contacts/c1");
+    expect(hit?.label).toBe("Ann Chovey");
+    expect(hit?.sublabel).toBe("CFO · Acme");
+    // Soft-deleted contacts must be filtered in SQL, not JS.
+    const call = dbMock.contact.findMany.mock.calls[0][0];
+    expect(call.where.deletedAt).toBeNull();
   });
 });

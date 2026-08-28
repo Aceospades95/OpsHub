@@ -9,6 +9,7 @@
 
 import { db } from "@/lib/db";
 import { format } from "date-fns";
+import { effectiveContractStatus } from "@/lib/effective-status";
 import type { ReportDefinition } from "../types";
 
 function daysBetween(a: Date, b: Date): number {
@@ -60,7 +61,9 @@ export const contractsExpiring: ReportDefinition = {
           title: c.title,
           contractNumber: c.contractNumber || "—",
           client: c.client?.name || "—",
-          status: c.status,
+          // Date-derived (stored EXPIRING_SOON/EXPIRED lags the
+          // calendar between job runs — audit §3.2-5).
+          status: effectiveContractStatus(c, now),
           value: c.value,
           currency: c.currency,
           accountManager: c.client?.accountManager?.name || "—",

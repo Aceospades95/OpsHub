@@ -21,6 +21,7 @@ import {
   AlertCircle,
 } from "lucide-react";
 import { runReportAction, emailReportAction } from "@/actions/reports";
+import { ReportCustomizePanel, type OverrideView } from "./report-customize-panel";
 
 interface ReportColumn {
   key: string;
@@ -37,6 +38,14 @@ interface Recipient {
   id: string;
   name: string;
   email: string;
+}
+
+/** Customize-panel inputs returned alongside each run. */
+interface RunMeta {
+  stockName: string;
+  stockDescription: string;
+  stockColumns: { key: string; label: string }[];
+  override: OverrideView | null;
 }
 
 interface Props {
@@ -58,6 +67,7 @@ function formatCell(value: unknown): string {
 
 export function ReportRunner({ reportKey, reportName, recipients }: Props) {
   const [output, setOutput] = useState<ReportOutput | null>(null);
+  const [meta, setMeta] = useState<RunMeta | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isRunning, startRun] = useTransition();
   const [isEmailing, startEmail] = useTransition();
@@ -84,6 +94,12 @@ export function ReportRunner({ reportKey, reportName, recipients }: Props) {
         return;
       }
       setOutput(result.output);
+      setMeta({
+        stockName: result.stockName,
+        stockDescription: result.stockDescription,
+        stockColumns: result.stockColumns,
+        override: result.override,
+      });
     });
   };
 
@@ -376,6 +392,19 @@ export function ReportRunner({ reportKey, reportName, recipients }: Props) {
           </div>
         </CardContent>
       </Card>
+
+      {/* Customize applies to built-in reports only — custom reports
+          have their own full editor at /admin/reports/custom/[id]/edit. */}
+      {!reportKey.startsWith("custom:") && meta && (
+        <ReportCustomizePanel
+          reportKey={reportKey}
+          stockName={meta.stockName}
+          stockDescription={meta.stockDescription}
+          stockColumns={meta.stockColumns}
+          override={meta.override}
+          onSaved={runReport}
+        />
+      )}
     </>
   );
 }

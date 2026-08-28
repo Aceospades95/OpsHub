@@ -13,6 +13,7 @@ import {
   Search,
   User,
   Building2,
+  Contact,
   FolderKanban,
   Truck,
   FileText,
@@ -45,6 +46,7 @@ const TYPE_META: Record<
 > = {
   employee: { label: "Employees", icon: User },
   client: { label: "Clients", icon: Building2 },
+  contact: { label: "Contacts", icon: Contact },
   project: { label: "Projects", icon: FolderKanban },
   supplier: { label: "Suppliers", icon: Truck },
   contract: { label: "Contracts", icon: FileText },
@@ -59,6 +61,7 @@ const TYPE_ORDER: SearchHit["type"][] = [
   "project",
   "client",
   "employee",
+  "contact",
   "quote",
   "contract",
   "supplier",

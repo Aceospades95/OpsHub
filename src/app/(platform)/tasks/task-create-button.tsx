@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useFormState } from "react-dom";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { GoogleListPicker } from "@/components/shared/google-list-picker";
 import { Dialog } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -63,6 +64,7 @@ export function TaskCreateButton({ projects, clients, users }: TaskCreateButtonP
             <Select
               name="priority"
               label="Priority"
+              defaultValue="MEDIUM"
               options={[
                 { label: "High", value: "HIGH" },
                 { label: "Medium", value: "MEDIUM" },
@@ -108,11 +110,14 @@ export function TaskCreateButton({ projects, clients, users }: TaskCreateButtonP
               ...clients.map((c) => ({ label: c.name, value: c.id })),
             ]}
           />
-          <label className="flex items-center gap-2 text-sm text-muted-foreground">
-            <input type="checkbox" name="pushToGoogle" value="true" className="rounded" />
+          {/* py-1 + h-5 checkbox keeps the label's hit area ≥24px tall —
+              this toggle has an external side effect, so don't skimp. */}
+          <label className="flex items-center gap-2 py-1 text-sm text-muted-foreground">
+            <input type="checkbox" name="pushToGoogle" value="true" className="h-5 w-5 shrink-0 rounded" />
             Also add to the assignee&apos;s Google Tasks (needs them connected; a due date shows on
             their Google Calendar)
           </label>
+          <GoogleListPicker />
           <div className="flex justify-end gap-2">
             <Button type="button" variant="outline" onClick={() => setOpen(false)}>
               Cancel

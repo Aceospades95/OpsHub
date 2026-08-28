@@ -65,6 +65,11 @@ interface StepRow {
   isRequired: boolean;
 }
 
+interface UserOption {
+  id: string;
+  name: string;
+}
+
 interface EmailTemplateOption {
   id: string;
   name: string;
@@ -75,6 +80,7 @@ interface Props {
   template: TemplateMeta;
   steps: StepRow[];
   emailTemplates: EmailTemplateOption[];
+  users: UserOption[];
   canDelete: boolean;
 }
 
@@ -82,6 +88,7 @@ export function TemplateEditor({
   template,
   steps: initialSteps,
   emailTemplates,
+  users,
   canDelete,
 }: Props) {
   const router = useRouter();
@@ -361,6 +368,7 @@ export function TemplateEditor({
           step={editingStep}
           steps={steps}
           emailTemplates={emailTemplates}
+          users={users}
           onClose={(changed) => {
             setEditingStep(null);
             if (changed) refresh();
@@ -417,12 +425,14 @@ function StepEditDialog({
   step,
   steps,
   emailTemplates,
+  users,
   onClose,
 }: {
   templateId: string;
   step: StepRow;
   steps: StepRow[];
   emailTemplates: EmailTemplateOption[];
+  users: UserOption[];
   onClose: (changed: boolean) => void;
 }) {
   const [name, setName] = useState(step.name);
@@ -542,6 +552,7 @@ function StepEditDialog({
             config={config}
             onChange={setConfig}
             emailTemplates={emailTemplates}
+            users={users}
           />
         </div>
 

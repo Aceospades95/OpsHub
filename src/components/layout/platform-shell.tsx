@@ -45,7 +45,7 @@ export async function PlatformShell({ children }: { children: React.ReactNode })
 
   const role = (freshUser?.role ?? session.user.role) as Role;
 
-  const [sidebarConfig, customPages, unreadCount, recentNotifications, branding, visibleModules] = await Promise.all([
+  const [sidebarConfig, customPages, unreadCount, recentNotifications, branding, visibleModules, hiddenModuleRows] = await Promise.all([
     getSidebarConfig(),
     // Sandbox custom pages: ADMIN / DEVELOPER get every published page;
     // other roles only get the published pages they hold an explicit
@@ -72,6 +72,11 @@ export async function PlatformShell({ children }: { children: React.ReactNode })
     // Permission-aware module list — the sidebar only renders permissioned
     // modules whose key is in here.
     getVisibleModules(session.user.id, role),
+    // Org-wide "hide until in use" toggles (Settings → Modules).
+    db.moduleSetting.findMany({
+      where: { hiddenInSidebar: true },
+      select: { module: true },
+    }),
   ]);
 
   const serializedNotifications = recentNotifications.map((n) => ({
@@ -89,6 +94,7 @@ export async function PlatformShell({ children }: { children: React.ReactNode })
       <Sidebar
         userRole={session.user.role}
         visibleModules={visibleModules}
+        hiddenModules={hiddenModuleRows.map((m) => m.module)}
         customPages={customPages}
         sidebarConfig={sidebarConfig}
         companyName={branding.companyName}
@@ -103,7 +109,10 @@ export async function PlatformShell({ children }: { children: React.ReactNode })
           unreadNotifications={unreadCount}
           recentNotifications={serializedNotifications}
         />
-        <main className="flex-1 overflow-auto page-bg p-4 sm:p-6 lg:p-8">
+        {/* pb-24: the fixed "Edit Layout" pill (bottom-6, ~56px tall)
+            needs ~92px of scroll clearance or it permanently covers the
+            last card's rows at max scroll. */}
+        <main className="flex-1 overflow-auto page-bg p-4 sm:p-6 lg:p-8 pb-24 sm:pb-24 lg:pb-24">
           <div className="mx-auto max-w-[1600px]">{children}</div>
         </main>
       </div>

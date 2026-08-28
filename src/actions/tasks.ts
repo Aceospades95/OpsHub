@@ -165,6 +165,10 @@ export async function createTask(_prevState: unknown, formData: FormData) {
   // Opt-in: also drop the task into the assignee's own Google Tasks
   // (where a due date surfaces on their Google Calendar).
   const pushToGoogle = formData.get("pushToGoogle") === "true";
+  // Destination list — only honored when you're assigning to YOURSELF
+  // (picking a list inside someone else's Google account would leak
+  // their personal list names; others always get their default list).
+  const googleListId = (formData.get("googleListId") as string) || undefined;
 
   const parsed = taskSchema.safeParse(raw);
   if (!parsed.success) {
@@ -242,7 +246,11 @@ export async function createTask(_prevState: unknown, formData: FormData) {
         select: { id: true },
       });
       if (connected) {
-        await pushNewTaskToGoogle(task.assigneeId, task.id);
+        await pushNewTaskToGoogle(
+          task.assigneeId,
+          task.id,
+          task.assigneeId === user.id ? googleListId : undefined
+        );
       }
     } catch (err) {
       log.error("tasks.pushGoogle", "Push to assignee Google Tasks failed", err, { taskId: task.id });

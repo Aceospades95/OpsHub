@@ -41,6 +41,8 @@ export interface TaskDrawerTask {
   assignee: { id: string; name: string } | null;
   /** True when the task is synced with someone's Google Tasks. */
   isGoogle: boolean;
+  /** Google list name for the row chip (null when unknown / not Google). */
+  googleListTitle?: string | null;
   /** Gmail/Docs link Google carries on the task, if any. */
   sourceLink: string | null;
 }

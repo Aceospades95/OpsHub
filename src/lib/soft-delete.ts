@@ -68,7 +68,8 @@ export interface SoftDeleteEntity {
     | "task"
     | "vehicle"
     | "disciplinaryReport"
-    | "bidOpportunity";
+    | "bidOpportunity"
+    | "contact";
   /** Activity-log entityType + recovery-page slug. Stable. */
   entityType: string;
   /** Plural label used as the section header on /admin/recovery. */
@@ -231,6 +232,19 @@ export const SOFT_DELETE_ENTITIES: readonly SoftDeleteEntity[] = [
     module: "bids",
     labelField: "title",
     hrefForId: (id) => `/bids/${id}`,
+  },
+  {
+    prismaModel: "contact",
+    entityType: "contact",
+    pluralLabel: "Contacts",
+    singularLabel: "contact",
+    // Contacts share the clients-module gate (see src/actions/contacts.ts).
+    module: "clients",
+    labelField: "name",
+    hrefForId: (id) => `/contacts/${id}`,
+    // Hard delete cascades ContactLink rows (FK onDelete: Cascade), so
+    // a purge can't leave dangling links; until then links are kept so
+    // a restore fully recovers the graph.
   },
   {
     prismaModel: "intranetResource",

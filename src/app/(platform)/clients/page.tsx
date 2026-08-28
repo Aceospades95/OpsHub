@@ -81,11 +81,26 @@ export default async function ClientsPage({
         select: {
           projects: { where: { deletedAt: null } },
           contracts: { where: { deletedAt: null } },
-          contacts: true,
         },
       },
     },
   });
+
+  // People counts come from the unified rolodex (ContactLink is
+  // polymorphic, so it can't ride in _count). The legacy ClientContact
+  // table is frozen — counting it would drift as the rolodex is edited.
+  const contactLinkCounts = await db.contactLink.groupBy({
+    by: ["entityId"],
+    where: {
+      entityType: "client",
+      entityId: { in: clients.map((c) => c.id) },
+      contact: { deletedAt: null },
+    },
+    _count: { _all: true },
+  });
+  const contactCountByClient = new Map(
+    contactLinkCounts.map((r) => [r.entityId, r._count._all])
+  );
 
   type ClientRow = (typeof clients)[number];
   const groupKeyOf = (client: ClientRow, key: GroupKey): string | null => {
@@ -117,7 +132,7 @@ export default async function ClientsPage({
               <div className="flex gap-4 text-xs text-muted-foreground">
                 <span>{pluralize(client._count.projects, "project")}</span>
                 <span>{pluralize(client._count.contracts, "contract")}</span>
-                <span>{pluralize(client._count.contacts, "contact")}</span>
+                <span>{pluralize(contactCountByClient.get(client.id) ?? 0, "contact")}</span>
               </div>
             </CardContent>
           </Card>
@@ -165,7 +180,7 @@ export default async function ClientsPage({
                 </td>
                 <td className="p-3 text-right tabular-nums">{client._count.projects}</td>
                 <td className="p-3 text-right tabular-nums">{client._count.contracts}</td>
-                <td className="p-3 text-right tabular-nums">{client._count.contacts}</td>
+                <td className="p-3 text-right tabular-nums">{contactCountByClient.get(client.id) ?? 0}</td>
               </tr>
             ))}
           </tbody>

@@ -27,6 +27,7 @@ export function BidFields({
   portals,
   clients,
   users,
+  contracts,
   fieldErrors,
 }: {
   bid?: {
@@ -42,11 +43,23 @@ export function BidFields({
     clientId: string | null;
     ownerId: string | null;
     lossReason: string | null;
+    incumbent: string | null;
+    endClientId: string | null;
+    contractId: string | null;
     notes: string | null;
+    sourceNotes: string | null;
+    openQuestions: string | null;
   };
   portals: BidOption[];
   clients: BidOption[];
   users: BidOption[];
+  /**
+   * Contract picker options (already filtered to the bid's client by
+   * the caller). Omitted on the create dialog — a brand-new bid has no
+   * contract yet, and leaving the input out keeps contractId untouched
+   * server-side only on create (updates always render the picker).
+   */
+  contracts?: BidOption[];
   fieldErrors?: Record<string, string[] | undefined>;
 }) {
   return (
@@ -105,6 +118,28 @@ export function BidFields({
           options={[{ label: "Unassigned", value: "" }, ...users.map((u) => ({ label: u.name, value: u.id }))]}
         />
       </div>
+      <div className="grid grid-cols-2 gap-4">
+        <Input
+          name="incumbent"
+          label="Incumbent"
+          placeholder="Who holds this work today?"
+          defaultValue={bid?.incumbent ?? ""}
+        />
+        <Select
+          name="endClientId"
+          label="End client (behind a prime)"
+          defaultValue={bid?.endClientId ?? ""}
+          options={[{ label: "None / direct", value: "" }, ...clients.map((c) => ({ label: c.name, value: c.id }))]}
+        />
+      </div>
+      {contracts && (
+        <Select
+          name="contractId"
+          label="Contract it became (for won bids)"
+          defaultValue={bid?.contractId ?? ""}
+          options={[{ label: "Not linked", value: "" }, ...contracts.map((c) => ({ label: c.name, value: c.id }))]}
+        />
+      )}
       <Textarea name="description" label="Scope / summary" rows={3} defaultValue={bid?.description ?? ""} />
       {bid && (
         <Input
@@ -114,6 +149,22 @@ export function BidFields({
         />
       )}
       <Textarea name="notes" label="Notes" rows={2} defaultValue={bid?.notes ?? ""} />
+      <div className="grid grid-cols-2 gap-4">
+        <Textarea
+          name="sourceNotes"
+          label="Source notes"
+          rows={2}
+          placeholder="Where these facts came from (threads, files, people)"
+          defaultValue={bid?.sourceNotes ?? ""}
+        />
+        <Textarea
+          name="openQuestions"
+          label="Open questions"
+          rows={2}
+          placeholder="Unknowns / risks still to chase down"
+          defaultValue={bid?.openQuestions ?? ""}
+        />
+      </div>
     </>
   );
 }

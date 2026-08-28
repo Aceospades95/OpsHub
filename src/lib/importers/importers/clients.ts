@@ -15,6 +15,13 @@
  *     update/upsert → update, fill-blanks → only fill empty fields).
  *     Pre-2026-07 this importer ignored the mode and always upserted —
  *     that bug is fixed.
+ *   - Fuzzy-duplicate guardrail: rows about to CREATE are also checked
+ *     against live clients by NORMALIZED name (lowercase, collapsed
+ *     whitespace, trailing punctuation stripped — see
+ *     normalizeImportName). In create mode a normalized-only match is
+ *     skipped as a possible duplicate instead of minting "Acme Corp."
+ *     next to "Acme Corp"; other modes create as before but warn. The
+ *     same guardrail catches normalized duplicates within one file.
  *   - status defaults to ACTIVE. Must be one of the ClientStatus enum
  *     values when supplied (case-insensitive).
  *   - accountManagerEmail resolves against existing Users in a second
@@ -49,6 +56,26 @@ const VALID_STATUSES: ClientStatus[] = [
   "PROSPECT",
   "ARCHIVED",
 ];
+
+/**
+ * Fuzzy-dedupe normalization shared by the clients + projects importers
+ * and the possible-duplicates report: lowercase, collapse internal
+ * whitespace, trim, strip trailing punctuation runs ("Acme Corp." /
+ * "acme  corp" / " Acme Corp " all normalize to "acme corp").
+ *
+ * Deliberately SEPARATE from the exact natural key (trimmed lowercase
+ * name) that drives create/update/upsert matching — normalization only
+ * powers the possible-duplicate guardrail, never the match itself.
+ * Returns "" for names that are nothing but whitespace/punctuation;
+ * callers must skip normalized matching in that case.
+ */
+export function normalizeImportName(raw: string): string {
+  return raw
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/[\s.,;:!?\-–—_/\\]+$/, "");
+}
 
 export const clientsImporter: ImporterDefinition = {
   key: "clients",
@@ -149,11 +176,23 @@ export const clientsImporter: ImporterDefinition = {
 
     // Pre-fetch existing clients keyed by lowercased trimmed name so
     // duplicate detection AND the UPDATE path share one read.
+    const allClients = await db.client.findMany({
+      select: { id: true, name: true, deletedAt: true },
+    });
     const existingByName = new Map<string, { id: string }>(
-      (
-        await db.client.findMany({ select: { id: true, name: true } })
-      ).map((c) => [c.name.trim().toLowerCase(), { id: c.id }])
+      allClients.map((c) => [c.name.trim().toLowerCase(), { id: c.id }])
     );
+    // Fuzzy-dupe guardrail: live (non-deleted) clients by normalized
+    // name. Updated after every create so in-file variants are caught
+    // too. Soft-deleted clients stay in the EXACT map above (existing
+    // semantics) but never flag a possible duplicate.
+    const existingByNorm = new Map<string, { id: string; name: string }>();
+    for (const c of allClients) {
+      if (c.deletedAt) continue;
+      const norm = normalizeImportName(c.name);
+      if (!norm || existingByNorm.has(norm)) continue;
+      existingByNorm.set(norm, { id: c.id, name: c.name });
+    }
 
     const seenInBatch = new Set<string>();
     /** Rows that need an account-manager link resolved post-batch.
@@ -223,6 +262,26 @@ export const clientsImporter: ImporterDefinition = {
         continue;
       }
 
+      // About to CREATE with no exact-key match — check for a live
+      // client whose NORMALIZED name collides ("Acme Corp." vs
+      // "acme corp"). In create mode that's a skip, not a new record;
+      // update/upsert/fill-blanks keep their exact-match semantics and
+      // just carry a warning on the created row.
+      const norm = normalizeImportName(name);
+      const normMatch =
+        modeAction === "create" && norm ? existingByNorm.get(norm) : undefined;
+      if (normMatch) {
+        if ((ctx.mode ?? "create") === "create") {
+          results.push({
+            row: rowNumber,
+            status: "skipped",
+            message: `Possible duplicate of "${normMatch.name}" — skipped in "Create new only" mode. Rename the row if it really is a different client, or re-run in "Create + update" mode.`,
+          });
+          continue;
+        }
+        warnings.push(`Possible duplicate of existing client "${normMatch.name}" — created anyway`);
+      }
+
       try {
         let clientId: string;
         let action: "imported" | "updated";
@@ -243,6 +302,11 @@ export const clientsImporter: ImporterDefinition = {
           clientId = created.id;
           action = "imported";
           existingByName.set(nameKey, { id: clientId });
+          // Register the fresh row for the fuzzy guardrail so a later
+          // in-file variant ("Acme Corp" then "acme corp.") is flagged.
+          if (norm && !existingByNorm.has(norm)) {
+            existingByNorm.set(norm, { id: clientId, name });
+          }
         }
 
         const managerEmail = (raw.accountManagerEmail || "").trim().toLowerCase();

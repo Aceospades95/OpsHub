@@ -19,6 +19,7 @@
  */
 export type NotificationType =
   | "task-assigned"
+  | "task-due-soon"
   | "mention"
   | "assignment-created"
   | "assignment-removed"
@@ -38,6 +39,7 @@ export type NotificationType =
 /** Human-readable labels for notification types — used in the UI. */
 export const NOTIFICATION_TYPE_LABELS: Record<NotificationType, string> = {
   "task-assigned": "Task assigned",
+  "task-due-soon": "Task due soon",
   mention: "Mention",
   "assignment-created": "New assignment",
   "assignment-removed": "Assignment removed",

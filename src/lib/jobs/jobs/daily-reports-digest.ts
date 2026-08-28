@@ -15,6 +15,7 @@ import { sendFromTemplate } from "@/lib/email";
 import { absoluteUrl } from "@/lib/url";
 import {
   listSchedulableReports,
+  getAllReportOverrides,
   runReport,
   renderHtml,
   renderText,
@@ -33,9 +34,22 @@ export const dailyReportsDigest: JobDefinition = {
     if (!(await shouldRunDaily("daily-reports-digest"))) {
       return { status: "skipped", output: "Already ran today", processed: 0 };
     }
-    const reports = listSchedulableReports();
+    // Reports hidden by an admin override stay out of the digest — the
+    // customization is honored everywhere reports circulate.
+    const overrides = await getAllReportOverrides();
+    const allSchedulable = listSchedulableReports();
+    const reports = allSchedulable.filter(
+      (r) => !(overrides.get(r.key)?.hidden ?? false)
+    );
+    const hiddenCount = allSchedulable.length - reports.length;
     if (reports.length === 0) {
-      return { output: "No schedulable reports configured.", processed: 0 };
+      return {
+        output:
+          hiddenCount > 0
+            ? `No reports to digest — all ${hiddenCount} schedulable report${hiddenCount === 1 ? " is" : "s are"} hidden by admin customizations.`
+            : "No schedulable reports configured.",
+        processed: 0,
+      };
     }
 
     // Run each report. Capture failures as a fake ReportOutput so they
@@ -111,7 +125,7 @@ export const dailyReportsDigest: JobDefinition = {
 
     const totalFailed = results.filter((r) => r.error).length;
     return {
-      output: `Ran ${results.length} report${results.length === 1 ? "" : "s"}${totalFailed > 0 ? ` (${totalFailed} failed)` : ""}, emailed ${sent} of ${admins.length} admin${admins.length === 1 ? "" : "s"}${failed > 0 ? ` (${failed} send failures)` : ""}`,
+      output: `Ran ${results.length} report${results.length === 1 ? "" : "s"}${totalFailed > 0 ? ` (${totalFailed} failed)` : ""}${hiddenCount > 0 ? ` (${hiddenCount} hidden by admin customization, skipped)` : ""}, emailed ${sent} of ${admins.length} admin${admins.length === 1 ? "" : "s"}${failed > 0 ? ` (${failed} send failures)` : ""}`,
       processed: sent,
     };
   },

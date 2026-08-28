@@ -1,5 +1,12 @@
 import { describe, it, expect } from "vitest";
-import { bidDueState, bidWaitingDays, OPEN_BID_STATUSES, BID_STATUSES } from "./bids";
+import {
+  bidDueState,
+  bidStaleness,
+  bidWaitingDays,
+  OPEN_BID_STATUSES,
+  BID_STATUSES,
+  BID_STALE_AFTER_DAYS,
+} from "./bids";
 
 const NOW = new Date("2026-07-08T12:00:00Z");
 const daysFromNow = (d: number) => new Date(NOW.getTime() + d * 24 * 60 * 60 * 1000);
@@ -27,6 +34,45 @@ describe("bidDueState", () => {
 
   it("none without a due date", () => {
     expect(bidDueState({ status: "PREPARING", dueDate: null }, NOW)).toBe("none");
+  });
+});
+
+describe("bidStaleness", () => {
+  it("current when not past due, or without a due date", () => {
+    expect(bidStaleness({ status: "PREPARING", dueDate: daysFromNow(3) }, NOW)).toBe("current");
+    expect(bidStaleness({ status: "IDENTIFIED", dueDate: null }, NOW)).toBe("current");
+    // Due today (less than a full day's difference) is not overdue yet.
+    expect(bidStaleness({ status: "PREPARING", dueDate: NOW }, NOW)).toBe("current");
+  });
+
+  it("overdue when past due by up to the stale threshold", () => {
+    expect(bidStaleness({ status: "IDENTIFIED", dueDate: daysFromNow(-1) }, NOW)).toBe("overdue");
+    expect(bidStaleness({ status: "PREPARING", dueDate: daysFromNow(-15) }, NOW)).toBe("overdue");
+  });
+
+  it("boundary: exactly 30 full days past due is still overdue; 31 is stale", () => {
+    expect(
+      bidStaleness({ status: "PREPARING", dueDate: daysFromNow(-BID_STALE_AFTER_DAYS) }, NOW)
+    ).toBe("overdue");
+    expect(
+      bidStaleness({ status: "PREPARING", dueDate: daysFromNow(-(BID_STALE_AFTER_DAYS + 1)) }, NOW)
+    ).toBe("stale");
+  });
+
+  it("boundary: 30 days + a few hours is still 30 full days → overdue", () => {
+    const dueDate = new Date(daysFromNow(-BID_STALE_AFTER_DAYS).getTime() - 6 * 60 * 60 * 1000);
+    expect(bidStaleness({ status: "IDENTIFIED", dueDate }, NOW)).toBe("overdue");
+  });
+
+  it("stale for long-past IDENTIFIED/PREPARING rows (the 2025 zombie case)", () => {
+    expect(bidStaleness({ status: "IDENTIFIED", dueDate: daysFromNow(-400) }, NOW)).toBe("stale");
+    expect(bidStaleness({ status: "PREPARING", dueDate: daysFromNow(-90) }, NOW)).toBe("stale");
+  });
+
+  it("never overdue/stale once submitted or closed, however old the due date", () => {
+    for (const status of ["SUBMITTED", "WON", "LOST", "NO_BID", "STALE"] as const) {
+      expect(bidStaleness({ status, dueDate: daysFromNow(-400) }, NOW)).toBe("current");
+    }
   });
 });
 
