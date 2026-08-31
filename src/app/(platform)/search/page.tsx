@@ -6,6 +6,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { vehicleLabel } from "@/lib/fleet";
 import { effectiveContractStatus } from "@/lib/effective-status";
+import { taskVisibilityWhere } from "@/lib/task-visibility";
 import { Badge } from "@/components/ui/badge";
 import { Search, BookOpen, Users, HardHat, Handshake, Car, Target } from "lucide-react";
 import Link from "next/link";
@@ -181,7 +182,7 @@ export default async function SearchPage({ searchParams }: Props) {
       ? db.task.findMany({
           where: {
             deletedAt: null,
-            AND: [taskScope, { OR: [{ title: contains }, { description: contains }] }],
+            AND: [taskScope, taskVisibilityWhere(userId), { OR: [{ title: contains }, { description: contains }] }],
           },
           include: {
             project: { select: { id: true, name: true } },

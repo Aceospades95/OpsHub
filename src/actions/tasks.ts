@@ -37,6 +37,7 @@ async function authorizeTaskMutation(
       createdById: true,
       projectId: true,
       clientId: true,
+      visibility: true,
     },
   });
   if (!task) return { error: "Task not found" };
@@ -45,6 +46,14 @@ async function authorizeTaskMutation(
   // short-circuit fast.
   if (task.assigneeId === user.id || task.createdById === user.id) {
     return null;
+  }
+  // PRIVATE means private: only the creator and assignee (handled
+  // above) may touch it — no canManage/project-edit override. Matches
+  // the read-side rule in lib/task-visibility.ts, and returns the same
+  // message as "not found" would be wrong (the id was valid) but must
+  // not confirm content either.
+  if (task.visibility === "PRIVATE") {
+    return { error: "You don't have permission to edit this task." };
   }
   const tasksPerms = await resolveModulePerms(user.id, user.role, "tasks");
   if (tasksPerms.canManage) return null;
@@ -133,6 +142,9 @@ const taskSchema = z.object({
   description: z.string().optional(),
   priority: z.enum(["HIGH", "MEDIUM", "LOW"]).default("MEDIUM"),
   status: z.enum(["TODO", "IN_PROGRESS", "DONE", "CANCELLED"]).default("TODO"),
+  // PUBLIC = normal module/scope rules; PRIVATE = creator + assignee
+  // only, everywhere (lists, search, widgets, mutations).
+  visibility: z.enum(["PUBLIC", "PRIVATE"]).default("PUBLIC"),
   dueDate: z.string().optional(),
   projectId: z.string().optional(),
   clientId: z.string().optional(),
@@ -157,6 +169,7 @@ export async function createTask(_prevState: unknown, formData: FormData) {
     description: (formData.get("description") as string) || undefined,
     priority: (formData.get("priority") as string) || "MEDIUM",
     status: (formData.get("status") as string) || "TODO",
+    visibility: (formData.get("visibility") as string) || "PUBLIC",
     dueDate: (formData.get("dueDate") as string) || undefined,
     projectId: (formData.get("projectId") as string) || undefined,
     clientId: (formData.get("clientId") as string) || undefined,
@@ -201,6 +214,7 @@ export async function createTask(_prevState: unknown, formData: FormData) {
       description: data.description || null,
       priority: data.priority,
       status: data.status,
+      visibility: data.visibility,
       dueDate: data.dueDate ? new Date(data.dueDate) : null,
       projectId: data.projectId || null,
       clientId,
@@ -351,11 +365,16 @@ export async function updateTask(_prevState: unknown, formData: FormData) {
     taskId
   );
   if (denied) return denied;
+  // A form that doesn't carry the visibility field must KEEP the
+  // task's current visibility — defaulting an omitted field to PUBLIC
+  // would silently expose a private task on any partial edit.
+  const visibilityField = (formData.get("visibility") as string | null) || null;
   const raw = {
     title: formData.get("title") as string,
     description: (formData.get("description") as string) || undefined,
     priority: (formData.get("priority") as string) || "MEDIUM",
     status: (formData.get("status") as string) || "TODO",
+    visibility: visibilityField || "PUBLIC",
     dueDate: (formData.get("dueDate") as string) || undefined,
     projectId: (formData.get("projectId") as string) || undefined,
     clientId: (formData.get("clientId") as string) || undefined,
@@ -399,6 +418,7 @@ export async function updateTask(_prevState: unknown, formData: FormData) {
       description: data.description || null,
       priority: data.priority,
       status: data.status,
+      ...(visibilityField ? { visibility: data.visibility } : {}),
       completedAt,
       dueDate: data.dueDate ? new Date(data.dueDate) : null,
       projectId: data.projectId || null,

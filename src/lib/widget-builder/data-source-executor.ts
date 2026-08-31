@@ -195,7 +195,13 @@ async function queryModel(
   switch (dataSourceId) {
     case "client": return db.client.findMany(args as Parameters<typeof db.client.findMany>[0]) as unknown as Record<string, unknown>[];
     case "project": return db.project.findMany(args as Parameters<typeof db.project.findMany>[0]) as unknown as Record<string, unknown>[];
-    case "task": return db.task.findMany(args as Parameters<typeof db.task.findMany>[0]) as unknown as Record<string, unknown>[];
+    case "task": {
+      // Same viewer-less rule as the activityLog case below: admin-built
+      // widgets render for whoever views the page, so private tasks are
+      // excluded unconditionally.
+      const taskArgs = { ...args, where: { AND: [filteredWhere, { visibility: "PUBLIC" }] } };
+      return db.task.findMany(taskArgs as Parameters<typeof db.task.findMany>[0]) as unknown as Record<string, unknown>[];
+    }
     case "contract": return db.contract.findMany(args as Parameters<typeof db.contract.findMany>[0]) as unknown as Record<string, unknown>[];
     case "milestone": return db.milestone.findMany(args as Parameters<typeof db.milestone.findMany>[0]) as unknown as Record<string, unknown>[];
     case "user": return db.user.findMany(args as Parameters<typeof db.user.findMany>[0]) as unknown as Record<string, unknown>[];
@@ -221,7 +227,7 @@ async function countModel(dataSourceId: string, where: Record<string, unknown>):
   switch (dataSourceId) {
     case "client": return db.client.count({ where: w });
     case "project": return db.project.count({ where: w });
-    case "task": return db.task.count({ where: w });
+    case "task": return db.task.count({ where: { AND: [w, { visibility: "PUBLIC" }] } as never });
     case "contract": return db.contract.count({ where: w });
     case "milestone": return db.milestone.count({ where: w });
     case "user": return db.user.count({ where: w });

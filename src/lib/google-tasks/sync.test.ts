@@ -133,6 +133,11 @@ describe("multi-list pull", () => {
         expect.objectContaining({ sourceId: "list-b:g2", googleListId: "list-b" }),
       ])
     );
+    // Mirrors of a PERSONAL Google list default private — every pulled
+    // create must say so (lib/task-visibility.ts).
+    for (const c of creates) {
+      expect(c.visibility).toBe("PRIVATE");
+    }
   });
 
   it("soft-deletes tasks of a list deleted in Google and drops its mirror row", async () => {
