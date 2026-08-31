@@ -75,6 +75,15 @@ export function AddTaskButton({
               ...users.map((u) => ({ label: u.name, value: u.id })),
             ]}
           />
+          <Select
+            name="visibility"
+            label="Visibility"
+            defaultValue="PUBLIC"
+            options={[
+              { label: "Public — visible under normal team rules", value: "PUBLIC" },
+              { label: "Private — only you and the assignee", value: "PRIVATE" },
+            ]}
+          />
           {/* py-1 + h-5 checkbox keeps the label's hit area ≥24px tall —
               this toggle has an external side effect, so don't skimp. */}
           <label className="flex items-center gap-2 py-1 text-sm text-muted-foreground">

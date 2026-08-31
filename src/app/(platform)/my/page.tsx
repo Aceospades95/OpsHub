@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { taskVisibilityWhere } from "@/lib/task-visibility";
 import { requireAuth, resolveModulePerms } from "@/lib/permissions";
 import { getUserScope, hasOrgWideScope } from "@/lib/scope";
 import { PageHeader } from "@/components/layout/page-header";
@@ -51,7 +52,7 @@ export default async function MyViewPage({
           client: { select: { id: true, name: true } },
           _count: {
             select: {
-              tasks: { where: { status: { in: ["TODO", "IN_PROGRESS"] }, deletedAt: null } },
+              tasks: { where: { status: { in: ["TODO", "IN_PROGRESS"] }, deletedAt: null, ...taskVisibilityWhere(user.id) } },
             },
           },
         },
@@ -77,7 +78,7 @@ export default async function MyViewPage({
           owner: { select: { id: true, name: true } },
           _count: {
             select: {
-              tasks: { where: { status: { in: ["TODO", "IN_PROGRESS"] }, deletedAt: null } },
+              tasks: { where: { status: { in: ["TODO", "IN_PROGRESS"] }, deletedAt: null, ...taskVisibilityWhere(user.id) } },
             },
           },
         },
@@ -188,6 +189,7 @@ export default async function MyViewPage({
             dueDate: task.dueDate ? task.dueDate.toISOString() : null,
             project: task.project ? { id: task.project.id, name: task.project.name } : null,
             isGoogle: task.sourceType === "google_tasks",
+            visibility: task.visibility,
             sourceLink: task.sourceLink ?? null,
             // Subtask nesting + "My order" for the By-list view: the
             // "<tasklistId>:<taskId>" key (parents are matched by its

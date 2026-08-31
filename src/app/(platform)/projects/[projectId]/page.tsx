@@ -32,6 +32,7 @@ import { ProjectPartnershipsCard } from "./project-partnerships-card";
 import { RecentlyViewedTracker } from "@/components/shared/recently-viewed-tracker";
 import { ContactLinksCard } from "@/components/shared/contact-links-card";
 import { effectiveContractStatus } from "@/lib/effective-status";
+import { taskVisibilityWhere } from "@/lib/task-visibility";
 
 interface Props {
   params: Promise<{ projectId: string }>;
@@ -208,7 +209,9 @@ export default async function ProjectDetailPage({ params }: Props) {
         })
       : Promise.resolve([] as { id: string; name: string; email: string; jobTitle: string | null; location: string | null }[]),
     db.task.findMany({
-      where: { projectId: project.id, status: { in: ["TODO", "IN_PROGRESS"] }, deletedAt: null },
+      // A private task filed under a project stays visible only to its
+      // creator/assignee — even on the project page.
+      where: { projectId: project.id, status: { in: ["TODO", "IN_PROGRESS"] }, deletedAt: null, ...taskVisibilityWhere(user.id) },
       orderBy: [{ priority: "asc" }, { dueDate: "asc" }],
       include: { assignee: { select: { id: true, name: true } } },
       take: 10,

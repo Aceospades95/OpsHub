@@ -219,6 +219,10 @@ export async function syncGoogleTasksForUser(userId: string): Promise<SyncResult
                 dueDate: g.due ? new Date(g.due) : null,
                 assigneeId: userId,
                 createdById: userId,
+                // Mirrors of someone's PERSONAL Google list default
+                // private (creator+assignee only); flipping one public
+                // in OpsHub is a deliberate act.
+                visibility: "PRIVATE",
                 sourceType: SOURCE_TYPE,
                 sourceId: key,
                 googleListId: list.id,

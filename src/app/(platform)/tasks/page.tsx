@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
+import { taskVisibilityWhere } from "@/lib/task-visibility";
 import { requireAuth } from "@/lib/permissions";
 import { getUserScope } from "@/lib/scope";
 import { PageHeader } from "@/components/layout/page-header";
@@ -110,6 +111,10 @@ export default async function TasksPage({
     }
     where.AND = [...((where.AND as Prisma.TaskWhereInput[]) ?? []), { OR: scopeOr }];
   }
+
+  // Privacy beats role: PRIVATE tasks render only for their creator /
+  // assignee, org-wide scope included (lib/task-visibility.ts).
+  where.AND = [...((where.AND as Prisma.TaskWhereInput[]) ?? []), taskVisibilityWhere(user.id)];
 
   const scopedProjectIds = scope.all ? null : Array.from(scope.projectIds);
   const scopedClientIds = scope.all ? null : Array.from(scope.clientIds);

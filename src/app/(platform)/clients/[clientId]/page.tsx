@@ -16,6 +16,7 @@ import { ClientActions } from "./client-actions";
 import { ContactLinksCard } from "@/components/shared/contact-links-card";
 import { EvidenceLinks } from "@/components/shared/evidence-links";
 import { effectiveContractStatus } from "@/lib/effective-status";
+import { taskVisibilityWhere } from "@/lib/task-visibility";
 import { PageLayout } from "@/components/shared/page-layout";
 import { TaskCheckbox } from "@/app/(platform)/tasks/task-checkbox";
 import { AddTaskButton } from "@/components/shared/add-task-button";
@@ -90,7 +91,7 @@ export default async function ClientDetailPage({ params }: Props) {
 
   // Get tasks associated with this client
   const tasks = await db.task.findMany({
-    where: { clientId: client.id, status: { in: ["TODO", "IN_PROGRESS"] }, deletedAt: null },
+    where: { clientId: client.id, status: { in: ["TODO", "IN_PROGRESS"] }, deletedAt: null, ...taskVisibilityWhere(user.id) },
     orderBy: [{ priority: "asc" }, { dueDate: "asc" }],
     include: { assignee: { select: { id: true, name: true } } },
     take: 10,

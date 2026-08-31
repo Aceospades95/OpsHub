@@ -14,7 +14,7 @@ import {
 import { formatCalendarDate } from "@/lib/dates";
 import { buildGoogleTaskTree } from "@/lib/google-tasks/task-tree";
 import { MyQuickAddTask } from "./my-quick-add-task";
-import { CheckSquare, Clock, CalendarCheck, Mail } from "lucide-react";
+import { CheckSquare, Clock, CalendarCheck, Mail, Lock } from "lucide-react";
 
 export interface MyTaskRow {
   id: string;
@@ -25,6 +25,8 @@ export interface MyTaskRow {
   project: { id: string; name: string } | null;
   /** True when the task is synced with the user's Google Tasks. */
   isGoogle: boolean;
+  /** PUBLIC or PRIVATE — private rows get a lock mark. */
+  visibility: string;
   /** Gmail/Docs link Google carries on the task, if any. */
   sourceLink: string | null;
   /** "<tasklistId>:<taskId>" sync key (null for OpsHub-native tasks). */
@@ -125,6 +127,14 @@ export function MyTasksCard({
                           className="h-3 w-3 text-muted-foreground shrink-0"
                           aria-label="Synced with Google Tasks"
                         />
+                      )}
+                      {task.visibility === "PRIVATE" && (
+                        <span
+                          className="shrink-0"
+                          title="Private — visible only to you and the assignee"
+                        >
+                          <Lock className="h-3 w-3 text-muted-foreground" role="img" aria-label="Private task" />
+                        </span>
                       )}
                       {task.isGoogle && task.listTitle && !groupByList && (
                         <span

@@ -1,16 +1,19 @@
 import { db } from "@/lib/db";
+import { taskVisibilityWhere } from "@/lib/task-visibility";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Calendar, Clock } from "lucide-react";
 import { addDays } from "date-fns";
 import { formatCalendarDate } from "@/lib/dates";
 
-export async function WidgetCalendar({ userId: _userId }: { userId: string }) {
+export async function WidgetCalendar({ userId }: { userId: string }) {
   const now = new Date();
   const thirtyDays = addDays(now, 30);
 
   const [upcomingTasks, upcomingMilestones, expiringContracts] = await Promise.all([
     db.task.findMany({
-      where: { dueDate: { gte: now, lte: thirtyDays }, status: { in: ["TODO", "IN_PROGRESS"] }, deletedAt: null },
+      // Org calendar shows task TITLES — private tasks stay off it for
+      // everyone but their creator/assignee.
+      where: { dueDate: { gte: now, lte: thirtyDays }, status: { in: ["TODO", "IN_PROGRESS"] }, deletedAt: null, ...taskVisibilityWhere(userId) },
       orderBy: { dueDate: "asc" },
       take: 5,
       select: { id: true, title: true, dueDate: true },

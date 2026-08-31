@@ -26,6 +26,7 @@
  */
 
 import { db } from "@/lib/db";
+import { PUBLIC_TASKS_ONLY } from "@/lib/task-visibility";
 import type { CustomReportEntity } from "@prisma/client";
 import { format } from "date-fns";
 
@@ -552,7 +553,9 @@ const TASK: EntityDef = {
       include.client = { select: { id: true, name: true } };
     }
     const rows = await db.task.findMany({
-      where: { ...where, deletedAt: null },
+      // Custom reports are shared artifacts with no single viewer —
+      // private tasks are excluded outright (lib/task-visibility.ts).
+      where: { ...where, deletedAt: null, ...PUBLIC_TASKS_ONLY },
       orderBy,
       take,
       include: Object.keys(include).length > 0 ? include : undefined,

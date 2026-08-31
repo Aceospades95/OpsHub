@@ -9,7 +9,7 @@ import { StatusBadge } from "@/components/shared/status-badge";
 import { TaskCheckbox } from "./task-checkbox";
 import { TaskDrawer, type TaskDrawerTask } from "./task-drawer";
 import { formatCalendarDate } from "@/lib/dates";
-import { CalendarCheck, Mail } from "lucide-react";
+import { CalendarCheck, Lock, Mail } from "lucide-react";
 
 const statusBadgeVariant: Record<string, "default" | "success" | "warning" | "destructive" | "secondary" | "outline"> = {
   TODO: "outline",
@@ -156,6 +156,18 @@ function TaskRow({
                   className="h-3.5 w-3.5 text-muted-foreground shrink-0"
                   aria-label="Synced with Google Tasks"
                 />
+              )}
+              {task.visibility === "PRIVATE" && (
+                <span
+                  className="shrink-0"
+                  title="Private — visible only to you and the assignee"
+                >
+                  <Lock
+                    className="h-3 w-3 text-muted-foreground"
+                    role="img"
+                    aria-label="Private task"
+                  />
+                </span>
               )}
               {task.googleListTitle && (
                 <span

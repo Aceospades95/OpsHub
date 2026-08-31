@@ -692,3 +692,29 @@ density inside the shared TreeView (touches every tree in the app).
 Open decision (not a task): Work Logs shows zero hours because
 enrollment is opt-in — enroll the field team or hide the module via
 /admin/modules until ready.
+
+## Phase J — task visibility (Aug 2026) ✅ shipped
+
+Before: org-wide roles saw every task, and project-less tasks — which
+is exactly what synced personal Google lists are — passed every scope
+filter on /tasks and /search. Now every task is PUBLIC (normal
+module/scope rules) or PRIVATE (creator + assignee only, with no role
+override — an admin's job is managing the system, not reading
+personal to-dos):
+
+- One filter (lib/task-visibility) enforced at every browsing surface:
+  /tasks, /search, project and client task cards, My View counts, the
+  calendar widget; viewer-less shared surfaces (custom reports,
+  admin-built widgets) exclude private tasks outright.
+- Mutations match reads: no canManage/project-edit override on private
+  tasks, and a form that omits the field keeps the stored visibility.
+- Synced Google tasks are PRIVATE by default (migration backfills the
+  existing ones); tasks filed under projects default PUBLIC; both
+  create dialogs and the task drawer carry the toggle, and private
+  rows show a lock mark.
+- Aggregate-only counters (dashboard totals, census) still count all
+  rows — a number, never content.
+
+Proven with a two-user live drive: an org-wide MANAGER cannot find a
+private task or another person's Google list on any surface; the
+owner sees everything, lock-marked.

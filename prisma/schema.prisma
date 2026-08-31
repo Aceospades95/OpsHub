@@ -509,12 +509,24 @@ model EntityPermission {
 
 // ─── TASKS ──────────────────────────────────────────────
 
+/// Who can SEE a task in lists, search, and widgets. PRIVATE tasks are
+/// visible only to their creator and assignee — deliberately with no
+/// admin override: synced personal Google lists default private, and
+/// an admin's job is managing the system, not reading personal to-dos.
+/// Aggregate-only counters (dashboard totals, admin census) still count
+/// every row — a number, never content.
+enum TaskVisibility {
+  PUBLIC
+  PRIVATE
+}
+
 model Task {
   id          String     @id @default(cuid())
   title       String
   description String?    @db.Text
   status      TaskStatus @default(TODO)
   priority    Priority   @default(MEDIUM)
+  visibility  TaskVisibility @default(PUBLIC)
   dueDate     DateTime?
   completedAt DateTime?
   sortOrder   Int        @default(0)

@@ -31,6 +31,8 @@ export interface TaskDrawerTask {
   description: string | null;
   status: string;
   priority: string;
+  /** PUBLIC (normal rules) or PRIVATE (creator + assignee only). */
+  visibility: string;
   dueDate: Date | string | null;
   /** When the task was marked DONE/CANCELLED — surfaced in the
    *  list-row metadata for completed tasks so the row isn't a
@@ -78,6 +80,7 @@ export function TaskDrawer({ task, projects, clients, users, onClose }: Props) {
   const [projectId, setProjectId] = useState("");
   const [clientId, setClientId] = useState("");
   const [assigneeId, setAssigneeId] = useState("");
+  const [visibility, setVisibility] = useState("PUBLIC");
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const panelRef = useRef<HTMLElement>(null);
@@ -96,6 +99,7 @@ export function TaskDrawer({ task, projects, clients, users, onClose }: Props) {
     setProjectId(task.project?.id ?? "");
     setClientId(task.client?.id ?? "");
     setAssigneeId(task.assignee?.id ?? "");
+    setVisibility(task.visibility);
     setError(null);
   }, [task]);
 
@@ -178,6 +182,7 @@ export function TaskDrawer({ task, projects, clients, users, onClose }: Props) {
     fd.set("projectId", projectId);
     fd.set("clientId", clientId);
     fd.set("assigneeId", assigneeId);
+    fd.set("visibility", visibility);
 
     startTransition(async () => {
       const res = await updateTask(null, fd);
@@ -257,6 +262,15 @@ export function TaskDrawer({ task, projects, clients, users, onClose }: Props) {
               ]}
             />
           </div>
+          <Select
+            label="Visibility"
+            value={visibility}
+            onChange={(e) => setVisibility(e.target.value)}
+            options={[
+              { label: "Public — visible under normal team rules", value: "PUBLIC" },
+              { label: "Private — only you and the assignee", value: "PRIVATE" },
+            ]}
+          />
           <div>
             <Input
               label="Due Date"
