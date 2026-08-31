@@ -670,3 +670,25 @@ causes. All fixed and re-measured live:
 Deliberately not done: an `xl:` breakpoint tier / raising the 1600px
 content cap (revisit with real wide-screen usage), and per-row
 density inside the shared TreeView (touches every tree in the app).
+
+## Phase I — CRM phase 2 (Aug 2026) ✅ shipped
+
+- **Interaction logging**: dated touch-log per contact (call / email /
+  meeting / note), an Interactions timeline card on the contact page
+  (edit/delete restricted to the author or an admin), and a "Last
+  touch" column on /contacts fed by one grouped query.
+- **Quote template variants**: named tiers ("Gold"/"Silver") cloned
+  from a base template with all line items, grouped under the base in
+  the list and the from-template picker; deleting a base promotes its
+  variants; duplicate labels per base refused.
+- **Google Tasks list fidelity, phase two**: sync captures each task's
+  parent and lexicographic position (five stamping sites, pull-only);
+  My View's "By list" mode renders each Google list exactly as the
+  Google app does — top-level tasks in "My order", subtasks indented —
+  with orphan promotion and cycle guards in a unit-tested pure helper.
+  Rows synced before this feature self-heal as they next change in
+  Google.
+
+Open decision (not a task): Work Logs shows zero hours because
+enrollment is opt-in — enroll the field team or hide the module via
+/admin/modules until ready.

@@ -140,6 +140,16 @@ export interface GoogleTask {
   deleted?: boolean;
   hidden?: boolean;
   /**
+   * Parent task's id (bare, same list) when this task is a SUBTASK.
+   * Absent on top-level tasks — the sync mirrors that as null.
+   */
+  parent?: string;
+  /**
+   * Lexicographic sort key among siblings — Google's manual "My order".
+   * Compare as plain strings; Google may omit it (e.g. assigned tasks).
+   */
+  position?: string;
+  /**
    * External references on the task — e.g. the Gmail message a task was
    * created from. `{ type: "email", description, link }`.
    */

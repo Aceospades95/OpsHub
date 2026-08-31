@@ -67,6 +67,8 @@ export default async function TemplatesPage() {
                 id: t.id,
                 name: t.name,
                 description: t.description,
+                variantOfId: t.variantOfId,
+                variantLabel: t.variantLabel,
                 lineItemCount: t._count.lineItems,
                 createdByName: t.createdBy.name,
                 createdById: t.createdBy.id,

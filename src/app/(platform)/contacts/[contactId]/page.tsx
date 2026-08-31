@@ -11,6 +11,7 @@ import { resolveLinkTargets, linkTargetKey, isContactEntityType } from "@/lib/co
 import { ContactActions } from "./contact-actions";
 import { ContactLinksSection } from "./contact-links-section";
 import { DepartedToggle } from "./departed-toggle";
+import { InteractionsSection } from "./interactions-section";
 
 interface Props {
   params: Promise<{ contactId: string }>;
@@ -34,7 +35,14 @@ export default async function ContactDetailPage({ params }: Props) {
 
   const contact = await db.contact.findFirst({
     where: { id: contactId, deletedAt: null },
-    include: { contactLinks: { orderBy: { createdAt: "asc" } } },
+    include: {
+      contactLinks: { orderBy: { createdAt: "asc" } },
+      interactions: {
+        // Reverse-chronological timeline; same-day entries newest-logged first.
+        orderBy: [{ occurredAt: "desc" }, { createdAt: "desc" }],
+        include: { createdBy: { select: { name: true } } },
+      },
+    },
   });
   if (!contact) notFound();
 
@@ -56,6 +64,18 @@ export default async function ContactDetailPage({ params }: Props) {
       },
     ];
   });
+
+  // Plain serializable rows for the client card; the author name comes
+  // along so the timeline can credit who logged each touch.
+  const interactions = contact.interactions.map((interaction) => ({
+    id: interaction.id,
+    kind: interaction.kind,
+    occurredAt: interaction.occurredAt.toISOString(),
+    summary: interaction.summary,
+    notes: interaction.notes,
+    createdById: interaction.createdById,
+    createdByName: interaction.createdBy?.name ?? null,
+  }));
 
   return (
     <div>
@@ -100,6 +120,21 @@ export default async function ContactDetailPage({ params }: Props) {
                 contactId={contact.id}
                 links={links}
                 canEdit={perms.canEdit}
+              />
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Interactions ({interactions.length})</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <InteractionsSection
+                contactId={contact.id}
+                interactions={interactions}
+                canEdit={perms.canEdit}
+                currentUserId={user.id}
+                isAdmin={user.role === "ADMIN"}
               />
             </CardContent>
           </Card>
